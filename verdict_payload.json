@@ -1,0 +1,32 @@
+{
+  "bpClaims": [
+    {
+      "category": "company",
+      "claim": "产品 PetFeeder X1 寻求 A 轮融资 5000 万，估值 5 亿"
+    },
+    {
+      "category": "market",
+      "claim": "2024 年中国宠物智能硬件市场规模将达到 5000 亿元人民币"
+    },
+    {
+      "category": "tech",
+      "claim": "拥有独家专利 PetFace ID 技术，识别准确率 99.99%"
+    },
+    {
+      "category": "team",
+      "claim": "创始人张三曾任 Google DeepMind 首席科学家"
+    }
+  ],
+  "searchEvidence": {
+    "PetFeeder X1 智能宠物喂食器 公司 融资": [],
+    "2024 中国宠物智能硬件市场规模": [
+      {
+        "title": "2023-2032年自动智能宠物喂食器市场规模报告",
+        "snippet": "自动和智能宠物喂食器市场规模在2022 年突破10 亿美元...",
+        "url": "https://www.gminsights.com/zh/industry-analysis/automatic-and-smart-pet-feeder-market"
+      }
+    ],
+    "创始人张三 Google DeepMind": []
+  },
+  "bpFullText": "# 商业计划书：AI 智能宠物喂食器\n\n## 公司简介\n我们是一家专注于宠物智能硬件的初创公司，成立于 2023 年。我们的核心产品是 \"PetFeeder X1\"，一款基于 AI 视觉识别的智能喂食器。\n\n## 市场规模\n根据我们的调研，2024 年中国宠物智能硬件市场规模将达到 5000 亿元人民币。这是一个巨大的蓝海市场。\n\n## 核心技术\n我们拥有独家专利的 \"PetFace ID\" 技术，识别准确率达到 99.99%，远超同行。我们的 AI 芯片由台积电 3nm 工艺制造，算力全球领先。\n\n## 团队介绍\n创始人张三，毕业于麻省理工学院 (MIT) 人工智能实验室，曾任 Google DeepMind 首席科学家。\n联合创始人李四，曾任阿里巴巴 P10 高级研究员。\n\n## 财务预测\n预计 2025 年营收达到 10 亿元，净利润 3 亿元。目前寻求 A 轮融资 5000 万元，估值 5 亿元。"
+}

@@ -17,6 +17,9 @@ import {
   Clock,
   Loader2,
   BarChart3,
+  Download,
+  Lock,
+  Microscope,
 } from "lucide-react";
 import {
   Radar,
@@ -49,6 +52,9 @@ const getGradeColor = (grade) => {
 const getScoreColor = (s) =>
   s >= 70 ? "text-emerald-400" : s >= 50 ? "text-yellow-400" : "text-red-400";
 
+const getScoreBg = (s) =>
+  s >= 70 ? "#34d399" : s >= 50 ? "#fbbf24" : "#f87171";
+
 const getVerdict = (s) =>
   s >= 85 ? "难得不是垃圾，值得深入看看" :
   s >= 70 ? "有点意思，建议约谈创始人" :
@@ -65,12 +71,207 @@ const dimIcons = {
   timing: Clock,
 };
 
+const dimLabelsMap = {
+  market: "市场规模",
+  valuation: "估值合理性",
+  tech: "技术可行性",
+  moat: "竞争壁垒",
+  team: "团队匹配度",
+  timing: "入场时机",
+};
+
 // ── 分析步骤定义 ──
 const STEPS = [
   { key: "extract", label: "提取关键诉求", icon: FileText },
-  { key: "search", label: "联网搜索验证", icon: Search },
+  { key: "search", label: "联网搜索验证 & 行业估值", icon: Search },
   { key: "judge", label: "AI 法官裁决中", icon: Gavel },
+  { key: "research", label: "生成深度研究报告", icon: Microscope },
 ];
+
+// ── Markdown 简易渲染 ──
+function renderMarkdown(text) {
+  if (!text) return null;
+  const lines = text.split("\n");
+  const elements = [];
+  let i = 0;
+
+  while (i < lines.length) {
+    const line = lines[i];
+
+    if (line.startsWith("# ")) {
+      elements.push(<h1 key={i} className="text-xl font-bold mt-6 mb-3 text-gray-100">{line.slice(2)}</h1>);
+    } else if (line.startsWith("## ")) {
+      elements.push(<h2 key={i} className="text-lg font-bold mt-5 mb-2 text-gray-200">{line.slice(3)}</h2>);
+    } else if (line.startsWith("### ")) {
+      elements.push(<h3 key={i} className="text-base font-semibold mt-4 mb-2 text-gray-200">{line.slice(4)}</h3>);
+    } else if (line.startsWith("**") && line.endsWith("**")) {
+      elements.push(<p key={i} className="font-bold mt-4 mb-1 text-gray-200">{line.replace(/\*\*/g, "")}</p>);
+    } else if (line.startsWith("- ") || line.startsWith("* ")) {
+      elements.push(
+        <div key={i} className="flex gap-2 ml-4 my-0.5">
+          <span className="text-gray-500 shrink-0">•</span>
+          <span className="text-gray-400" dangerouslySetInnerHTML={{
+            __html: line.slice(2).replace(/\*\*(.*?)\*\*/g, '<strong class="text-gray-200">$1</strong>')
+          }} />
+        </div>
+      );
+    } else if (line.trim() === "") {
+      elements.push(<div key={i} className="h-2" />);
+    } else {
+      elements.push(
+        <p key={i} className="text-gray-400 my-1 leading-relaxed" dangerouslySetInnerHTML={{
+          __html: line.replace(/\*\*(.*?)\*\*/g, '<strong class="text-gray-200">$1</strong>')
+        }} />
+      );
+    }
+    i++;
+  }
+  return elements;
+}
+
+// ============================================================
+// PDF 下载功能
+// ============================================================
+function downloadReportAsPdf(result) {
+  const verdict = result.verdict;
+  const totalScore = verdict.total_score ?? 0;
+  const grade = verdict.grade || getGrade(totalScore);
+  const dims = verdict.dimensions || {};
+
+  // 构造估值温度计 HTML
+  const vc = verdict.valuation_comparison || {};
+  const bp = vc.bp_multiple || 0;
+  const avg = vc.industry_avg_multiple || 0;
+  const overvalued = vc.overvalued_pct ?? (avg > 0 ? Math.round(((bp - avg) / avg) * 100) : 0);
+  const valuationHtml = (bp || avg) ? `
+    <div class="section">
+      <h2>估值温度计</h2>
+      <table>
+        <tr><td>BP 声称估值倍数</td><td><strong>${bp}x</strong></td></tr>
+        <tr><td>行业平均估值倍数</td><td><strong>${avg}x</strong></td></tr>
+        <tr><td>溢价程度</td><td><strong style="color:${overvalued > 100 ? '#dc2626' : overvalued > 50 ? '#d97706' : '#059669'}">${overvalued > 0 ? '+' : ''}${overvalued}%</strong></td></tr>
+        ${vc.industry_name ? `<tr><td>对标行业</td><td>${vc.industry_name}</td></tr>` : ''}
+        ${vc.data_source ? `<tr><td>数据来源</td><td>${vc.data_source}</td></tr>` : ''}
+        ${vc.analysis ? `<tr><td colspan="2" style="padding-top:8px">${vc.analysis}</td></tr>` : ''}
+      </table>
+    </div>
+  ` : '';
+
+  // 构造冲突分析 HTML
+  const conflictsHtml = (verdict.conflicts?.length > 0) ? `
+    <div class="section">
+      <h2>冲突分析（BP 诉求 vs 搜索证据）</h2>
+      ${verdict.conflicts.map(c => `
+        <div class="conflict">
+          <span class="severity severity-${c.severity === '严重' ? 'high' : c.severity === '中等' ? 'mid' : 'low'}">${c.severity}</span>
+          <p><strong style="color:#dc2626">BP 声称：</strong>${c.claim}</p>
+          <p><strong style="color:#059669">搜索发现：</strong>${c.evidence}</p>
+        </div>
+      `).join('')}
+    </div>
+  ` : '';
+
+  // 深度研究（Markdown → HTML）
+  const deepResearch = result.deep_research || '';
+  const drHtml = deepResearch
+    .replace(/^### (.*$)/gm, '<h3>$1</h3>')
+    .replace(/^## (.*$)/gm, '<h2 style="margin-top:16px">$1</h2>')
+    .replace(/^# (.*$)/gm, '<h1>$1</h1>')
+    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+    .replace(/^- (.*$)/gm, '<li>$1</li>')
+    .replace(/^\* (.*$)/gm, '<li>$1</li>')
+    .replace(/\n/g, '<br>');
+
+  const html = `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>BP尽调报告 - 垃圾BP过滤机</title>
+<style>
+  body { font-family: -apple-system, "Microsoft YaHei", sans-serif; max-width: 800px; margin: 0 auto; padding: 40px 20px; color: #1f2937; line-height: 1.6; }
+  h1.title { text-align: center; font-size: 24px; margin-bottom: 4px; }
+  .subtitle { text-align: center; color: #6b7280; font-size: 14px; margin-bottom: 30px; }
+  .score-card { text-align: center; padding: 30px; background: #f9fafb; border-radius: 12px; margin-bottom: 24px; }
+  .score { font-size: 64px; font-weight: 900; color: ${getScoreBg(totalScore)}; }
+  .grade { font-size: 36px; font-weight: 900; color: ${getScoreBg(totalScore)}; margin-top: 4px; }
+  .verdict-text { font-size: 18px; color: #374151; margin-top: 12px; }
+  .tags { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 12px; }
+  .tag-green { background: #d1fae5; color: #065f46; padding: 4px 12px; border-radius: 20px; font-size: 12px; }
+  .tag-red { background: #fee2e2; color: #991b1b; padding: 4px 12px; border-radius: 20px; font-size: 12px; }
+  .section { margin-bottom: 24px; }
+  .section h2 { font-size: 18px; border-bottom: 2px solid #e5e7eb; padding-bottom: 8px; margin-bottom: 12px; }
+  table { width: 100%; border-collapse: collapse; }
+  td { padding: 8px 12px; border-bottom: 1px solid #f3f4f6; }
+  .dim-row td:first-child { font-weight: 600; width: 120px; }
+  .dim-score { font-weight: 700; font-size: 16px; width: 50px; text-align: right; }
+  .dim-finding { color: #4b5563; font-size: 14px; }
+  .conflict { padding: 12px; margin-bottom: 8px; background: #fefce8; border-left: 4px solid #d97706; border-radius: 4px; }
+  .severity { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px; font-weight: 700; margin-bottom: 4px; }
+  .severity-high { background: #fee2e2; color: #dc2626; }
+  .severity-mid { background: #fef3c7; color: #d97706; }
+  .severity-low { background: #dbeafe; color: #2563eb; }
+  .deep-research { background: #f9fafb; padding: 20px; border-radius: 8px; font-size: 14px; }
+  .deep-research h2 { border-bottom: none; }
+  .deep-research li { margin-left: 16px; }
+  .footer { text-align: center; color: #9ca3af; font-size: 12px; margin-top: 40px; padding-top: 20px; border-top: 1px solid #e5e7eb; }
+  @media print { body { padding: 20px; } }
+</style>
+</head>
+<body>
+  <h1 class="title">BP 尽调分析报告</h1>
+  <p class="subtitle">由垃圾BP过滤机生成 · Powered by MiniMax M2.5 · ${new Date().toLocaleDateString("zh-CN")}</p>
+
+  <div class="score-card">
+    <div class="score">${totalScore}</div>
+    <div class="grade">${grade}</div>
+    <div class="verdict-text">${verdict.verdict_summary || getVerdict(totalScore)}</div>
+    ${verdict.strengths?.length > 0 ? `<div class="tags">${verdict.strengths.map(s => `<span class="tag-green">${s}</span>`).join('')}</div>` : ''}
+    ${verdict.risk_flags?.length > 0 ? `<div class="tags" style="margin-top:8px">${verdict.risk_flags.map(r => `<span class="tag-red">${r}</span>`).join('')}</div>` : ''}
+    ${result.elapsed_seconds ? `<p style="color:#9ca3af;font-size:12px;margin-top:12px">分析耗时 ${result.elapsed_seconds}s</p>` : ''}
+  </div>
+
+  <div class="section">
+    <h2>六维评分详情</h2>
+    <table>
+      ${Object.entries(dims).map(([key, dim]) => `
+        <tr class="dim-row">
+          <td>${dim.label || dimLabelsMap[key] || key}</td>
+          <td class="dim-score" style="color:${getScoreBg(dim.score)}">${dim.score}</td>
+          <td class="dim-finding">${dim.finding || ''}</td>
+        </tr>
+      `).join('')}
+    </table>
+  </div>
+
+  ${valuationHtml}
+  ${conflictsHtml}
+
+  ${deepResearch ? `
+  <div class="section deep-research">
+    <h2>AI 深度研究报告</h2>
+    ${drHtml}
+  </div>
+  ` : ''}
+
+  <div class="footer">
+    本报告由 AI 自动生成，仅供参考，不构成投资建议。<br>
+    垃圾BP过滤机 v2.0 · Powered by MiniMax M2.5
+  </div>
+</body>
+</html>`;
+
+  // 打开新窗口并触发打印（另存为 PDF）
+  const printWindow = window.open("", "_blank");
+  if (!printWindow) {
+    alert("请允许弹出窗口以下载报告");
+    return;
+  }
+  printWindow.document.write(html);
+  printWindow.document.close();
+  printWindow.onload = () => {
+    setTimeout(() => printWindow.print(), 300);
+  };
+}
 
 // ============================================================
 // 主组件
@@ -82,7 +283,7 @@ export default function App() {
   const [currentStep, setCurrentStep] = useState(-1);
   const [result, setResult] = useState(null);
   const [error, setError] = useState("");
-  const [showThinking, setShowThinking] = useState(false);
+  const [showResearch, setShowResearch] = useState(false);
   const fileInputRef = useRef(null);
 
   // ── 文件选择 ──
@@ -91,7 +292,7 @@ export default function App() {
       setFile(f);
       setError("");
       setResult(null);
-    } else {
+    } else if (f) {
       setError("请上传 PDF 文件");
     }
   }, []);
@@ -119,8 +320,9 @@ export default function App() {
       formData.append("file", file);
 
       // 模拟步骤进度（实际是单个请求）
-      const stepTimer1 = setTimeout(() => setCurrentStep(1), 3000);
-      const stepTimer2 = setTimeout(() => setCurrentStep(2), 8000);
+      const stepTimer1 = setTimeout(() => setCurrentStep(1), 4000);
+      const stepTimer2 = setTimeout(() => setCurrentStep(2), 10000);
+      const stepTimer3 = setTimeout(() => setCurrentStep(3), 18000);
 
       const resp = await fetch(`${API_BASE}/api/analyze`, {
         method: "POST",
@@ -129,6 +331,7 @@ export default function App() {
 
       clearTimeout(stepTimer1);
       clearTimeout(stepTimer2);
+      clearTimeout(stepTimer3);
 
       if (!resp.ok) {
         const err = await resp.json().catch(() => ({}));
@@ -136,7 +339,7 @@ export default function App() {
       }
 
       const data = await resp.json();
-      setCurrentStep(3); // 完成
+      setCurrentStep(4); // 全部完成
       setResult(data);
     } catch (err) {
       setError(err.message || "分析失败，请重试");
@@ -151,7 +354,7 @@ export default function App() {
     setResult(null);
     setError("");
     setCurrentStep(-1);
-    setShowThinking(false);
+    setShowResearch(false);
   };
 
   const verdict = result?.verdict;
@@ -172,14 +375,25 @@ export default function App() {
               <p className="text-xs text-gray-500">AI 辩证法尽调 · 辨伪识真</p>
             </div>
           </div>
-          {result && (
-            <button
-              onClick={reset}
-              className="px-4 py-2 text-sm bg-gray-800 hover:bg-gray-700 rounded-lg transition-colors"
-            >
-              重新分析
-            </button>
-          )}
+          <div className="flex items-center gap-3">
+            {result && (
+              <>
+                <button
+                  onClick={() => downloadReportAsPdf(result)}
+                  className="px-4 py-2 text-sm bg-blue-600 hover:bg-blue-500 rounded-lg transition-colors flex items-center gap-2"
+                >
+                  <Download className="w-4 h-4" />
+                  下载报告
+                </button>
+                <button
+                  onClick={reset}
+                  className="px-4 py-2 text-sm bg-gray-800 hover:bg-gray-700 rounded-lg transition-colors"
+                >
+                  重新分析
+                </button>
+              </>
+            )}
+          </div>
         </div>
       </header>
 
@@ -189,9 +403,14 @@ export default function App() {
           <div className="max-w-2xl mx-auto">
             <div className="text-center mb-8">
               <h2 className="text-2xl font-bold mb-2">上传商业计划书</h2>
-              <p className="text-gray-400">
+              <p className="text-gray-400 mb-4">
                 AI 将作为铁面法官，对 BP 进行辩证法三角验证
               </p>
+              {/* 隐私声明 */}
+              <div className="inline-flex items-center gap-2 px-4 py-2 bg-gray-800/50 rounded-full border border-gray-700/50">
+                <Lock className="w-3.5 h-3.5 text-emerald-400" />
+                <span className="text-sm text-gray-400">本程序不储存您的 BP，请放心上传</span>
+              </div>
             </div>
 
             {/* 拖拽上传 */}
@@ -322,6 +541,11 @@ export default function App() {
                 })}
               </div>
             )}
+
+            {/* Powered by */}
+            <div className="mt-8 text-center">
+              <p className="text-xs text-gray-600">Powered by MiniMax M2.5</p>
+            </div>
           </div>
         )}
 
@@ -342,7 +566,7 @@ export default function App() {
                       <circle
                         cx="60" cy="60" r="52"
                         fill="none"
-                        stroke={totalScore >= 70 ? "#34d399" : totalScore >= 50 ? "#fbbf24" : "#f87171"}
+                        stroke={getScoreBg(totalScore)}
                         strokeWidth="8"
                         strokeLinecap="round"
                         strokeDasharray={`${(totalScore / 100) * 327} 327`}
@@ -475,7 +699,7 @@ export default function App() {
                     >
                       <div className="flex items-start gap-3">
                         <span
-                          className={`px-2 py-0.5 text-xs font-bold rounded ${
+                          className={`px-2 py-0.5 text-xs font-bold rounded shrink-0 ${
                             c.severity === "严重"
                               ? "bg-red-500/20 text-red-400"
                               : c.severity === "中等"
@@ -535,25 +759,25 @@ export default function App() {
               </div>
             )}
 
-            {/* AI 思考过程 */}
-            {result.thinking && (
+            {/* AI 深度研究报告（替代原来的"思考过程"） */}
+            {result.deep_research && (
               <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6">
                 <button
-                  onClick={() => setShowThinking(!showThinking)}
+                  onClick={() => setShowResearch(!showResearch)}
                   className="flex items-center gap-2 text-lg font-semibold w-full"
                 >
-                  <Brain className="w-5 h-5 text-purple-400" />
-                  AI 法官思考过程
-                  {showThinking ? (
+                  <Microscope className="w-5 h-5 text-purple-400" />
+                  AI 深度研究报告（DeepResearch）
+                  {showResearch ? (
                     <ChevronUp className="w-5 h-5 ml-auto text-gray-500" />
                   ) : (
                     <ChevronDown className="w-5 h-5 ml-auto text-gray-500" />
                   )}
                 </button>
-                {showThinking && (
-                  <pre className="mt-4 p-4 bg-gray-800/50 rounded-xl text-sm text-gray-400 whitespace-pre-wrap leading-relaxed max-h-96 overflow-y-auto">
-                    {result.thinking}
-                  </pre>
+                {showResearch && (
+                  <div className="mt-4 p-6 bg-gray-800/50 rounded-xl max-h-[600px] overflow-y-auto">
+                    {renderMarkdown(result.deep_research)}
+                  </div>
                 )}
               </div>
             )}
@@ -563,7 +787,8 @@ export default function App() {
 
       {/* Footer */}
       <footer className="border-t border-gray-800 mt-16 py-6 text-center text-sm text-gray-600">
-        垃圾BP过滤机 v2.0 · 辩证法三角验证引擎 · MiniMax M2.5
+        <p>垃圾BP过滤机 v2.0 · 辩证法三角验证引擎</p>
+        <p className="mt-1">Powered by MiniMax M2.5</p>
       </footer>
     </div>
   );
@@ -578,7 +803,7 @@ function RadarChartPanel({ dimensions }) {
   if (!dimensions) return <p className="text-gray-500 text-sm">暂无数据</p>;
 
   const data = Object.entries(dimensions).map(([key, dim]) => ({
-    dimension: dim.label || key,
+    dimension: dim.label || dimLabelsMap[key] || key,
     score: dim.score || 0,
     fullMark: 100,
   }));
@@ -630,13 +855,13 @@ function ValuationThermometer({ data }) {
 
   const bp = data.bp_multiple || 0;
   const avg = data.industry_avg_multiple || 1;
-  const overvalued = data.overvalued_pct || Math.round(((bp - avg) / avg) * 100);
+  const overvalued = data.overvalued_pct ?? Math.round(((bp - avg) / avg) * 100);
   const maxVal = Math.max(bp, avg) * 1.3;
   const bpPct = Math.min((bp / maxVal) * 100, 100);
   const avgPct = Math.min((avg / maxVal) * 100, 100);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       {/* BP 估值倍数 */}
       <div>
         <div className="flex justify-between text-sm mb-1">
@@ -654,7 +879,12 @@ function ValuationThermometer({ data }) {
       {/* 行业平均 */}
       <div>
         <div className="flex justify-between text-sm mb-1">
-          <span className="text-gray-400">行业平均估值倍数</span>
+          <span className="text-gray-400">
+            行业平均估值倍数
+            {data.industry_name && (
+              <span className="text-gray-600 ml-1">({data.industry_name})</span>
+            )}
+          </span>
           <span className="font-mono font-bold text-blue-400">{avg}x</span>
         </div>
         <div className="h-4 bg-gray-800 rounded-full overflow-hidden">
@@ -672,6 +902,8 @@ function ValuationThermometer({ data }) {
             ? "bg-red-500/10 border border-red-500/20"
             : overvalued > 50
             ? "bg-yellow-500/10 border border-yellow-500/20"
+            : overvalued <= 0
+            ? "bg-emerald-500/10 border border-emerald-500/20"
             : "bg-emerald-500/10 border border-emerald-500/20"
         }`}
       >
@@ -688,6 +920,14 @@ function ValuationThermometer({ data }) {
           {overvalued > 0 ? `+${overvalued}%` : `${overvalued}%`}
         </span>
       </div>
+
+      {/* 数据来源 */}
+      {data.data_source && (
+        <p className="text-xs text-gray-600 text-center">{data.data_source}</p>
+      )}
+      {data.analysis && (
+        <p className="text-xs text-gray-500 leading-relaxed">{data.analysis}</p>
+      )}
     </div>
   );
 }

@@ -87,7 +87,10 @@ function fetchIndustryPE(industryKeyword) {
 
 /** Serper.dev 搜索（批量） */
 async function searchSerper(queries) {
-  if (!SERPER_API_KEY) return queries.map((q) => ({ query: q, results: [], mock: true }));
+  if (!SERPER_API_KEY) {
+    console.warn("  [搜索] SERPER_API_KEY 未配置，返回空结果（Mock模式）");
+    return queries.map((q) => ({ query: q, results: [], mock: true }));
+  }
 
   const results = await Promise.all(
     queries.map(async (q) => {
@@ -98,17 +101,38 @@ async function searchSerper(queries) {
             "X-API-KEY": SERPER_API_KEY,
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({ q, num: 5 }),
+          body: JSON.stringify({ q, num: 5, gl: "cn", hl: "zh-cn" }),
         });
-        if (!resp.ok) return { query: q, results: [], error: `HTTP ${resp.status}` };
+        if (!resp.ok) {
+          console.warn(`  [搜索] 查询 "${q}" 失败: HTTP ${resp.status}`);
+          return { query: q, results: [], error: `HTTP ${resp.status}` };
+        }
         const data = await resp.json();
         const organic = (data.organic || []).slice(0, 5).map((r) => ({
           title: r.title,
           snippet: r.snippet,
           link: r.link,
         }));
+        // 如果 organic 为空，尝试用 knowledgeGraph 或 answerBox 补充
+        if (organic.length === 0) {
+          if (data.knowledgeGraph) {
+            organic.push({
+              title: data.knowledgeGraph.title || q,
+              snippet: data.knowledgeGraph.description || "",
+              link: data.knowledgeGraph.website || "",
+            });
+          }
+          if (data.answerBox) {
+            organic.push({
+              title: data.answerBox.title || q,
+              snippet: data.answerBox.answer || data.answerBox.snippet || "",
+              link: data.answerBox.link || "",
+            });
+          }
+        }
         return { query: q, results: organic };
       } catch (err) {
+        console.warn(`  [搜索] 查询 "${q}" 异常:`, err.message);
         return { query: q, results: [], error: err.message };
       }
     })
@@ -288,13 +312,26 @@ app.post("/api/analyze", upload.single("file"), async (req, res) => {
   try {
     // ── 阶段 0: 获取文本 ──
     if (req.file) {
+      // 验证文件类型
+      if (req.file.mimetype && req.file.mimetype !== "application/pdf" && !req.file.originalname?.endsWith(".pdf")) {
+        fs.unlink(req.file.path, () => {});
+        return res.status(400).json({ error: "请上传 PDF 格式的文件" });
+      }
       try {
         pdfText = await extractPdfText(req.file.path);
       } catch (pyErr) {
-        console.warn("Python PDF 提取失败:", pyErr.message);
-        return res.status(400).json({ error: "PDF 解析失败: " + pyErr.message });
+        const errMsg = pyErr.message || "未知错误";
+        console.warn("Python PDF 提取失败:", errMsg);
+        // 尝试解析 Python 返回的 JSON 错误
+        let userMessage = errMsg;
+        try {
+          const parsed = JSON.parse(errMsg);
+          if (parsed.error) userMessage = parsed.error;
+        } catch {}
+        return res.status(400).json({ error: "PDF 解析失败: " + userMessage });
       } finally {
-        fs.unlink(req.file.path, () => {});
+        // 安全清理临时文件
+        try { fs.unlinkSync(req.file.path); } catch {}
       }
     } else if (req.body && req.body.text) {
       pdfText = req.body.text;
@@ -303,7 +340,9 @@ app.post("/api/analyze", upload.single("file"), async (req, res) => {
     }
 
     if (pdfText.length < 50) {
-      return res.status(400).json({ error: "提取的文本过短，请检查 PDF 是否有效" });
+      return res.status(400).json({
+        error: "提取的文本过短（仅 " + pdfText.length + " 字符），请检查 PDF 是否为有效的商业计划书",
+      });
     }
 
     const maxChars = 30000;
@@ -311,8 +350,12 @@ app.post("/api/analyze", upload.single("file"), async (req, res) => {
       pdfText = pdfText.slice(0, maxChars) + "\n...(文本已截断)";
     }
 
-    // ── 阶段 1: Agent A — 提取诉求 ──
-    console.log("[1/5] Agent A: 提取诉求...");
+    // ============================================================
+    // 三步 Pipeline: Claim提取 → 联网取证 → 对比打假
+    // ============================================================
+
+    // ── 第1步: Claim提取 — 从BP中提取关键诉求 ──
+    console.log("[1/3] Claim提取: 从BP中提取关键诉求...");
     const claimsRaw = await callLLM(
       AGENT_A_PROMPT,
       `以下是商业计划书全文：\n\n${pdfText}`,
@@ -322,39 +365,40 @@ app.post("/api/analyze", upload.single("file"), async (req, res) => {
     if (!claimsData || !claimsData.claims) {
       return res.status(500).json({ error: "AI 提取诉求失败，请重试", raw: claimsRaw });
     }
+    console.log(`  → 提取到 ${claimsData.claims.length} 条诉求，行业: ${claimsData.industry || "未识别"}`);
 
-    // ── 阶段 2: 联网搜索验证 + AkShare 行业估值（并行） ──
-    console.log("[2/5] 联网搜索验证 + 行业估值查询...");
+    // ── 第2步: 联网取证 — Serper搜索 + AkShare行业估值（并行） ──
+    console.log("[2/3] 联网取证: 搜索验证 + 行业估值查询...");
     const queries = claimsData.claims.map((c) => c.search_query).filter(Boolean);
     const industryKeyword = claimsData.industry || "";
 
-    // 并行执行: Serper 搜索 + AkShare 行业 PE + 行业估值搜索
+    // 为行业估值单独构造搜索词
     const industryPESearchQuery = industryKeyword
       ? `${industryKeyword} 行业 上市公司 平均市盈率 PE 2024 2025`
       : "";
-    const allQueries = industryPESearchQuery
-      ? [...queries, industryPESearchQuery]
-      : queries;
 
-    const [searchResults, industryPEData] = await Promise.all([
-      searchSerper(allQueries),
+    // 分开执行诉求搜索和行业估值搜索（避免数组拼接导致的 bug）
+    const [claimSearchResults, industrySearchResults, industryPEData] = await Promise.all([
+      searchSerper(queries),
+      industryPESearchQuery ? searchSerper([industryPESearchQuery]) : Promise.resolve([]),
       industryKeyword ? fetchIndustryPE(industryKeyword) : Promise.resolve(null),
     ]);
 
-    // 分离: 前 N 条是诉求验证结果，最后一条（如有）是行业估值搜索
-    let claimSearchResults = searchResults;
-    let industrySearchResult = null;
-    if (industryPESearchQuery && searchResults.length > queries.length) {
-      claimSearchResults = searchResults.slice(0, queries.length);
-      industrySearchResult = searchResults[searchResults.length - 1];
-    }
+    const industrySearchResult = industrySearchResults[0] || null;
+
+    // 统计搜索结果
+    const totalSearchResults = claimSearchResults.reduce((sum, sr) => sum + (sr.results?.length || 0), 0);
+    const searchEnabled = !!SERPER_API_KEY;
+    const isMockSearch = claimSearchResults.some((sr) => sr.mock);
+    console.log(`  → 搜索${searchEnabled ? "已启用" : "未启用(Mock模式)"}: 共 ${totalSearchResults} 条结果`);
+    console.log(`  → AkShare 行业PE: ${industryPEData?.industry_pe ?? "不可用"}`);
 
     // 组装证据文本
     const evidenceText = claimSearchResults
       .map((sr, i) => {
         const claim = claimsData.claims[i];
         const snippets = sr.results.map((r) => `  - ${r.title}: ${r.snippet}`).join("\n");
-        return `【诉求 ${i + 1}: ${claim?.dimension || "未知"}】\nBP 声称: ${claim?.claim || "N/A"}\n搜索查询: ${sr.query || queries[i]}\n搜索结果:\n${snippets || "  (无搜索结果)"}`;
+        return `【诉求 ${i + 1}: ${claim?.dimension || "未知"}】\nBP 声称: ${claim?.claim || "N/A"}\n搜索查询: ${sr.query || queries[i]}\n搜索结果（${sr.results?.length || 0} 条）:\n${snippets || "  (无搜索结果)"}`;
       })
       .join("\n\n");
 
@@ -377,7 +421,8 @@ app.post("/api/analyze", upload.single("file"), async (req, res) => {
       });
     }
 
-    console.log("[3/5] Agent B: AI 法官裁决...");
+    // ── 第3步: 对比打假 — AI法官裁决 + 深度研究报告 ──
+    console.log("[3/3] 对比打假: AI法官裁决 + 深度研究报告...");
     const judgeInput = [
       `【原告陈述 — BP 诉求】\n${JSON.stringify(claimsData.claims, null, 2)}`,
       `\n\n【被告证据 — 搜索结果】\n${evidenceText}`,
@@ -394,8 +439,7 @@ app.post("/api/analyze", upload.single("file"), async (req, res) => {
       return res.status(500).json({ error: "AI 法官输出解析失败，请重试", raw: verdictRaw });
     }
 
-    // ── 阶段 4: Deep Research — AI 深度研究报告 ──
-    console.log("[4/5] 深度研究报告生成...");
+    // 生成深度研究报告
     const deepResearchInput = [
       `【商业计划书原文（摘要）】\n${pdfText.slice(0, 10000)}`,
       `\n\n【AI 法官裁决】\n${JSON.stringify(verdict, null, 2)}`,
@@ -410,7 +454,7 @@ app.post("/api/analyze", upload.single("file"), async (req, res) => {
     );
 
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-    console.log(`[5/5] 完成！总耗时 ${elapsed}s`);
+    console.log(`✓ 完成！总耗时 ${elapsed}s`);
 
     res.json({
       success: true,
@@ -422,6 +466,14 @@ app.post("/api/analyze", upload.single("file"), async (req, res) => {
       thinking,
       deep_research: deepResearch,
       verdict,
+      // 新增搜索摘要信息，方便前端展示
+      search_summary: {
+        enabled: searchEnabled,
+        mock: isMockSearch,
+        total_results: totalSearchResults,
+        queries_count: queries.length,
+        industry_pe_available: !!(industryPEData?.industry_pe),
+      },
     });
   } catch (err) {
     console.error("[分析错误]", err);

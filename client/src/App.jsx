@@ -80,12 +80,11 @@ const dimLabelsMap = {
   timing: "入场时机",
 };
 
-// ── 分析步骤定义 ──
+// ── 分析步骤定义（3步 Pipeline） ──
 const STEPS = [
-  { key: "extract", label: "提取关键诉求", icon: FileText },
-  { key: "search", label: "联网搜索验证 & 行业估值", icon: Search },
-  { key: "judge", label: "AI 法官裁决中", icon: Gavel },
-  { key: "research", label: "生成深度研究报告", icon: Microscope },
+  { key: "extract", label: "Claim提取: 提取关键诉求", icon: FileText },
+  { key: "search", label: "联网取证: 搜索验证 & 行业估值", icon: Search },
+  { key: "judge", label: "对比打假: AI法官裁决 & 深度研究", icon: Gavel },
 ];
 
 // ── Markdown 简易渲染 ──
@@ -319,10 +318,9 @@ export default function App() {
       const formData = new FormData();
       formData.append("file", file);
 
-      // 模拟步骤进度（实际是单个请求）
-      const stepTimer1 = setTimeout(() => setCurrentStep(1), 4000);
-      const stepTimer2 = setTimeout(() => setCurrentStep(2), 10000);
-      const stepTimer3 = setTimeout(() => setCurrentStep(3), 18000);
+      // 模拟步骤进度（3步 Pipeline，实际是单个请求）
+      const stepTimer1 = setTimeout(() => setCurrentStep(1), 5000);
+      const stepTimer2 = setTimeout(() => setCurrentStep(2), 15000);
 
       const resp = await fetch(`${API_BASE}/api/analyze`, {
         method: "POST",
@@ -331,7 +329,6 @@ export default function App() {
 
       clearTimeout(stepTimer1);
       clearTimeout(stepTimer2);
-      clearTimeout(stepTimer3);
 
       if (!resp.ok) {
         const err = await resp.json().catch(() => ({}));
@@ -339,7 +336,7 @@ export default function App() {
       }
 
       const data = await resp.json();
-      setCurrentStep(4); // 全部完成
+      setCurrentStep(3); // 全部完成
       setResult(data);
     } catch (err) {
       setError(err.message || "分析失败，请重试");
@@ -683,6 +680,76 @@ export default function App() {
                 </div>
               </div>
             </div>
+
+            {/* 联网取证摘要 */}
+            {result.search_results && (
+              <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6">
+                <h4 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                  <Search className="w-5 h-5 text-cyan-400" />
+                  联网取证摘要
+                  {result.search_summary && (
+                    <span className="text-sm font-normal text-gray-500 ml-2">
+                      {result.search_summary.mock
+                        ? "(搜索未启用 — Mock模式)"
+                        : `共 ${result.search_summary.total_results} 条搜索结果`}
+                    </span>
+                  )}
+                </h4>
+                <div className="space-y-3">
+                  {result.search_results.map((sr, i) => {
+                    const claim = result.claims?.[i];
+                    return (
+                      <div key={i} className="p-3 rounded-xl bg-gray-800/50 border border-gray-700">
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className="px-2 py-0.5 text-xs font-bold rounded bg-blue-500/20 text-blue-400">
+                            {claim?.dimension || `诉求${i + 1}`}
+                          </span>
+                          <span className="text-sm text-gray-400 truncate flex-1">
+                            {sr.query}
+                          </span>
+                          <span className={`text-xs font-mono ${sr.results?.length > 0 ? "text-emerald-400" : "text-red-400"}`}>
+                            {sr.results?.length || 0} 条结果
+                          </span>
+                        </div>
+                        {sr.results?.length > 0 ? (
+                          <div className="space-y-1 ml-4">
+                            {sr.results.slice(0, 3).map((r, j) => (
+                              <div key={j} className="text-xs text-gray-500">
+                                <span className="text-gray-400">{r.title}</span>
+                                {r.snippet && <span className="ml-1">— {r.snippet.slice(0, 80)}</span>}
+                              </div>
+                            ))}
+                            {sr.results.length > 3 && (
+                              <span className="text-xs text-gray-600">... 还有 {sr.results.length - 3} 条</span>
+                            )}
+                          </div>
+                        ) : (
+                          <p className="text-xs text-gray-600 ml-4">
+                            {sr.mock ? "搜索未启用（需配置 SERPER_API_KEY）" : sr.error ? `搜索出错: ${sr.error}` : "未找到相关结果"}
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+                {/* 行业PE数据状态 */}
+                {result.industry_pe && (
+                  <div className="mt-3 p-3 rounded-xl bg-gray-800/30 border border-gray-700/50 flex items-center gap-3">
+                    <BarChart3 className="w-4 h-4 text-orange-400 shrink-0" />
+                    <span className="text-sm text-gray-400">
+                      行业估值数据：
+                      {result.industry_pe.industry_pe
+                        ? <span className="text-orange-400 font-mono ml-1">
+                            {result.industry_pe.industry_name} 平均PE {result.industry_pe.industry_pe}x
+                            <span className="text-gray-600 ml-1">(来源: {result.industry_pe.source})</span>
+                          </span>
+                        : <span className="text-gray-600 ml-1">AkShare 数据不可用</span>
+                      }
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* 冲突分析 */}
             {verdict.conflicts?.length > 0 && (

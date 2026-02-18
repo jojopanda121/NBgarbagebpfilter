@@ -36,17 +36,36 @@ const API_BASE = process.env.REACT_APP_API_URL || "";
 
 // ── 辅助函数 ──
 const getGrade = (s) =>
-  s >= 90 ? "A+" : s >= 85 ? "A" : s >= 80 ? "A-" :
-  s >= 75 ? "B+" : s >= 70 ? "B" : s >= 65 ? "B-" :
-  s >= 60 ? "C+" : s >= 55 ? "C" : s >= 50 ? "C-" :
-  s >= 40 ? "D" : "F";
+  s >= 85 ? "A" :
+  s >= 75 ? "B" :
+  s >= 60 ? "C" :
+  "D";
 
 const getGradeColor = (grade) => {
-  if (grade.startsWith("A")) return "text-emerald-400";
-  if (grade.startsWith("B")) return "text-blue-400";
-  if (grade.startsWith("C")) return "text-yellow-400";
-  if (grade.startsWith("D")) return "text-orange-400";
+  if (grade === "A") return "text-emerald-400";
+  if (grade === "B") return "text-blue-400";
+  if (grade === "C") return "text-yellow-400";
   return "text-red-400";
+};
+
+const getGradeLabel = (grade) => {
+  const labels = {
+    A: "推荐投资 (Fast Track)",
+    B: "谨慎推荐 (Proceed with DD)",
+    C: "可以跟进 (Keep In View)",
+    D: "建议放弃 (Reject / Archive)"
+  };
+  return labels[grade] || grade;
+};
+
+const getGradeAction = (grade) => {
+  const actions = {
+    A: "立刻推进：24小时内约见创始人，启动业务尽调和财务尽调，开始建模",
+    B: "空甲拟议：安排面聊，核心考察团队对短期的认知，在财务数据中申请行权测试，并始佑价。",
+    C: "早期留金 or 平台生高：商业逻辑穿透没准，但缺乏数据验证。建议盒金 VP 梳理 POC，关注签约，再评估天花板价值量，支支评估。",
+    D: "结构性死亡：伪需求，烧钱无底洞 (LTV<CAC)，股权结构混乱，严重高估，严重低估处于1万期初的人工时间。"
+  };
+  return actions[grade] || "";
 };
 
 const getScoreColor = (s) =>
@@ -63,28 +82,26 @@ const getVerdict = (s) =>
   "建议直接 Pass，下一个";
 
 const dimIcons = {
-  market: TrendingUp,
-  valuation: BarChart3,
-  tech: Brain,
-  moat: Shield,
+  timing_ceiling: TrendingUp,
+  product_moat: Brain,
+  business_validation: BarChart3,
   team: Users,
-  timing: Clock,
+  external_risk: Shield,
 };
 
 const dimLabelsMap = {
-  market: "市场规模",
-  valuation: "估值合理性",
-  tech: "技术可行性",
-  moat: "竞争壁垒",
-  team: "团队匹配度",
-  timing: "入场时机",
+  timing_ceiling: "时机与天花板",
+  product_moat: "产品与壁垒",
+  business_validation: "商业验证与效率",
+  team: "团队基因",
+  external_risk: "外部风险",
 };
 
 // ── 分析步骤定义（3步 Pipeline） ──
 const STEPS = [
-  { key: "extract", label: "Claim提取: 提取关键诉求", icon: FileText },
+  { key: "extract", label: "数据提取: 提取评分所需数据", icon: FileText },
   { key: "search", label: "联网取证: 搜索验证 & 行业估值", icon: Search },
-  { key: "judge", label: "对比打假: AI法官裁决 & 深度研究", icon: Gavel },
+  { key: "judge", label: "数据验证: AI校准 & 标准化评分", icon: Gavel },
 ];
 
 // ── Markdown 简易渲染 ──
@@ -193,7 +210,8 @@ function downloadReportAsPdf(result) {
   .score-card { text-align: center; padding: 30px; background: #f9fafb; border-radius: 12px; margin-bottom: 24px; }
   .score { font-size: 64px; font-weight: 900; color: ${getScoreBg(totalScore)}; }
   .grade { font-size: 36px; font-weight: 900; color: ${getScoreBg(totalScore)}; margin-top: 4px; }
-  .verdict-text { font-size: 18px; color: #374151; margin-top: 12px; }
+  .grade-label { font-size: 18px; color: #374151; margin-top: 8px; font-weight: 600; }
+  .verdict-text { font-size: 16px; color: #4b5563; margin-top: 12px; line-height: 1.5; }
   .tags { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 12px; }
   .tag-green { background: #d1fae5; color: #065f46; padding: 4px 12px; border-radius: 20px; font-size: 12px; }
   .tag-red { background: #fee2e2; color: #991b1b; padding: 4px 12px; border-radius: 20px; font-size: 12px; }
@@ -201,9 +219,10 @@ function downloadReportAsPdf(result) {
   .section h2 { font-size: 18px; border-bottom: 2px solid #e5e7eb; padding-bottom: 8px; margin-bottom: 12px; }
   table { width: 100%; border-collapse: collapse; }
   td { padding: 8px 12px; border-bottom: 1px solid #f3f4f6; }
-  .dim-row td:first-child { font-weight: 600; width: 120px; }
+  .dim-row td:first-child { font-weight: 600; width: 180px; }
   .dim-score { font-weight: 700; font-size: 16px; width: 50px; text-align: right; }
   .dim-finding { color: #4b5563; font-size: 14px; }
+  .dim-subtitle { color: #6b7280; font-size: 12px; }
   .conflict { padding: 12px; margin-bottom: 8px; background: #fefce8; border-left: 4px solid #d97706; border-radius: 4px; }
   .severity { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px; font-weight: 700; margin-bottom: 4px; }
   .severity-high { background: #fee2e2; color: #dc2626; }
@@ -218,23 +237,27 @@ function downloadReportAsPdf(result) {
 </head>
 <body>
   <h1 class="title">BP 尽调分析报告</h1>
-  <p class="subtitle">由垃圾BP过滤机生成 · Powered by MiniMax M2.5 · ${new Date().toLocaleDateString("zh-CN")}</p>
+  <p class="subtitle">由垃圾BP过滤机生成 · 5维标准化评分体系 · Powered by MiniMax M2.5 · ${new Date().toLocaleDateString("zh-CN")}</p>
 
   <div class="score-card">
     <div class="score">${totalScore}</div>
     <div class="grade">${grade}</div>
-    <div class="verdict-text">${verdict.verdict_summary || getVerdict(totalScore)}</div>
+    <div class="grade-label">${getGradeLabel(grade)}</div>
+    <div class="verdict-text">${getGradeAction(grade)}</div>
     ${verdict.strengths?.length > 0 ? `<div class="tags">${verdict.strengths.map(s => `<span class="tag-green">${s}</span>`).join('')}</div>` : ''}
     ${verdict.risk_flags?.length > 0 ? `<div class="tags" style="margin-top:8px">${verdict.risk_flags.map(r => `<span class="tag-red">${r}</span>`).join('')}</div>` : ''}
     ${result.elapsed_seconds ? `<p style="color:#9ca3af;font-size:12px;margin-top:12px">分析耗时 ${result.elapsed_seconds}s</p>` : ''}
   </div>
 
   <div class="section">
-    <h2>六维评分详情</h2>
+    <h2>五维评分详情</h2>
     <table>
       ${Object.entries(dims).map(([key, dim]) => `
         <tr class="dim-row">
-          <td>${dim.label || dimLabelsMap[key] || key}</td>
+          <td>
+            <div>${dim.label || dimLabelsMap[key] || key}</div>
+            <div class="dim-subtitle">${dim.subtitle || ''}</div>
+          </td>
           <td class="dim-score" style="color:${getScoreBg(dim.score)}">${dim.score}</td>
           <td class="dim-finding">${dim.finding || ''}</td>
         </tr>
@@ -254,7 +277,7 @@ function downloadReportAsPdf(result) {
 
   <div class="footer">
     本报告由 AI 自动生成，仅供参考，不构成投资建议。<br>
-    垃圾BP过滤机 v2.0 · Powered by MiniMax M2.5
+    垃圾BP过滤机 v3.0 · 5维标准化评分体系 · Powered by MiniMax M2.5
   </div>
 </body>
 </html>`;
@@ -584,12 +607,18 @@ export default function App() {
 
                 {/* 裁决摘要 */}
                 <div className="flex-1 text-center md:text-left">
-                  <h3 className="text-xl font-bold mb-2">裁决结果</h3>
-                  <p className="text-lg text-gray-300 mb-3">
+                  <h3 className="text-xl font-bold mb-2">评分结果</h3>
+                  <div className="text-2xl font-bold mb-2">
+                    {verdict.grade} - {getGradeLabel(verdict.grade)}
+                  </div>
+                  <p className="text-base text-gray-300 mb-3">
                     {verdict.verdict_summary || getVerdict(totalScore)}
                   </p>
+                  <p className="text-sm text-gray-400 leading-relaxed">
+                    {getGradeAction(verdict.grade)}
+                  </p>
                   {result.elapsed_seconds && (
-                    <p className="text-sm text-gray-500">
+                    <p className="text-sm text-gray-500 mt-2">
                       分析耗时 {result.elapsed_seconds}s
                     </p>
                   )}
@@ -631,7 +660,7 @@ export default function App() {
               <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6">
                 <h4 className="text-lg font-semibold mb-4 flex items-center gap-2">
                   <Target className="w-5 h-5 text-blue-400" />
-                  六维雷达图
+                  五维雷达图
                 </h4>
                 <RadarChartPanel dimensions={verdict.dimensions} />
               </div>
@@ -649,10 +678,27 @@ export default function App() {
                   {verdict.dimensions &&
                     Object.entries(verdict.dimensions).map(([key, dim]) => {
                       const Icon = dimIcons[key] || Target;
+                      // 外部风险维度特殊处理（显示为乘数效果）
+                      if (key === 'external_risk' && dim.multiplier !== undefined) {
+                        return (
+                          <div key={key} className="flex items-center gap-3">
+                            <Icon className="w-4 h-4 text-gray-400 shrink-0" />
+                            <span className="text-sm text-gray-400 w-32 shrink-0">
+                              {dim.label || key}
+                            </span>
+                            <div className="flex-1 flex items-center gap-2">
+                              <span className="text-sm text-gray-500">乘数效果:</span>
+                              <span className={`text-sm font-mono font-bold ${dim.multiplier >= 0.9 ? "text-emerald-400" : dim.multiplier >= 0.5 ? "text-yellow-400" : "text-red-400"}`}>
+                                ×{dim.multiplier.toFixed(1)}
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      }
                       return (
                         <div key={key} className="flex items-center gap-3">
                           <Icon className="w-4 h-4 text-gray-400 shrink-0" />
-                          <span className="text-sm text-gray-400 w-20 shrink-0">
+                          <span className="text-sm text-gray-400 w-32 shrink-0">
                             {dim.label || key}
                           </span>
                           <div className="flex-1 h-2 bg-gray-800 rounded-full overflow-hidden">
@@ -697,12 +743,12 @@ export default function App() {
                 </h4>
                 <div className="space-y-3">
                   {result.search_results.map((sr, i) => {
-                    const claim = result.claims?.[i];
+                    const query_item = result.extracted_data?.search_queries?.[i];
                     return (
                       <div key={i} className="p-3 rounded-xl bg-gray-800/50 border border-gray-700">
                         <div className="flex items-center gap-2 mb-2">
                           <span className="px-2 py-0.5 text-xs font-bold rounded bg-blue-500/20 text-blue-400">
-                            {claim?.dimension || `诉求${i + 1}`}
+                            {query_item?.dimension || `维度${i + 1}`}
                           </span>
                           <span className="text-sm text-gray-400 truncate flex-1">
                             {sr.query}
@@ -798,7 +844,7 @@ export default function App() {
             {/* 各维度详细裁决 */}
             {verdict.dimensions && (
               <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6">
-                <h4 className="text-lg font-semibold mb-4">各维度详细裁决</h4>
+                <h4 className="text-lg font-semibold mb-4">五维评分详情</h4>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {Object.entries(verdict.dimensions).map(([key, dim]) => {
                     const Icon = dimIcons[key] || Target;
@@ -809,7 +855,12 @@ export default function App() {
                       >
                         <div className="flex items-center gap-2 mb-2">
                           <Icon className="w-4 h-4 text-gray-400" />
-                          <span className="font-medium">{dim.label || key}</span>
+                          <div className="flex-1">
+                            <span className="font-medium block">{dim.label || key}</span>
+                            {dim.subtitle && (
+                              <span className="text-xs text-gray-500">{dim.subtitle}</span>
+                            )}
+                          </div>
                           <span
                             className={`ml-auto text-lg font-bold ${getScoreColor(
                               dim.score
@@ -819,6 +870,11 @@ export default function App() {
                           </span>
                         </div>
                         <p className="text-sm text-gray-400">{dim.finding}</p>
+                        {key === 'external_risk' && dim.multiplier !== undefined && (
+                          <p className="text-xs text-gray-500 mt-2">
+                            乘数效果: ×{dim.multiplier.toFixed(2)}
+                          </p>
+                        )}
                       </div>
                     );
                   })}

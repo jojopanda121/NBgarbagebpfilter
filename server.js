@@ -15,12 +15,13 @@ const os = require("os");
 const BUILD_DIR = path.join(__dirname, "build");
 const SCRIPT_DIR = path.join(__dirname, "scripts");
 const PDF_TO_TEXT_SCRIPT = path.join(SCRIPT_DIR, "pdf_to_text.py");
-const PORT = parseInt(process.env.PORT, 10) || 3000;
+// Zeabur 默认暴露 8080；本地开发可用 PORT=3000
+const PORT = parseInt(process.env.PORT, 10) || 8080;
 
 // ── MiniMax 配置 ──
 if (!process.env.MINIMAX_API_KEY) {
   console.error(
-    "[WARN] 环境变量 MINIMAX_API_KEY 未设置！请在 .env 中配置，否则 AI 分析功能无法使用。"
+    "[FATAL] 环境变量 MINIMAX_API_KEY 未设置！AI 分析功能将无法使用。请在 Zeabur 控制台 → 环境变量中配置该变量。"
   );
 }
 if (!process.env.SERPER_API_KEY) {
@@ -888,13 +889,13 @@ function serveFile(pathname, res) {
 // ══════════════════════════════════════════════════════════════
 
 const server = http.createServer((req, res) => {
+  // ── CORS 跨域头（对所有响应生效，包括错误响应）──
   res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader(
-    "Access-Control-Allow-Methods",
-    "GET, POST, OPTIONS"
-  );
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "*");
+  res.setHeader("Access-Control-Max-Age", "86400"); // 预检缓存 24 h
 
+  // OPTIONS 预检请求立即返回 204，不进入业务逻辑
   if (req.method === "OPTIONS") {
     res.writeHead(204);
     res.end();

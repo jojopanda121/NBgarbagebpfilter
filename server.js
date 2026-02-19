@@ -18,12 +18,21 @@ const PDF_TO_TEXT_SCRIPT = path.join(SCRIPT_DIR, "pdf_to_text.py");
 const PORT = parseInt(process.env.PORT, 10) || 3000;
 
 // ── MiniMax 配置 ──
+if (!process.env.MINIMAX_API_KEY) {
+  console.error(
+    "[WARN] 环境变量 MINIMAX_API_KEY 未设置！请在 .env 中配置，否则 AI 分析功能无法使用。"
+  );
+}
+if (!process.env.SERPER_API_KEY) {
+  console.warn(
+    "[WARN] 环境变量 SERPER_API_KEY 未设置，联网搜索将以 Mock 模式运行（不影响 AI 分析）。"
+  );
+}
+
 const CONFIG = {
   baseUrl: process.env.MINIMAX_BASE_URL || "https://api.minimax.io",
   apiPath: "/anthropic/v1/messages",
-  apiKey:
-    process.env.MINIMAX_API_KEY ||
-    "sk-api-UsxD1u5Vi5alAFgjz9t-IBVp57GqkHW4f5rR_on-lpeSKggu6NDfAdPONJbn1Lr_NeX7AfA2nS4p4ZsY02SxPMs1a3s2KZPawYgdb4rMqGynIILCVrOxi0A",
+  apiKey: process.env.MINIMAX_API_KEY || "",
   model: process.env.MINIMAX_MODEL || "MiniMax-M2.5",
 };
 
@@ -892,7 +901,9 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  const pathname = (req.url || "").split("?")[0];
+  // 去掉末尾多余的斜杠（避免代理 301 重定向后浏览器改为 GET 导致 405）
+  const rawPath = (req.url || "").split("?")[0];
+  const pathname = rawPath.length > 1 ? rawPath.replace(/\/+$/, "") : rawPath;
 
   // MiniMax 对话 API（透传）
   if (req.method === "POST" && pathname === "/api/chat") {

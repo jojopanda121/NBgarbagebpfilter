@@ -10,7 +10,11 @@ if (typeof window !== "undefined" && pdfjsLib.GlobalWorkerOptions) {
 // AI 垃圾 BP 过滤机 - 上传 BP 后由 MiniMax 模型 + 联网搜索分析
 // ============================================================
 
-const API_URL = "/api/chat";
+// 后端 API 基础路径：部署在独立域名时通过 REACT_APP_API_URL 指定，
+// 例如：REACT_APP_API_URL=https://your-backend.zeabur.app
+// 同域部署时留空即可（相对路径）。
+const API_BASE = (process.env.REACT_APP_API_URL || "").replace(/\/+$/, "");
+const API_URL = `${API_BASE}/api/chat`;
 
 // 在浏览器里从 PDF 文件提取纯文本（仅文字版 PDF，扫描版无效）
 const extractTextFromPdf = async (file) => {
@@ -30,7 +34,7 @@ const extractTextFromPdf = async (file) => {
 const extractTextFromPdfWithBackend = async (file, readB64) => {
   try {
     const base64 = await readB64(file);
-    const resp = await fetch("/api/pdf-to-text", {
+    const resp = await fetch(`${API_BASE}/api/pdf-to-text`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ pdf: base64 })
@@ -591,7 +595,7 @@ export default function App() {
       goPhase(1, "提取关键信息", "AI 正在识别 BP 中需要验证的关键信息...");
       let claims = { companyName: "", industry: "", searchQueries: [] };
       try {
-        const claimsResp = await fetch("/api/extract-claims", {
+        const claimsResp = await fetch(`${API_BASE}/api/extract-claims`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ bpText: bpContent }),
@@ -616,7 +620,7 @@ export default function App() {
       if (queries.length > 0) {
         goPhase(2, "联网搜索验证", `正在搜索验证 ${queries.length} 条关键信息...`);
         try {
-          const searchResp = await fetch("/api/web-search", {
+          const searchResp = await fetch(`${API_BASE}/api/web-search`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ queries }),
@@ -688,7 +692,7 @@ export default function App() {
           }
           const cfg = retryConfigs[attempt];
 
-          const verdictResp = await fetch("/api/verdict", {
+          const verdictResp = await fetch(`${API_BASE}/api/verdict`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({

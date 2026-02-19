@@ -895,9 +895,15 @@ const server = http.createServer((req, res) => {
   res.setHeader("Access-Control-Allow-Headers", "*");
   res.setHeader("Access-Control-Max-Age", "86400"); // 预检缓存 24 h
 
-  // OPTIONS 预检请求立即返回 204，不进入业务逻辑
+  // OPTIONS 预检请求立即返回 204，并在 writeHead 中显式携带 CORS 头
+  // （避免某些反向代理在 writeHead 前剥离 setHeader 设置的头）
   if (req.method === "OPTIONS") {
-    res.writeHead(204);
+    res.writeHead(204, {
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Requested-With",
+      "Access-Control-Max-Age": "86400",
+    });
     res.end();
     return;
   }
@@ -905,6 +911,27 @@ const server = http.createServer((req, res) => {
   // 去掉末尾多余的斜杠（避免代理 301 重定向后浏览器改为 GET 导致 405）
   const rawPath = (req.url || "").split("?")[0];
   const pathname = rawPath.length > 1 ? rawPath.replace(/\/+$/, "") : rawPath;
+
+  // 对 POST-Only API 端点提前拦截错误方法，返回 405 + CORS 头
+  // （若代理将非 POST 请求转发过来，确保前端能拿到含 CORS 头的清晰错误）
+  const POST_ONLY_PATHS = [
+    "/api/chat",
+    "/api/web-search",
+    "/api/extract-claims",
+    "/api/verdict",
+    "/api/pdf-to-text",
+  ];
+  if (POST_ONLY_PATHS.includes(pathname) && req.method !== "POST") {
+    res.writeHead(405, {
+      "Content-Type": "application/json",
+      "Allow": "POST, OPTIONS",
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Requested-With",
+    });
+    res.end(JSON.stringify({ error: "Method Not Allowed — this endpoint only accepts POST" }));
+    return;
+  }
 
   // MiniMax 对话 API（透传）
   if (req.method === "POST" && pathname === "/api/chat") {

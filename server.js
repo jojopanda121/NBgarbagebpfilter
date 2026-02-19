@@ -480,7 +480,7 @@ ${claimsBlock}
 ${evidenceBlock}
 </SEARCH_EVIDENCE>
 
-${bpFullText ? `<BP_FULL_TEXT_EXCERPT>\n${bpFullText.slice(0, 8000)}\n</BP_FULL_TEXT_EXCERPT>` : ""}
+${bpFullText ? `<BP_FULL_TEXT_EXCERPT>\n${bpFullText.slice(0, 30000)}\n</BP_FULL_TEXT_EXCERPT>` : ""}
 
 ## 裁决规则（冲突计算逻辑）
 

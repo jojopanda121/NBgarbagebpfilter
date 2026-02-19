@@ -14,6 +14,7 @@ const fs = require("fs");
 const os = require("os");
 const { spawn } = require("child_process");
 const Anthropic = require("@anthropic-ai/sdk").default;
+const { scoreProject } = require("./scoring");
 
 const app = express();
 const upload = multer({ dest: os.tmpdir(), limits: { fileSize: 50 * 1024 * 1024 } });
@@ -186,45 +187,156 @@ async function callLLMWithThinking(systemPrompt, userContent) {
 function sanitizeJsonString(str) {
   // 去掉单行注释 // ...
   str = str.replace(/\/\/[^\n]*/g, "");
+  // 去掉多行注释 /* ... */
+  str = str.replace(/\/\*[\s\S]*?\*\//g, "");
   // 去掉尾逗号: ,} 或 ,]
   str = str.replace(/,\s*([\]}])/g, "$1");
-  return str;
+  // 去掉 JSON 字符串外的控制字符（但保留字符串内的）
+  // 先标记字符串位置，避免误删
+  return str.trim();
+}
+
+/** 尝试修复常见的 JSON 格式问题 */
+function attemptJsonFix(str) {
+  if (!str) return str;
+  
+  let fixed = str;
+  
+  // 修复常见问题：
+  // 1. 移除 BOM 和零宽字符
+  fixed = fixed.replace(/^\uFEFF/, '').replace(/[\u200B-\u200D\uFEFF]/g, '');
+  
+  // 2. 修复单引号（JSON 必须用双引号）
+  // 注意：这个正则可能不完美，但能处理大部分情况
+  // fixed = fixed.replace(/'([^']*?)'/g, '"$1"');
+  
+  // 3. 移除对象/数组末尾的逗号
+  fixed = fixed.replace(/,(\s*[}\]])/g, '$1');
+  
+  // 4. 修复换行符问题（JSON 字符串内不能有未转义的换行）
+  // 这个比较复杂，暂时跳过
+  
+  // 5. 移除注释
+  fixed = fixed.replace(/\/\/.*$/gm, '');
+  fixed = fixed.replace(/\/\*[\s\S]*?\*\//g, '');
+  
+  return fixed.trim();
 }
 
 /** 从 LLM 输出中提取 JSON（增强容错） */
 function extractJson(raw) {
-  if (!raw || typeof raw !== "string") return null;
+  if (!raw || typeof raw !== "string") {
+    console.warn("[extractJson] 输入为空或非字符串");
+    return null;
+  }
 
-  // 1) 尝试提取 ```json ... ``` 代码块
-  const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
   const candidates = [];
 
-  if (fenced) candidates.push(fenced[1].trim());
+  // 1) 尝试提取 ```json ... ``` 或 ``` ... ``` 代码块（支持多种格式）
+  const fencedPatterns = [
+    /```json\s*([\s\S]*?)```/,
+    /```\s*([\s\S]*?)```/,
+    /`{3,}\s*json\s*([\s\S]*?)`{3,}/,
+  ];
+  
+  for (const pattern of fencedPatterns) {
+    const match = raw.match(pattern);
+    if (match && match[1]) {
+      candidates.push(match[1].trim());
+    }
+  }
 
-  // 2) 找到最外层 { ... } 边界
+  // 2) 找到最外层 { ... } 边界（更精确的匹配）
   const firstBrace = raw.indexOf("{");
   const lastBrace = raw.lastIndexOf("}");
   if (firstBrace !== -1 && lastBrace > firstBrace) {
-    candidates.push(raw.slice(firstBrace, lastBrace + 1));
+    const jsonCandidate = raw.slice(firstBrace, lastBrace + 1);
+    candidates.push(jsonCandidate);
+    
+    // 尝试找到第一个完整的 JSON 对象（处理嵌套大括号）
+    let braceCount = 0;
+    let startIdx = firstBrace;
+    for (let i = firstBrace; i < raw.length; i++) {
+      if (raw[i] === "{") braceCount++;
+      if (raw[i] === "}") braceCount--;
+      if (braceCount === 0) {
+        candidates.push(raw.slice(startIdx, i + 1));
+        break;
+      }
+    }
   }
 
   // 3) 原始文本本身
   candidates.push(raw.trim());
 
   // 逐个候选尝试解析
-  for (const candidate of candidates) {
-    // 先直接解析
-    try {
-      return JSON.parse(candidate);
-    } catch {}
+  for (let i = 0; i < candidates.length; i++) {
+    const candidate = candidates[i];
+    if (!candidate) continue;
 
-    // 清理后重试
+    // 尝试 1: 直接解析
     try {
-      return JSON.parse(sanitizeJsonString(candidate));
-    } catch {}
+      const parsed = JSON.parse(candidate);
+      console.log(`[extractJson] ✓ 成功解析（候选 ${i + 1}/${candidates.length}，直接解析）`);
+      return parsed;
+    } catch (e) {
+      if (i === 0) {
+        console.warn(`[extractJson] 候选 ${i + 1} 直接解析失败:`, e.message);
+      }
+    }
+
+    // 尝试 2: sanitize 后解析
+    try {
+      const cleaned = sanitizeJsonString(candidate);
+      const parsed = JSON.parse(cleaned);
+      console.log(`[extractJson] ✓ 成功解析（候选 ${i + 1}/${candidates.length}，sanitize 后）`);
+      return parsed;
+    } catch (e) {
+      if (i === 0) {
+        console.warn(`[extractJson] 候选 ${i + 1} sanitize 后解析失败:`, e.message);
+      }
+    }
+
+    // 尝试 3: 修复常见问题后解析
+    try {
+      const fixed = attemptJsonFix(candidate);
+      const parsed = JSON.parse(fixed);
+      console.log(`[extractJson] ✓ 成功解析（候选 ${i + 1}/${candidates.length}，修复后）`);
+      return parsed;
+    } catch (e) {
+      if (i === 0) {
+        console.warn(`[extractJson] 候选 ${i + 1} 修复后解析失败:`, e.message);
+      }
+    }
+
+    // 尝试 4: 组合修复
+    try {
+      const fixed = attemptJsonFix(sanitizeJsonString(candidate));
+      const parsed = JSON.parse(fixed);
+      console.log(`[extractJson] ✓ 成功解析（候选 ${i + 1}/${candidates.length}，组合修复）`);
+      return parsed;
+    } catch (e) {
+      if (i === 0) {
+        console.warn(`[extractJson] 候选 ${i + 1} 组合修复后解析失败:`, e.message);
+      }
+    }
   }
 
-  console.warn("[extractJson] 所有解析尝试失败，原始输出前 500 字符:", raw.slice(0, 500));
+  // 所有尝试都失败，输出详细调试信息
+  console.error("[extractJson] ========== 解析失败详情 ==========");
+  console.error("[extractJson] 原始输出长度:", raw.length);
+  console.error("[extractJson] 原始输出前 800 字符:");
+  console.error(raw.slice(0, 800));
+  console.error("[extractJson] 原始输出后 200 字符:");
+  console.error(raw.slice(-200));
+  console.error("[extractJson] 候选数量:", candidates.length);
+  candidates.forEach((c, i) => {
+    if (c) {
+      console.error(`[extractJson] 候选 ${i + 1} 前 200 字符:`, c.slice(0, 200));
+    }
+  });
+  console.error("[extractJson] =====================================");
+  
   return null;
 }
 
@@ -232,85 +344,150 @@ function extractJson(raw) {
 // 系统提示词
 // ============================================================
 
-const AGENT_A_PROMPT = `你是一位顶级 VC 分析师（Agent A — 诉求提取器）。
-你的任务是从商业计划书（BP）文本中提取 5 条关键诉求，并为每条生成一个用于验证的搜索查询。
-同时，你需要识别出 BP 所属的行业，以便后续查询行业平均市盈率。
+const AGENT_A_PROMPT = `你是一位顶级 VC 分析师（Agent A — 数据提取器）。
+你的任务是从商业计划书（BP）文本中提取关键数据，用于后续的标准化评分。
 
-提取维度：
-1. 市场规模 (TAM) — 市场有多大？
-2. 估值/财务 — 融资金额、估值、收入数据
-3. 核心技术/产品 — 技术路线、产品成熟度
-4. 竞争对手 — 竞品分析、市场格局
-5. 团队 — 创始人背景、核心团队
+你需要提取以下数据：
 
-请严格输出纯 JSON（不要加 markdown 代码块、不要加注释、不要加额外文字），格式如下：
+**第一维度：时机与天花板**
+- TAM: 目标可触达市场规模（单位：十亿人民币或亿美元，仅提取数字）
+- CAGR: 行业预期年复合增长率（%，仅提取数字）
+
+**第二维度：产品与壁垒**
+- TRL: 技术就绪水平（1-9级，9为可量产。根据BP描述判断：1-3为概念/实验室，4-6为原型/小试，7-9为中试/量产）
+- SC: 客户转换成本评分（0-100分。评估用户切换到竞品的难度，考虑数据迁移成本、学习成本、集成成本等）
+
+**第三维度：商业验证与效率**
+- LTV: 客户生命周期价值（人民币或美元）
+- CAC: 客户获客成本（人民币或美元）
+- Ratio: LTV/CAC 比值（计算得出）
+- Margin: 毛利率（%，0-1之间的小数，如 0.6 表示60%）
+
+**第四维度：团队基因**
+- Exp: 核心创始人行业相关经验（年）
+- Equity: 最大股东持股比例（%，0-100之间的数字）
+
+**第五维度：外部风险与交易条件**
+- Policy_Risk: 政策违规风险（0或1，0表示极高风险如涉及政策禁止领域，1表示无明显政策风险）
+- BP_Valuation: BP声称的估值（亿元或亿美元）
+- BP_Revenue: BP声称的收入或ARR（亿元或亿美元，如果没有收入填0）
+
+同时识别：
+- industry: 行业关键词（如：人工智能、新能源、医疗器械、SaaS等）
+- company_name: 公司名称
+
+【重要】你必须严格按照以下要求输出：
+1. 只输出纯 JSON，不要有任何其他文字
+2. 不要使用 markdown 代码块（不要用 \`\`\`json 或 \`\`\`）
+3. 不要添加任何注释（// 或 /* */）
+4. 不要在 JSON 前后添加任何解释性文字
+5. 确保 JSON 格式完全正确，没有尾逗号
+6. 如果BP中没有明确提及某个数据，根据行业常识和BP描述进行合理推断，并标注 "estimated": true
+
+输出格式示例：
 {
+  "company_name": "XX科技",
   "industry": "人工智能",
-  "claims": [
-    {
-      "dimension": "市场规模",
-      "claim": "BP 中的具体声明原文",
-      "search_query": "用于 Google 验证的搜索关键词"
-    },
-    {
-      "dimension": "估值/财务",
-      "claim": "BP 中关于融资或收入的声明",
-      "search_query": "验证用搜索关键词"
-    }
-  ]
+  "TAM": 100,
+  "TAM_estimated": false,
+  "CAGR": 25,
+  "CAGR_estimated": true,
+  "TRL": 7,
+  "SC": 65,
+  "LTV": 50000,
+  "CAC": 10000,
+  "Ratio": 5,
+  "Margin": 0.7,
+  "Exp": 8,
+  "Equity": 60,
+  "Policy_Risk": 1,
+  "BP_Valuation": 5,
+  "BP_Revenue": 0.5,
+  "search_queries": [
+    {"dimension": "市场规模", "query": "人工智能 市场规模 2024 TAM"},
+    {"dimension": "行业增速", "query": "人工智能 CAGR 年复合增长率"},
+    {"dimension": "竞品估值", "query": "人工智能 竞品公司 估值 融资"},
+    {"dimension": "团队背景", "query": "创始人姓名 背景 经历"},
+    {"dimension": "政策监管", "query": "人工智能 政策 监管 合规"}
+  ],
+  "extraction_notes": "简要说明数据提取过程中的关键假设和推断"
 }
 
-注意：claims 数组必须包含 5 个对象，分别对应上述 5 个维度。industry 填写行业关键词（如：人工智能、新能源、医疗器械、SaaS 等）。`;
+注意：所有数值字段必须是数字类型（不要加单位），search_queries 用于后续联网验证。`;
 
-const AGENT_B_PROMPT = `你是一位铁面无私的 AI 法官（Agent B — 辩证裁决者）。
+const AGENT_B_PROMPT = `你是一位铁面无私的 AI 法官（Agent B — 数据验证与校准者）。
 
-你将收到三份材料：
-- 【原告陈述】= BP 中的诉求（Claims）
-- 【被告证据】= 联网搜索结果（Evidence）
-- 【行业基准】= 行业平均市盈率数据（Industry PE）
+你将收到：
+- 【BP提取数据】= Agent A 从 BP 中提取的原始数据
+- 【搜索证据】= 联网搜索的验证结果
+- 【行业基准】= 行业平均市盈率数据
 
-裁决规则：
-- 如果 BP 市场规模 > 搜索证据的 5 倍 → 该维度 0 分（涉嫌欺诈）
-- 如果 BP 估值 > 可比公司的 2 倍 → 该维度 20 分（严重高估）
-- 如果技术仍在理论阶段但 BP 声称已量产 → 该维度 0 分
-- 找不到相关证据支撑 → 该维度 30 分（存疑）
-- 证据与声明基本吻合 → 该维度 70-90 分
+你的任务是：
+1. 验证 BP 提取数据的真实性，与搜索证据对比
+2. 校准可能被夸大的数据（如市场规模、增长率等）
+3. 补充缺失的数据（如果BP未提及，根据搜索证据和行业常识推断）
+4. 计算估值溢价倍数 Valuation_Gap = BP估值倍数 / 行业平均倍数
 
-估值对比规则：
-- 使用提供的行业平均市盈率作为基准
-- 计算 BP 声称的估值倍数（市盈率或市销率）
-- 与行业平均水平进行对比，计算溢价百分比
-- 如果行业平均市盈率数据不可用，根据搜索结果中的同行估值数据推断
+验证规则：
+- TAM: 如果 BP 声称的市场规模 > 搜索证据的 3倍，应校准为搜索证据的值
+- CAGR: 如果 BP 声称的增速明显高于行业平均，应保守调整
+- TRL: 根据 BP 描述和搜索到的技术成熟度判断（1-9级）
+- SC: 根据行业特性评估客户转换成本（0-100分）
+- LTV/CAC: 如果 BP 未提供，根据搜索到的行业平均客单价和获客成本估算
+- Margin: 如果 BP 未提供，根据行业平均毛利率估算
+- Exp: 验证创始人背景的真实性
+- Equity: 检查股权结构是否合理
+- Policy_Risk: 检查是否涉及政策禁止或高风险领域（如P2P、虚拟货币挖矿等）
+- Valuation_Gap: 计算 BP 估值相对行业可比公司的溢价倍数
 
-请严格输出纯 JSON（不要加 markdown 代码块、不要加注释、不要加额外文字），格式如下：
+【重要】你必须严格按照以下要求输出：
+1. 只输出纯 JSON，不要有任何其他文字
+2. 不要使用 markdown 代码块（不要用 \`\`\`json 或 \`\`\`）
+3. 不要添加任何注释（// 或 /* */）
+4. 不要在 JSON 前后添加任何解释性文字
+5. 确保 JSON 格式完全正确，没有尾逗号
+6. 所有数值字段必须是数字类型
+
+输出格式示例：
 {
-  "total_score": 65,
-  "grade": "B",
-  "verdict_summary": "一句话裁决总结",
-  "dimensions": {
-    "market": { "score": 70, "label": "市场规模", "finding": "具体裁决说明" },
-    "valuation": { "score": 50, "label": "估值合理性", "finding": "具体裁决说明" },
-    "tech": { "score": 60, "label": "技术可行性", "finding": "具体裁决说明" },
-    "moat": { "score": 55, "label": "竞争壁垒", "finding": "具体裁决说明" },
-    "team": { "score": 75, "label": "团队匹配度", "finding": "具体裁决说明" },
-    "timing": { "score": 65, "label": "入场时机", "finding": "具体裁决说明" }
+  "validated_data": {
+    "TAM": 80,
+    "CAGR": 20,
+    "TRL": 6,
+    "SC": 55,
+    "Ratio": 2.5,
+    "Margin": 0.6,
+    "Exp": 8,
+    "Equity": 55,
+    "Policy_Risk": 1,
+    "Valuation_Gap": 1.8
   },
-  "risk_flags": ["风险点1", "风险点2"],
-  "strengths": ["优势1", "优势2"],
+  "validation_notes": {
+    "TAM": "BP声称100亿，搜索显示市场规模约80亿，已校准",
+    "CAGR": "BP声称30%，行业平均20%，保守调整",
+    "TRL": "BP描述已有中试产线，判定为6级",
+    "SC": "SaaS产品，数据迁移成本中等，评55分",
+    "Ratio": "根据行业平均LTV 5万、CAC 2万计算，比值2.5",
+    "Margin": "BP声称70%，行业平均60%，保守取60%",
+    "Valuation_Gap": "BP估值5亿，收入0.5亿，PS=10x；行业平均PS=5.5x，溢价1.8倍"
+  },
   "conflicts": [
-    { "claim": "BP 声称...", "evidence": "搜索发现...", "severity": "严重" }
+    { "field": "TAM", "bp_claim": "100亿", "evidence": "搜索显示80亿", "severity": "中等" },
+    { "field": "CAGR", "bp_claim": "30%", "evidence": "行业平均20%", "severity": "轻微" }
   ],
-  "valuation_comparison": {
-    "bp_multiple": 40,
-    "industry_avg_multiple": 25,
-    "overvalued_pct": 60,
-    "industry_name": "行业名称",
-    "data_source": "数据来源说明",
-    "analysis": "估值对比分析说明"
+  "risk_flags": ["估值偏高", "技术尚未量产"],
+  "strengths": ["团队经验丰富", "市场空间大"],
+  "industry_comparison": {
+    "bp_valuation": 5,
+    "bp_revenue": 0.5,
+    "bp_multiple": 10,
+    "industry_avg_multiple": 5.5,
+    "comparable_companies": ["竞品A: PS 6x", "竞品B: PS 5x"],
+    "data_source": "搜索结果 + AkShare行业数据"
   }
 }
 
-注意：score 字段必须是 0 到 100 之间的整数，severity 只能是 "严重"、"中等"、"轻微" 之一。`;
+注意：validated_data 中的所有字段都必须有值（不能为null），如果无法确定则使用行业平均值或保守估计。`;
 
 const DEEP_RESEARCH_PROMPT = `你是一位资深投资分析师，正在为投资委员会撰写深度研究报告。
 
@@ -398,23 +575,48 @@ app.post("/api/analyze", upload.single("file"), async (req, res) => {
     // 三步 Pipeline: Claim提取 → 联网取证 → 对比打假
     // ============================================================
 
-    // ── 第1步: Claim提取 — 从BP中提取关键诉求 ──
-    console.log("[1/3] Claim提取: 从BP中提取关键诉求...");
-    const claimsRaw = await callLLM(
+    // ── 第1步: 数据提取 — 从BP中提取评分所需数据 ──
+    console.log("[1/3] 数据提取: 从BP中提取评分所需数据...");
+    let extractionRaw = await callLLM(
       AGENT_A_PROMPT,
       `以下是商业计划书全文：\n\n${pdfText}`,
       4096
     );
-    const claimsData = extractJson(claimsRaw);
-    if (!claimsData || !claimsData.claims) {
-      return res.status(500).json({ error: "AI 提取诉求失败，请重试", raw: claimsRaw });
+    let extractedData = extractJson(extractionRaw);
+    
+    // 如果首次提取失败，重试一次（添加更严格的提示）
+    if (!extractedData || !extractedData.search_queries) {
+      console.warn("[1/3] 首次数据提取 JSON 解析失败，重试中...");
+      const retryPrompt = AGENT_A_PROMPT + "\n\n【紧急提醒】你上一次的输出不是合法 JSON，导致解析失败。这次请务必：\n1. 只输出 JSON 对象，从 { 开始，到 } 结束\n2. 不要添加任何解释、标题或 markdown 标记\n3. 确保所有字符串用双引号包裹\n4. 不要有尾逗号";
+      extractionRaw = await callLLM(retryPrompt, `以下是商业计划书全文：\n\n${pdfText}`, 4096);
+      extractedData = extractJson(extractionRaw);
     }
-    console.log(`  → 提取到 ${claimsData.claims.length} 条诉求，行业: ${claimsData.industry || "未识别"}`);
+    
+    if (!extractedData || !extractedData.search_queries) {
+      console.error("[1/3] 数据提取两次均失败");
+      return res.status(500).json({ 
+        error: "AI 数据提取失败（已重试 2 次），请重新分析。如果问题持续，请检查 PDF 内容是否为有效的商业计划书。", 
+        raw: extractionRaw?.slice(0, 2000),
+        debug: "extractJson 返回 null，请查看服务器日志了解详情"
+      });
+    }
+    
+    // 验证 search_queries 数组的完整性
+    if (!Array.isArray(extractedData.search_queries) || extractedData.search_queries.length === 0) {
+      console.error("[1/3] search_queries 数组为空或格式错误");
+      return res.status(500).json({ 
+        error: "AI 提取的数据格式错误，请重试", 
+        raw: extractionRaw?.slice(0, 2000) 
+      });
+    }
+    
+    console.log(`  → 提取到 ${extractedData.search_queries.length} 条搜索查询，行业: ${extractedData.industry || "未识别"}`);
+    console.log(`  → TAM: ${extractedData.TAM}亿, CAGR: ${extractedData.CAGR}%, TRL: ${extractedData.TRL}, Ratio: ${extractedData.Ratio}`);
 
     // ── 第2步: 联网取证 — Serper搜索 + AkShare行业估值（并行） ──
     console.log("[2/3] 联网取证: 搜索验证 + 行业估值查询...");
-    const queries = claimsData.claims.map((c) => c.search_query).filter(Boolean);
-    const industryKeyword = claimsData.industry || "";
+    const queries = extractedData.search_queries.map((q) => q.query).filter(Boolean);
+    const industryKeyword = extractedData.industry || "";
 
     // 为行业估值单独构造搜索词
     const industryPESearchQuery = industryKeyword
@@ -440,9 +642,9 @@ app.post("/api/analyze", upload.single("file"), async (req, res) => {
     // 组装证据文本
     const evidenceText = claimSearchResults
       .map((sr, i) => {
-        const claim = claimsData.claims[i];
+        const query_item = extractedData.search_queries[i];
         const snippets = sr.results.map((r) => `  - ${r.title}: ${r.snippet}`).join("\n");
-        return `【诉求 ${i + 1}: ${claim?.dimension || "未知"}】\nBP 声称: ${claim?.claim || "N/A"}\n搜索查询: ${sr.query || queries[i]}\n搜索结果（${sr.results?.length || 0} 条）:\n${snippets || "  (无搜索结果)"}`;
+        return `【搜索 ${i + 1}: ${query_item?.dimension || "未知"}】\n搜索查询: ${sr.query || queries[i]}\n搜索结果（${sr.results?.length || 0} 条）:\n${snippets || "  (无搜索结果)"}`;
       })
       .join("\n\n");
 
@@ -465,42 +667,104 @@ app.post("/api/analyze", upload.single("file"), async (req, res) => {
       });
     }
 
-    // ── 第3步: 对比打假 — AI法官裁决 + 深度研究报告 ──
-    console.log("[3/3] 对比打假: AI法官裁决 + 深度研究报告...");
+    // ── 第3步: 数据验证与评分计算 ──
+    console.log("[3/3] 数据验证与评分计算...");
     const judgeInput = [
-      `【原告陈述 — BP 诉求】\n${JSON.stringify(claimsData.claims, null, 2)}`,
-      `\n\n【被告证据 — 搜索结果】\n${evidenceText}`,
+      `【BP提取数据】\n${JSON.stringify(extractedData, null, 2)}`,
+      `\n\n【搜索证据】\n${evidenceText}`,
       `\n\n${industryPEText}`,
     ].join("");
 
     let thinking = "";
-    let verdictRaw = "";
-    let verdict = null;
+    let validationRaw = "";
+    let validatedData = null;
 
-    // 首次尝试
+    // 首次尝试（使用 thinking 模式）
     const result1 = await callLLMWithThinking(AGENT_B_PROMPT, judgeInput);
     thinking = result1.thinking;
-    verdictRaw = result1.text;
-    verdict = extractJson(verdictRaw);
+    validationRaw = result1.text;
+    validatedData = extractJson(validationRaw);
 
-    // 解析失败时重试一次（用普通模式 + 更严格的提示）
-    if (!verdict) {
-      console.warn("[3/3] 首次裁决 JSON 解析失败，重试中...");
-      const retryPrompt = AGENT_B_PROMPT + "\n\n重要提醒：你上一次的输出不是合法 JSON，导致解析失败。这次请务必只输出纯 JSON，不要包含任何额外文字、markdown 标记或注释。";
-      verdictRaw = await callLLM(retryPrompt, judgeInput, 8192);
-      verdict = extractJson(verdictRaw);
+    // 解析失败时重试
+    if (!validatedData || !validatedData.validated_data) {
+      console.warn("[3/3] 首次数据验证 JSON 解析失败，重试...");
+      const retryPrompt = AGENT_B_PROMPT + "\n\n【紧急提醒】你上一次的输出不是合法 JSON，导致解析失败。这次请务必只输出JSON。";
+      validationRaw = await callLLM(retryPrompt, judgeInput, 8192);
+      validatedData = extractJson(validationRaw);
     }
 
-    if (!verdict) {
-      console.error("[3/3] 两次裁决均解析失败，原始输出:", verdictRaw?.slice(0, 1000));
-      return res.status(500).json({ error: "AI 法官输出解析失败（已重试），请重新分析", raw: verdictRaw?.slice(0, 2000) });
+    if (!validatedData || !validatedData.validated_data) {
+      console.error("[3/3] 数据验证失败");
+      return res.status(500).json({ 
+        error: "AI 数据验证失败，请重试", 
+        raw: validationRaw?.slice(0, 2000)
+      });
     }
+
+    // 使用验证后的数据进行评分
+    const scoringInput = validatedData.validated_data;
+    const scoringResult = scoreProject(scoringInput);
+    
+    console.log(`  → 评分完成: 总分 ${scoringResult.total_score}, 评级 ${scoringResult.grade}`);
+    console.log(`  → 五维得分: S1=${scoringResult.dimensions.timing_ceiling.score}, S2=${scoringResult.dimensions.product_moat.score}, S3=${scoringResult.dimensions.business_validation.score}, S4=${scoringResult.dimensions.team.score}, V5=${scoringResult.dimensions.external_risk.multiplier}`);
+
+    // 构造最终裁决结果（兼容前端格式）
+    const verdict = {
+      total_score: scoringResult.total_score,
+      grade: scoringResult.grade,
+      verdict_summary: scoringResult.grade_label,
+      dimensions: {
+        timing_ceiling: {
+          score: scoringResult.dimensions.timing_ceiling.score,
+          label: scoringResult.dimensions.timing_ceiling.label,
+          subtitle: scoringResult.dimensions.timing_ceiling.subtitle,
+          finding: validatedData.validation_notes?.TAM || validatedData.validation_notes?.CAGR || "市场规模与增速评估"
+        },
+        product_moat: {
+          score: scoringResult.dimensions.product_moat.score,
+          label: scoringResult.dimensions.product_moat.label,
+          subtitle: scoringResult.dimensions.product_moat.subtitle,
+          finding: validatedData.validation_notes?.TRL || validatedData.validation_notes?.SC || "技术成熟度与竞争壁垒评估"
+        },
+        business_validation: {
+          score: scoringResult.dimensions.business_validation.score,
+          label: scoringResult.dimensions.business_validation.label,
+          subtitle: scoringResult.dimensions.business_validation.subtitle,
+          finding: validatedData.validation_notes?.Ratio || validatedData.validation_notes?.Margin || "商业模式与单位经济评估"
+        },
+        team: {
+          score: scoringResult.dimensions.team.score,
+          label: scoringResult.dimensions.team.label,
+          subtitle: scoringResult.dimensions.team.subtitle,
+          finding: validatedData.validation_notes?.Exp || validatedData.validation_notes?.Equity || "团队经验与股权结构评估"
+        },
+        external_risk: {
+          score: scoringResult.dimensions.external_risk.score,
+          label: scoringResult.dimensions.external_risk.label,
+          subtitle: scoringResult.dimensions.external_risk.subtitle,
+          finding: validatedData.validation_notes?.Policy_Risk || validatedData.validation_notes?.Valuation_Gap || "政策风险与估值合理性评估",
+          multiplier: scoringResult.dimensions.external_risk.multiplier
+        }
+      },
+      risk_flags: validatedData.risk_flags || [],
+      strengths: validatedData.strengths || [],
+      conflicts: validatedData.conflicts || [],
+      valuation_comparison: validatedData.industry_comparison || {
+        bp_multiple: scoringInput.BP_Valuation && scoringInput.BP_Revenue ? scoringInput.BP_Valuation / scoringInput.BP_Revenue : 0,
+        industry_avg_multiple: industryPEData?.industry_pe || 0,
+        overvalued_pct: scoringInput.Valuation_Gap ? Math.round((scoringInput.Valuation_Gap - 1) * 100) : 0,
+        industry_name: industryKeyword,
+        data_source: "搜索结果 + AkShare + AI分析",
+        analysis: `${scoringResult.grade_action}`
+      }
+    };
 
     // 生成深度研究报告
     const deepResearchInput = [
       `【商业计划书原文（摘要）】\n${pdfText.slice(0, 10000)}`,
-      `\n\n【AI 法官裁决】\n${JSON.stringify(verdict, null, 2)}`,
-      `\n\n【搜索验证证据】\n${evidenceText}`,
+      `\n\n【评分结果】\n总分: ${scoringResult.total_score}\n评级: ${scoringResult.grade} - ${scoringResult.grade_label}\n\n五维得分:\n${JSON.stringify(scoringResult.dimensions, null, 2)}`,
+      `\n\n【数据验证】\n${JSON.stringify(validatedData, null, 2)}`,
+      `\n\n【搜索证据】\n${evidenceText}`,
       `\n\n${industryPEText}`,
     ].join("");
 
@@ -516,8 +780,9 @@ app.post("/api/analyze", upload.single("file"), async (req, res) => {
     res.json({
       success: true,
       elapsed_seconds: parseFloat(elapsed),
-      claims: claimsData.claims,
-      industry: claimsData.industry,
+      extracted_data: extractedData,
+      validated_data: scoringInput,
+      industry: extractedData.industry,
       search_results: claimSearchResults,
       industry_pe: industryPEData,
       thinking,

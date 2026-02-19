@@ -201,7 +201,7 @@ function LiveProgress({ phaseName, phaseIdx, totalPhases, startTime, subText }) 
       <div style={{ textAlign: "center", marginBottom: 20 }}>
         <div style={{ fontSize: 20, marginBottom: 8 }}>{phaseEmojis[phaseIdx] || "⏳"}</div>
         <div style={{ fontSize: 16, fontWeight: 700, color: C.text, marginBottom: 4 }}>{phaseName}</div>
-        {subText && <div style={{ fontSize: 12, color: C.dim }}>{subText}</div>}
+        {subText && <div style={{ fontSize: 12, color: /⚠️|未配置|失败|不可用/.test(subText) ? C.orange : /✅/.test(subText) ? C.green : C.dim }}>{subText}</div>}
       </div>
       <div style={{ position: "relative", marginBottom: 10 }}>
         <div style={{ height: 12, borderRadius: 6, background: C.border, overflow: "hidden" }}>
@@ -614,7 +614,9 @@ export default function App() {
       let searchResults = {};
       let searchEnabled = false;
       if (queries.length > 0) {
-        goPhase(2, "联网搜索验证", `正在搜索验证 ${queries.length} 条关键信息...`);
+        const queryPreview = queries.slice(0, 2).map(q => q.length > 18 ? q.slice(0, 16) + "…" : q).join(" · ");
+        goPhase(2, "联网搜索验证", `正在搜索 ${queries.length} 条关键信息…`);
+        setPhaseSub(queryPreview ? `关键词：${queryPreview}${queries.length > 2 ? " 等" : ""}` : "");
         try {
           const searchResp = await fetch("/api/web-search", {
             method: "POST",
@@ -626,14 +628,19 @@ export default function App() {
             searchResults = searchData.results || {};
             searchEnabled = searchData.searchEnabled;
             const totalHits = Object.values(searchResults).reduce((sum, r) => sum + r.length, 0);
-            setPhaseSub(searchEnabled
-              ? `搜索完成，获得 ${totalHits} 条结果`
-              : "未配置搜索 API，跳过联网验证"
-            );
+            const hitCount = Object.values(searchResults).filter(r => r.length > 0).length;
+            const totalQueries = Object.keys(searchResults).length;
+            if (!searchEnabled) {
+              setPhaseSub("⚠️ 未配置 SERPER_API_KEY，跳过联网验证（分析仍继续）");
+            } else if (totalHits === 0) {
+              setPhaseSub("⚠️ 搜索 API 已连接，但未找到任何结果（网络或 Key 问题）");
+            } else {
+              setPhaseSub(`✅ 搜索完成：共 ${totalHits} 条结果，${hitCount}/${totalQueries} 个查询有命中`);
+            }
           }
         } catch (e) {
           console.warn("联网搜索失败，继续分析:", e.message);
-          setPhaseSub("搜索服务不可用，跳过联网验证");
+          setPhaseSub("⚠️ 搜索服务不可用，跳过联网验证");
         }
       } else {
         goPhase(2, "联网搜索验证", "跳过（未提取到可搜索的声明）");
@@ -818,10 +825,12 @@ export default function App() {
             <div style={{ display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap" }}>
               <span style={{ padding: "4px 14px", borderRadius: 20, background: `${C.cyan}15`, color: C.cyan, fontSize: 12, fontWeight: 600 }}>📍 {result.stage}</span>
               {result.stageReason && <span style={{ padding: "4px 14px", borderRadius: 20, background: `${C.purple}12`, color: C.purple, fontSize: 11 }}>{result.stageReason}</span>}
-              {result.searchEnabled ? (
-                <span style={{ padding: "4px 14px", borderRadius: 20, background: `${C.green}15`, color: C.green, fontSize: 11, fontWeight: 600 }}>🌐 已联网验证 ({result.searchResultCount || 0} 条搜索结果)</span>
+              {result.searchEnabled && result.searchResultCount > 0 ? (
+                <span style={{ padding: "4px 14px", borderRadius: 20, background: `${C.green}15`, color: C.green, fontSize: 11, fontWeight: 600 }}>🌐 已联网验证（{result.searchResultCount} 条结果）</span>
+              ) : result.searchEnabled ? (
+                <span style={{ padding: "4px 14px", borderRadius: 20, background: `${C.yellow}15`, color: C.yellow, fontSize: 11 }}>🌐 搜索已连接（0 条结果，疑似 Key 或网络问题）</span>
               ) : (
-                <span style={{ padding: "4px 14px", borderRadius: 20, background: `${C.orange}15`, color: C.orange, fontSize: 11 }}>⚠️ 未联网验证</span>
+                <span style={{ padding: "4px 14px", borderRadius: 20, background: `${C.orange}15`, color: C.orange, fontSize: 11 }}>⚠️ 未联网验证（需配置 SERPER_API_KEY）</span>
               )}
             </div>
           </div>

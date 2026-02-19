@@ -2,8 +2,13 @@
   "name": "bp-filter",
   "version": "1.0.0",
   "private": true,
+  "engines": {
+    "node": ">=18"
+  },
   "dependencies": {
-    "dotenv": "^17.3.1",
+    "dotenv": "^17.3.1"
+  },
+  "devDependencies": {
     "http-proxy-middleware": "^3.0.5",
     "pdfjs-dist": "^5.4.624",
     "react": "^18.2.0",

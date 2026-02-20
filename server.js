@@ -825,13 +825,29 @@ function handlePdfToText(req, res) {
     // ② 进入信号量等待队列（超过并发上限时在此挂起）
     await pdfSemaphore.acquire();
 
+    // 用标志位确保信号量只释放一次（error + close 均会触发）
+    let semReleased = false;
+    function releaseSem() {
+      if (!semReleased) { semReleased = true; pdfSemaphore.release(); }
+    }
+
     // ③ pdftotext Disk-to-Disk：直接将结果写到 tmpTxt，不走 stdout
     const proc = spawn("pdftotext", ["-utf8", tmpPdf, tmpTxt]);
     let stderr = "";
     proc.stderr.on("data", (chunk) => { stderr += chunk; });
 
+    // 180 秒超时：防止大文件 / 资源紧张时 pdftotext 卡死
+    const killTimer = setTimeout(() => {
+      proc.removeAllListeners();
+      proc.kill();
+      releaseSem();
+      sendErr(504, "PDF 解析超时（超过 180 秒），请尝试更小的文件");
+    }, 180_000);
+
     proc.on("error", (e) => {
-      pdfSemaphore.release();
+      clearTimeout(killTimer);
+      proc.removeAllListeners();
+      releaseSem();
       sendErr(500,
         "未找到 pdftotext，请安装 poppler-utils（sudo apt install poppler-utils）",
         e.message
@@ -839,7 +855,11 @@ function handlePdfToText(req, res) {
     });
 
     proc.on("close", (code) => {
-      pdfSemaphore.release();
+      clearTimeout(killTimer);
+      proc.removeAllListeners();
+      releaseSem();
+      // 超时或 error 路径已经回复过，不再重复发送
+      if (res.headersSent) return;
       if (code !== 0) {
         sendErr(500, "pdftotext 解析失败", stderr.trim().slice(0, 500));
         return;
@@ -854,6 +874,7 @@ function handlePdfToText(req, res) {
           }
           return;
         }
+        if (res.headersSent) return;
         res.writeHead(200, {
           "Content-Type": "application/json",
           "Access-Control-Allow-Origin": "*",

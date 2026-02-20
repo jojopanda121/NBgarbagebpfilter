@@ -70,6 +70,7 @@ function httpsPost(url, data, extraHeaders = {}) {
     };
     const req = https.request(options, (proxyRes) => {
       let body = "";
+      proxyRes.on("error", reject);
       proxyRes.on("data", (chunk) => (body += chunk));
       proxyRes.on("end", () =>
         resolve({ statusCode: proxyRes.statusCode, body })
@@ -86,6 +87,7 @@ function httpsGet(url) {
     https
       .get(url, (proxyRes) => {
         let body = "";
+        proxyRes.on("error", reject);
         proxyRes.on("data", (chunk) => (body += chunk));
         proxyRes.on("end", () =>
           resolve({ statusCode: proxyRes.statusCode, body })
@@ -201,6 +203,12 @@ function callMiniMax(reqBody, res) {
 
   const proxyReq = https.request(options, (proxyRes) => {
     let body = "";
+    proxyRes.on("error", (e) => {
+      if (!res.headersSent) {
+        res.writeHead(500, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: e.message }));
+      }
+    });
     proxyRes.on("data", (chunk) => (body += chunk));
     proxyRes.on("end", () => {
       try {
@@ -276,6 +284,7 @@ function callMiniMaxAsync(messages, system, maxTokens = 32768) {
 
     const req = https.request(options, (proxyRes) => {
       let body = "";
+      proxyRes.on("error", reject);
       proxyRes.on("data", (chunk) => (body += chunk));
       proxyRes.on("end", () => {
         try {

@@ -211,6 +211,7 @@ function callMiniMax(reqBody, res) {
     });
     proxyRes.on("data", (chunk) => (body += chunk));
     proxyRes.on("end", () => {
+      if (res.headersSent) return;
       try {
         const data = JSON.parse(body);
 
@@ -238,17 +239,21 @@ function callMiniMax(reqBody, res) {
           })
         );
       } catch (e) {
-        res.writeHead(500, { "Content-Type": "application/json" });
-        res.end(
-          JSON.stringify({ error: "解析 MiniMax 返回失败", body })
-        );
+        if (!res.headersSent) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({ error: "解析 MiniMax 返回失败", body })
+          );
+        }
       }
     });
   });
 
   proxyReq.on("error", (e) => {
-    res.writeHead(500, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ error: e.message }));
+    if (!res.headersSent) {
+      res.writeHead(500, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: e.message }));
+    }
   });
 
   proxyReq.write(postData);
@@ -801,6 +806,27 @@ function handlePdfToText(req, res) {
       });
       let stdout = "";
       let stderr = "";
+
+      // 防止 py.on("error") 与 py.on("close") 同时触发导致双重响应
+      let responded = false;
+      function replyOnce(statusCode, body) {
+        if (responded) return;
+        responded = true;
+        fs.unlink(tmpPath, () => {});
+        clearTimeout(killTimer);
+        res.writeHead(statusCode, { "Content-Type": "application/json" });
+        res.end(body);
+      }
+
+      // 超时兜底：120 秒后强制终止 Python 进程
+      const killTimer = setTimeout(() => {
+        py.kill("SIGKILL");
+        replyOnce(
+          504,
+          JSON.stringify({ error: "PDF 解析超时（>120s），文件可能过大或 Python 环境异常" })
+        );
+      }, 120_000);
+
       py.stdout.on("data", (chunk) => {
         stdout += chunk;
       });
@@ -808,10 +834,9 @@ function handlePdfToText(req, res) {
         stderr += chunk;
       });
       py.on("close", (code) => {
-        fs.unlink(tmpPath, () => {});
         if (code !== 0) {
-          res.writeHead(500, { "Content-Type": "application/json" });
-          res.end(
+          replyOnce(
+            500,
             JSON.stringify({
               error: "PDF 解析失败",
               detail: (stderr || stdout || "").trim().slice(0, 500),
@@ -819,16 +844,14 @@ function handlePdfToText(req, res) {
           );
           return;
         }
-        res.writeHead(200, {
-          "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": "*",
-        });
-        res.end(JSON.stringify({ text: (stdout || "").trim() }));
+        replyOnce(
+          200,
+          JSON.stringify({ text: (stdout || "").trim() })
+        );
       });
       py.on("error", (e) => {
-        fs.unlink(tmpPath, () => {});
-        res.writeHead(500, { "Content-Type": "application/json" });
-        res.end(
+        replyOnce(
+          500,
           JSON.stringify({
             error:
               "未找到 Python 或脚本执行失败，请安装 Python 并执行: pip install -r scripts/requirements.txt",

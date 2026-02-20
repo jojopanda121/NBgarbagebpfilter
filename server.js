@@ -750,115 +750,161 @@ Output your reasoning steps before the final JSON answer.
 }
 
 // ══════════════════════════════════════════════════════════════
-// PDF → 纯文本（调用 Python：PyMuPDF + OCR）
+// PDF → 纯文本（Disk-Streaming + pdftotext from poppler-utils）
+//
+// Memory strategy (2 vCPU / 2 GB server):
+//   1. req stream is piped straight to /tmp/<uid>.json — no body
+//      string is ever accumulated in the Node.js heap.
+//   2. fs.readFile reads the JSON, extracts only the `pdf` field,
+//      then the raw buffer is immediately GC-eligible.
+//   3. Base64 → binary decoding is done in 64 KiB aligned slices so
+//      the full decoded PDF is never in memory at the same time as
+//      the base64 string.
+//   4. `pdftotext` (C++, poppler-utils) does the extraction; it is
+//      far more memory-efficient than any JS-based PDF parser.
+//   5. Both temp files (/tmp/<uid>.json and /tmp/<uid>.pdf) are
+//      deleted immediately after use or on any error path.
 // ══════════════════════════════════════════════════════════════
 
 function handlePdfToText(req, res) {
-  let body = "";
-  req.on("data", (chunk) => (body += chunk));
-  req.on("end", () => {
-    let pdfBase64 = null;
-    try {
-      const parsed = JSON.parse(body);
-      pdfBase64 = parsed.pdf;
-    } catch (e) {
-      res.writeHead(400, { "Content-Type": "application/json" });
-      res.end(
-        JSON.stringify({
-          error: "请求体需为 JSON，且包含 pdf 字段（base64）",
-        })
-      );
-      return;
-    }
-    if (!pdfBase64 || typeof pdfBase64 !== "string") {
-      res.writeHead(400, { "Content-Type": "application/json" });
-      res.end(
-        JSON.stringify({ error: "缺少 pdf 字段（base64 字符串）" })
-      );
-      return;
-    }
+  const uid = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const tmpDir     = os.tmpdir();
+  const tmpJsonPath = path.join(tmpDir, `bp-pdf-${uid}.json`);
+  const tmpPdfPath  = path.join(tmpDir, `bp-pdf-${uid}.pdf`);
 
-    const tmpDir = os.tmpdir();
-    const tmpPath = path.join(
-      tmpDir,
-      `bp-pdf-${Date.now()}-${Math.random().toString(36).slice(2)}.pdf`
-    );
-    let buf;
-    try {
-      buf = Buffer.from(pdfBase64, "base64");
-    } catch (e) {
-      res.writeHead(400, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ error: "pdf base64 解码失败" }));
-      return;
-    }
-    fs.writeFile(tmpPath, buf, (errWrite) => {
-      if (errWrite) {
-        res.writeHead(500, { "Content-Type": "application/json" });
-        res.end(
-          JSON.stringify({
-            error: "写入临时文件失败: " + errWrite.message,
-          })
-        );
-        return;
-      }
-      const py = spawn("python3", [PDF_TO_TEXT_SCRIPT, tmpPath], {
-        cwd: __dirname,
-      });
-      let stdout = "";
-      let stderr = "";
+  let responded = false;
+  let killTimer  = null;
 
-      // 防止 py.on("error") 与 py.on("close") 同时触发导致双重响应
-      let responded = false;
-      function replyOnce(statusCode, body) {
-        if (responded) return;
-        responded = true;
-        fs.unlink(tmpPath, () => {});
-        clearTimeout(killTimer);
-        res.writeHead(statusCode, { "Content-Type": "application/json" });
-        res.end(body);
+  function cleanup() {
+    fs.unlink(tmpJsonPath, () => {});
+    fs.unlink(tmpPdfPath,  () => {});
+  }
+
+  function replyOnce(statusCode, jsonBody) {
+    if (responded) return;
+    responded = true;
+    cleanup();
+    if (killTimer) clearTimeout(killTimer);
+    res.writeHead(statusCode, { "Content-Type": "application/json" });
+    res.end(jsonBody);
+  }
+
+  // ── Step 1: pipe the raw request body straight to disk ────────────────
+  // Node.js heap only ever holds one I/O chunk (~64 KiB) at a time.
+  const jsonFile = fs.createWriteStream(tmpJsonPath);
+
+  req.on("error", (e) => {
+    jsonFile.destroy();
+    replyOnce(400, JSON.stringify({ error: "请求流错误: " + e.message }));
+  });
+  jsonFile.on("error", (e) => {
+    replyOnce(500, JSON.stringify({ error: "写入临时文件失败: " + e.message }));
+  });
+
+  req.pipe(jsonFile);
+
+  jsonFile.on("finish", () => {
+    if (responded) return;
+
+    // ── Step 2: parse JSON and validate ───────────────────────────────
+    // fs.readFile keeps one Buffer in the heap; JSON.parse extracts the
+    // pdf string and the raw Buffer becomes GC-eligible immediately.
+    fs.readFile(tmpJsonPath, (errRead, rawBuf) => {
+      // The JSON temp file is no longer needed once we've read it.
+      fs.unlink(tmpJsonPath, () => {});
+
+      if (errRead) {
+        return replyOnce(500, JSON.stringify({ error: "读取临时文件失败: " + errRead.message }));
       }
 
-      // 超时兜底：120 秒后强制终止 Python 进程
-      const killTimer = setTimeout(() => {
-        py.kill("SIGKILL");
-        replyOnce(
-          504,
-          JSON.stringify({ error: "PDF 解析超时（>120s），文件可能过大或 Python 环境异常" })
-        );
-      }, 120_000);
+      let pdfBase64;
+      try {
+        const parsed = JSON.parse(rawBuf); // rawBuf GC-eligible after this line
+        pdfBase64 = parsed.pdf;
+      } catch {
+        return replyOnce(400, JSON.stringify({ error: "请求体需为 JSON，且包含 pdf 字段（base64）" }));
+      }
 
-      py.stdout.on("data", (chunk) => {
-        stdout += chunk;
-      });
-      py.stderr.on("data", (chunk) => {
-        stderr += chunk;
-      });
-      py.on("close", (code) => {
-        if (code !== 0) {
-          replyOnce(
-            500,
-            JSON.stringify({
-              error: "PDF 解析失败",
-              detail: (stderr || stdout || "").trim().slice(0, 500),
-            })
-          );
-          return;
+      if (!pdfBase64 || typeof pdfBase64 !== "string") {
+        return replyOnce(400, JSON.stringify({ error: "缺少 pdf 字段（base64 字符串）" }));
+      }
+
+      // ── Step 3: stream-decode base64 → temp PDF file ──────────────
+      // We process 64 KiB of base64 text at a time (always a multiple
+      // of 4 so base64 block boundaries stay aligned).  The decoded
+      // binary slice is written and freed before the next slice is
+      // created, so the peak in-memory footprint is ~96 KiB here.
+      const pdfFile   = fs.createWriteStream(tmpPdfPath);
+      const B64_CHUNK = 65536; // 64 KiB — must be a multiple of 4
+      let offset = 0;
+
+      function writeNextChunk() {
+        while (offset < pdfBase64.length) {
+          const rawEnd = Math.min(offset + B64_CHUNK, pdfBase64.length);
+          // Align to a base64 4-char block boundary.
+          const end = rawEnd === pdfBase64.length
+            ? rawEnd
+            : rawEnd - (rawEnd % 4);
+          if (end <= offset) break; // safety guard — shouldn't happen
+
+          const decoded = Buffer.from(pdfBase64.slice(offset, end), "base64");
+          offset = end;
+
+          // Honour write-stream back-pressure to avoid I/O queue pile-up.
+          if (!pdfFile.write(decoded)) {
+            pdfFile.once("drain", writeNextChunk);
+            return;
+          }
         }
-        replyOnce(
-          200,
-          JSON.stringify({ text: (stdout || "").trim() })
-        );
+        pdfFile.end();
+      }
+
+      pdfFile.on("error", (e) => {
+        replyOnce(500, JSON.stringify({ error: "PDF 文件写入失败: " + e.message }));
       });
-      py.on("error", (e) => {
-        replyOnce(
-          500,
-          JSON.stringify({
-            error:
-              "未找到 Python 或脚本执行失败，请安装 Python 并执行: pip install -r scripts/requirements.txt",
+
+      pdfFile.on("finish", () => {
+        pdfBase64 = null; // release the base64 string for GC
+
+        // ── Step 4: extract text with pdftotext (poppler-utils, C++) ──
+        // "-enc UTF-8" ensures consistent encoding; "-" sends output to
+        // stdout so we never write a second temp file.
+        const textChunks = [];
+        let stderrBuf    = "";
+
+        const pt = spawn("pdftotext", ["-enc", "UTF-8", tmpPdfPath, "-"], {
+          stdio: ["ignore", "pipe", "pipe"],
+        });
+
+        // Hard timeout: kill the child and respond after 120 s.
+        killTimer = setTimeout(() => {
+          pt.kill("SIGKILL");
+          replyOnce(504, JSON.stringify({ error: "PDF 解析超时（>120s），文件可能过大或环境异常" }));
+        }, 120_000);
+
+        pt.stdout.on("data", (chunk) => textChunks.push(chunk));
+        pt.stderr.on("data", (chunk) => { stderrBuf += chunk; });
+
+        pt.on("error", (e) => {
+          replyOnce(500, JSON.stringify({
+            error: "未找到 pdftotext，请安装 poppler-utils: apt-get install poppler-utils",
             detail: e.message,
-          })
-        );
+          }));
+        });
+
+        pt.on("close", (code) => {
+          if (code !== 0) {
+            return replyOnce(500, JSON.stringify({
+              error: "PDF 解析失败",
+              detail: (stderrBuf || "").trim().slice(0, 500),
+            }));
+          }
+          const text = Buffer.concat(textChunks).toString("utf8").trim();
+          replyOnce(200, JSON.stringify({ text }));
+        });
       });
+
+      writeNextChunk();
     });
   });
 }

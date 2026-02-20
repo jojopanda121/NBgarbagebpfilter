@@ -750,117 +750,91 @@ Output your reasoning steps before the final JSON answer.
 }
 
 // ══════════════════════════════════════════════════════════════
-// PDF → 纯文本（调用 Python：PyMuPDF + OCR）
+// PDF → 纯文本（磁盘流式：req 直接落盘 + pdftotext C++ 工具）
+// 协议：POST /api/pdf-to-text，Content-Type: application/octet-stream
+// Body：PDF 原始二进制（不经 base64，无内存放大）
 // ══════════════════════════════════════════════════════════════
 
 function handlePdfToText(req, res) {
-  let body = "";
-  req.on("data", (chunk) => (body += chunk));
-  req.on("end", () => {
-    let pdfBase64 = null;
-    try {
-      const parsed = JSON.parse(body);
-      pdfBase64 = parsed.pdf;
-    } catch (e) {
-      res.writeHead(400, { "Content-Type": "application/json" });
-      res.end(
-        JSON.stringify({
-          error: "请求体需为 JSON，且包含 pdf 字段（base64）",
-        })
-      );
-      return;
-    }
-    if (!pdfBase64 || typeof pdfBase64 !== "string") {
-      res.writeHead(400, { "Content-Type": "application/json" });
-      res.end(
-        JSON.stringify({ error: "缺少 pdf 字段（base64 字符串）" })
-      );
-      return;
-    }
+  const tmpPdf = path.join(
+    os.tmpdir(),
+    `bp-pdf-${Date.now()}-${Math.random().toString(36).slice(2)}.pdf`
+  );
 
-    const tmpDir = os.tmpdir();
-    const tmpPath = path.join(
-      tmpDir,
-      `bp-pdf-${Date.now()}-${Math.random().toString(36).slice(2)}.pdf`
+  let childProc = null;
+  let responded = false;
+
+  function replyOnce(statusCode, payload) {
+    if (responded) return;
+    responded = true;
+    clearTimeout(killTimer);
+    fs.unlink(tmpPdf, () => {});
+    res.writeHead(statusCode, { "Content-Type": "application/json" });
+    res.end(payload);
+  }
+
+  // 120 秒超时兜底，防止进程挂死占用连接
+  const killTimer = setTimeout(() => {
+    if (childProc) childProc.kill("SIGKILL");
+    replyOnce(
+      504,
+      JSON.stringify({ error: "PDF 解析超时（>120s），文件可能过大或 pdftotext 环境异常" })
     );
-    let buf;
-    try {
-      buf = Buffer.from(pdfBase64, "base64");
-    } catch (e) {
-      res.writeHead(400, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ error: "pdf base64 解码失败" }));
-      return;
-    }
-    fs.writeFile(tmpPath, buf, (errWrite) => {
-      if (errWrite) {
-        res.writeHead(500, { "Content-Type": "application/json" });
-        res.end(
+  }, 120_000);
+
+  // ── 阶段一：req 流直接落盘，跳过 base64 / Buffer，零额外内存 ──
+  const writeStream = fs.createWriteStream(tmpPdf);
+
+  req.on("error", (e) => {
+    writeStream.destroy();
+    replyOnce(400, JSON.stringify({ error: "接收上传数据失败: " + e.message }));
+  });
+
+  writeStream.on("error", (e) => {
+    replyOnce(500, JSON.stringify({ error: "写入临时文件失败: " + e.message }));
+  });
+
+  writeStream.on("finish", () => {
+    // ── 阶段二：pdftotext（poppler-utils，C++）提取文本输出到 stdout ──
+    // -enc UTF-8   强制 UTF-8 输出
+    // -nopgbrk     去除分页换行符（^L）
+    // "-"          写到 stdout，不产生第二个临时文件
+    const proc = spawn("pdftotext", ["-enc", "UTF-8", "-nopgbrk", tmpPdf, "-"]);
+    childProc = proc;
+
+    let stdout = "";
+    let stderr = "";
+
+    proc.stdout.on("data", (chunk) => { stdout += chunk; });
+    proc.stderr.on("data", (chunk) => { stderr += chunk; });
+
+    proc.on("close", (code) => {
+      if (code !== 0) {
+        replyOnce(
+          500,
           JSON.stringify({
-            error: "写入临时文件失败: " + errWrite.message,
+            error: "pdftotext 解析失败，请确认已安装 poppler-utils（apt-get install -y poppler-utils）",
+            detail: (stderr || "").trim().slice(0, 500),
           })
         );
         return;
       }
-      const py = spawn("python3", [PDF_TO_TEXT_SCRIPT, tmpPath], {
-        cwd: __dirname,
-      });
-      let stdout = "";
-      let stderr = "";
+      replyOnce(200, JSON.stringify({ text: stdout.trim() }));
+    });
 
-      // 防止 py.on("error") 与 py.on("close") 同时触发导致双重响应
-      let responded = false;
-      function replyOnce(statusCode, body) {
-        if (responded) return;
-        responded = true;
-        fs.unlink(tmpPath, () => {});
-        clearTimeout(killTimer);
-        res.writeHead(statusCode, { "Content-Type": "application/json" });
-        res.end(body);
-      }
-
-      // 超时兜底：120 秒后强制终止 Python 进程
-      const killTimer = setTimeout(() => {
-        py.kill("SIGKILL");
-        replyOnce(
-          504,
-          JSON.stringify({ error: "PDF 解析超时（>120s），文件可能过大或 Python 环境异常" })
-        );
-      }, 120_000);
-
-      py.stdout.on("data", (chunk) => {
-        stdout += chunk;
-      });
-      py.stderr.on("data", (chunk) => {
-        stderr += chunk;
-      });
-      py.on("close", (code) => {
-        if (code !== 0) {
-          replyOnce(
-            500,
-            JSON.stringify({
-              error: "PDF 解析失败",
-              detail: (stderr || stdout || "").trim().slice(0, 500),
-            })
-          );
-          return;
-        }
-        replyOnce(
-          200,
-          JSON.stringify({ text: (stdout || "").trim() })
-        );
-      });
-      py.on("error", (e) => {
-        replyOnce(
-          500,
-          JSON.stringify({
-            error:
-              "未找到 Python 或脚本执行失败，请安装 Python 并执行: pip install -r scripts/requirements.txt",
-            detail: e.message,
-          })
-        );
-      });
+    proc.on("error", (e) => {
+      replyOnce(
+        500,
+        JSON.stringify({
+          error: "未找到 pdftotext，请安装 poppler-utils: apt-get install -y poppler-utils",
+          detail: e.message,
+        })
+      );
     });
   });
+
+  // req 是可读流，直接 pipe 到磁盘写入流
+  req.pipe(writeStream);
 }
 
 // ── 返回静态文件或 SPA index ──

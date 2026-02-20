@@ -30,14 +30,15 @@ const extractTextFromPdf = async (file) => {
   return parts.join("\n").replace(/\s+/g, " ").trim();
 };
 
-// 优先用后端 Python 解析 PDF（支持 OCR 扫描版），失败则回退到浏览器解析
+// 优先用后端 pdftotext 解析 PDF，失败则回退到浏览器解析
+// 协议改为 application/octet-stream：File 对象直接作为 body，
+// 浏览器流式发送二进制，避免 base64 编码带来的 1.33x 内存膨胀。
 const extractTextFromPdfWithBackend = async (file, readB64) => {
   try {
-    const base64 = await readB64(file);
     const resp = await fetch(`${API_BASE}/api/pdf-to-text`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ pdf: base64 })
+      headers: { "Content-Type": "application/octet-stream" },
+      body: file
     });
     if (!resp.ok) {
       const err = await resp.json().catch(() => ({}));
@@ -47,7 +48,7 @@ const extractTextFromPdfWithBackend = async (file, readB64) => {
     const text = (data.text || "").trim();
     if (text.length >= 30) return text;
   } catch (e) {
-    console.warn("Python PDF/OCR 不可用，回退到浏览器解析:", e.message);
+    console.warn("pdftotext 不可用，回退到浏览器解析:", e.message);
   }
   return extractTextFromPdf(file);
 };

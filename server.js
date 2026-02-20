@@ -18,6 +18,28 @@ const PDF_TO_TEXT_SCRIPT = path.join(SCRIPT_DIR, "pdf_to_text.py");
 // Zeabur 默认暴露 8080；本地开发可用 PORT=3000
 const PORT = parseInt(process.env.PORT, 10) || 8080;
 
+// ── PDF 并发信号量：最多 3 个 pdftotext 进程同时运行 ──
+// 超出者进入 Promise 等待队列，避免在高并发下 fork 爆炸
+function createSemaphore(limit) {
+  let running = 0;
+  const queue = [];
+  return {
+    acquire() {
+      return new Promise((resolve) => {
+        if (running < limit) { running++; resolve(); }
+        else queue.push(resolve);
+      });
+    },
+    release() {
+      running--;
+      if (queue.length > 0) { running++; queue.shift()(); }
+    },
+  };
+}
+const pdfSemaphore = createSemaphore(
+  parseInt(process.env.PDF_CONCURRENCY, 10) || 3
+);
+
 // ── MiniMax 配置 ──
 if (!process.env.MINIMAX_API_KEY) {
   console.error(
@@ -766,148 +788,82 @@ Output your reasoning steps before the final JSON answer.
 //      deleted immediately after use or on any error path.
 // ══════════════════════════════════════════════════════════════
 
+// ── Zero-Buffer PDF 处理 ──────────────────────────────────────
+// 数据路径：req(octet-stream) → pipe → tmpPdf(磁盘)
+//            pdftotext → tmpTxt(磁盘) → fs.readFile → res
+// Node.js 堆全程不驻留 PDF 二进制；stdout 不回传大 Buffer。
+// 信号量保证同时最多 PDF_CONCURRENCY（默认3）个进程并发。
+// ─────────────────────────────────────────────────────────────
 function handlePdfToText(req, res) {
-  const uid = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-  const tmpDir     = os.tmpdir();
-  const tmpJsonPath = path.join(tmpDir, `bp-pdf-${uid}.json`);
-  const tmpPdfPath  = path.join(tmpDir, `bp-pdf-${uid}.pdf`);
+  const id = `bp-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const tmpPdf = path.join(os.tmpdir(), `${id}.pdf`);
+  const tmpTxt = path.join(os.tmpdir(), `${id}.txt`);
 
-  let responded = false;
-  let killTimer  = null;
-
+  // 双文件清理：无论成功或失败均删除 .pdf 和 .txt
   function cleanup() {
-    fs.unlink(tmpJsonPath, () => {});
-    fs.unlink(tmpPdfPath,  () => {});
+    fs.unlink(tmpPdf, () => {});
+    fs.unlink(tmpTxt, () => {});
   }
 
-  function replyOnce(statusCode, jsonBody) {
-    if (responded) return;
-    responded = true;
+  function sendErr(status, msg, detail) {
     cleanup();
-    if (killTimer) clearTimeout(killTimer);
-    res.writeHead(statusCode, { "Content-Type": "application/json" });
-    res.end(jsonBody);
+    if (!res.headersSent) {
+      res.writeHead(status, { "Content-Type": "application/json" });
+      res.end(JSON.stringify(detail ? { error: msg, detail } : { error: msg }));
+    }
   }
 
-  // ── Step 1: pipe the raw request body straight to disk ────────────────
-  // Node.js heap only ever holds one I/O chunk (~64 KiB) at a time.
-  const jsonFile = fs.createWriteStream(tmpJsonPath);
+  // ① 请求流直接落盘 — Node.js 堆分配接近 0
+  const writeStream = fs.createWriteStream(tmpPdf);
+  req.pipe(writeStream);
 
-  req.on("error", (e) => {
-    jsonFile.destroy();
-    replyOnce(400, JSON.stringify({ error: "请求流错误: " + e.message }));
-  });
-  jsonFile.on("error", (e) => {
-    replyOnce(500, JSON.stringify({ error: "写入临时文件失败: " + e.message }));
-  });
+  writeStream.on("error", (e) =>
+    sendErr(500, "写入临时 PDF 失败: " + e.message)
+  );
 
-  req.pipe(jsonFile);
+  writeStream.on("finish", async () => {
+    // ② 进入信号量等待队列（超过并发上限时在此挂起）
+    await pdfSemaphore.acquire();
 
-  jsonFile.on("finish", () => {
-    if (responded) return;
+    // ③ pdftotext Disk-to-Disk：直接将结果写到 tmpTxt，不走 stdout
+    const proc = spawn("pdftotext", ["-utf8", tmpPdf, tmpTxt]);
+    let stderr = "";
+    proc.stderr.on("data", (chunk) => { stderr += chunk; });
 
-    // ── Step 2: parse JSON and validate ───────────────────────────────
-    // fs.readFile keeps one Buffer in the heap; JSON.parse extracts the
-    // pdf string and the raw Buffer becomes GC-eligible immediately.
-    fs.readFile(tmpJsonPath, (errRead, rawBuf) => {
-      // The JSON temp file is no longer needed once we've read it.
-      fs.unlink(tmpJsonPath, () => {});
+    proc.on("error", (e) => {
+      pdfSemaphore.release();
+      sendErr(500,
+        "未找到 pdftotext，请安装 poppler-utils（sudo apt install poppler-utils）",
+        e.message
+      );
+    });
 
-      if (errRead) {
-        return replyOnce(500, JSON.stringify({ error: "读取临时文件失败: " + errRead.message }));
+    proc.on("close", (code) => {
+      pdfSemaphore.release();
+      if (code !== 0) {
+        sendErr(500, "pdftotext 解析失败", stderr.trim().slice(0, 500));
+        return;
       }
-
-      let pdfBase64;
-      try {
-        const parsed = JSON.parse(rawBuf); // rawBuf GC-eligible after this line
-        pdfBase64 = parsed.pdf;
-      } catch {
-        return replyOnce(400, JSON.stringify({ error: "请求体需为 JSON，且包含 pdf 字段（base64）" }));
-      }
-
-      if (!pdfBase64 || typeof pdfBase64 !== "string") {
-        return replyOnce(400, JSON.stringify({ error: "缺少 pdf 字段（base64 字符串）" }));
-      }
-
-      // ── Step 3: stream-decode base64 → temp PDF file ──────────────
-      // We process 64 KiB of base64 text at a time (always a multiple
-      // of 4 so base64 block boundaries stay aligned).  The decoded
-      // binary slice is written and freed before the next slice is
-      // created, so the peak in-memory footprint is ~96 KiB here.
-      const pdfFile   = fs.createWriteStream(tmpPdfPath);
-      const B64_CHUNK = 65536; // 64 KiB — must be a multiple of 4
-      let offset = 0;
-
-      function writeNextChunk() {
-        while (offset < pdfBase64.length) {
-          const rawEnd = Math.min(offset + B64_CHUNK, pdfBase64.length);
-          // Align to a base64 4-char block boundary.
-          const end = rawEnd === pdfBase64.length
-            ? rawEnd
-            : rawEnd - (rawEnd % 4);
-          if (end <= offset) break; // safety guard — shouldn't happen
-
-          const decoded = Buffer.from(pdfBase64.slice(offset, end), "base64");
-          offset = end;
-
-          // Honour write-stream back-pressure to avoid I/O queue pile-up.
-          if (!pdfFile.write(decoded)) {
-            pdfFile.once("drain", writeNextChunk);
-            return;
+      // ④ 读取磁盘结果文件（通常几十 KB，一次性 readFile 可接受）
+      fs.readFile(tmpTxt, "utf8", (err, text) => {
+        cleanup();
+        if (err) {
+          if (!res.headersSent) {
+            res.writeHead(500, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ error: "读取解析结果失败: " + err.message }));
           }
+          return;
         }
-        pdfFile.end();
-      }
-
-      pdfFile.on("error", (e) => {
-        replyOnce(500, JSON.stringify({ error: "PDF 文件写入失败: " + e.message }));
+        res.writeHead(200, {
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "*",
+        });
+        res.end(JSON.stringify({ text: text.trim() }));
       });
-
-      pdfFile.on("finish", () => {
-        pdfBase64 = null; // release the base64 string for GC
-
-        // ── Step 4: extract text with pdftotext (poppler-utils, C++) ──
-        // "-enc UTF-8" ensures consistent encoding; "-" sends output to
-        // stdout so we never write a second temp file.
-        const textChunks = [];
-        let stderrBuf    = "";
-
-        const pt = spawn("pdftotext", ["-enc", "UTF-8", tmpPdfPath, "-"], {
-          stdio: ["ignore", "pipe", "pipe"],
-        });
-
-        // Hard timeout: kill the child and respond after 120 s.
-        killTimer = setTimeout(() => {
-          pt.kill("SIGKILL");
-          replyOnce(504, JSON.stringify({ error: "PDF 解析超时（>120s），文件可能过大或环境异常" }));
-        }, 120_000);
-
-        pt.stdout.on("data", (chunk) => textChunks.push(chunk));
-        pt.stderr.on("data", (chunk) => { stderrBuf += chunk; });
-
-        pt.on("error", (e) => {
-          replyOnce(500, JSON.stringify({
-            error: "未找到 pdftotext，请安装 poppler-utils: apt-get install poppler-utils",
-            detail: e.message,
-          }));
-        });
-
-        pt.on("close", (code) => {
-          if (code !== 0) {
-            return replyOnce(500, JSON.stringify({
-              error: "PDF 解析失败",
-              detail: (stderrBuf || "").trim().slice(0, 500),
-            }));
-          }
-          const text = Buffer.concat(textChunks).toString("utf8").trim();
-          replyOnce(200, JSON.stringify({ text }));
-        });
-      });
-
-      writeNextChunk();
     });
   });
 }
+
 
 // ── 返回静态文件或 SPA index ──
 function serveFile(pathname, res) {

@@ -30,14 +30,16 @@ const extractTextFromPdf = async (file) => {
   return parts.join("\n").replace(/\s+/g, " ").trim();
 };
 
-// 优先用后端 Python 解析 PDF（支持 OCR 扫描版），失败则回退到浏览器解析
-const extractTextFromPdfWithBackend = async (file, readB64) => {
+// 优先用后端 pdftotext 解析 PDF。
+// 直接以 application/octet-stream 发送原始二进制，
+// 跳过 base64 编码，浏览器堆与网络带宽均节省 ~33%。
+// 失败时回退到浏览器内 pdfjs 解析（文字版 PDF）。
+const extractTextFromPdfWithBackend = async (file) => {
   try {
-    const base64 = await readB64(file);
     const resp = await fetch(`${API_BASE}/api/pdf-to-text`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ pdf: base64 })
+      headers: { "Content-Type": "application/octet-stream" },
+      body: file,          // File 对象即 Blob，浏览器以流形式发送
     });
     if (!resp.ok) {
       const err = await resp.json().catch(() => ({}));
@@ -47,7 +49,7 @@ const extractTextFromPdfWithBackend = async (file, readB64) => {
     const text = (data.text || "").trim();
     if (text.length >= 30) return text;
   } catch (e) {
-    console.warn("Python PDF/OCR 不可用，回退到浏览器解析:", e.message);
+    console.warn("pdftotext 不可用，回退到浏览器解析:", e.message);
   }
   return extractTextFromPdf(file);
 };
@@ -567,7 +569,7 @@ export default function App() {
         await new Promise(r => setTimeout(r, 500));
       } else if (ext === "pdf") {
         setPhaseSub(`文件 ${(file.size / 1024).toFixed(0)}KB，Python 解析 PDF 中...`);
-        textContent = await extractTextFromPdfWithBackend(file, readB64);
+        textContent = await extractTextFromPdfWithBackend(file);
         setPhaseSub(`成功提取 ${textContent.length} 个字符`);
         await new Promise(r => setTimeout(r, 500));
       } else {

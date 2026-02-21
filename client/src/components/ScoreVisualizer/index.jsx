@@ -25,7 +25,7 @@ const RadarChartPanel = memo(function RadarChartPanel({ dimensions }) {
   }));
 
   return (
-    <ResponsiveContainer width="100%" height={300}>
+    <ResponsiveContainer width="100%" height={260}>
       <RadarChart data={data} cx="50%" cy="50%" outerRadius="75%">
         <PolarGrid stroke="#374151" />
         <PolarAngleAxis
@@ -161,7 +161,7 @@ const DimensionBars = memo(function DimensionBars({ dimensions }) {
           return (
             <div key={key} className="flex items-center gap-3">
               <Icon className="w-4 h-4 text-gray-400 shrink-0" />
-              <span className="text-sm text-gray-400 w-32 shrink-0">
+              <span className="text-sm text-gray-400 w-20 sm:w-32 shrink-0 truncate">
                 {dim.label || key}
               </span>
               <div className="flex-1 flex items-center gap-2">
@@ -185,7 +185,7 @@ const DimensionBars = memo(function DimensionBars({ dimensions }) {
         return (
           <div key={key} className="flex items-center gap-3">
             <Icon className="w-4 h-4 text-gray-400 shrink-0" />
-            <span className="text-sm text-gray-400 w-32 shrink-0">
+            <span className="text-sm text-gray-400 w-20 sm:w-32 shrink-0 truncate">
               {dim.label || key}
             </span>
             <div className="flex-1 h-2 bg-gray-800 rounded-full overflow-hidden">
@@ -229,7 +229,7 @@ const ScoreVisualizer = memo(function ScoreVisualizer({ verdict }) {
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
       {/* 雷达图 */}
-      <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6">
+      <div className="bg-gray-900 border border-gray-800 rounded-2xl p-4 sm:p-6">
         <h4 className="text-lg font-semibold mb-4 flex items-center gap-2">
           <Target className="w-5 h-5 text-blue-400" />
           五维雷达图
@@ -238,7 +238,7 @@ const ScoreVisualizer = memo(function ScoreVisualizer({ verdict }) {
       </div>
 
       {/* 估值温度计 + 维度进度条 */}
-      <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6">
+      <div className="bg-gray-900 border border-gray-800 rounded-2xl p-4 sm:p-6">
         <h4 className="text-lg font-semibold mb-4 flex items-center gap-2">
           <BarChart3 className="w-5 h-5 text-orange-400" />
           估值温度计

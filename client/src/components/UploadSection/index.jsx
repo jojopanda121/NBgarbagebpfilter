@@ -61,8 +61,8 @@ const UploadSection = memo(function UploadSection() {
   return (
     <div className="max-w-2xl mx-auto">
       {/* 标题 */}
-      <div className="text-center mb-8">
-        <h2 className="text-2xl font-bold mb-2">上传商业计划书</h2>
+      <div className="text-center mb-6 sm:mb-8">
+        <h2 className="text-xl sm:text-2xl font-bold mb-2">上传商业计划书</h2>
         <p className="text-gray-400 mb-4">
           AI 将作为铁面法官，对 BP 进行辩证法三角验证
         </p>
@@ -81,7 +81,7 @@ const UploadSection = memo(function UploadSection() {
         onDragLeave={onDragLeave}
         onClick={() => fileInputRef.current?.click()}
         className={`
-          border-2 border-dashed rounded-2xl p-12 text-center cursor-pointer
+          border-2 border-dashed rounded-2xl p-8 sm:p-12 text-center cursor-pointer
           transition-all duration-200
           ${
             dragOver

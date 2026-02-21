@@ -24,8 +24,8 @@ const VerdictCard = memo(function VerdictCard({ result }) {
   const grade = verdict.grade || getGrade(totalScore);
 
   return (
-    <div className="bg-gray-900 border border-gray-800 rounded-2xl p-8">
-      <div className="flex flex-col md:flex-row items-center gap-8">
+    <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5 sm:p-8">
+      <div className="flex flex-col md:flex-row items-center gap-6 sm:gap-8">
         {/* 圆形分数仪表 */}
         <div className="text-center">
           <div className="relative w-36 h-36">
@@ -116,37 +116,38 @@ export default function App() {
     <div className="min-h-screen bg-gray-950 text-gray-100">
       {/* Header */}
       <header className="border-b border-gray-800 bg-gray-950/80 backdrop-blur-sm sticky top-0 z-50">
-        <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-red-500 to-orange-500 flex items-center justify-center">
-              <Gavel className="w-5 h-5 text-white" />
+        <div className="max-w-6xl mx-auto px-4 py-3 sm:px-6 sm:py-4 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+            <div className="w-9 h-9 sm:w-10 sm:h-10 shrink-0 rounded-xl bg-gradient-to-br from-red-500 to-orange-500 flex items-center justify-center">
+              <Gavel className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
             </div>
-            <div>
-              <h1 className="text-lg font-bold tracking-tight">垃圾BP过滤机</h1>
-              <p className="text-xs text-gray-500">AI 辩证法尽调 · 辨伪识真</p>
+            <div className="min-w-0">
+              <h1 className="text-base sm:text-lg font-bold tracking-tight truncate">垃圾BP过滤机</h1>
+              <p className="text-xs text-gray-500 hidden sm:block">AI 辩证法尽调 · 辨伪识真</p>
             </div>
           </div>
           {result && (
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 shrink-0">
               <button
                 onClick={() => downloadReportAsPdf(result)}
-                className="px-4 py-2 text-sm bg-blue-600 hover:bg-blue-500 rounded-lg transition-colors flex items-center gap-2"
+                className="px-3 py-1.5 sm:px-4 sm:py-2 text-sm bg-blue-600 hover:bg-blue-500 rounded-lg transition-colors flex items-center gap-1.5 sm:gap-2"
               >
                 <Download className="w-4 h-4" />
-                下载报告
+                <span className="hidden sm:inline">下载报告</span>
               </button>
               <button
                 onClick={reset}
-                className="px-4 py-2 text-sm bg-gray-800 hover:bg-gray-700 rounded-lg transition-colors"
+                className="px-3 py-1.5 sm:px-4 sm:py-2 text-sm bg-gray-800 hover:bg-gray-700 rounded-lg transition-colors"
               >
-                重新分析
+                <span className="hidden sm:inline">重新分析</span>
+                <span className="sm:hidden">重置</span>
               </button>
             </div>
           )}
         </div>
       </header>
 
-      <main className="max-w-6xl mx-auto px-6 py-8">
+      <main className="max-w-6xl mx-auto px-4 py-6 sm:px-6 sm:py-8">
         {/* 上传 + 流水线进度（分析中显示） */}
         {!result && (
           <>

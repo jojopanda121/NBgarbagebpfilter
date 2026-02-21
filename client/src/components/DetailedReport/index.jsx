@@ -18,7 +18,7 @@ const SearchResultsPanel = memo(function SearchResultsPanel({ result }) {
   if (!result.search_results) return null;
 
   return (
-    <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6">
+    <div className="bg-gray-900 border border-gray-800 rounded-2xl p-4 sm:p-6">
       <h4 className="text-lg font-semibold mb-4 flex items-center gap-2">
         <Search className="w-5 h-5 text-cyan-400" />
         联网取证摘要
@@ -38,15 +38,15 @@ const SearchResultsPanel = memo(function SearchResultsPanel({ result }) {
               key={i}
               className="p-3 rounded-xl bg-gray-800/50 border border-gray-700"
             >
-              <div className="flex items-center gap-2 mb-2">
-                <span className="px-2 py-0.5 text-xs font-bold rounded bg-blue-500/20 text-blue-400">
+              <div className="flex flex-wrap items-center gap-2 mb-2">
+                <span className="px-2 py-0.5 text-xs font-bold rounded bg-blue-500/20 text-blue-400 shrink-0">
                   {query_item?.dimension || `维度${i + 1}`}
                 </span>
-                <span className="text-sm text-gray-400 truncate flex-1">
+                <span className="text-sm text-gray-400 truncate min-w-0 flex-1">
                   {sr.query}
                 </span>
                 <span
-                  className={`text-xs font-mono ${
+                  className={`text-xs font-mono shrink-0 ${
                     sr.results?.length > 0 ? "text-emerald-400" : "text-red-400"
                   }`}
                 >
@@ -114,7 +114,7 @@ const ConflictsPanel = memo(function ConflictsPanel({ conflicts }) {
   if (!conflicts?.length) return null;
 
   return (
-    <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6">
+    <div className="bg-gray-900 border border-gray-800 rounded-2xl p-4 sm:p-6">
       <h4 className="text-lg font-semibold mb-4 flex items-center gap-2">
         <AlertTriangle className="w-5 h-5 text-yellow-400" />
         冲突分析（BP 诉求 vs 搜索证据）
@@ -162,7 +162,7 @@ const DimensionsDetail = memo(function DimensionsDetail({ dimensions }) {
   if (!dimensions) return null;
 
   return (
-    <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6">
+    <div className="bg-gray-900 border border-gray-800 rounded-2xl p-4 sm:p-6">
       <h4 className="text-lg font-semibold mb-4">五维评分详情</h4>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {Object.entries(dimensions).map(([key, dim]) => {
@@ -214,7 +214,7 @@ const DeepResearchPanel = memo(function DeepResearchPanel({
   if (!hasContent) return null;
 
   return (
-    <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6">
+    <div className="bg-gray-900 border border-gray-800 rounded-2xl p-4 sm:p-6">
       <button
         onClick={() => setShowResearch(!showResearch)}
         className="flex items-center gap-2 text-lg font-semibold w-full"
@@ -232,7 +232,7 @@ const DeepResearchPanel = memo(function DeepResearchPanel({
         <div className="mt-4 space-y-4">
           {/* Extended Thinking 过程（折叠内部再分区块） */}
           {thinking && (
-            <div className="p-6 bg-purple-900/10 border border-purple-500/20 rounded-xl max-h-[400px] overflow-y-auto">
+            <div className="p-4 sm:p-6 bg-purple-900/10 border border-purple-500/20 rounded-xl max-h-[400px] overflow-y-auto">
               <p className="text-xs text-purple-400 font-semibold mb-3 uppercase tracking-wider">
                 Extended Thinking 过程
               </p>
@@ -242,7 +242,7 @@ const DeepResearchPanel = memo(function DeepResearchPanel({
 
           {/* 深度研究正文 */}
           {deepResearch && (
-            <div className="p-6 bg-gray-800/50 rounded-xl max-h-[600px] overflow-y-auto">
+            <div className="p-4 sm:p-6 bg-gray-800/50 rounded-xl max-h-[600px] overflow-y-auto overflow-x-auto">
               {renderMarkdown(deepResearch)}
             </div>
           )}

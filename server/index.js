@@ -810,6 +810,10 @@ if (fs.existsSync(clientBuildDir)) {
   app.get("*", (_req, res) => {
     res.sendFile(path.join(clientBuildDir, "index.html"));
   });
+} else {
+  app.get("*", (_req, res) => {
+    res.status(503).send(`<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>前端未构建</title><style>body{font-family:sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;background:#0f172a;color:#e2e8f0}.box{text-align:center;padding:2rem;border:1px solid #334155;border-radius:1rem;max-width:480px}h1{color:#f87171;margin-bottom:1rem}code{background:#1e293b;padding:.2em .5em;border-radius:.3em;font-size:.95em}</style></head><body><div class="box"><h1>前端尚未构建</h1><p>服务器找不到 <code>client/build/</code> 目录。</p><p>请在项目根目录执行：</p><pre><code>npm run build</code></pre><p>然后重启服务器。</p></div></body></html>`);
+  });
 }
 
 // ── 启动 ──

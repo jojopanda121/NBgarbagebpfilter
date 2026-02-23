@@ -32,7 +32,8 @@ server {
         #
         proxy_connect_timeout  10s;    # 连接后端超时（通常无需改动）
         proxy_send_timeout     60s;    # Nginx 向后端发送请求体超时
-        proxy_read_timeout     300s;   # ← 关键：等待后端响应超时，默认 60s
+        proxy_read_timeout     200s;   # ← 关键：等待后端响应超时，默认 60s
+                                       # pdftotext 内部超时 180s，此处留 20s 余量
 
         # ── 基础代理头 ────────────────────────────────────────────
         proxy_set_header Host              $host;
@@ -50,7 +51,7 @@ server {
     #
     # location ~ ^/api/(pdf-to-text|verdict|extract-claims)$ {
     #     proxy_pass         http://127.0.0.1:3000;
-    #     proxy_read_timeout 300s;
+    #     proxy_read_timeout 200s;  # pdftotext 内部 180s，留 20s 余量
     #     proxy_send_timeout 60s;
     #     client_max_body_size 100m;
     #     proxy_set_header Host $host;

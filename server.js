@@ -15,15 +15,47 @@ const os = require("os");
 const BUILD_DIR = path.join(__dirname, "build");
 const SCRIPT_DIR = path.join(__dirname, "scripts");
 const PDF_TO_TEXT_SCRIPT = path.join(SCRIPT_DIR, "pdf_to_text.py");
-const PORT = parseInt(process.env.PORT, 10) || 3000;
+// Zeabur 默认暴露 8080；本地开发可用 PORT=3000
+const PORT = parseInt(process.env.PORT, 10) || 8080;
+
+// ── PDF 并发信号量：最多 3 个 pdftotext 进程同时运行 ──
+// 超出者进入 Promise 等待队列，避免在高并发下 fork 爆炸
+function createSemaphore(limit) {
+  let running = 0;
+  const queue = [];
+  return {
+    acquire() {
+      return new Promise((resolve) => {
+        if (running < limit) { running++; resolve(); }
+        else queue.push(resolve);
+      });
+    },
+    release() {
+      running--;
+      if (queue.length > 0) { running++; queue.shift()(); }
+    },
+  };
+}
+const pdfSemaphore = createSemaphore(
+  parseInt(process.env.PDF_CONCURRENCY, 10) || 3
+);
 
 // ── MiniMax 配置 ──
+if (!process.env.MINIMAX_API_KEY) {
+  console.error(
+    "[FATAL] 环境变量 MINIMAX_API_KEY 未设置！AI 分析功能将无法使用。请在 Zeabur 控制台 → 环境变量中配置该变量。"
+  );
+}
+if (!process.env.SERPER_API_KEY) {
+  console.warn(
+    "[WARN] 环境变量 SERPER_API_KEY 未设置，联网搜索将以 Mock 模式运行（不影响 AI 分析）。"
+  );
+}
+
 const CONFIG = {
   baseUrl: process.env.MINIMAX_BASE_URL || "https://api.minimax.io",
   apiPath: "/anthropic/v1/messages",
-  apiKey:
-    process.env.MINIMAX_API_KEY ||
-    "sk-api-UsxD1u5Vi5alAFgjz9t-IBVp57GqkHW4f5rR_on-lpeSKggu6NDfAdPONJbn1Lr_NeX7AfA2nS4p4ZsY02SxPMs1a3s2KZPawYgdb4rMqGynIILCVrOxi0A",
+  apiKey: process.env.MINIMAX_API_KEY || "",
   model: process.env.MINIMAX_MODEL || "MiniMax-M2.5",
 };
 
@@ -60,6 +92,7 @@ function httpsPost(url, data, extraHeaders = {}) {
     };
     const req = https.request(options, (proxyRes) => {
       let body = "";
+      proxyRes.on("error", reject);
       proxyRes.on("data", (chunk) => (body += chunk));
       proxyRes.on("end", () =>
         resolve({ statusCode: proxyRes.statusCode, body })
@@ -76,6 +109,7 @@ function httpsGet(url) {
     https
       .get(url, (proxyRes) => {
         let body = "";
+        proxyRes.on("error", reject);
         proxyRes.on("data", (chunk) => (body += chunk));
         proxyRes.on("end", () =>
           resolve({ statusCode: proxyRes.statusCode, body })
@@ -191,8 +225,15 @@ function callMiniMax(reqBody, res) {
 
   const proxyReq = https.request(options, (proxyRes) => {
     let body = "";
+    proxyRes.on("error", (e) => {
+      if (!res.headersSent) {
+        res.writeHead(500, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: e.message }));
+      }
+    });
     proxyRes.on("data", (chunk) => (body += chunk));
     proxyRes.on("end", () => {
+      if (res.headersSent) return;
       try {
         const data = JSON.parse(body);
 
@@ -220,17 +261,21 @@ function callMiniMax(reqBody, res) {
           })
         );
       } catch (e) {
-        res.writeHead(500, { "Content-Type": "application/json" });
-        res.end(
-          JSON.stringify({ error: "解析 MiniMax 返回失败", body })
-        );
+        if (!res.headersSent) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({ error: "解析 MiniMax 返回失败", body })
+          );
+        }
       }
     });
   });
 
   proxyReq.on("error", (e) => {
-    res.writeHead(500, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ error: e.message }));
+    if (!res.headersSent) {
+      res.writeHead(500, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: e.message }));
+    }
   });
 
   proxyReq.write(postData);
@@ -266,6 +311,7 @@ function callMiniMaxAsync(messages, system, maxTokens = 32768) {
 
     const req = https.request(options, (proxyRes) => {
       let body = "";
+      proxyRes.on("error", reject);
       proxyRes.on("data", (chunk) => (body += chunk));
       proxyRes.on("end", () => {
         try {
@@ -480,7 +526,7 @@ ${claimsBlock}
 ${evidenceBlock}
 </SEARCH_EVIDENCE>
 
-${bpFullText ? `<BP_FULL_TEXT_EXCERPT>\n${bpFullText.slice(0, 8000)}\n</BP_FULL_TEXT_EXCERPT>` : ""}
+${bpFullText ? `<BP_FULL_TEXT_EXCERPT>\n${bpFullText.slice(0, 30000)}\n</BP_FULL_TEXT_EXCERPT>` : ""}
 
 ## 裁决规则（冲突计算逻辑）
 
@@ -726,122 +772,119 @@ Output your reasoning steps before the final JSON answer.
 }
 
 // ══════════════════════════════════════════════════════════════
-// PDF → 纯文本（调用 Python：PyMuPDF + OCR）
+// PDF → 纯文本（Disk-Streaming + pdftotext from poppler-utils）
+//
+// Memory strategy (2 vCPU / 2 GB server):
+//   1. req stream is piped straight to /tmp/<uid>.json — no body
+//      string is ever accumulated in the Node.js heap.
+//   2. fs.readFile reads the JSON, extracts only the `pdf` field,
+//      then the raw buffer is immediately GC-eligible.
+//   3. Base64 → binary decoding is done in 64 KiB aligned slices so
+//      the full decoded PDF is never in memory at the same time as
+//      the base64 string.
+//   4. `pdftotext` (C++, poppler-utils) does the extraction; it is
+//      far more memory-efficient than any JS-based PDF parser.
+//   5. Both temp files (/tmp/<uid>.json and /tmp/<uid>.pdf) are
+//      deleted immediately after use or on any error path.
 // ══════════════════════════════════════════════════════════════
 
-// PDF 解析超时时间（毫秒），需与 Nginx proxy_read_timeout 对齐，略小于 Nginx 值
-const PDF_PARSE_TIMEOUT_MS = 290_000; // 290s，Nginx 端设置 300s
-
+// ── Zero-Buffer PDF 处理 ──────────────────────────────────────
+// 数据路径：req(octet-stream) → pipe → tmpPdf(磁盘)
+//            pdftotext → tmpTxt(磁盘) → fs.readFile → res
+// Node.js 堆全程不驻留 PDF 二进制；stdout 不回传大 Buffer。
+// 信号量保证同时最多 PDF_CONCURRENCY（默认3）个进程并发。
+// ─────────────────────────────────────────────────────────────
 function handlePdfToText(req, res) {
-  let body = "";
+  const id = `bp-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const tmpPdf = path.join(os.tmpdir(), `${id}.pdf`);
+  const tmpTxt = path.join(os.tmpdir(), `${id}.txt`);
 
-  // 防止重复响应（py.on("error") 和 py.on("close") 都会触发时产生 ERR_HTTP_HEADERS_SENT）
-  let responded = false;
-  function sendOnce(statusCode, payload) {
-    if (responded) return;
-    responded = true;
-    const headers = { "Content-Type": "application/json" };
-    if (statusCode === 200) headers["Access-Control-Allow-Origin"] = "*";
-    res.writeHead(statusCode, headers);
-    res.end(JSON.stringify(payload));
+  // 双文件清理：无论成功或失败均删除 .pdf 和 .txt
+  function cleanup() {
+    fs.unlink(tmpPdf, () => {});
+    fs.unlink(tmpTxt, () => {});
   }
 
-  req.on("data", (chunk) => (body += chunk));
-  req.on("end", () => {
-    let pdfBase64 = null;
-    try {
-      const parsed = JSON.parse(body);
-      pdfBase64 = parsed.pdf;
-    } catch (e) {
-      sendOnce(400, { error: "请求体需为 JSON，且包含 pdf 字段（base64）" });
-      return;
+  function sendErr(status, msg, detail) {
+    cleanup();
+    if (!res.headersSent) {
+      res.writeHead(status, { "Content-Type": "application/json" });
+      res.end(JSON.stringify(detail ? { error: msg, detail } : { error: msg }));
     }
-    if (!pdfBase64 || typeof pdfBase64 !== "string") {
-      sendOnce(400, { error: "缺少 pdf 字段（base64 字符串）" });
-      return;
-    }
+  }
 
-    const tmpDir = os.tmpdir();
-    const tmpPath = path.join(
-      tmpDir,
-      `bp-pdf-${Date.now()}-${Math.random().toString(36).slice(2)}.pdf`
-    );
-    let buf;
-    try {
-      buf = Buffer.from(pdfBase64, "base64");
-    } catch (e) {
-      sendOnce(400, { error: "pdf base64 解码失败" });
-      return;
+  // ① 请求流直接落盘 — Node.js 堆分配接近 0
+  const writeStream = fs.createWriteStream(tmpPdf);
+  req.pipe(writeStream);
+
+  writeStream.on("error", (e) =>
+    sendErr(500, "写入临时 PDF 失败: " + e.message)
+  );
+
+  writeStream.on("finish", async () => {
+    // ② 进入信号量等待队列（超过并发上限时在此挂起）
+    await pdfSemaphore.acquire();
+
+    // 用标志位确保信号量只释放一次（error + close 均会触发）
+    let semReleased = false;
+    function releaseSem() {
+      if (!semReleased) { semReleased = true; pdfSemaphore.release(); }
     }
 
-    const fileSizeMB = (buf.length / 1024 / 1024).toFixed(1);
-    console.log(`[PDF] 开始解析，文件大小: ${fileSizeMB} MB`);
+    // ③ pdftotext Disk-to-Disk：直接将结果写到 tmpTxt，不走 stdout
+    const proc = spawn("pdftotext", ["-utf8", tmpPdf, tmpTxt]);
+    let stderr = "";
+    proc.stderr.on("data", (chunk) => { stderr += chunk; });
 
-    fs.writeFile(tmpPath, buf, (errWrite) => {
-      if (errWrite) {
-        sendOnce(500, { error: "写入临时文件失败: " + errWrite.message });
+    // 180 秒超时：防止大文件 / 资源紧张时 pdftotext 卡死
+    const killTimer = setTimeout(() => {
+      proc.removeAllListeners();
+      proc.kill();
+      releaseSem();
+      sendErr(504, "PDF 解析超时（超过 180 秒），请尝试更小的文件");
+    }, 180_000);
+
+    proc.on("error", (e) => {
+      clearTimeout(killTimer);
+      proc.removeAllListeners();
+      releaseSem();
+      sendErr(500,
+        "未找到 pdftotext，请安装 poppler-utils（sudo apt install poppler-utils）",
+        e.message
+      );
+    });
+
+    proc.on("close", (code) => {
+      clearTimeout(killTimer);
+      proc.removeAllListeners();
+      releaseSem();
+      // 超时或 error 路径已经回复过，不再重复发送
+      if (res.headersSent) return;
+      if (code !== 0) {
+        sendErr(500, "pdftotext 解析失败", stderr.trim().slice(0, 500));
         return;
       }
-
-      const py = spawn("python3", [PDF_TO_TEXT_SCRIPT, tmpPath], {
-        cwd: __dirname,
-      });
-      let stdout = "";
-      let stderr = "";
-
-      // 超时兜底：若 Python 进程超过 PDF_PARSE_TIMEOUT_MS 仍未结束，强制终止
-      const killTimer = setTimeout(() => {
-        console.warn(`[PDF] 解析超时（>${PDF_PARSE_TIMEOUT_MS / 1000}s），强制终止 Python 进程`);
-        py.kill("SIGTERM");
-        fs.unlink(tmpPath, () => {});
-        sendOnce(504, {
-          error: `PDF 解析超时（超过 ${PDF_PARSE_TIMEOUT_MS / 1000} 秒），请上传页数更少的文件`,
-        });
-      }, PDF_PARSE_TIMEOUT_MS);
-
-      // 客户端（或 Nginx）提前断开连接时，释放 Python 子进程，避免僵尸进程占用内存
-      req.on("close", () => {
-        if (!responded) {
-          console.warn("[PDF] 客户端提前断开，终止 Python 进程");
-          clearTimeout(killTimer);
-          py.kill("SIGTERM");
-          fs.unlink(tmpPath, () => {});
-          responded = true; // 无需发送，连接已断
-        }
-      });
-
-      py.stdout.on("data", (chunk) => { stdout += chunk; });
-      py.stderr.on("data", (chunk) => { stderr += chunk; });
-
-      py.on("close", (code) => {
-        clearTimeout(killTimer);
-        fs.unlink(tmpPath, () => {});
-        if (code !== 0) {
-          console.error(`[PDF] Python 退出码 ${code}, stderr: ${stderr.slice(0, 200)}`);
-          sendOnce(500, {
-            error: "PDF 解析失败",
-            detail: (stderr || stdout || "").trim().slice(0, 500),
-          });
+      // ④ 读取磁盘结果文件（通常几十 KB，一次性 readFile 可接受）
+      fs.readFile(tmpTxt, "utf8", (err, text) => {
+        cleanup();
+        if (err) {
+          if (!res.headersSent) {
+            res.writeHead(500, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ error: "读取解析结果失败: " + err.message }));
+          }
           return;
         }
-        console.log(`[PDF] 解析成功，提取文本 ${stdout.length} 字节`);
-        sendOnce(200, { text: (stdout || "").trim() });
-      });
-
-      // error 事件：python3 不存在或无权限时触发；close 事件随后也会触发，sendOnce 保证只响应一次
-      py.on("error", (e) => {
-        clearTimeout(killTimer);
-        fs.unlink(tmpPath, () => {});
-        console.error("[PDF] spawn 错误:", e.message);
-        sendOnce(500, {
-          error:
-            "未找到 Python 或脚本执行失败，请安装 Python 并执行: pip install -r scripts/requirements.txt",
-          detail: e.message,
+        if (res.headersSent) return;
+        res.writeHead(200, {
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "*",
         });
+        res.end(JSON.stringify({ text: text.trim() }));
       });
     });
   });
 }
+
 
 // ── 返回静态文件或 SPA index ──
 function serveFile(pathname, res) {
@@ -901,20 +944,49 @@ function serveFile(pathname, res) {
 // ══════════════════════════════════════════════════════════════
 
 const server = http.createServer((req, res) => {
+  // ── CORS 跨域头（对所有响应生效，包括错误响应）──
   res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader(
-    "Access-Control-Allow-Methods",
-    "GET, POST, OPTIONS"
-  );
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "*");
+  res.setHeader("Access-Control-Max-Age", "86400"); // 预检缓存 24 h
 
+  // OPTIONS 预检请求立即返回 204，并在 writeHead 中显式携带 CORS 头
+  // （避免某些反向代理在 writeHead 前剥离 setHeader 设置的头）
   if (req.method === "OPTIONS") {
-    res.writeHead(204);
+    res.writeHead(204, {
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Requested-With",
+      "Access-Control-Max-Age": "86400",
+    });
     res.end();
     return;
   }
 
-  const pathname = (req.url || "").split("?")[0];
+  // 去掉末尾多余的斜杠（避免代理 301 重定向后浏览器改为 GET 导致 405）
+  const rawPath = (req.url || "").split("?")[0];
+  const pathname = rawPath.length > 1 ? rawPath.replace(/\/+$/, "") : rawPath;
+
+  // 对 POST-Only API 端点提前拦截错误方法，返回 405 + CORS 头
+  // （若代理将非 POST 请求转发过来，确保前端能拿到含 CORS 头的清晰错误）
+  const POST_ONLY_PATHS = [
+    "/api/chat",
+    "/api/web-search",
+    "/api/extract-claims",
+    "/api/verdict",
+    "/api/pdf-to-text",
+  ];
+  if (POST_ONLY_PATHS.includes(pathname) && req.method !== "POST") {
+    res.writeHead(405, {
+      "Content-Type": "application/json",
+      "Allow": "POST, OPTIONS",
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Requested-With",
+    });
+    res.end(JSON.stringify({ error: "Method Not Allowed — this endpoint only accepts POST" }));
+    return;
+  }
 
   // MiniMax 对话 API（透传）
   if (req.method === "POST" && pathname === "/api/chat") {

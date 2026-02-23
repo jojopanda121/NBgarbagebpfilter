@@ -8,3 +8,6 @@ coverage
 *.pyc
 __pycache__
 uploads/
+
+# PM2 日志（保留目录结构，忽略日志内容）
+logs/*.log

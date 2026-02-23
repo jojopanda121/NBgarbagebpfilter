@@ -10,7 +10,11 @@ if (typeof window !== "undefined" && pdfjsLib.GlobalWorkerOptions) {
 // AI 垃圾 BP 过滤机 - 上传 BP 后由 MiniMax 模型 + 联网搜索分析
 // ============================================================
 
-const API_URL = "/api/chat";
+// 后端 API 基础路径：部署在独立域名时通过 REACT_APP_API_URL 指定，
+// 例如：REACT_APP_API_URL=https://your-backend.zeabur.app
+// 同域部署时留空即可（相对路径）。
+const API_BASE = (process.env.REACT_APP_API_URL || "").replace(/\/+$/, "");
+const API_URL = `${API_BASE}/api/chat`;
 
 // 在浏览器里从 PDF 文件提取纯文本（仅文字版 PDF，扫描版无效）
 const extractTextFromPdf = async (file) => {
@@ -26,14 +30,16 @@ const extractTextFromPdf = async (file) => {
   return parts.join("\n").replace(/\s+/g, " ").trim();
 };
 
-// 优先用后端 Python 解析 PDF（支持 OCR 扫描版），失败则回退到浏览器解析
-const extractTextFromPdfWithBackend = async (file, readB64) => {
+// 优先用后端 pdftotext 解析 PDF。
+// 直接以 application/octet-stream 发送原始二进制，
+// 跳过 base64 编码，浏览器堆与网络带宽均节省 ~33%。
+// 失败时回退到浏览器内 pdfjs 解析（文字版 PDF）。
+const extractTextFromPdfWithBackend = async (file) => {
   try {
-    const base64 = await readB64(file);
-    const resp = await fetch("/api/pdf-to-text", {
+    const resp = await fetch(`${API_BASE}/api/pdf-to-text`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ pdf: base64 })
+      headers: { "Content-Type": "application/octet-stream" },
+      body: file,          // File 对象即 Blob，浏览器以流形式发送
     });
     if (!resp.ok) {
       const err = await resp.json().catch(() => ({}));
@@ -43,7 +49,7 @@ const extractTextFromPdfWithBackend = async (file, readB64) => {
     const text = (data.text || "").trim();
     if (text.length >= 30) return text;
   } catch (e) {
-    console.warn("Python PDF/OCR 不可用，回退到浏览器解析:", e.message);
+    console.warn("pdftotext 不可用，回退到浏览器解析:", e.message);
   }
   return extractTextFromPdf(file);
 };
@@ -201,7 +207,7 @@ function LiveProgress({ phaseName, phaseIdx, totalPhases, startTime, subText }) 
       <div style={{ textAlign: "center", marginBottom: 20 }}>
         <div style={{ fontSize: 20, marginBottom: 8 }}>{phaseEmojis[phaseIdx] || "⏳"}</div>
         <div style={{ fontSize: 16, fontWeight: 700, color: C.text, marginBottom: 4 }}>{phaseName}</div>
-        {subText && <div style={{ fontSize: 12, color: C.dim }}>{subText}</div>}
+        {subText && <div style={{ fontSize: 12, color: /⚠️|未配置|失败|不可用/.test(subText) ? C.orange : /✅/.test(subText) ? C.green : C.dim }}>{subText}</div>}
       </div>
       <div style={{ position: "relative", marginBottom: 10 }}>
         <div style={{ height: 12, borderRadius: 6, background: C.border, overflow: "hidden" }}>
@@ -563,7 +569,7 @@ export default function App() {
         await new Promise(r => setTimeout(r, 500));
       } else if (ext === "pdf") {
         setPhaseSub(`文件 ${(file.size / 1024).toFixed(0)}KB，Python 解析 PDF 中...`);
-        textContent = await extractTextFromPdfWithBackend(file, readB64);
+        textContent = await extractTextFromPdfWithBackend(file);
         setPhaseSub(`成功提取 ${textContent.length} 个字符`);
         await new Promise(r => setTimeout(r, 500));
       } else {
@@ -591,7 +597,7 @@ export default function App() {
       goPhase(1, "提取关键信息", "AI 正在识别 BP 中需要验证的关键信息...");
       let claims = { companyName: "", industry: "", searchQueries: [] };
       try {
-        const claimsResp = await fetch("/api/extract-claims", {
+        const claimsResp = await fetch(`${API_BASE}/api/extract-claims`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ bpText: bpContent }),
@@ -614,9 +620,11 @@ export default function App() {
       let searchResults = {};
       let searchEnabled = false;
       if (queries.length > 0) {
-        goPhase(2, "联网搜索验证", `正在搜索验证 ${queries.length} 条关键信息...`);
+        const queryPreview = queries.slice(0, 2).map(q => q.length > 18 ? q.slice(0, 16) + "…" : q).join(" · ");
+        goPhase(2, "联网搜索验证", `正在搜索 ${queries.length} 条关键信息…`);
+        setPhaseSub(queryPreview ? `关键词：${queryPreview}${queries.length > 2 ? " 等" : ""}` : "");
         try {
-          const searchResp = await fetch("/api/web-search", {
+          const searchResp = await fetch(`${API_BASE}/api/web-search`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ queries }),
@@ -626,14 +634,19 @@ export default function App() {
             searchResults = searchData.results || {};
             searchEnabled = searchData.searchEnabled;
             const totalHits = Object.values(searchResults).reduce((sum, r) => sum + r.length, 0);
-            setPhaseSub(searchEnabled
-              ? `搜索完成，获得 ${totalHits} 条结果`
-              : "未配置搜索 API，跳过联网验证"
-            );
+            const hitCount = Object.values(searchResults).filter(r => r.length > 0).length;
+            const totalQueries = Object.keys(searchResults).length;
+            if (!searchEnabled) {
+              setPhaseSub("⚠️ 未配置 SERPER_API_KEY，跳过联网验证（分析仍继续）");
+            } else if (totalHits === 0) {
+              setPhaseSub("⚠️ 搜索 API 已连接，但未找到任何结果（网络或 Key 问题）");
+            } else {
+              setPhaseSub(`✅ 搜索完成：共 ${totalHits} 条结果，${hitCount}/${totalQueries} 个查询有命中`);
+            }
           }
         } catch (e) {
           console.warn("联网搜索失败，继续分析:", e.message);
-          setPhaseSub("搜索服务不可用，跳过联网验证");
+          setPhaseSub("⚠️ 搜索服务不可用，跳过联网验证");
         }
       } else {
         goPhase(2, "联网搜索验证", "跳过（未提取到可搜索的声明）");
@@ -688,7 +701,7 @@ export default function App() {
           }
           const cfg = retryConfigs[attempt];
 
-          const verdictResp = await fetch("/api/verdict", {
+          const verdictResp = await fetch(`${API_BASE}/api/verdict`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -818,10 +831,12 @@ export default function App() {
             <div style={{ display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap" }}>
               <span style={{ padding: "4px 14px", borderRadius: 20, background: `${C.cyan}15`, color: C.cyan, fontSize: 12, fontWeight: 600 }}>📍 {result.stage}</span>
               {result.stageReason && <span style={{ padding: "4px 14px", borderRadius: 20, background: `${C.purple}12`, color: C.purple, fontSize: 11 }}>{result.stageReason}</span>}
-              {result.searchEnabled ? (
-                <span style={{ padding: "4px 14px", borderRadius: 20, background: `${C.green}15`, color: C.green, fontSize: 11, fontWeight: 600 }}>🌐 已联网验证 ({result.searchResultCount || 0} 条搜索结果)</span>
+              {result.searchEnabled && result.searchResultCount > 0 ? (
+                <span style={{ padding: "4px 14px", borderRadius: 20, background: `${C.green}15`, color: C.green, fontSize: 11, fontWeight: 600 }}>🌐 已联网验证（{result.searchResultCount} 条结果）</span>
+              ) : result.searchEnabled ? (
+                <span style={{ padding: "4px 14px", borderRadius: 20, background: `${C.yellow}15`, color: C.yellow, fontSize: 11 }}>🌐 搜索已连接（0 条结果，疑似 Key 或网络问题）</span>
               ) : (
-                <span style={{ padding: "4px 14px", borderRadius: 20, background: `${C.orange}15`, color: C.orange, fontSize: 11 }}>⚠️ 未联网验证</span>
+                <span style={{ padding: "4px 14px", borderRadius: 20, background: `${C.orange}15`, color: C.orange, fontSize: 11 }}>⚠️ 未联网验证（需配置 SERPER_API_KEY）</span>
               )}
             </div>
           </div>

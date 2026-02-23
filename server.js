@@ -729,8 +729,23 @@ Output your reasoning steps before the final JSON answer.
 // PDF → 纯文本（调用 Python：PyMuPDF + OCR）
 // ══════════════════════════════════════════════════════════════
 
+// PDF 解析超时时间（毫秒），需与 Nginx proxy_read_timeout 对齐，略小于 Nginx 值
+const PDF_PARSE_TIMEOUT_MS = 290_000; // 290s，Nginx 端设置 300s
+
 function handlePdfToText(req, res) {
   let body = "";
+
+  // 防止重复响应（py.on("error") 和 py.on("close") 都会触发时产生 ERR_HTTP_HEADERS_SENT）
+  let responded = false;
+  function sendOnce(statusCode, payload) {
+    if (responded) return;
+    responded = true;
+    const headers = { "Content-Type": "application/json" };
+    if (statusCode === 200) headers["Access-Control-Allow-Origin"] = "*";
+    res.writeHead(statusCode, headers);
+    res.end(JSON.stringify(payload));
+  }
+
   req.on("data", (chunk) => (body += chunk));
   req.on("end", () => {
     let pdfBase64 = null;
@@ -738,19 +753,11 @@ function handlePdfToText(req, res) {
       const parsed = JSON.parse(body);
       pdfBase64 = parsed.pdf;
     } catch (e) {
-      res.writeHead(400, { "Content-Type": "application/json" });
-      res.end(
-        JSON.stringify({
-          error: "请求体需为 JSON，且包含 pdf 字段（base64）",
-        })
-      );
+      sendOnce(400, { error: "请求体需为 JSON，且包含 pdf 字段（base64）" });
       return;
     }
     if (!pdfBase64 || typeof pdfBase64 !== "string") {
-      res.writeHead(400, { "Content-Type": "application/json" });
-      res.end(
-        JSON.stringify({ error: "缺少 pdf 字段（base64 字符串）" })
-      );
+      sendOnce(400, { error: "缺少 pdf 字段（base64 字符串）" });
       return;
     }
 
@@ -763,59 +770,74 @@ function handlePdfToText(req, res) {
     try {
       buf = Buffer.from(pdfBase64, "base64");
     } catch (e) {
-      res.writeHead(400, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ error: "pdf base64 解码失败" }));
+      sendOnce(400, { error: "pdf base64 解码失败" });
       return;
     }
+
+    const fileSizeMB = (buf.length / 1024 / 1024).toFixed(1);
+    console.log(`[PDF] 开始解析，文件大小: ${fileSizeMB} MB`);
+
     fs.writeFile(tmpPath, buf, (errWrite) => {
       if (errWrite) {
-        res.writeHead(500, { "Content-Type": "application/json" });
-        res.end(
-          JSON.stringify({
-            error: "写入临时文件失败: " + errWrite.message,
-          })
-        );
+        sendOnce(500, { error: "写入临时文件失败: " + errWrite.message });
         return;
       }
+
       const py = spawn("python3", [PDF_TO_TEXT_SCRIPT, tmpPath], {
         cwd: __dirname,
       });
       let stdout = "";
       let stderr = "";
-      py.stdout.on("data", (chunk) => {
-        stdout += chunk;
+
+      // 超时兜底：若 Python 进程超过 PDF_PARSE_TIMEOUT_MS 仍未结束，强制终止
+      const killTimer = setTimeout(() => {
+        console.warn(`[PDF] 解析超时（>${PDF_PARSE_TIMEOUT_MS / 1000}s），强制终止 Python 进程`);
+        py.kill("SIGTERM");
+        fs.unlink(tmpPath, () => {});
+        sendOnce(504, {
+          error: `PDF 解析超时（超过 ${PDF_PARSE_TIMEOUT_MS / 1000} 秒），请上传页数更少的文件`,
+        });
+      }, PDF_PARSE_TIMEOUT_MS);
+
+      // 客户端（或 Nginx）提前断开连接时，释放 Python 子进程，避免僵尸进程占用内存
+      req.on("close", () => {
+        if (!responded) {
+          console.warn("[PDF] 客户端提前断开，终止 Python 进程");
+          clearTimeout(killTimer);
+          py.kill("SIGTERM");
+          fs.unlink(tmpPath, () => {});
+          responded = true; // 无需发送，连接已断
+        }
       });
-      py.stderr.on("data", (chunk) => {
-        stderr += chunk;
-      });
+
+      py.stdout.on("data", (chunk) => { stdout += chunk; });
+      py.stderr.on("data", (chunk) => { stderr += chunk; });
+
       py.on("close", (code) => {
+        clearTimeout(killTimer);
         fs.unlink(tmpPath, () => {});
         if (code !== 0) {
-          res.writeHead(500, { "Content-Type": "application/json" });
-          res.end(
-            JSON.stringify({
-              error: "PDF 解析失败",
-              detail: (stderr || stdout || "").trim().slice(0, 500),
-            })
-          );
+          console.error(`[PDF] Python 退出码 ${code}, stderr: ${stderr.slice(0, 200)}`);
+          sendOnce(500, {
+            error: "PDF 解析失败",
+            detail: (stderr || stdout || "").trim().slice(0, 500),
+          });
           return;
         }
-        res.writeHead(200, {
-          "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": "*",
-        });
-        res.end(JSON.stringify({ text: (stdout || "").trim() }));
+        console.log(`[PDF] 解析成功，提取文本 ${stdout.length} 字节`);
+        sendOnce(200, { text: (stdout || "").trim() });
       });
+
+      // error 事件：python3 不存在或无权限时触发；close 事件随后也会触发，sendOnce 保证只响应一次
       py.on("error", (e) => {
+        clearTimeout(killTimer);
         fs.unlink(tmpPath, () => {});
-        res.writeHead(500, { "Content-Type": "application/json" });
-        res.end(
-          JSON.stringify({
-            error:
-              "未找到 Python 或脚本执行失败，请安装 Python 并执行: pip install -r scripts/requirements.txt",
-            detail: e.message,
-          })
-        );
+        console.error("[PDF] spawn 错误:", e.message);
+        sendOnce(500, {
+          error:
+            "未找到 Python 或脚本执行失败，请安装 Python 并执行: pip install -r scripts/requirements.txt",
+          detail: e.message,
+        });
       });
     });
   });

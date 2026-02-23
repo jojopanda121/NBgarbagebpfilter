@@ -1,0 +1,96 @@
+# ============================================================
+# Nginx 反向代理配置示例
+# 用于：Node.js 后端含长耗时 API（PDF 解析 / AI 推理）的场景
+#
+# 使用方法：
+#   cp nginx.conf.example /etc/nginx/sites-available/garbagebpfilter
+#   ln -s /etc/nginx/sites-available/garbagebpfilter /etc/nginx/sites-enabled/
+#   nginx -t && nginx -s reload
+# ============================================================
+
+# 上传文件大小限制（PDF base64 编码后约为原文件 1.37 倍）
+# 50MB PDF → base64 约 68MB，按需调整
+client_max_body_size 100m;
+
+# 关键：调大 client_body_timeout，避免大 body 上传中途被切断
+client_body_timeout 120s;
+
+server {
+    listen 80;
+    # listen 443 ssl;  # 若启用 HTTPS，取消注释并配置证书
+    server_name your-domain.com;  # 替换为实际域名或 IP
+
+    # ── 反向代理到 Node.js ──
+    location / {
+        proxy_pass http://127.0.0.1:3000;
+
+        # ── 超时配置（核心）──────────────────────────────────────
+        #
+        # proxy_read_timeout：Nginx 等待后端响应的最大时间
+        # 必须 > Node.js 内部处理时间（Python 解析 + AI 推理）
+        # 当前 Node.js 侧 PDF 超时设为 290s，此处设 300s，留 10s 余量
+        #
+        proxy_connect_timeout  10s;    # 连接后端超时（通常无需改动）
+        proxy_send_timeout     60s;    # Nginx 向后端发送请求体超时
+        proxy_read_timeout     300s;   # ← 关键：等待后端响应超时，默认 60s
+
+        # ── 基础代理头 ────────────────────────────────────────────
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # ── 禁用缓冲（长耗时 API / 流式响应场景）────────────────
+        proxy_buffering    off;
+        proxy_buffer_size  4k;
+    }
+
+    # ── 专门为长耗时 API 单独配置更长的超时 ──
+    # 如果只想对 PDF / AI 接口放宽，其余接口维持默认 60s，可用此块：
+    #
+    # location ~ ^/api/(pdf-to-text|verdict|extract-claims)$ {
+    #     proxy_pass         http://127.0.0.1:3000;
+    #     proxy_read_timeout 300s;
+    #     proxy_send_timeout 60s;
+    #     client_max_body_size 100m;
+    #     proxy_set_header Host $host;
+    #     proxy_set_header X-Real-IP $remote_addr;
+    # }
+}
+
+# ============================================================
+# 如何验证配置是否生效
+# ============================================================
+#
+# 1. 语法检查：
+#      nginx -t
+#
+# 2. 重载（不中断连接）：
+#      nginx -s reload
+#
+# 3. 确认 proxy_read_timeout 已生效：
+#      nginx -T | grep proxy_read_timeout
+#
+# 4. 实时观察 Nginx 日志（502 时会显示 upstream timed out）：
+#      tail -f /var/log/nginx/error.log
+#
+# ============================================================
+# 如何确认 Node.js 是否因 OOM 被系统终止
+# ============================================================
+#
+# 方法 1 — 查看内核 OOM Killer 日志：
+#   dmesg | grep -E "oom|killed|Out of memory" | tail -20
+#   # 若出现 "Out of memory: Kill process ... node" 说明被 OOM 杀掉
+#
+# 方法 2 — 查看 systemd 服务重启记录（若用 systemd 管理）：
+#   journalctl -u your-service-name --since "1 hour ago" | grep -E "killed|OOM|memory|restart|start"
+#   # signal=killed 且 exit-code=killed 表示被系统信号（如 SIGKILL）强制终止
+#
+# 方法 3 — 实时监控内存（在大文件处理期间）：
+#   watch -n 1 "free -m && ps aux --sort=-%mem | head -5"
+#
+# 方法 4 — 给 Node.js 设置内存上限（防止无限膨胀）：
+#   node --max-old-space-size=1024 server.js   # 限制堆内存 1GB
+#   # 在 package.json start 脚本中加入此参数
+#
+# ============================================================

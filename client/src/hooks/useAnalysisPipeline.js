@@ -5,10 +5,9 @@ import { API_BASE } from "../constants";
 /**
  * useAnalysisPipeline
  *
- * 封装三步流水线的完整业务逻辑：
- *   Step 0 — 数据提取
- *   Step 1 — 联网取证
- *   Step 2 — AI 校准 & 标准化评分
+ * 封装两步流水线的完整业务逻辑：
+ *   Step 0 — 数据提取（提取BP关键声明与评分数据）
+ *   Step 1 — AI深度研究（MiniMax知识库专家分析 & 评分）
  *
  * 实现：
  *   - 向 /api/analyze 发送 multipart/form-data 请求
@@ -33,9 +32,9 @@ export function useAnalysisPipeline() {
     setResult(null);
     setCurrentStep(0);
 
-    // 模拟三步进度（后端实际为单请求，前端用定时器驱动视觉进度）
-    const stepTimer1 = setTimeout(() => setCurrentStep(1), 5000);
-    const stepTimer2 = setTimeout(() => setCurrentStep(2), 15000);
+    // 模拟两步进度（后端实际为单请求，前端用定时器驱动视觉进度）
+    // Step 0: 数据提取（约8s）→ Step 1: AI深度研究（主要耗时）
+    const stepTimer1 = setTimeout(() => setCurrentStep(1), 8000);
 
     try {
       const formData = new FormData();
@@ -47,7 +46,6 @@ export function useAnalysisPipeline() {
       });
 
       clearTimeout(stepTimer1);
-      clearTimeout(stepTimer2);
 
       if (!resp.ok) {
         const errBody = await resp.json().catch(() => ({}));
@@ -55,11 +53,10 @@ export function useAnalysisPipeline() {
       }
 
       const data = await resp.json();
-      setCurrentStep(3); // 全部完成
+      setCurrentStep(2); // 全部完成
       setResult(data);
     } catch (err) {
       clearTimeout(stepTimer1);
-      clearTimeout(stepTimer2);
       setError(err.message || "分析失败，请重试");
     } finally {
       setAnalyzing(false);

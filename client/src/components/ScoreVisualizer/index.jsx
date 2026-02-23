@@ -139,7 +139,7 @@ const ValuationThermometer = memo(function ValuationThermometer({ data }) {
       </div>
 
       {data.data_source && (
-        <p className="text-xs text-gray-600 text-center">{data.data_source}</p>
+        <p className="text-xs text-gray-600 text-center">数据来源：{data.data_source}</p>
       )}
       {data.analysis && (
         <p className="text-xs text-gray-500 leading-relaxed">{data.analysis}</p>

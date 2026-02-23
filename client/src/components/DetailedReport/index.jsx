@@ -1,115 +1,215 @@
-import React, { memo } from "react";
+import React, { memo, useState } from "react";
 import {
-  Search,
   AlertTriangle,
   Target,
   ChevronDown,
   ChevronUp,
   Microscope,
-  BarChart3,
+  CheckCircle,
+  XCircle,
+  HelpCircle,
+  TrendingDown,
+  Shield,
+  Brain,
 } from "lucide-react";
 import { dimIcons } from "../../constants";
 import { getScoreColor } from "../../utils/scoreHelpers";
 import { renderMarkdown } from "../../utils/renderMarkdown";
 import useAnalysisStore from "../../store/useAnalysisStore";
 
-// ── 联网取证摘要 ──
-const SearchResultsPanel = memo(function SearchResultsPanel({ result }) {
-  if (!result.search_results) return null;
+// ── 声明核查结论标签 ──
+function VerdictBadge({ verdict }) {
+  const map = {
+    "诚实":      { bg: "bg-emerald-500/15", text: "text-emerald-400", border: "border-emerald-500/30", icon: <CheckCircle className="w-3 h-3" /> },
+    "夸大":      { bg: "bg-yellow-500/15",  text: "text-yellow-400",  border: "border-yellow-500/30",  icon: <TrendingDown className="w-3 h-3" /> },
+    "严重夸大":  { bg: "bg-orange-500/15",  text: "text-orange-400",  border: "border-orange-500/30",  icon: <AlertTriangle className="w-3 h-3" /> },
+    "信息不对称":{ bg: "bg-red-500/15",     text: "text-red-400",     border: "border-red-500/30",     icon: <Shield className="w-3 h-3" /> },
+    "存疑":      { bg: "bg-blue-500/15",    text: "text-blue-400",    border: "border-blue-500/30",    icon: <HelpCircle className="w-3 h-3" /> },
+    "证伪":      { bg: "bg-red-600/20",     text: "text-red-500",     border: "border-red-600/40",     icon: <XCircle className="w-3 h-3" /> },
+  };
+  const style = map[verdict] || { bg: "bg-gray-700/50", text: "text-gray-400", border: "border-gray-600/30", icon: <HelpCircle className="w-3 h-3" /> };
+  return (
+    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold border ${style.bg} ${style.text} ${style.border}`}>
+      {style.icon}{verdict || "未判定"}
+    </span>
+  );
+}
+
+// ── 严重程度徽章 ──
+function SeverityBadge({ severity }) {
+  const map = {
+    "严重": "bg-red-500/20 text-red-400 border-red-500/30",
+    "高":   "bg-red-500/20 text-red-400 border-red-500/30",
+    "中":   "bg-yellow-500/20 text-yellow-400 border-yellow-500/30",
+    "中等": "bg-yellow-500/20 text-yellow-400 border-yellow-500/30",
+    "低":   "bg-blue-500/20 text-blue-400 border-blue-500/30",
+  };
+  const cls = map[severity] || "bg-gray-700/50 text-gray-400 border-gray-600/30";
+  return (
+    <span className={`px-2 py-0.5 text-xs font-bold rounded border ${cls}`}>{severity}</span>
+  );
+}
+
+// ── 类别标签 ──
+function CategoryBadge({ category }) {
+  const map = {
+    market:       { label: "市场规模", cls: "bg-purple-500/15 text-purple-400" },
+    tech:         { label: "技术",     cls: "bg-cyan-500/15 text-cyan-400" },
+    product:      { label: "产品",     cls: "bg-blue-500/15 text-blue-400" },
+    competition:  { label: "竞争",     cls: "bg-orange-500/15 text-orange-400" },
+    team:         { label: "团队",     cls: "bg-green-500/15 text-green-400" },
+    financial:    { label: "财务",     cls: "bg-yellow-500/15 text-yellow-400" },
+    valuation:    { label: "估值",     cls: "bg-red-500/15 text-red-400" },
+    policy:       { label: "政策",     cls: "bg-gray-500/15 text-gray-400" },
+  };
+  const m = map[category] || { label: category, cls: "bg-gray-700/50 text-gray-400" };
+  return <span className={`px-2 py-0.5 rounded text-xs font-medium ${m.cls}`}>{m.label}</span>;
+}
+
+// ── 单条声明核查卡片 ──
+function ClaimVerdictCard({ item }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div
+      className="border border-gray-800 rounded-xl overflow-hidden cursor-pointer hover:border-gray-700 transition-colors"
+      onClick={() => setOpen(!open)}
+    >
+      <div className="flex items-start gap-3 p-3 bg-gray-800/30">
+        <div className="flex items-center gap-2 flex-wrap flex-1 min-w-0">
+          <CategoryBadge category={item.category} />
+          <span className="text-sm text-gray-300 flex-1 min-w-0 truncate">
+            {item.original_claim || item.bp_claim || item.claim || "—"}
+          </span>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <VerdictBadge verdict={item.verdict} />
+          {open
+            ? <ChevronUp className="w-3 h-3 text-gray-500" />
+            : <ChevronDown className="w-3 h-3 text-gray-500" />}
+        </div>
+      </div>
+
+      {open && (
+        <div className="border-t border-gray-800">
+          {/* BP 声称 vs AI 研究 */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 divide-y sm:divide-y-0 sm:divide-x divide-gray-800">
+            <div className="p-3">
+              <div className="text-xs font-bold text-blue-400 uppercase tracking-wider mb-2">📄 BP 声称</div>
+              <p className="text-sm text-gray-400 leading-relaxed">{item.bp_claim || item.original_claim || "—"}</p>
+            </div>
+            <div className="p-3">
+              <div className="text-xs font-bold text-purple-400 uppercase tracking-wider mb-2">🔬 AI 研究发现</div>
+              <p className="text-sm text-gray-400 leading-relaxed">{item.ai_research || "—"}</p>
+            </div>
+          </div>
+
+          {/* 差异量化 & 影响 */}
+          {(item.diff || item.severity || item.score_impact) && (
+            <div className="px-3 py-2 bg-gray-900/50 border-t border-gray-800 flex flex-wrap items-center gap-3">
+              {item.diff && (
+                <span className="text-xs text-orange-400">
+                  <span className="font-bold">差异：</span>{item.diff}
+                </span>
+              )}
+              {item.severity && (
+                <span className="flex items-center gap-1 text-xs text-gray-500">
+                  影响程度：<SeverityBadge severity={item.severity} />
+                </span>
+              )}
+              {item.score_impact && (
+                <span className="text-xs text-gray-500 italic">{item.score_impact}</span>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── AI 声明核查面板 ──
+const ClaimVerdictsPanel = memo(function ClaimVerdictsPanel({ claimVerdicts }) {
+  const [expanded, setExpanded] = useState(true);
+  const [filter, setFilter] = useState("all");
+
+  if (!claimVerdicts?.length) return null;
+
+  const filtered = filter === "all"
+    ? claimVerdicts
+    : claimVerdicts.filter(c => c.verdict === filter);
+
+  const stats = {
+    total: claimVerdicts.length,
+    honest: claimVerdicts.filter(c => c.verdict === "诚实").length,
+    exaggerated: claimVerdicts.filter(c => ["夸大", "严重夸大"].includes(c.verdict)).length,
+    questionable: claimVerdicts.filter(c => c.verdict === "存疑").length,
+    disproved: claimVerdicts.filter(c => ["证伪", "信息不对称"].includes(c.verdict)).length,
+  };
+
+  const FILTERS = [
+    { key: "all",    label: `全部 (${stats.total})` },
+    { key: "诚实",   label: `诚实 (${stats.honest})` },
+    { key: "夸大",   label: `夸大 (${stats.exaggerated})` },
+    { key: "存疑",   label: `存疑 (${stats.questionable})` },
+    { key: "证伪",   label: `证伪/信息不对称 (${stats.disproved})` },
+  ];
 
   return (
     <div className="bg-gray-900 border border-gray-800 rounded-2xl p-4 sm:p-6">
-      <h4 className="text-lg font-semibold mb-4 flex items-center gap-2">
-        <Search className="w-5 h-5 text-cyan-400" />
-        联网取证摘要
-        {result.search_summary && (
-          <span className="text-sm font-normal text-gray-500 ml-2">
-            {result.search_summary.mock
-              ? "(搜索未启用 — Mock模式)"
-              : `共 ${result.search_summary.total_results} 条搜索结果`}
-          </span>
-        )}
-      </h4>
-      <div className="space-y-3">
-        {result.search_results.map((sr, i) => {
-          const query_item = result.extracted_data?.search_queries?.[i];
-          return (
-            <div
-              key={i}
-              className="p-3 rounded-xl bg-gray-800/50 border border-gray-700"
-            >
-              <div className="flex flex-wrap items-center gap-2 mb-2">
-                <span className="px-2 py-0.5 text-xs font-bold rounded bg-blue-500/20 text-blue-400 shrink-0">
-                  {query_item?.dimension || `维度${i + 1}`}
-                </span>
-                <span className="text-sm text-gray-400 truncate min-w-0 flex-1">
-                  {sr.query}
-                </span>
-                <span
-                  className={`text-xs font-mono shrink-0 ${
-                    sr.results?.length > 0 ? "text-emerald-400" : "text-red-400"
-                  }`}
-                >
-                  {sr.results?.length || 0} 条结果
-                </span>
-              </div>
-              {sr.results?.length > 0 ? (
-                <div className="space-y-1 ml-4">
-                  {sr.results.slice(0, 3).map((r, j) => (
-                    <div key={j} className="text-xs text-gray-500">
-                      <span className="text-gray-400">{r.title}</span>
-                      {r.snippet && (
-                        <span className="ml-1">
-                          — {r.snippet.slice(0, 80)}
-                        </span>
-                      )}
-                    </div>
-                  ))}
-                  {sr.results.length > 3 && (
-                    <span className="text-xs text-gray-600">
-                      ... 还有 {sr.results.length - 3} 条
-                    </span>
-                  )}
-                </div>
-              ) : (
-                <p className="text-xs text-gray-600 ml-4">
-                  {sr.mock
-                    ? "搜索未启用（需配置 SERPER_API_KEY）"
-                    : sr.error
-                    ? `搜索出错: ${sr.error}`
-                    : "未找到相关结果"}
-                </p>
-              )}
-            </div>
-          );
-        })}
-      </div>
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="flex items-center gap-2 text-lg font-semibold w-full mb-1"
+      >
+        <Brain className="w-5 h-5 text-purple-400" />
+        AI 逐条声明核查
+        <span className="ml-auto flex items-center gap-3 text-sm font-normal">
+          <span className="text-emerald-400">{stats.honest} 诚实</span>
+          <span className="text-yellow-400">{stats.exaggerated} 夸大</span>
+          <span className="text-blue-400">{stats.questionable} 存疑</span>
+          <span className="text-red-400">{stats.disproved} 证伪</span>
+          {expanded
+            ? <ChevronUp className="w-4 h-4 text-gray-500" />
+            : <ChevronDown className="w-4 h-4 text-gray-500" />}
+        </span>
+      </button>
+      <p className="text-xs text-gray-600 mb-4 ml-7">
+        MiniMax AI 基于知识库对每条 BP 声明进行独立核查，点击展开查看详情
+      </p>
 
-      {/* 行业 PE 数据状态 */}
-      {result.industry_pe && (
-        <div className="mt-3 p-3 rounded-xl bg-gray-800/30 border border-gray-700/50 flex items-center gap-3">
-          <BarChart3 className="w-4 h-4 text-orange-400 shrink-0" />
-          <span className="text-sm text-gray-400">
-            行业估值数据：
-            {result.industry_pe.industry_pe ? (
-              <span className="text-orange-400 font-mono ml-1">
-                {result.industry_pe.industry_name} 平均PE{" "}
-                {result.industry_pe.industry_pe}x
-                <span className="text-gray-600 ml-1">
-                  (来源: {result.industry_pe.source})
-                </span>
-              </span>
-            ) : (
-              <span className="text-gray-600 ml-1">AkShare 数据不可用</span>
+      {expanded && (
+        <>
+          {/* 筛选 */}
+          <div className="flex flex-wrap gap-2 mb-4">
+            {FILTERS.map(f => (
+              <button
+                key={f.key}
+                onClick={(e) => { e.stopPropagation(); setFilter(f.key); }}
+                className={`px-3 py-1 text-xs rounded-full border transition-colors ${
+                  filter === f.key
+                    ? "bg-blue-500/20 text-blue-400 border-blue-500/40"
+                    : "bg-gray-800 text-gray-500 border-gray-700 hover:border-gray-500"
+                }`}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="space-y-2">
+            {filtered.map((item, i) => (
+              <ClaimVerdictCard key={i} item={item} />
+            ))}
+            {filtered.length === 0 && (
+              <p className="text-sm text-gray-600 text-center py-4">该类别下暂无声明</p>
             )}
-          </span>
-        </div>
+          </div>
+        </>
       )}
     </div>
   );
 });
 
-// ── 冲突分析 ──
+// ── 核心冲突汇总 ──
 const ConflictsPanel = memo(function ConflictsPanel({ conflicts }) {
   if (!conflicts?.length) return null;
 
@@ -117,36 +217,24 @@ const ConflictsPanel = memo(function ConflictsPanel({ conflicts }) {
     <div className="bg-gray-900 border border-gray-800 rounded-2xl p-4 sm:p-6">
       <h4 className="text-lg font-semibold mb-4 flex items-center gap-2">
         <AlertTriangle className="w-5 h-5 text-yellow-400" />
-        冲突分析（BP 诉求 vs 搜索证据）
+        核心冲突汇总（BP 诉求 vs AI 研究结论）
       </h4>
-      <div className="space-y-4">
+      <div className="space-y-3">
         {conflicts.map((c, i) => (
-          <div
-            key={i}
-            className="p-4 rounded-xl bg-gray-800/50 border border-gray-700"
-          >
+          <div key={i} className="p-4 rounded-xl bg-gray-800/50 border border-gray-700">
             <div className="flex items-start gap-3">
-              <span
-                className={`px-2 py-0.5 text-xs font-bold rounded shrink-0 ${
-                  c.severity === "严重"
-                    ? "bg-red-500/20 text-red-400"
-                    : c.severity === "中等"
-                    ? "bg-yellow-500/20 text-yellow-400"
-                    : "bg-blue-500/20 text-blue-400"
-                }`}
-              >
-                {c.severity}
-              </span>
-              <div className="flex-1 space-y-2">
+              <SeverityBadge severity={c.severity} />
+              <div className="flex-1 space-y-2 min-w-0">
+                {c.field && (
+                  <span className="text-xs text-gray-500 font-mono">[{c.field}]</span>
+                )}
                 <p className="text-sm">
-                  <span className="text-red-400 font-medium">BP 声称：</span>
-                  {c.claim}
+                  <span className="text-orange-400 font-medium">BP 声称：</span>
+                  <span className="text-gray-300">{c.claim}</span>
                 </p>
                 <p className="text-sm">
-                  <span className="text-emerald-400 font-medium">
-                    搜索发现：
-                  </span>
-                  {c.evidence}
+                  <span className="text-blue-400 font-medium">AI 研究：</span>
+                  <span className="text-gray-400">{c.evidence}</span>
                 </p>
               </div>
             </div>
@@ -157,56 +245,119 @@ const ConflictsPanel = memo(function ConflictsPanel({ conflicts }) {
   );
 });
 
-// ── 五维评分详情 ──
+// ── 五维评分详情（含 BP vs AI 对比）──
+function DimensionDetailCard({ dimKey, dim, Icon }) {
+  const [open, setOpen] = useState(false);
+  const hasBpVsAi = dim.bp_claim || dim.ai_finding;
+
+  return (
+    <div className="border border-gray-800 rounded-xl overflow-hidden">
+      <div
+        className="flex items-center gap-3 p-4 bg-gray-800/30 cursor-pointer hover:bg-gray-800/50 transition-colors"
+        onClick={() => setOpen(!open)}
+      >
+        <div className="w-10 h-10 rounded-lg flex items-center justify-center bg-gray-800">
+          <Icon className="w-5 h-5 text-gray-400" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="font-semibold">{dim.label || dimKey}</span>
+            {dim.subtitle && (
+              <span className="text-xs text-gray-500 hidden sm:inline">{dim.subtitle}</span>
+            )}
+            {dimKey === "external_risk" && dim.multiplier !== undefined && (
+              <span className={`text-xs font-mono font-bold ${
+                dim.multiplier >= 0.9 ? "text-emerald-400" :
+                dim.multiplier >= 0.5 ? "text-yellow-400" : "text-red-400"
+              }`}>
+                ×{dim.multiplier.toFixed(1)} 乘数
+              </span>
+            )}
+          </div>
+        </div>
+        <div className="flex items-center gap-3 shrink-0">
+          <div className="text-right">
+            <span className={`text-2xl font-bold ${getScoreColor(dim.score)}`}>{dim.score}</span>
+            <span className="text-xs text-gray-600 ml-0.5">/100</span>
+          </div>
+          <div className="w-14 h-2 bg-gray-800 rounded-full overflow-hidden">
+            <div
+              className={`h-full rounded-full ${
+                dim.score >= 70 ? "bg-emerald-500" :
+                dim.score >= 50 ? "bg-yellow-500" : "bg-red-500"
+              }`}
+              style={{ width: `${dim.score}%` }}
+            />
+          </div>
+          {open
+            ? <ChevronUp className="w-4 h-4 text-gray-500" />
+            : <ChevronDown className="w-4 h-4 text-gray-500" />}
+        </div>
+      </div>
+
+      {open && (
+        <div className="border-t border-gray-800 p-4 space-y-4">
+          {/* AI 分析结论 */}
+          {dim.finding && (
+            <div>
+              <div className="text-xs font-bold text-orange-400 uppercase tracking-wider mb-2">📋 AI 分析结论</div>
+              <p className="text-sm text-gray-400 leading-relaxed bg-gray-900/50 rounded-lg p-3 border-l-2 border-orange-500/40">
+                {dim.finding}
+              </p>
+            </div>
+          )}
+
+          {/* BP 声称 vs AI 发现 */}
+          {hasBpVsAi && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {dim.bp_claim && (
+                <div>
+                  <div className="text-xs font-bold text-blue-400 uppercase tracking-wider mb-2">📄 BP 声称</div>
+                  <p className="text-sm text-gray-400 leading-relaxed bg-gray-900/50 rounded-lg p-3 border-l-2 border-blue-500/40">
+                    {dim.bp_claim}
+                  </p>
+                </div>
+              )}
+              {dim.ai_finding && (
+                <div>
+                  <div className="text-xs font-bold text-purple-400 uppercase tracking-wider mb-2">🔬 AI 专家研究</div>
+                  <p className="text-sm text-gray-400 leading-relaxed bg-gray-900/50 rounded-lg p-3 border-l-2 border-purple-500/40">
+                    {dim.ai_finding}
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 const DimensionsDetail = memo(function DimensionsDetail({ dimensions }) {
   if (!dimensions) return null;
 
   return (
     <div className="bg-gray-900 border border-gray-800 rounded-2xl p-4 sm:p-6">
-      <h4 className="text-lg font-semibold mb-4">五维评分详情</h4>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <h4 className="text-lg font-semibold mb-2 flex items-center gap-2">
+        <Target className="w-5 h-5 text-blue-400" />
+        五维评分详情
+      </h4>
+      <p className="text-xs text-gray-600 mb-4 ml-7">
+        点击每个维度查看 BP 声明 vs AI 专家研究对比
+      </p>
+      <div className="space-y-3">
         {Object.entries(dimensions).map(([key, dim]) => {
           const Icon = dimIcons[key] || Target;
-          return (
-            <div
-              key={key}
-              className="p-4 rounded-xl bg-gray-800/50 border border-gray-700"
-            >
-              <div className="flex items-center gap-2 mb-2">
-                <Icon className="w-4 h-4 text-gray-400" />
-                <div className="flex-1">
-                  <span className="font-medium block">{dim.label || key}</span>
-                  {dim.subtitle && (
-                    <span className="text-xs text-gray-500">{dim.subtitle}</span>
-                  )}
-                </div>
-                <span
-                  className={`ml-auto text-lg font-bold ${getScoreColor(
-                    dim.score
-                  )}`}
-                >
-                  {dim.score}
-                </span>
-              </div>
-              <p className="text-sm text-gray-400">{dim.finding}</p>
-              {key === "external_risk" && dim.multiplier !== undefined && (
-                <p className="text-xs text-gray-500 mt-2">
-                  乘数效果: ×{dim.multiplier.toFixed(2)}
-                </p>
-              )}
-            </div>
-          );
+          return <DimensionDetailCard key={key} dimKey={key} dim={dim} Icon={Icon} />;
         })}
       </div>
     </div>
   );
 });
 
-// ── Extended Thinking / 深度研究（可折叠）──
-const DeepResearchPanel = memo(function DeepResearchPanel({
-  deepResearch,
-  thinking,
-}) {
+// ── AI 深度研究报告（可折叠）──
+const DeepResearchPanel = memo(function DeepResearchPanel({ deepResearch, thinking }) {
   const showResearch = useAnalysisStore((s) => s.showResearch);
   const setShowResearch = useAnalysisStore((s) => s.setShowResearch);
 
@@ -221,28 +372,32 @@ const DeepResearchPanel = memo(function DeepResearchPanel({
       >
         <Microscope className="w-5 h-5 text-purple-400" />
         AI 深度研究报告（DeepResearch）
-        {showResearch ? (
-          <ChevronUp className="w-5 h-5 ml-auto text-gray-500" />
-        ) : (
-          <ChevronDown className="w-5 h-5 ml-auto text-gray-500" />
-        )}
+        {showResearch
+          ? <ChevronUp className="w-5 h-5 ml-auto text-gray-500" />
+          : <ChevronDown className="w-5 h-5 ml-auto text-gray-500" />}
       </button>
+      <p className="text-xs text-gray-600 mt-1 ml-7">
+        MiniMax M2.5 知识库全量分析 · 市场数据 · 可比公司 · 估值分析 · 投资建议
+      </p>
 
       {showResearch && (
         <div className="mt-4 space-y-4">
-          {/* Extended Thinking 过程（折叠内部再分区块） */}
+          {/* DeepThink 推理过程 */}
           {thinking && (
-            <div className="p-4 sm:p-6 bg-purple-900/10 border border-purple-500/20 rounded-xl max-h-[400px] overflow-y-auto">
-              <p className="text-xs text-purple-400 font-semibold mb-3 uppercase tracking-wider">
-                Extended Thinking 过程
+            <div className="p-4 sm:p-5 bg-purple-900/10 border border-purple-500/20 rounded-xl max-h-96 overflow-y-auto">
+              <p className="text-xs text-purple-400 font-semibold mb-3 uppercase tracking-wider flex items-center gap-2">
+                <Brain className="w-4 h-4" />
+                DeepThink 推理过程（AI 专家团队分析思路）
               </p>
-              {renderMarkdown(thinking)}
+              <div className="text-sm text-gray-400 leading-relaxed whitespace-pre-wrap font-mono">
+                {thinking}
+              </div>
             </div>
           )}
 
           {/* 深度研究正文 */}
           {deepResearch && (
-            <div className="p-4 sm:p-6 bg-gray-800/50 rounded-xl max-h-[600px] overflow-y-auto overflow-x-auto">
+            <div className="p-4 sm:p-6 bg-gray-800/50 rounded-xl overflow-x-auto">
               {renderMarkdown(deepResearch)}
             </div>
           )}
@@ -253,21 +408,16 @@ const DeepResearchPanel = memo(function DeepResearchPanel({
 });
 
 /**
- * DetailedReport
+ * DetailedReport — 完整分析报告
  *
- * 职责：渲染完整分析报告——取证摘要、冲突分析、五维详情、深度研究。
- *
- * 性能策略：
- *   - memo 阻断与 result 无关的父层更新（如 currentStep 变化）。
- *   - 子面板各自 memo，showResearch 切换只重渲染 DeepResearchPanel。
- *   - 仅在 result 非空时挂载，分析中完全不渲染。
+ * 展示顺序：AI声明核查 → 核心冲突 → 五维评分详情（含BP vs AI对比）→ 深度研究报告
  */
 const DetailedReport = memo(function DetailedReport({ result }) {
   if (!result) return null;
 
   return (
     <div className="space-y-6">
-      <SearchResultsPanel result={result} />
+      <ClaimVerdictsPanel claimVerdicts={result.verdict?.claim_verdicts} />
       <ConflictsPanel conflicts={result.verdict?.conflicts} />
       <DimensionsDetail dimensions={result.verdict?.dimensions} />
       <DeepResearchPanel

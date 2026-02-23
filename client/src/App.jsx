@@ -123,7 +123,7 @@ export default function App() {
             </div>
             <div className="min-w-0">
               <h1 className="text-base sm:text-lg font-bold tracking-tight truncate">垃圾BP过滤机</h1>
-              <p className="text-xs text-gray-500 hidden sm:block">AI 辩证法尽调 · 辨伪识真</p>
+              <p className="text-xs text-gray-500 hidden sm:block">MiniMax 知识库深度研究 · DeepThink 辩证法尽调 · 辨伪识真</p>
             </div>
           </div>
           {result && (
@@ -168,8 +168,8 @@ export default function App() {
 
       {/* Footer */}
       <footer className="border-t border-gray-800 mt-16 py-6 text-center text-sm text-gray-600">
-        <p>垃圾BP过滤机 v2.0 · 辩证法三角验证引擎</p>
-        <p className="mt-1">Powered by MiniMax M2.5</p>
+        <p>垃圾BP过滤机 v2.1 · MiniMax 知识库深度研究引擎</p>
+        <p className="mt-1">Powered by MiniMax M2.5 DeepThink · 行业专家 + 投资专家 AI 团队</p>
       </footer>
     </div>
   );

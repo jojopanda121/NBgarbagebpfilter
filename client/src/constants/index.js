@@ -4,11 +4,10 @@ import { TrendingUp, Brain, BarChart3, Users, Shield } from "lucide-react";
 // ── API 地址（保持原有读取方式，兼容云端生产环境）──
 export const API_BASE = process.env.REACT_APP_API_URL || "";
 
-// ── 分析步骤定义（3步 Pipeline）──
+// ── 分析步骤定义（2步 Pipeline）──
 export const STEPS = [
-  { key: "extract", label: "数据提取: 提取评分所需数据", icon: FileText },
-  { key: "search", label: "联网取证: 搜索验证 & 行业估值", icon: Search },
-  { key: "judge", label: "数据验证: AI校准 & 标准化评分", icon: Gavel },
+  { key: "extract", label: "数据提取: 从BP中提取关键声明与数据", icon: FileText },
+  { key: "judge", label: "AI深度研究: MiniMax知识库专家分析 & 评分", icon: Gavel },
 ];
 
 // ── 维度图标映射 ──

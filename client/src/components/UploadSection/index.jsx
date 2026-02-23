@@ -64,7 +64,7 @@ const UploadSection = memo(function UploadSection() {
       <div className="text-center mb-6 sm:mb-8">
         <h2 className="text-xl sm:text-2xl font-bold mb-2">上传商业计划书</h2>
         <p className="text-gray-400 mb-4">
-          AI 将作为铁面法官，对 BP 进行辩证法三角验证
+          MiniMax M2.5 将扮演行业专家 + 投资专家，深度研究 BP 中每条声明，逐条核查真实性
         </p>
         <div className="inline-flex items-center gap-2 px-4 py-2 bg-gray-800/50 rounded-full border border-gray-700/50">
           <Lock className="w-3.5 h-3.5 text-emerald-400" />
@@ -152,7 +152,7 @@ const UploadSection = memo(function UploadSection() {
       {/* Powered by */}
       {!analyzing && (
         <div className="mt-8 text-center">
-          <p className="text-xs text-gray-600">Powered by MiniMax M2.5</p>
+          <p className="text-xs text-gray-600">Powered by MiniMax M2.5 · DeepThink 深度研究引擎 · 提取30000字符</p>
         </div>
       )}
     </div>

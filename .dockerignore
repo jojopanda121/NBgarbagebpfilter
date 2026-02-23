@@ -17,3 +17,11 @@ start.bat
 start.sh
 verdict_payload.json
 test_bp.txt
+__pycache__
+*.pyc
+*.pyo
+.DS_Store
+.vscode
+coverage
+dist
+uploads

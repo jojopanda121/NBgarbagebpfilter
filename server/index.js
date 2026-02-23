@@ -102,7 +102,7 @@ async function searchSerper(queries) {
             "X-API-KEY": SERPER_API_KEY,
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({ q, num: 5, gl: "cn", hl: "zh-cn" }),
+          body: JSON.stringify({ q, num: 5, gl: "us", hl: "zh-cn" }),
         });
         if (!resp.ok) {
           console.warn(`  [搜索] 查询 "${q}" 失败: HTTP ${resp.status}`);

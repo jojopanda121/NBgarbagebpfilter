@@ -7,7 +7,7 @@
   },
   "scripts": {
     "install:all": "cd client && npm install && cd ../server && npm install",
-    "build": "cd client && npm run build",
+    "build": "cd client && npm install && npm run build",
     "start": "pm2 start ecosystem.config.js --env production",
     "start:dev": "pm2 start ecosystem.config.js --env development",
     "stop": "pm2 stop garbagebpfilter",

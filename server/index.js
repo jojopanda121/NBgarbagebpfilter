@@ -12,6 +12,7 @@ const cors = require("cors");
 const path = require("path");
 const fs = require("fs");
 const os = require("os");
+const crypto = require("crypto");
 const { spawn } = require("child_process");
 const Anthropic = require("@anthropic-ai/sdk").default;
 const { scoreProject } = require("./scoring");
@@ -23,6 +24,47 @@ app.use(cors());
 app.use(express.json({ limit: "50mb" }));
 
 const PORT = parseInt(process.env.PORT, 10) || 3001;
+
+// ============================================================
+// 异步任务存储（内存）
+//
+// 架构：POST /api/analyze 立即返回 taskId，流水线后台运行；
+//       前端轮询 GET /api/task/:taskId，每次请求毫秒级完成，
+//       彻底绕开网关/浏览器对长连接的超时强杀。
+// ============================================================
+
+const tasks = new Map(); // taskId → TaskState
+
+function createTask() {
+  const id = crypto.randomBytes(16).toString("hex");
+  const task = {
+    id,
+    status: "running",   // running | complete | error
+    percentage: 0,
+    stage: "queued",
+    message: "任务已提交，等待处理...",
+    result: null,
+    error: null,
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+  };
+  tasks.set(id, task);
+  return task;
+}
+
+function updateTask(taskId, fields) {
+  const task = tasks.get(taskId);
+  if (!task) return;
+  Object.assign(task, fields, { updatedAt: Date.now() });
+}
+
+// 每 10 分钟清理超过 1 小时的旧任务
+setInterval(() => {
+  const cutoff = Date.now() - 3_600_000;
+  for (const [id, t] of tasks) {
+    if (t.createdAt < cutoff) tasks.delete(id);
+  }
+}, 600_000);
 
 // ── MiniMax via Anthropic SDK 配置 ──
 const anthropic = new Anthropic({
@@ -600,7 +642,7 @@ const CLAIM_BATCH_SIZE = 6; // 每批核查声明数，控制单次 token 量
  * @param {Function} sendSSE        SSE 推送函数
  * @returns {{ claimVerdicts, structuralResult, thinking }}
  */
-async function runAgentBWithBatching(extractedData, bpText, sendSSE) {
+async function runAgentBWithBatching(extractedData, bpText, onProgress) {
   const claims = extractedData.key_claims || [];
 
   // ── Phase 1: 微观声明核查（各批次并发，整体串行于 Phase 2 之前）──
@@ -611,7 +653,7 @@ async function runAgentBWithBatching(extractedData, bpText, sendSSE) {
 
   const batchCount = batches.length;
   console.log(`[B.1] 声明核查: ${claims.length} 条 → ${batchCount} 批并发`);
-  sendSSE({
+  onProgress({
     type: "progress",
     stage: "claim_verify",
     percentage: 35,
@@ -651,7 +693,7 @@ async function runAgentBWithBatching(extractedData, bpText, sendSSE) {
   // 此时 Phase 1 全部批次已完成，汇总所有核查结论
   const allClaimVerdicts = batchResults.flat();
   console.log(`[B.1] 声明核查完成: 共 ${allClaimVerdicts.length} 条核查结论`);
-  sendSSE({
+  onProgress({
     type: "progress",
     stage: "claims_verified",
     percentage: 62,
@@ -680,7 +722,7 @@ async function runAgentBWithBatching(extractedData, bpText, sendSSE) {
   // 解析失败时重试（不含 thinking，节省 token）
   if (!structuralResult || !structuralResult.validated_data) {
     console.warn("[B.2] 五维评分首次 JSON 解析失败，重试（普通模式）...");
-    sendSSE({
+    onProgress({
       type: "progress",
       stage: "scoring_retry",
       percentage: 75,
@@ -704,249 +746,183 @@ async function runAgentBWithBatching(extractedData, bpText, sendSSE) {
 // API 路由
 // ============================================================
 
-/** 健康检查 */
-app.get("/api/health", (_req, res) => {
-  res.json({ status: "ok", model: MODEL, search: "minimax_builtin" });
-});
+// ============================================================
+// 后台流水线函数 — 不持有 HTTP 连接，进度写入 tasks Map
+// ============================================================
 
-/** 搜索状态（保持兼容，告知前端使用 MiniMax 内置知识） */
-app.get("/api/search-status", (_req, res) => {
-  res.json({ enabled: true, provider: "minimax_builtin" });
-});
-
-/** 核心分析端点 — 上传 PDF，完成完整流水线（SSE 进度推送） */
-app.post("/api/analyze", upload.single("file"), async (req, res) => {
+/**
+ * 完整分析流水线（异步后台执行）
+ * @param {string} taskId  任务 ID
+ * @param {string} bpText  已提取的 BP 原文
+ */
+async function runPipelineBackground(taskId, bpText) {
   const startTime = Date.now();
-  let pdfText = "";
 
-  // ── 阶段 0: 获取文本（SSE 启动前，验证错误以普通 JSON 返回）──
-  try {
-    if (req.file) {
-      if (req.file.mimetype && req.file.mimetype !== "application/pdf" && !req.file.originalname?.endsWith(".pdf")) {
-        fs.unlink(req.file.path, () => {});
-        return res.status(400).json({ error: "请上传 PDF 格式的文件" });
-      }
-      try {
-        pdfText = await extractPdfText(req.file.path);
-      } catch (pyErr) {
-        const errMsg = pyErr.message || "未知错误";
-        console.warn("Python PDF 提取失败:", errMsg);
-        let userMessage = errMsg;
-        try {
-          const parsed = JSON.parse(errMsg);
-          if (parsed.error) userMessage = parsed.error;
-        } catch {}
-        return res.status(400).json({ error: "PDF 解析失败: " + userMessage });
-      } finally {
-        try { fs.unlinkSync(req.file.path); } catch {}
-      }
-    } else if (req.body && req.body.text) {
-      pdfText = req.body.text;
-    } else {
-      return res.status(400).json({ error: "请上传 PDF 文件或提供文本" });
-    }
-
-    if (pdfText.length < 50) {
-      return res.status(400).json({
-        error: "提取的文本过短（仅 " + pdfText.length + " 字符），请检查 PDF 是否为有效的商业计划书",
-      });
-    }
-  } catch (err) {
-    return res.status(500).json({ error: err.message || "服务器内部错误" });
-  }
-
-  // ── 启动 SSE 流 ──
-  res.setHeader("Content-Type", "text/event-stream");
-  res.setHeader("Cache-Control", "no-cache");
-  res.setHeader("Connection", "keep-alive");
-  res.setHeader("X-Accel-Buffering", "no"); // 禁用 nginx 缓冲
-
-  let clientDisconnected = false;
-  req.on("close", () => { clientDisconnected = true; });
-
-  /** 向客户端推送 SSE 数据帧 */
-  const sendSSE = (data) => {
-    if (clientDisconnected) return;
-    try {
-      res.write(`data: ${JSON.stringify(data)}\n\n`);
-    } catch (_) {}
+  const onProgress = ({ type, stage, percentage, message }) => {
+    if (type === "progress") updateTask(taskId, { stage, percentage, message });
   };
 
-  try {
-    // 提取前 30000 字符供分析
-    const maxChars = 30000;
-    const bpText = pdfText.length > maxChars
-      ? pdfText.slice(0, maxChars) + "\n...(文本已截断，共" + pdfText.length + "字符)"
-      : pdfText;
+  const maxChars = 30000;
+  const truncatedText =
+    bpText.length > maxChars
+      ? bpText.slice(0, maxChars) + "\n...(文本已截断，共" + bpText.length + "字符)"
+      : bpText;
 
-    sendSSE({ type: "progress", stage: "pdf_done", percentage: 8, message: "PDF文本提取完成，准备开始数据分析..." });
+  onProgress({ type: "progress", stage: "pdf_done", percentage: 8, message: "PDF文本提取完成，准备开始数据分析..." });
 
-    // ============================================================
-    // 两步 Pipeline: 数据提取 → AI专家深度研究与评分
-    // ============================================================
+  // ── 第1步: 数据提取 ──
+  console.log(`[${taskId.slice(0, 8)}] [1/2] 数据提取...`);
+  onProgress({ type: "progress", stage: "data_extract", percentage: 12, message: "正在提取BP关键声明与评分数据（step 1/2）..." });
 
-    // ── 第1步: 数据提取 — 从BP中提取评分数据和关键声明 ──
-    console.log("[1/2] 数据提取: 从BP中提取关键数据和声明...");
-    sendSSE({ type: "progress", stage: "data_extract", percentage: 12, message: "正在提取BP关键声明与评分数据（step 1/2）..." });
+  let extractionRaw = await callLLM(
+    AGENT_A_PROMPT,
+    `以下是商业计划书全文（共提取 ${truncatedText.length} 字符）：\n\n${truncatedText}`,
+    8192
+  );
+  let extractedData = extractJson(extractionRaw);
 
-    let extractionRaw = await callLLM(
-      AGENT_A_PROMPT,
-      `以下是商业计划书全文（共提取 ${bpText.length} 字符）：\n\n${bpText}`,
-      8192
-    );
-    let extractedData = extractJson(extractionRaw);
+  if (!extractedData || !extractedData.key_claims) {
+    console.warn(`[${taskId.slice(0, 8)}] [1/2] 首次数据提取失败，重试...`);
+    onProgress({ type: "progress", stage: "data_extract_retry", percentage: 18, message: "数据提取重试中，请稍候..." });
+    const retryPrompt =
+      AGENT_A_PROMPT +
+      "\n\n【紧急提醒】上次输出不是合法 JSON 导致解析失败。这次只输出 JSON 对象，从 { 开始到 } 结束，不加任何解释或 markdown。";
+    extractionRaw = await callLLM(retryPrompt, `以下是商业计划书全文：\n\n${truncatedText}`, 8192);
+    extractedData = extractJson(extractionRaw);
+  }
 
-    // 首次提取失败，重试
-    if (!extractedData || !extractedData.key_claims) {
-      console.warn("[1/2] 首次数据提取 JSON 解析失败，重试中...");
-      sendSSE({ type: "progress", stage: "data_extract_retry", percentage: 18, message: "数据提取重试中，请稍候..." });
-      const retryPrompt = AGENT_A_PROMPT + "\n\n【紧急提醒】上次输出不是合法 JSON 导致解析失败。这次只输出 JSON 对象，从 { 开始到 } 结束，不加任何解释或 markdown。";
-      extractionRaw = await callLLM(retryPrompt, `以下是商业计划书全文：\n\n${bpText}`, 8192);
-      extractedData = extractJson(extractionRaw);
-    }
+  if (!extractedData) throw new Error("AI 数据提取失败，请重新分析");
 
-    if (!extractedData) {
-      console.error("[1/2] 数据提取两次均失败");
-      sendSSE({ type: "error", error: "AI 数据提取失败，请重新分析" });
-      res.end();
-      return;
-    }
+  if (!extractedData.key_claims && extractedData.search_queries) {
+    extractedData.key_claims = extractedData.search_queries.map((q) => ({
+      category: q.dimension || "other",
+      claim: q.query || "",
+      source_in_bp: "BP中",
+    }));
+  }
 
-    // 兼容旧格式：如果没有 key_claims 但有 search_queries，转换格式
-    if (!extractedData.key_claims && extractedData.search_queries) {
-      extractedData.key_claims = extractedData.search_queries.map(q => ({
-        category: q.dimension || "other",
-        claim: q.query || "",
-        source_in_bp: "BP中",
-      }));
-    }
+  const claimCount = (extractedData.key_claims || []).length;
+  console.log(`[${taskId.slice(0, 8)}]   → 提取到 ${claimCount} 条关键声明，行业: ${extractedData.industry || "未识别"}`);
 
-    const claimCount = (extractedData.key_claims || []).length;
-    console.log(`  → 提取到 ${claimCount} 条关键声明，行业: ${extractedData.industry || "未识别"}`);
-    console.log(`  → TAM: ${extractedData.TAM}, CAGR: ${extractedData.CAGR}%, TRL: ${extractedData.TRL}, Margin: ${extractedData.Margin}`);
+  onProgress({
+    type: "progress",
+    stage: "data_done",
+    percentage: 28,
+    message: `数据提取完成，共识别 ${claimCount} 条关键声明，启动AI深度研究...`,
+  });
 
-    sendSSE({
-      type: "progress",
-      stage: "data_done",
-      percentage: 28,
-      message: `数据提取完成，共识别 ${claimCount} 条关键声明，启动AI深度研究...`,
-    });
+  // ── 第2步: Agent B ──
+  console.log(`[${taskId.slice(0, 8)}] [2/2] Agent B 启动...`);
+  onProgress({ type: "progress", stage: "agent_b_start", percentage: 32, message: "Agent B 启动（声明核查先行，评分随后）..." });
 
-    // ── 第2步: Agent B — 微观声明核查 → 宏观五维评分（严格时序串行）──
-    //
-    // 时序约束：Phase 1（声明核查）全部批次完成后，Phase 2（五维评分）才启动。
-    // 这确保评分基于已验证的真实数据，而非 BP 原始声称。
-    console.log("[2/2] Agent B 启动: 微观声明核查（并发批次）→ 宏观五维评分（串行依赖）...");
-    sendSSE({ type: "progress", stage: "agent_b_start", percentage: 32, message: "Agent B 启动（声明核查先行，评分随后）..." });
+  extractionRaw = null;
 
-    // 释放已不再需要的大字符串，降低内存峰值
-    extractionRaw = null;
+  const { claimVerdicts, structuralResult, thinking } = await runAgentBWithBatching(
+    extractedData,
+    truncatedText,
+    onProgress
+  );
 
-    const { claimVerdicts, structuralResult, thinking } = await runAgentBWithBatching(
-      extractedData,
-      bpText,
-      sendSSE
-    );
+  if (!structuralResult || !structuralResult.validated_data) {
+    throw new Error("AI 专家评分失败，请重试");
+  }
 
-    if (!structuralResult || !structuralResult.validated_data) {
-      console.error("[2/2] Agent B 五维评分失败");
-      sendSSE({ type: "error", error: "AI 专家评分失败，请重试" });
-      res.end();
-      return;
-    }
+  const validatedData = { ...structuralResult, claim_verdicts: claimVerdicts };
+  onProgress({ type: "progress", stage: "ai_done", percentage: 82, message: "AI深度研究完成，正在计算五维评分..." });
 
-    // 将 Phase 1 的核查结论挂载到结构化结果上，供后续报告生成使用
-    const validatedData = { ...structuralResult, claim_verdicts: claimVerdicts };
+  // ── 评分计算 ──
+  const scoringInput = validatedData.validated_data;
+  const scoringResult = scoreProject(scoringInput);
+  console.log(`[${taskId.slice(0, 8)}]   → 评分完成: 总分 ${scoringResult.total_score}, 评级 ${scoringResult.grade}`);
 
-    sendSSE({ type: "progress", stage: "ai_done", percentage: 82, message: "AI深度研究完成，正在计算五维评分..." });
+  onProgress({
+    type: "progress",
+    stage: "scoring",
+    percentage: 86,
+    message: `评分完成（${scoringResult.total_score}分 / ${scoringResult.grade}），生成深度研究报告...`,
+  });
 
-    // ── 评分计算 ──
-    const scoringInput = validatedData.validated_data;
-    const scoringResult = scoreProject(scoringInput);
+  // ── 构建维度数据 ──
+  const dimensionAnalysis = validatedData.dimension_analysis || {};
+  const buildDimensionFinding = (key, dimResult) => {
+    const expertDim = dimensionAnalysis[key] || {};
+    return expertDim.finding || dimResult.label + " 评估完成";
+  };
 
-    console.log(`  → 评分完成: 总分 ${scoringResult.total_score}, 评级 ${scoringResult.grade}`);
-    sendSSE({ type: "progress", stage: "scoring", percentage: 86, message: `评分完成（${scoringResult.total_score}分 / ${scoringResult.grade}），生成深度研究报告...` });
-
-    // ── 构建维度数据（合并评分系统结果 + 专家分析结论）──
-    const dimensionAnalysis = validatedData.dimension_analysis || {};
-
-    const buildDimensionFinding = (key, dimResult) => {
-      const expertDim = dimensionAnalysis[key] || {};
-      return expertDim.finding || dimResult.label + " 评估完成";
-    };
-
-    const verdict = {
-      total_score: scoringResult.total_score,
-      grade: scoringResult.grade,
-      verdict_summary: scoringResult.grade_label,
-      dimensions: {
-        timing_ceiling: {
-          score: scoringResult.dimensions.timing_ceiling.score,
-          label: scoringResult.dimensions.timing_ceiling.label,
-          subtitle: scoringResult.dimensions.timing_ceiling.subtitle,
-          finding: buildDimensionFinding("timing_ceiling", scoringResult.dimensions.timing_ceiling),
-          bp_claim: dimensionAnalysis.timing_ceiling?.bp_claim || "",
-          ai_finding: dimensionAnalysis.timing_ceiling?.ai_finding || "",
-        },
-        product_moat: {
-          score: scoringResult.dimensions.product_moat.score,
-          label: scoringResult.dimensions.product_moat.label,
-          subtitle: scoringResult.dimensions.product_moat.subtitle,
-          finding: buildDimensionFinding("product_moat", scoringResult.dimensions.product_moat),
-          bp_claim: dimensionAnalysis.product_moat?.bp_claim || "",
-          ai_finding: dimensionAnalysis.product_moat?.ai_finding || "",
-        },
-        business_validation: {
-          score: scoringResult.dimensions.business_validation.score,
-          label: scoringResult.dimensions.business_validation.label,
-          subtitle: scoringResult.dimensions.business_validation.subtitle,
-          finding: buildDimensionFinding("business_validation", scoringResult.dimensions.business_validation),
-          bp_claim: dimensionAnalysis.business_validation?.bp_claim || "",
-          ai_finding: dimensionAnalysis.business_validation?.ai_finding || "",
-        },
-        team: {
-          score: scoringResult.dimensions.team.score,
-          label: scoringResult.dimensions.team.label,
-          subtitle: scoringResult.dimensions.team.subtitle,
-          finding: buildDimensionFinding("team", scoringResult.dimensions.team),
-          bp_claim: dimensionAnalysis.team?.bp_claim || "",
-          ai_finding: dimensionAnalysis.team?.ai_finding || "",
-        },
-        external_risk: {
-          score: scoringResult.dimensions.external_risk.score,
-          label: scoringResult.dimensions.external_risk.label,
-          subtitle: scoringResult.dimensions.external_risk.subtitle,
-          finding: buildDimensionFinding("external_risk", scoringResult.dimensions.external_risk),
-          bp_claim: dimensionAnalysis.external_risk?.bp_claim || "",
-          ai_finding: dimensionAnalysis.external_risk?.ai_finding || "",
-          multiplier: scoringResult.dimensions.external_risk.multiplier,
-        },
+  const verdict = {
+    total_score: scoringResult.total_score,
+    grade: scoringResult.grade,
+    verdict_summary: scoringResult.grade_label,
+    dimensions: {
+      timing_ceiling: {
+        score: scoringResult.dimensions.timing_ceiling.score,
+        label: scoringResult.dimensions.timing_ceiling.label,
+        subtitle: scoringResult.dimensions.timing_ceiling.subtitle,
+        finding: buildDimensionFinding("timing_ceiling", scoringResult.dimensions.timing_ceiling),
+        bp_claim: dimensionAnalysis.timing_ceiling?.bp_claim || "",
+        ai_finding: dimensionAnalysis.timing_ceiling?.ai_finding || "",
       },
-      risk_flags: validatedData.risk_flags || [],
-      strengths: validatedData.strengths || [],
-      conflicts: validatedData.conflicts || [],
-      claim_verdicts: validatedData.claim_verdicts || [],
-      valuation_comparison: validatedData.valuation_comparison || {
-        bp_multiple: scoringInput.BP_Valuation && scoringInput.BP_Revenue
+      product_moat: {
+        score: scoringResult.dimensions.product_moat.score,
+        label: scoringResult.dimensions.product_moat.label,
+        subtitle: scoringResult.dimensions.product_moat.subtitle,
+        finding: buildDimensionFinding("product_moat", scoringResult.dimensions.product_moat),
+        bp_claim: dimensionAnalysis.product_moat?.bp_claim || "",
+        ai_finding: dimensionAnalysis.product_moat?.ai_finding || "",
+      },
+      business_validation: {
+        score: scoringResult.dimensions.business_validation.score,
+        label: scoringResult.dimensions.business_validation.label,
+        subtitle: scoringResult.dimensions.business_validation.subtitle,
+        finding: buildDimensionFinding("business_validation", scoringResult.dimensions.business_validation),
+        bp_claim: dimensionAnalysis.business_validation?.bp_claim || "",
+        ai_finding: dimensionAnalysis.business_validation?.ai_finding || "",
+      },
+      team: {
+        score: scoringResult.dimensions.team.score,
+        label: scoringResult.dimensions.team.label,
+        subtitle: scoringResult.dimensions.team.subtitle,
+        finding: buildDimensionFinding("team", scoringResult.dimensions.team),
+        bp_claim: dimensionAnalysis.team?.bp_claim || "",
+        ai_finding: dimensionAnalysis.team?.ai_finding || "",
+      },
+      external_risk: {
+        score: scoringResult.dimensions.external_risk.score,
+        label: scoringResult.dimensions.external_risk.label,
+        subtitle: scoringResult.dimensions.external_risk.subtitle,
+        finding: buildDimensionFinding("external_risk", scoringResult.dimensions.external_risk),
+        bp_claim: dimensionAnalysis.external_risk?.bp_claim || "",
+        ai_finding: dimensionAnalysis.external_risk?.ai_finding || "",
+        multiplier: scoringResult.dimensions.external_risk.multiplier,
+      },
+    },
+    risk_flags: validatedData.risk_flags || [],
+    strengths: validatedData.strengths || [],
+    conflicts: validatedData.conflicts || [],
+    claim_verdicts: validatedData.claim_verdicts || [],
+    valuation_comparison: validatedData.valuation_comparison || {
+      bp_multiple:
+        scoringInput.BP_Valuation && scoringInput.BP_Revenue
           ? Math.round(scoringInput.BP_Valuation / scoringInput.BP_Revenue)
           : 0,
-        industry_avg_multiple: 0,
-        overvalued_pct: scoringInput.Valuation_Gap
-          ? Math.round((scoringInput.Valuation_Gap - 1) * 100)
-          : 0,
-        industry_name: extractedData.industry || "",
-        data_source: "MiniMax AI 知识库分析",
-        analysis: scoringResult.grade_action,
-      },
-    };
+      industry_avg_multiple: 0,
+      overvalued_pct: scoringInput.Valuation_Gap
+        ? Math.round((scoringInput.Valuation_Gap - 1) * 100)
+        : 0,
+      industry_name: extractedData.industry || "",
+      data_source: "MiniMax AI 知识库分析",
+      analysis: scoringResult.grade_action,
+    },
+  };
 
-    // ── 生成深度研究报告 ──
-    console.log("  → 生成深度研究报告...");
-    sendSSE({ type: "progress", stage: "report", percentage: 90, message: "正在生成深度研究报告（约1-2分钟）..." });
+  // ── 生成深度研究报告 ──
+  console.log(`[${taskId.slice(0, 8)}]   → 生成深度研究报告...`);
+  onProgress({ type: "progress", stage: "report", percentage: 90, message: "正在生成深度研究报告（约1-2分钟）..." });
 
-    const deepResearchInput = [
-      `【商业计划书原文节选（前12000字）】\n${bpText.slice(0, 12000)}`,
-      `\n\n【AI专家深度分析结果】\n${JSON.stringify({
+  const deepResearchInput = [
+    `【商业计划书原文节选（前12000字）】\n${truncatedText.slice(0, 12000)}`,
+    `\n\n【AI专家深度分析结果】\n${JSON.stringify(
+      {
         scoring: {
           total_score: scoringResult.total_score,
           grade: scoringResult.grade,
@@ -960,45 +936,137 @@ app.post("/api/analyze", upload.single("file"), async (req, res) => {
         conflicts: validatedData.conflicts,
         valuation_comparison: validatedData.valuation_comparison,
         validation_notes: validatedData.validation_notes,
-      }, null, 2)}`,
-    ].join("");
-
-    const deepResearch = await callLLM(DEEP_RESEARCH_PROMPT, deepResearchInput, 8192);
-
-    const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-    console.log(`✓ 完成！总耗时 ${elapsed}s`);
-
-    sendSSE({ type: "progress", stage: "finalizing", percentage: 98, message: "报告生成完成，正在整理结果..." });
-
-    // ── 发送最终结果 ──
-    sendSSE({
-      type: "complete",
-      data: {
-        success: true,
-        elapsed_seconds: parseFloat(elapsed),
-        extracted_data: extractedData,
-        validated_data: scoringInput,
-        industry: extractedData.industry,
-        thinking,
-        deep_research: deepResearch,
-        verdict,
-        search_summary: {
-          enabled: true,
-          mock: false,
-          total_results: 0,
-          queries_count: claimCount,
-          industry_pe_available: false,
-          provider: "minimax_builtin_knowledge",
-        },
       },
-    });
+      null,
+      2
+    )}`,
+  ].join("");
 
-    res.end();
-  } catch (err) {
-    console.error("[分析错误]", err);
-    sendSSE({ type: "error", error: err.message || "服务器内部错误" });
-    res.end();
+  const deepResearch = await callLLM(DEEP_RESEARCH_PROMPT, deepResearchInput, 8192);
+
+  const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+  console.log(`[${taskId.slice(0, 8)}] ✓ 完成！总耗时 ${elapsed}s`);
+
+  onProgress({ type: "progress", stage: "finalizing", percentage: 98, message: "报告生成完成，正在整理结果..." });
+
+  // ── 写入最终结果（前端下次轮询即可获取）──
+  updateTask(taskId, {
+    status: "complete",
+    percentage: 100,
+    stage: "complete",
+    message: "分析完成！",
+    result: {
+      success: true,
+      elapsed_seconds: parseFloat(elapsed),
+      extracted_data: extractedData,
+      validated_data: scoringInput,
+      industry: extractedData.industry,
+      thinking,
+      deep_research: deepResearch,
+      verdict,
+      search_summary: {
+        enabled: true,
+        mock: false,
+        total_results: 0,
+        queries_count: claimCount,
+        industry_pe_available: false,
+        provider: "minimax_builtin_knowledge",
+      },
+    },
+  });
+}
+
+// ============================================================
+// API 路由
+// ============================================================
+
+/** 健康检查 */
+app.get("/api/health", (_req, res) => {
+  res.json({ status: "ok", model: MODEL, search: "minimax_builtin" });
+});
+
+/** 搜索状态（保持兼容） */
+app.get("/api/search-status", (_req, res) => {
+  res.json({ enabled: true, provider: "minimax_builtin" });
+});
+
+/**
+ * 核心分析端点 — 接收上传，立即返回 taskId，后台异步执行流水线。
+ *
+ * 重构说明：
+ *   原实现使用长连接 SSE（约 7 分钟），被网关/负载均衡器强制断开。
+ *   新实现将流水线完全移入后台，HTTP 请求在 <1 秒内返回 taskId，
+ *   前端通过 GET /api/task/:taskId 每 2.5 秒轮询一次，
+ *   每次轮询均为短生命周期请求，不受任何网关超时限制。
+ */
+app.post("/api/analyze", upload.single("file"), (req, res) => {
+  // 同步输入验证（快速失败）
+  if (!req.file && !(req.body && req.body.text)) {
+    return res.status(400).json({ error: "请上传 PDF 文件或提供文本" });
   }
+  if (req.file) {
+    const mime = req.file.mimetype || "";
+    const name = req.file.originalname || "";
+    if (mime !== "application/pdf" && !name.endsWith(".pdf")) {
+      fs.unlink(req.file.path, () => {});
+      return res.status(400).json({ error: "请上传 PDF 格式的文件" });
+    }
+  }
+
+  // 创建任务，立即返回 taskId
+  const task = createTask();
+  res.json({ taskId: task.id });
+
+  // 后台异步执行完整流水线
+  const filePath = req.file ? req.file.path : null;
+  const directText = req.body?.text || null;
+
+  (async () => {
+    let bpText = "";
+    try {
+      if (filePath) {
+        try {
+          bpText = await extractPdfText(filePath);
+        } catch (pyErr) {
+          const errMsg = pyErr.message || "未知错误";
+          let userMessage = errMsg;
+          try {
+            const p = JSON.parse(errMsg);
+            if (p.error) userMessage = p.error;
+          } catch {}
+          throw new Error("PDF 解析失败: " + userMessage);
+        } finally {
+          try { fs.unlinkSync(filePath); } catch {}
+        }
+      } else {
+        bpText = directText;
+      }
+
+      if (!bpText || bpText.length < 50) {
+        throw new Error(
+          "提取的文本过短（仅 " + (bpText?.length || 0) + " 字符），请检查 PDF 是否为有效的商业计划书"
+        );
+      }
+
+      await runPipelineBackground(task.id, bpText);
+    } catch (err) {
+      console.error(`[任务 ${task.id.slice(0, 8)}] 错误:`, err.message);
+      updateTask(task.id, { status: "error", error: err.message || "服务器内部错误" });
+    }
+  })();
+});
+
+/**
+ * 任务状态轮询端点
+ * 前端每 2.5 秒请求一次，获取进度和最终结果。
+ * 每次请求毫秒级完成，完全不受网关超时影响。
+ */
+app.get("/api/task/:taskId", (req, res) => {
+  const task = tasks.get(req.params.taskId);
+  if (!task) {
+    return res.status(404).json({ error: "任务不存在或已过期（超过1小时自动清理）" });
+  }
+  res.json(task);
 });
 
 // ── 静态文件服务（生产模式） ──
@@ -1018,12 +1086,12 @@ if (fs.existsSync(clientBuildDir)) {
 const server = app.listen(PORT, () => {
   console.log(`\n🚀 GarbageBPFilter 后端已启动: http://localhost:${PORT}`);
   console.log(`   模型: ${MODEL}`);
-  console.log(`   分析引擎: MiniMax 内置知识库 + DeepThink 深度研究\n`);
+  console.log(`   分析引擎: MiniMax 内置知识库 + DeepThink 深度研究`);
+  console.log(`   通信模式: 异步任务轮询（POST /api/analyze → GET /api/task/:taskId）\n`);
 });
 
-// 延长超时以支持长时间运行的 AI 分析流水线（约 6-10 分钟）
-// Node.js 18+ 的 requestTimeout 默认值为 300s（5 分钟），需显式覆盖
-const HTTP_TIMEOUT = 15 * 60 * 1000; // 15 分钟
-server.timeout = HTTP_TIMEOUT;           // socket 空闲超时
-server.requestTimeout = HTTP_TIMEOUT;    // 完整请求超时（Node.js 14.11+）
-server.keepAliveTimeout = HTTP_TIMEOUT + 1000; // keep-alive 超时需略高于 requestTimeout
+// 所有 HTTP 请求均为短生命周期（上传 + 轮询），2 分钟超时足够
+const HTTP_TIMEOUT = 2 * 60 * 1000;
+server.timeout = HTTP_TIMEOUT;
+server.requestTimeout = HTTP_TIMEOUT;
+server.keepAliveTimeout = HTTP_TIMEOUT + 1000;

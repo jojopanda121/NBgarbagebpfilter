@@ -1043,6 +1043,40 @@ async function runPipelineBackground(taskId, bpText) {
     return expertDim.finding || dimResult.label + " 评估完成";
   };
 
+  // 尝试从 AI 结果中提取 valuation_comparison
+  // 优先顺序：
+  // 1. validatedData.valuation_comparison (如果 AI 直接返回在根目录)
+  // 2. dimensionAnalysis.external_risk.valuation_comparison (如果嵌套在维度分析里)
+  // 3. 兜底计算逻辑
+  let valuationComparison = validatedData.valuation_comparison;
+
+  // 如果 AI 没返回完整的 valuation_comparison，尝试自己构造
+  if (!valuationComparison || !valuationComparison.bp_multiple) {
+    const bpValuation = scoringInput.BP_Valuation || 0;
+    const bpRevenue = scoringInput.BP_Revenue || 0;
+    const bpMultiple = (bpValuation && bpRevenue) ? Math.round(bpValuation / bpRevenue) : 0;
+    
+    // 尝试从 dimension_analysis.external_risk 中提取行业平均倍数
+    // AI 可能会在 text 中提到 "行业平均PS=XX"
+    let industryAvg = 0;
+    const riskFinding = dimensionAnalysis.external_risk?.ai_finding || "";
+    const avgMatch = riskFinding.match(/行业平均(?:PS|PE|估值倍数)[=≈:：]\s*(\d+(?:\.\d+)?)/i);
+    if (avgMatch) {
+      industryAvg = parseFloat(avgMatch[1]);
+    }
+
+    valuationComparison = {
+      bp_multiple: bpMultiple,
+      industry_avg_multiple: industryAvg,
+      overvalued_pct: scoringInput.Valuation_Gap
+        ? Math.round((scoringInput.Valuation_Gap - 1) * 100)
+        : 0,
+      industry_name: extractedData.industry || "",
+      data_source: "MiniMax AI 知识库分析",
+      analysis: scoringResult.grade_action,
+    };
+  }
+
   const verdict = {
     total_score: scoringResult.total_score,
     grade: scoringResult.grade,
@@ -1094,19 +1128,7 @@ async function runPipelineBackground(taskId, bpText) {
     strengths: validatedData.strengths || [],
     conflicts: validatedData.conflicts || [],
     claim_verdicts: validatedData.claim_verdicts || [],
-    valuation_comparison: validatedData.valuation_comparison || {
-      bp_multiple:
-        scoringInput.BP_Valuation && scoringInput.BP_Revenue
-          ? Math.round(scoringInput.BP_Valuation / scoringInput.BP_Revenue)
-          : 0,
-      industry_avg_multiple: 0,
-      overvalued_pct: scoringInput.Valuation_Gap
-        ? Math.round((scoringInput.Valuation_Gap - 1) * 100)
-        : 0,
-      industry_name: extractedData.industry || "",
-      data_source: "MiniMax AI 知识库分析",
-      analysis: scoringResult.grade_action,
-    },
+    valuation_comparison: valuationComparison,
   };
 
   // ── 生成深度研究报告 ──

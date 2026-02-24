@@ -21,15 +21,17 @@ const VerdictCard = memo(function VerdictCard({ result }) {
   if (!result?.verdict) return null;
   const verdict = result.verdict;
   const totalScore = verdict.total_score ?? 0;
-  const grade = verdict.grade || getGrade(totalScore);
+  // 使用新的 getGradeInfo 获取完整信息
+  const gradeInfo = getGradeInfo(totalScore);
+  const grade = verdict.grade || gradeInfo.grade;
 
   return (
     <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5 sm:p-8">
       <div className="flex flex-col md:flex-row items-center gap-6 sm:gap-8">
         {/* 圆形分数仪表 */}
         <div className="text-center">
-          <div className="relative w-36 h-36">
-            <svg className="w-36 h-36 -rotate-90" viewBox="0 0 120 120">
+          <div className="relative w-36 h-36 mx-auto">
+            <svg className="w-full h-full -rotate-90" viewBox="0 0 120 120">
               <circle
                 cx="60" cy="60" r="52"
                 fill="none" stroke="#1f2937" strokeWidth="8"
@@ -51,7 +53,7 @@ const VerdictCard = memo(function VerdictCard({ result }) {
               <span className="text-xs text-gray-500">/ 100</span>
             </div>
           </div>
-          <div className={`text-3xl font-black mt-2 ${getGradeColor(grade)}`}>
+          <div className={`text-3xl font-black mt-2 ${gradeInfo.color}`}>
             {grade}
           </div>
         </div>
@@ -59,15 +61,16 @@ const VerdictCard = memo(function VerdictCard({ result }) {
         {/* 裁决摘要 */}
         <div className="flex-1 text-center md:text-left">
           <h3 className="text-xl font-bold mb-2">评分结果</h3>
-          <div className="text-2xl font-bold mb-2">
-            {verdict.grade} - {getGradeLabel(verdict.grade)}
+          <div className={`text-2xl font-bold mb-2 ${gradeInfo.color}`}>
+            {grade} - {gradeInfo.label}
           </div>
           <p className="text-base text-gray-300 mb-3">
             {verdict.verdict_summary || getVerdict(totalScore)}
           </p>
-          <p className="text-sm text-gray-400 leading-relaxed">
-            {getGradeAction(verdict.grade)}
-          </p>
+          <div className={`p-4 rounded-xl text-sm leading-relaxed border ${gradeInfo.bg} ${gradeInfo.border} ${gradeInfo.color}`}>
+             <span className="font-bold mr-2">行动建议:</span>
+             {gradeInfo.action}
+          </div>
           {result.elapsed_seconds && (
             <p className="text-sm text-gray-500 mt-2">
               分析耗时 {result.elapsed_seconds}s

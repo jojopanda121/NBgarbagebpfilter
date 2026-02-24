@@ -33,6 +33,30 @@ export const getGradeAction = (grade) => {
   return actions[grade] || "";
 };
 
+export const getGradeInfo = (score) => {
+  const grade = getGrade(score);
+  const color = getGradeColor(grade);
+  const label = getGradeLabel(grade);
+  const action = getGradeAction(grade);
+  
+  let bg, border;
+  if (grade === "A") {
+    bg = "bg-emerald-500/10";
+    border = "border-emerald-500/20";
+  } else if (grade === "B") {
+    bg = "bg-blue-500/10";
+    border = "border-blue-500/20";
+  } else if (grade === "C") {
+    bg = "bg-yellow-500/10";
+    border = "border-yellow-500/20";
+  } else {
+    bg = "bg-red-500/10";
+    border = "border-red-500/20";
+  }
+
+  return { grade, color, label, action, bg, border };
+};
+
 export const getScoreColor = (s) =>
   s >= 70 ? "text-emerald-400" : s >= 50 ? "text-yellow-400" : "text-red-400";
 

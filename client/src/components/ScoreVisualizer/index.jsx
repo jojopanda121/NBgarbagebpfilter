@@ -244,7 +244,6 @@ const ScoreVisualizer = memo(function ScoreVisualizer({ verdict }) {
           估值温度计
         </h4>
         <ValuationThermometer data={verdict.valuation_comparison} />
-        <DimensionBars dimensions={verdict.dimensions} />
       </div>
     </div>
   );

@@ -6,180 +6,185 @@
 /**
  * 计算模块1: 时机与天花板 (S1, 权重 20%)
  * 合并: 市场规模 + 入场时机
- * 
+ *
  * 输入变量:
  * - TAM: 目标可触达市场规模 (单位: 十亿人民币或亿美元)
  * - CAGR: 行业预期年复合增长率 (%)
- * 
+ *
  * 计算公式:
  * S1 = min[100, (w_a * log10(TAM + 1) + w_b * CAGR)]
- * 
- * 开发参数建议: w_a 和 w_b 是调节系数
- * 例如, 设定 TAM 达到 100 亿且 CAGR 达到 30% 时, 该项无限接近满分 100
  */
 function calculateDimension1_TimingAndCeiling(TAM, CAGR) {
-  // 调节系数 (可根据实际情况调整)
-  const w_a = 20;  // TAM 权重系数
-  const w_b = 2;   // CAGR 权重系数
-  
-  // 为了防止创始人对 TAM 无脑注水, 工程师应在此处使用对数函数 (Log) 进行压制平滑
-  const score = w_a * Math.log10(TAM + 1) + w_b * CAGR;
-  
+  const w_a = 20;
+  const w_b = 2;
+
+  const safeTAM = Number(TAM);
+  const safeCGAR = Number(CAGR);
+  const tamVal = isNaN(safeTAM) ? 0 : Math.max(0, safeTAM);
+  const cgrVal = isNaN(safeCGAR) ? 0 : safeCGAR;
+
+  const score = w_a * Math.log10(tamVal + 1) + w_b * cgrVal;
   return Math.min(100, Math.max(0, Math.round(score)));
 }
 
 /**
  * 计算模块2: 产品与壁垒 (S2, 权重 25%)
  * 合并: 技术可行性 + 竞争壁垒
- * 
+ *
  * 输入变量:
  * - TRL: 技术就绪水平 (Technology Readiness Level, 1-9级, 9为可量产)
- * - SC: 客户转换成本评分 (Switching Cost, 由AI抓取行业常识打分, 0-100)
- * 
- * 计算公式:
- * S2 = 0.4 * (TRL / 9 * 100) + 0.6 * SC
- * 
- * 开发提示: TRL 是一个强客观指标
- * 如果 BP 只是停留在"PPT 阶段" (TRL ≤ 3), 则产品项得分将被死死压在极低水平
+ * - SC: 客户转换成本评分 (Switching Cost, 由AI打分, 0-100)
+ *
+ * 修改(Req 5): 软化早期项目惩罚
+ * - TRL >= 4（原型/小试阶段及以上）保证TRL分不低于50，避免误杀早期项目
+ * - TRL 1-3 仍有惩罚但保留最低30，不至于完全归零
+ * - SC 数据缺失时使用行业中性分50，而非0
  */
 function calculateDimension2_ProductAndMoat(TRL, SC) {
-  const score = 0.4 * (TRL / 9 * 100) + 0.6 * SC;
+  const safeTRL = Number(TRL);
+  const trlVal = isNaN(safeTRL) ? 1 : Math.max(1, Math.min(9, safeTRL));
+
+  const safeSC = Number(SC);
+  // 数据缺失时使用行业中性分50，而非0
+  const scVal = isNaN(safeSC) || SC === null || SC === undefined
+    ? 50
+    : Math.max(0, Math.min(100, safeSC));
+
+  const rawTrlScore = (trlVal / 9) * 100;
+  // 早期项目保护：TRL>=4（原型/小试阶段及以上）保证最低TRL分=50
+  const trlScore = trlVal >= 4
+    ? Math.max(50, rawTrlScore)
+    : Math.max(30, rawTrlScore);
+
+  const score = 0.4 * trlScore + 0.6 * scVal;
   return Math.min(100, Math.max(0, Math.round(score)));
 }
 
 /**
- * 计算模块3: 商业验证与效率 (S3, 权重 35%)
- * 合并: 商业模式 + 用户增长/留存 + 财务健康度
- * 
- * 核心指标是 LTV/CAC
- * 这是防范"第二类错误 (取伪)"的核心。哪怕是没有收入的早期项目,
- * 其预期的单位经济模型 (UE) 也必须跑通。
- * 
+ * 计算模块3: 资本效率与规模效应 (S3, 权重 35%)
+ * 重构(Req 6): 取代原"商业验证与效率"（LTV/CAC模型）
+ *
+ * 核心逻辑: 判断一个商业模式是否具备"越跑越轻"的内在特征
+ *
  * 输入变量:
- * - Ratio: LTV 与 CAC 的比值
- * - Margin: 毛利率 (%)
- * 
- * 计算公式:
- * 这里需要设定分段函数 (Piecewise function)
- * 一级市场的共识是: LTV/CAC 小于 1 是做慈善, 大于 3 才是好生意
- * 
- * f(Ratio) = {
- *   0                      if Ratio ≤ 1
- *   50 * (Ratio - 1)       if 1 < Ratio < 3
- *   100                    if Ratio ≥ 3
- * }
- * 
- * S3 = 0.7 * f(Ratio) + 0.3 * min(100, Margin * 100)
- * 
- * 开发提示: 如果 BP 缺乏数据, AI 应该自动检索该行业的"平均获客成本"和"客单价"代入计算,
- * 拆穿 BP 的水分
+ * - Capital_Efficiency: 资本效率评分，由 Agent B 给出 (1-10分)
+ *   - [10-8] 极高(负营运资本): 客户预付资金扩张，不依赖融资内生增长
+ *   - [7-5]  中等(合理投入): LTV/CAC在3-5x，周转健康
+ *   - [4-1]  极低(资本绞肉机): 增长依赖垫资堆人，停止输血即休克
+ * - Scale_Effect: 规模效应评分，由 Agent B 给出 (1-10分)
+ *   - [10-8] 赢家通吃: 双边网络效应或绝对规模经济
+ *   - [7-5]  强者恒强: 单边网络效应、数据飞轮、品牌壁垒
+ *   - [4-1]  规模不经济: 收入与人力/履约成本呈线性关系
+ *
+ * 公式: S3 = Capital_Efficiency * 5 + Scale_Effect * 5
+ *
+ * 缺失数据处理(Req 5): 数据缺失时默认5.5（中立基准），防止总分雪崩
  */
-function calculateDimension3_BusinessValidation(Ratio, Margin) {
-  let f_ratio = 0;
-  if (Ratio <= 1) {
-    f_ratio = 0;
-  } else if (Ratio > 1 && Ratio < 3) {
-    f_ratio = 50 * (Ratio - 1);
-  } else {
-    f_ratio = 100;
-  }
-  
-  const score = 0.7 * f_ratio + 0.3 * Math.min(100, Margin * 100);
+function calculateDimension3_CapitalEfficiencyAndScale(Capital_Efficiency, Scale_Effect) {
+  const ce = Number(Capital_Efficiency);
+  const se = Number(Scale_Effect);
+
+  // 数据缺失时采用行业中立基准分5.5（满分10分的55%）
+  const safeCE = (!isNaN(ce) && ce >= 1 && ce <= 10) ? ce : 5.5;
+  const safeSE = (!isNaN(se) && se >= 1 && se <= 10) ? se : 5.5;
+
+  const score = safeCE * 5 + safeSE * 5;
   return Math.min(100, Math.max(0, Math.round(score)));
 }
 
 /**
  * 计算模块4: 团队基因 (S4, 权重 20%)
  * 保留: 团队匹配度
- * 
- * 客观依据: 评估"人"与"事"的契合度, 同时对不良股权结构进行扣分
- * 
+ *
  * 输入变量:
  * - Exp: 核心创始人行业相关经验 (年)
  * - Equity: 最大股东持股比例 (%)
- * 
+ *
  * 计算公式:
  * S4 = min(100, Exp * 10) - Penalty(Equity)
- * 
- * 股权惩罚函数 Penalty:
- * 早期项目如果大股东持股不足 50%, 或者多人均分 (如 33/33/33),
- * 会穿越后续融资锁死。
- * 
- * Penalty(Equity) = {
- *   50     if Equity < 30%
- *   20     if 30% ≤ Equity < 50%
- *   0      if Equity ≥ 50%
- * }
  */
 function calculateDimension4_Team(Exp, Equity) {
+  const safeExp = Number(Exp);
+  const safeEquity = Number(Equity);
+
+  const expVal = isNaN(safeExp) ? 0 : Math.max(0, safeExp);
+  const equityVal = isNaN(safeEquity) ? 50 : Math.max(0, Math.min(100, safeEquity));
+
   let penalty = 0;
-  if (Equity < 30) {
+  if (equityVal < 30) {
     penalty = 50;
-  } else if (Equity >= 30 && Equity < 50) {
+  } else if (equityVal >= 30 && equityVal < 50) {
     penalty = 20;
   }
-  
-  const score = Math.min(100, Exp * 10) - penalty;
+
+  const score = Math.min(100, expVal * 10) - penalty;
   return Math.min(100, Math.max(0, Math.round(score)));
 }
 
 /**
  * 计算模块5: 外部风险与交易条件 (作为乘数 V5)
  * 合并: 政策/监管风险 + 估值合理性
- * 
- * 客观依据: 政策封杀或估值荒谬, 是"一票否决"项
- * 
+ *
+ * 修改(Req 5): 取消"直接归零"逻辑，改为平滑降权
+ * - Gap <= 1:            V5_discount = 1.0（无估值泡沫，不降权）
+ * - 1 < Gap <= 3:        V5_discount = 0.8（中度泡沫，打8折）
+ * - Gap > 3:             V5_discount = 0.5（严重高估，打5折，保留底分，不判死刑）
+ * - 无估值数据/未披露:   V5_discount = 1.0（无罪推定原则，不予惩罚）
+ *
  * 输入变量:
  * - Policy_Risk: AI 判定的政策违规风险等级 (0 为极高风险, 1 为无风险)
  * - Valuation_Gap: BP 叫价与行业可比公司中位数的溢价倍数
- * 
- * 计算公式:
- * V5 = Policy_Risk × Discount(Valuation_Gap)
- * 
- * Discount(x) = {
- *   1.0     if x ≤ 1.5 (溢价在合理范围内)
- *   0.5     if 1.5 < x < 3 (估值过高, 需重度砍价)
- *   0       if x ≥ 3 (离谱叫价, 直接否决)
- * }
  */
 function calculateDimension5_ExternalRisk(Policy_Risk, Valuation_Gap) {
-  let discount = 1.0;
-  if (Valuation_Gap > 1.5 && Valuation_Gap < 3) {
+  const risk = Number(Policy_Risk);
+  const safeRisk = isNaN(risk) ? 1 : Math.max(0, Math.min(1, risk));
+
+  const gap = Number(Valuation_Gap);
+
+  // 无估值数据时无罪推定，不予惩罚
+  let discount;
+  if (Valuation_Gap === null || Valuation_Gap === undefined || isNaN(gap) || gap <= 0) {
+    discount = 1.0;
+  } else if (gap <= 1) {
+    discount = 1.0;
+  } else if (gap <= 3) {
+    discount = 0.8;
+  } else {
     discount = 0.5;
-  } else if (Valuation_Gap >= 3) {
-    discount = 0;
   }
-  
-  const V5 = Policy_Risk * discount;
-  return V5;
+
+  return safeRisk * discount;
 }
 
 /**
  * 评分系统总体架构设计
- * 
- * 系统的最终总分 (Total_Score) 不是简单的五项相加,
- * 而是采取"基础得分 × 否决系数"的形式。
- * 
+ *
  * Total_Score = (Σ S_i * W_i) × V_5
- * 
- * - S_i: 第 i 个模块的得分 (0-100分)
- * - W_i: 第 i 个模块的权重百分比
- * - V_5: 模块五 (风险与交易条件) 的否决系数 (取值为 0 或 1, 或者一个惩罚折扣率)
+ *
+ * 修改(Req 5): 严格使用 Number() 转换，NaN/null/undefined 时有 Fallback 逻辑
  */
 function calculateTotalScore(S1, S2, S3, S4, V5) {
   const W1 = 0.20;  // 时机与天花板: 20%
   const W2 = 0.25;  // 产品与壁垒: 25%
-  const W3 = 0.35;  // 商业验证与效率: 35%
+  const W3 = 0.35;  // 资本效率与规模效应: 35%
   const W4 = 0.20;  // 团队基因: 20%
-  
-  const baseScore = (S1 * W1 + S2 * W2 + S3 * W3 + S4 * W4);
-  const totalScore = baseScore * V5;
-  
+
+  // 严格使用 Number() 转换，NaN 时 fallback 为 0
+  const s1 = Number(S1) || 0;
+  const s2 = Number(S2) || 0;
+  const s3 = Number(S3) || 0;
+  const s4 = Number(S4) || 0;
+  const v5 = Number(V5);
+  const safeV5 = isNaN(v5) ? 1 : v5;
+
+  const baseScore = s1 * W1 + s2 * W2 + s3 * W3 + s4 * W4;
+  const totalScore = baseScore * safeV5;
+
   return Math.min(100, Math.max(0, Math.round(totalScore)));
 }
 
 /**
- * 评级标准 (参考最后一张截图)
+ * 评级标准
  */
 function getGrade(totalScore) {
   if (totalScore >= 85) {
@@ -195,31 +200,38 @@ function getGrade(totalScore) {
 
 /**
  * 主评分函数
- * 输入: 从 BP 和搜索结果中提取的原始数据
+ * 输入: 从 Agent B 验证后的结构化数据
  * 输出: 5个维度的得分 + 总分 + 评级
  */
 function scoreProject(data) {
   // 第一维度: 时机与天花板
-  const S1 = calculateDimension1_TimingAndCeiling(data.TAM || 0, data.CAGR || 0);
-  
-  // 第二维度: 产品与壁垒
-  const S2 = calculateDimension2_ProductAndMoat(data.TRL || 1, data.SC || 0);
-  
-  // 第三维度: 商业验证与效率
-  const S3 = calculateDimension3_BusinessValidation(data.Ratio || 0, data.Margin || 0);
-  
+  const S1 = calculateDimension1_TimingAndCeiling(data.TAM, data.CAGR);
+
+  // 第二维度: 产品与壁垒（含早期项目保护）
+  const S2 = calculateDimension2_ProductAndMoat(data.TRL, data.SC);
+
+  // 第三维度: 资本效率与规模效应（Req 6 重构）
+  const S3 = calculateDimension3_CapitalEfficiencyAndScale(
+    data.Capital_Efficiency,
+    data.Scale_Effect
+  );
+
   // 第四维度: 团队基因
-  const S4 = calculateDimension4_Team(data.Exp || 0, data.Equity || 0);
-  
-  // 第五维度: 外部风险与交易条件 (乘数)
-  const V5 = calculateDimension5_ExternalRisk(data.Policy_Risk || 1, data.Valuation_Gap || 1);
-  
+  const S4 = calculateDimension4_Team(data.Exp, data.Equity);
+
+  // 第五维度: 外部风险与交易条件（乘数，含平滑降权）
+  // Policy_Risk 缺失时默认1（无明显政策风险）
+  const policyRisk = (data.Policy_Risk !== undefined && data.Policy_Risk !== null)
+    ? data.Policy_Risk
+    : 1;
+  const V5 = calculateDimension5_ExternalRisk(policyRisk, data.Valuation_Gap);
+
   // 计算总分
   const totalScore = calculateTotalScore(S1, S2, S3, S4, V5);
-  
+
   // 获取评级
   const grading = getGrade(totalScore);
-  
+
   return {
     dimensions: {
       timing_ceiling: {
@@ -238,10 +250,10 @@ function scoreProject(data) {
       },
       business_validation: {
         score: S3,
-        label: "商业验证与效率",
-        subtitle: "商业模式 + 增长 + 财务",
+        label: "资本效率与规模效应",
+        subtitle: "资本效率 + 规模效应",
         weight: 35,
-        inputs: { Ratio: data.Ratio, Margin: data.Margin },
+        inputs: { Capital_Efficiency: data.Capital_Efficiency, Scale_Effect: data.Scale_Effect },
       },
       team: {
         score: S4,
@@ -271,7 +283,7 @@ module.exports = {
   scoreProject,
   calculateDimension1_TimingAndCeiling,
   calculateDimension2_ProductAndMoat,
-  calculateDimension3_BusinessValidation,
+  calculateDimension3_CapitalEfficiencyAndScale,
   calculateDimension4_Team,
   calculateDimension5_ExternalRisk,
   calculateTotalScore,

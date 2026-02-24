@@ -23,7 +23,7 @@ export const dimIcons = {
 export const dimLabelsMap = {
   timing_ceiling: "时机与天花板",
   product_moat: "产品与壁垒",
-  business_validation: "商业验证与效率",
+  business_validation: "资本效率与规模效应",
   team: "团队基因",
   external_risk: "外部风险",
 };

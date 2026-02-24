@@ -36,6 +36,10 @@ export function useAnalysisPipeline() {
     // Step 0: 数据提取（约8s）→ Step 1: AI深度研究（主要耗时）
     const stepTimer1 = setTimeout(() => setCurrentStep(1), 8000);
 
+    // 5 分钟超时（AI 深度分析耗时较长）
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5 * 60 * 1000);
+
     try {
       const formData = new FormData();
       formData.append("file", file);
@@ -43,9 +47,11 @@ export function useAnalysisPipeline() {
       const resp = await fetch(`${API_BASE}/api/analyze`, {
         method: "POST",
         body: formData,
+        signal: controller.signal,
       });
 
       clearTimeout(stepTimer1);
+      clearTimeout(timeoutId);
 
       if (!resp.ok) {
         const errBody = await resp.json().catch(() => ({}));
@@ -57,7 +63,14 @@ export function useAnalysisPipeline() {
       setResult(data);
     } catch (err) {
       clearTimeout(stepTimer1);
-      setError(err.message || "分析失败，请重试");
+      clearTimeout(timeoutId);
+      if (err.name === "AbortError") {
+        setError("分析超时（超过5分钟），请上传更小的文件后重试");
+      } else if (err.message === "Failed to fetch") {
+        setError("网络连接失败，服务器可能正在重启，请稍后重试");
+      } else {
+        setError(err.message || "分析失败，请重试");
+      }
     } finally {
       setAnalyzing(false);
     }

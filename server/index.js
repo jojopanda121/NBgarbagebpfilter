@@ -116,12 +116,34 @@ function attemptJsonFix(str) {
   return fixed.trim();
 }
 
+/**
+ * 预处理 MiniMax DeepThink 输出：
+ * 移除 <minimax:tool_call>...</minimax:tool_call> 等 XML 工具调用标签。
+ * DeepThink 模式下 MiniMax 会在文本中插入内置搜索工具调用标记，
+ * 这些标记通过 Anthropic SDK 兼容层无法执行，导致 JSON 解析失败。
+ */
+function preprocessMinimaxOutput(raw) {
+  if (!raw || typeof raw !== 'string') return raw;
+  let processed = raw;
+  // 移除 minimax 工具调用块（含内部所有内容）
+  processed = processed.replace(/<minimax:tool_call>[\s\S]*?<\/minimax:tool_call>/g, '');
+  // 移除 minimax 工具结果块
+  processed = processed.replace(/<minimax:tool_result>[\s\S]*?<\/minimax:tool_result>/g, '');
+  // 移除孤立的 invoke / parameter XML 块
+  processed = processed.replace(/<invoke[^>]*>[\s\S]*?<\/invoke>/g, '');
+  processed = processed.replace(/<parameter[^>]*>[\s\S]*?<\/parameter>/g, '');
+  return processed.trim();
+}
+
 /** 从 LLM 输出中提取 JSON（增强容错） */
 function extractJson(raw) {
   if (!raw || typeof raw !== "string") {
     console.warn("[extractJson] 输入为空或非字符串");
     return null;
   }
+
+  // 预处理：移除 MiniMax DeepThink 产生的 XML 工具调用标记
+  raw = preprocessMinimaxOutput(raw);
 
   const candidates = [];
 
@@ -606,9 +628,13 @@ app.post("/api/analyze", upload.single("file"), async (req, res) => {
     // ── 第2步: AI专家深度研究与评分（DeepThink 模式）──
     console.log("[2/2] AI专家深度研究: MiniMax 知识库深度分析中（DeepThink模式）...");
 
+    // 释放已不再需要的大字符串，降低内存峰值
+    extractionRaw = null;
+
+    // 传给专家模型的 BP 节选缩减为 15000 字（提取阶段已拿到结构化数据，无需重复传全文）
     const judgeInput = [
       `【BP提取数据】\n${JSON.stringify(extractedData, null, 2)}`,
-      `\n\n【BP原文节选（前30000字）】\n${bpText}`,
+      `\n\n【BP原文节选（前15000字）】\n${bpText.slice(0, 15000)}`,
     ].join("");
 
     let thinking = "";
@@ -628,11 +654,13 @@ app.post("/api/analyze", upload.single("file"), async (req, res) => {
       validatedData = extractJson(validationRaw);
     }
 
+    // 释放大字符串
+    validationRaw = null;
+
     if (!validatedData || !validatedData.validated_data) {
       console.error("[2/2] 专家分析失败");
       return res.status(500).json({
         error: "AI 专家分析失败，请重试",
-        raw: validationRaw?.slice(0, 2000),
       });
     }
 
@@ -718,7 +746,7 @@ app.post("/api/analyze", upload.single("file"), async (req, res) => {
     // ── 生成深度研究报告 ──
     console.log("  → 生成深度研究报告...");
     const deepResearchInput = [
-      `【商业计划书原文节选（前20000字）】\n${bpText.slice(0, 20000)}`,
+      `【商业计划书原文节选（前12000字）】\n${bpText.slice(0, 12000)}`,
       `\n\n【AI专家深度分析结果】\n${JSON.stringify({
         scoring: {
           total_score: scoringResult.total_score,

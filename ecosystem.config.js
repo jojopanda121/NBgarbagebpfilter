@@ -40,10 +40,13 @@ module.exports = {
       instances: 1,
       exec_mode: 'fork',
 
+      // ── Node.js 堆内存上限（服务器 2GB RAM，为 OS 和 PM2 留 500MB）──
+      node_args: '--max-old-space-size=1400',
+
       // ── 自动重启策略 ──
       autorestart: true,
       watch: false,             // 生产不开 watch
-      max_memory_restart: '512M',
+      max_memory_restart: '1400M', // 原 512M 太低，单次分析可达 600MB+，导致请求中途崩溃
       min_uptime: '10s',        // 10s 内崩溃不计入重启次数
       max_restarts: 10,
       restart_delay: 3000,      // 崩溃后等待 3s 再重启

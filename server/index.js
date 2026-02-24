@@ -77,11 +77,11 @@ const MODEL = process.env.MINIMAX_MODEL || "MiniMax-M2.5";
 // 工具函数
 // ============================================================
 
-/** 调用 Python 脚本提取 PDF 文本 */
-function extractPdfText(pdfPath) {
+/** 调用 Python 脚本提取文档文本（支持 PDF 和 PPTX） */
+function extractDocText(filePath, mode) {
   return new Promise((resolve, reject) => {
-    const scriptPath = path.join(__dirname, "..", "scripts", "extract_pdf.py");
-    const proc = spawn("python3", [scriptPath, pdfPath], {
+    const scriptPath = path.join(__dirname, "..", "scripts", "extract_doc.py");
+    const proc = spawn("python3", [scriptPath, filePath, mode], {
       timeout: 120_000,
       maxBuffer: 30 * 1024 * 1024,
     });
@@ -798,7 +798,7 @@ async function runPipelineBackground(taskId, bpText) {
       ? bpText.slice(0, maxChars) + "\n...(文本已截断，共" + bpText.length + "字符)"
       : bpText;
 
-  onProgress({ type: "progress", stage: "pdf_done", percentage: 8, message: "PDF文本提取完成，准备开始数据分析..." });
+  onProgress({ type: "progress", stage: "pdf_done", percentage: 8, message: "文档解析完成，准备开始数据分析..." });
 
   // ── 第1步: 数据提取 ──
   console.log(`[${taskId.slice(0, 8)}] [1/2] 数据提取...`);
@@ -1036,10 +1036,14 @@ app.post("/api/analyze", upload.single("file"), (req, res) => {
   }
   if (req.file) {
     const mime = req.file.mimetype || "";
-    const name = req.file.originalname || "";
-    if (mime !== "application/pdf" && !name.endsWith(".pdf")) {
+    const name = (req.file.originalname || "").toLowerCase();
+    const isPdf = mime === "application/pdf" || name.endsWith(".pdf");
+    const isPptx =
+      mime === "application/vnd.openxmlformats-officedocument.presentationml.presentation" ||
+      name.endsWith(".pptx");
+    if (!isPdf && !isPptx) {
       fs.unlink(req.file.path, () => {});
-      return res.status(400).json({ error: "请上传 PDF 格式的文件" });
+      return res.status(400).json({ error: "请上传 PDF 或 PPTX 格式的文件" });
     }
   }
 
@@ -1049,6 +1053,9 @@ app.post("/api/analyze", upload.single("file"), (req, res) => {
 
   // 后台异步执行完整流水线
   const filePath = req.file ? req.file.path : null;
+  const fileMode = req.file
+    ? ((req.file.originalname || "").toLowerCase().endsWith(".pptx") ? "pptx" : "pdf")
+    : null;
   const directText = req.body?.text || null;
 
   (async () => {
@@ -1056,7 +1063,7 @@ app.post("/api/analyze", upload.single("file"), (req, res) => {
     try {
       if (filePath) {
         try {
-          bpText = await extractPdfText(filePath);
+          bpText = await extractDocText(filePath, fileMode);
         } catch (pyErr) {
           const errMsg = pyErr.message || "未知错误";
           let userMessage = errMsg;
@@ -1064,7 +1071,7 @@ app.post("/api/analyze", upload.single("file"), (req, res) => {
             const p = JSON.parse(errMsg);
             if (p.error) userMessage = p.error;
           } catch {}
-          throw new Error("PDF 解析失败: " + userMessage);
+          throw new Error("文档解析失败: " + userMessage);
         } finally {
           try { fs.unlinkSync(filePath); } catch {}
         }

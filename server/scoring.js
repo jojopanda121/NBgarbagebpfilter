@@ -188,13 +188,13 @@ function calculateTotalScore(S1, S2, S3, S4, V5) {
  */
 function getGrade(totalScore) {
   if (totalScore >= 85) {
-    return { grade: "A", label: "推荐投资 (Fast Track)", action: "立刻推进：24小时内约见创始人，启动业务尽调和财务尽调，开始建模", color: "#10b981" };
+    return { grade: "A", label: "极力推荐 (Strong Buy)", action: "优先推进：核心指标优异，建议24小时内约见创始人。立即启动全面业务与财务尽调，锁定投资额度。", color: "#10b981" };
   } else if (totalScore >= 75) {
-    return { grade: "B", label: "谨慎推荐 (Proceed with DD)", action: "空甲拟议：安排面聊，核心考察团队对短期的认知，在财务数据中申请行权测试，并始佑价。", color: "#3b82f6" };
+    return { grade: "B", label: "优秀项目 (Buy)", action: "建议尽调：项目基本面扎实，具有投资潜力。建议安排团队面聊，并在尽调中重点验证其增长策略的可落地性。", color: "#3b82f6" };
   } else if (totalScore >= 60) {
-    return { grade: "C", label: "可以跟进 (Keep In View)", action: "早期留金 or 平台生高：商业逻辑穿透没准，但缺乏数据验证。建议盒金 VP 梳理 POC，关注签约，再评估天花板价值量，支支评估。", color: "#f59e0b" };
+    return { grade: "C", label: "谨慎跟进 (Hold)", action: "审慎尽调：商业逻辑尚可但存在瑕疵或数据验证不足。建议在尽调中针对“风险提示”中的问题进行穿透式核查，确认无硬伤后再做决策。", color: "#f59e0b" };
   } else {
-    return { grade: "D", label: "建议放弃 (Reject / Archive)", action: "项目风险过高：商业模式未经验证，市场天花板受限或竞争壁垒不足。建议暂停推进，除非创始人有重大战略调整或新数据验证。", color: "#ef4444" };
+    return { grade: "D", label: "建议观望 (Watch / Strict DD)", action: "严格尽调或观望：项目早期风险较高，或核心壁垒存疑。除非创始人有极强的战略调整能力，否则建议暂缓推进，仅在有新数据验证时重启严格尽调。", color: "#ef4444" };
   }
 }
 

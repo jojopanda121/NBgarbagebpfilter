@@ -11,6 +11,7 @@ import {
   getGradeColor,
   getGradeLabel,
   getGradeAction,
+  getGradeInfo,
   getScoreColor,
   getScoreBg,
   getVerdict,

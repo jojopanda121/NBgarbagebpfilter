@@ -6,13 +6,14 @@
     "node": ">=18"
   },
   "scripts": {
-    "install:all": "cd client && npm install && cd ../server && npm install",
+    "install:python": "pip3 install --break-system-packages -r scripts/requirements.txt 2>/dev/null || pip3 install -r scripts/requirements.txt",
+    "install:all": "cd client && npm install && cd ../server && npm install && npm run install:python",
     "build": "cd client && npm install && npm run build",
     "start": "pm2 start ecosystem.config.js --env production",
     "start:dev": "pm2 start ecosystem.config.js --env development",
     "stop": "pm2 stop garbagebpfilter",
     "restart": "pm2 restart garbagebpfilter",
     "logs": "pm2 logs garbagebpfilter",
-    "deploy": "npm run build && npm start"
+    "deploy": "npm run install:python && npm run build && npm start"
   }
 }

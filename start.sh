@@ -23,6 +23,15 @@ if [ ! -d "node_modules" ]; then
     echo ""
 fi
 
+# 安装 Python 依赖（PyMuPDF 等 PDF 解析库）
+echo "🐍 检查 Python 依赖..."
+if ! python3 -c "import fitz" > /dev/null 2>&1; then
+    echo "📦 安装 Python 依赖（scripts/requirements.txt）..."
+    pip3 install --break-system-packages -r scripts/requirements.txt 2>/dev/null || \
+    pip3 install -r scripts/requirements.txt
+    echo ""
+fi
+
 # 启动后端 (后台)
 echo "🚀 启动 API 代理服务器 (端口 3001)..."
 node server.js &

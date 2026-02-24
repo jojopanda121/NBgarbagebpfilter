@@ -418,7 +418,6 @@ const DetailedReport = memo(function DetailedReport({ result }) {
   return (
     <div className="space-y-6">
       <ClaimVerdictsPanel claimVerdicts={result.verdict?.claim_verdicts} />
-      <ConflictsPanel conflicts={result.verdict?.conflicts} />
       <DimensionsDetail dimensions={result.verdict?.dimensions} />
       <DeepResearchPanel
         deepResearch={result.deep_research}

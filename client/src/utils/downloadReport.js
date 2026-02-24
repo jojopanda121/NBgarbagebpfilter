@@ -140,7 +140,6 @@ export function downloadReportAsPdf(result) {
   </div>
 
   ${valuationHtml}
-  ${conflictsHtml}
 
   ${
     deepResearch

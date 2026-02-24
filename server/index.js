@@ -539,13 +539,13 @@ app.get("/api/search-status", (_req, res) => {
   res.json({ enabled: true, provider: "minimax_builtin" });
 });
 
-/** 核心分析端点 — 上传 PDF，完成完整流水线 */
+/** 核心分析端点 — 上传 PDF，完成完整流水线（SSE 进度推送） */
 app.post("/api/analyze", upload.single("file"), async (req, res) => {
   const startTime = Date.now();
   let pdfText = "";
 
+  // ── 阶段 0: 获取文本（SSE 启动前，验证错误以普通 JSON 返回）──
   try {
-    // ── 阶段 0: 获取文本 ──
     if (req.file) {
       if (req.file.mimetype && req.file.mimetype !== "application/pdf" && !req.file.originalname?.endsWith(".pdf")) {
         fs.unlink(req.file.path, () => {});
@@ -576,12 +576,35 @@ app.post("/api/analyze", upload.single("file"), async (req, res) => {
         error: "提取的文本过短（仅 " + pdfText.length + " 字符），请检查 PDF 是否为有效的商业计划书",
       });
     }
+  } catch (err) {
+    return res.status(500).json({ error: err.message || "服务器内部错误" });
+  }
 
+  // ── 启动 SSE 流 ──
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  res.setHeader("X-Accel-Buffering", "no"); // 禁用 nginx 缓冲
+
+  let clientDisconnected = false;
+  req.on("close", () => { clientDisconnected = true; });
+
+  /** 向客户端推送 SSE 数据帧 */
+  const sendSSE = (data) => {
+    if (clientDisconnected) return;
+    try {
+      res.write(`data: ${JSON.stringify(data)}\n\n`);
+    } catch (_) {}
+  };
+
+  try {
     // 提取前 30000 字符供分析
     const maxChars = 30000;
     const bpText = pdfText.length > maxChars
       ? pdfText.slice(0, maxChars) + "\n...(文本已截断，共" + pdfText.length + "字符)"
       : pdfText;
+
+    sendSSE({ type: "progress", stage: "pdf_done", percentage: 8, message: "PDF文本提取完成，准备开始数据分析..." });
 
     // ============================================================
     // 两步 Pipeline: 数据提取 → AI专家深度研究与评分
@@ -589,6 +612,8 @@ app.post("/api/analyze", upload.single("file"), async (req, res) => {
 
     // ── 第1步: 数据提取 — 从BP中提取评分数据和关键声明 ──
     console.log("[1/2] 数据提取: 从BP中提取关键数据和声明...");
+    sendSSE({ type: "progress", stage: "data_extract", percentage: 12, message: "正在提取BP关键声明与评分数据（step 1/2）..." });
+
     let extractionRaw = await callLLM(
       AGENT_A_PROMPT,
       `以下是商业计划书全文（共提取 ${bpText.length} 字符）：\n\n${bpText}`,
@@ -599,6 +624,7 @@ app.post("/api/analyze", upload.single("file"), async (req, res) => {
     // 首次提取失败，重试
     if (!extractedData || !extractedData.key_claims) {
       console.warn("[1/2] 首次数据提取 JSON 解析失败，重试中...");
+      sendSSE({ type: "progress", stage: "data_extract_retry", percentage: 18, message: "数据提取重试中，请稍候..." });
       const retryPrompt = AGENT_A_PROMPT + "\n\n【紧急提醒】上次输出不是合法 JSON 导致解析失败。这次只输出 JSON 对象，从 { 开始到 } 结束，不加任何解释或 markdown。";
       extractionRaw = await callLLM(retryPrompt, `以下是商业计划书全文：\n\n${bpText}`, 8192);
       extractedData = extractJson(extractionRaw);
@@ -606,10 +632,9 @@ app.post("/api/analyze", upload.single("file"), async (req, res) => {
 
     if (!extractedData) {
       console.error("[1/2] 数据提取两次均失败");
-      return res.status(500).json({
-        error: "AI 数据提取失败，请重新分析",
-        raw: extractionRaw?.slice(0, 2000),
-      });
+      sendSSE({ type: "error", error: "AI 数据提取失败，请重新分析" });
+      res.end();
+      return;
     }
 
     // 兼容旧格式：如果没有 key_claims 但有 search_queries，转换格式
@@ -625,8 +650,16 @@ app.post("/api/analyze", upload.single("file"), async (req, res) => {
     console.log(`  → 提取到 ${claimCount} 条关键声明，行业: ${extractedData.industry || "未识别"}`);
     console.log(`  → TAM: ${extractedData.TAM}, CAGR: ${extractedData.CAGR}%, TRL: ${extractedData.TRL}, Margin: ${extractedData.Margin}`);
 
+    sendSSE({
+      type: "progress",
+      stage: "data_done",
+      percentage: 28,
+      message: `数据提取完成，共识别 ${claimCount} 条关键声明，启动AI深度研究...`,
+    });
+
     // ── 第2步: AI专家深度研究与评分（DeepThink 模式）──
     console.log("[2/2] AI专家深度研究: MiniMax 知识库深度分析中（DeepThink模式）...");
+    sendSSE({ type: "progress", stage: "ai_research", percentage: 32, message: "AI深度研究启动（DeepThink模式，预计3-5分钟）..." });
 
     // 释放已不再需要的大字符串，降低内存峰值
     extractionRaw = null;
@@ -649,6 +682,7 @@ app.post("/api/analyze", upload.single("file"), async (req, res) => {
     // 解析失败重试
     if (!validatedData || !validatedData.validated_data) {
       console.warn("[2/2] 首次专家分析 JSON 解析失败，重试...");
+      sendSSE({ type: "progress", stage: "ai_research_retry", percentage: 75, message: "AI研究结果解析失败，重试中..." });
       const retryJudgePrompt = EXPERT_JUDGE_PROMPT + "\n\n【紧急提醒】上次输出不是合法 JSON。这次只输出 JSON 对象，从 { 开始到 } 结束。";
       validationRaw = await callLLM(retryJudgePrompt, judgeInput, 16000);
       validatedData = extractJson(validationRaw);
@@ -659,16 +693,19 @@ app.post("/api/analyze", upload.single("file"), async (req, res) => {
 
     if (!validatedData || !validatedData.validated_data) {
       console.error("[2/2] 专家分析失败");
-      return res.status(500).json({
-        error: "AI 专家分析失败，请重试",
-      });
+      sendSSE({ type: "error", error: "AI 专家分析失败，请重试" });
+      res.end();
+      return;
     }
+
+    sendSSE({ type: "progress", stage: "ai_done", percentage: 82, message: "AI深度研究完成，正在计算五维评分..." });
 
     // ── 评分计算 ──
     const scoringInput = validatedData.validated_data;
     const scoringResult = scoreProject(scoringInput);
 
     console.log(`  → 评分完成: 总分 ${scoringResult.total_score}, 评级 ${scoringResult.grade}`);
+    sendSSE({ type: "progress", stage: "scoring", percentage: 86, message: `评分完成（${scoringResult.total_score}分 / ${scoringResult.grade}），生成深度研究报告...` });
 
     // ── 构建维度数据（合并评分系统结果 + 专家分析结论）──
     const dimensionAnalysis = validatedData.dimension_analysis || {};
@@ -745,6 +782,8 @@ app.post("/api/analyze", upload.single("file"), async (req, res) => {
 
     // ── 生成深度研究报告 ──
     console.log("  → 生成深度研究报告...");
+    sendSSE({ type: "progress", stage: "report", percentage: 90, message: "正在生成深度研究报告（约1-2分钟）..." });
+
     const deepResearchInput = [
       `【商业计划书原文节选（前12000字）】\n${bpText.slice(0, 12000)}`,
       `\n\n【AI专家深度分析结果】\n${JSON.stringify({
@@ -769,27 +808,36 @@ app.post("/api/analyze", upload.single("file"), async (req, res) => {
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
     console.log(`✓ 完成！总耗时 ${elapsed}s`);
 
-    res.json({
-      success: true,
-      elapsed_seconds: parseFloat(elapsed),
-      extracted_data: extractedData,
-      validated_data: scoringInput,
-      industry: extractedData.industry,
-      thinking,
-      deep_research: deepResearch,
-      verdict,
-      search_summary: {
-        enabled: true,
-        mock: false,
-        total_results: 0,
-        queries_count: claimCount,
-        industry_pe_available: false,
-        provider: "minimax_builtin_knowledge",
+    sendSSE({ type: "progress", stage: "finalizing", percentage: 98, message: "报告生成完成，正在整理结果..." });
+
+    // ── 发送最终结果 ──
+    sendSSE({
+      type: "complete",
+      data: {
+        success: true,
+        elapsed_seconds: parseFloat(elapsed),
+        extracted_data: extractedData,
+        validated_data: scoringInput,
+        industry: extractedData.industry,
+        thinking,
+        deep_research: deepResearch,
+        verdict,
+        search_summary: {
+          enabled: true,
+          mock: false,
+          total_results: 0,
+          queries_count: claimCount,
+          industry_pe_available: false,
+          provider: "minimax_builtin_knowledge",
+        },
       },
     });
+
+    res.end();
   } catch (err) {
     console.error("[分析错误]", err);
-    res.status(500).json({ error: err.message || "服务器内部错误" });
+    sendSSE({ type: "error", error: err.message || "服务器内部错误" });
+    res.end();
   }
 });
 

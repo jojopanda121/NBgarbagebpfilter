@@ -5,37 +5,41 @@ import { API_BASE } from "../constants";
 /**
  * useAnalysisPipeline
  *
- * 封装两步流水线的完整业务逻辑：
- *   Step 0 — 数据提取（提取BP关键声明与评分数据）
- *   Step 1 — AI深度研究（MiniMax知识库专家分析 & 评分）
+ * 重构说明：
+ *   原实现依赖长连接 SSE（约 7 分钟），被网关/浏览器强制中断。
+ *   新实现采用「提交 + 轮询」模式：
+ *     1. POST /api/analyze  → 立即返回 { taskId }（<1 秒）
+ *     2. GET  /api/task/:id → 每 2.5 秒轮询一次进度（毫秒级完成）
+ *   每次轮询均为短生命周期请求，不存在超时问题。
+ *   网络抖动时最多容忍连续 8 次失败后才报错，单次失败直接重试下一轮。
  *
- * 实现：
- *   - 向 /api/analyze 发送 multipart/form-data 请求
- *   - 解析 SSE（Server-Sent Events）流，获取后端真实进度事件
- *   - 在 AI 深度研究阶段使用慢速爬行动画，保持进度条持续移动
- *   - 基于已用时间和当前进度实时计算 ETA（预估剩余时间）
- *   - 全程将进度写入 Zustand store，与 UI 完全解耦
- *   - 错误统一通过 setError 上报，不向调用方抛出
- *
- * SSE 阶段 → currentStep 映射：
+ * SSE stage → currentStep 映射（与后端 onProgress 保持一致）：
  *   pdf_done / data_extract / data_extract_retry / data_done → step 0
- *   ai_research / ai_research_retry / ai_done / scoring / report / finalizing → step 1
- *   complete → step 2（全部完成）
+ *   agent_b_start / claim_verify / claims_verified / scoring_retry /
+ *   ai_done / scoring / report / finalizing                 → step 1
+ *   complete                                                 → step 2
  */
 
-/** SSE stage 映射到 pipeline step */
 const STAGE_TO_STEP = {
   pdf_done: 0,
   data_extract: 0,
   data_extract_retry: 0,
   data_done: 0,
+  agent_b_start: 1,
+  claim_verify: 1,
+  claims_verified: 1,
+  scoring_retry: 1,
   ai_research: 1,
   ai_research_retry: 1,
   ai_done: 1,
   scoring: 1,
   report: 1,
   finalizing: 1,
+  complete: 2,
 };
+
+const POLL_INTERVAL_MS = 2500;    // 轮询间隔
+const MAX_CONSECUTIVE_ERRORS = 8; // 容忍最大连续失败次数
 
 export function useAnalysisPipeline() {
   const {
@@ -60,7 +64,7 @@ export function useAnalysisPipeline() {
       const state = useAnalysisStore.getState();
       const { progress, currentStep } = state;
 
-      // ETA 计算：基于已用时间和当前百分比推算剩余时间
+      // ETA 计算
       if (progress > 2 && progress < 99 && startTimeRef.current) {
         const elapsed = (Date.now() - startTimeRef.current) / 1000;
         const totalEstimate = elapsed / (progress / 100);
@@ -68,23 +72,18 @@ export function useAnalysisPipeline() {
         state.setEta(Math.round(remaining));
       }
 
-      // 慢速爬行：在等待后端响应期间保持进度条缓慢移动，避免卡死感
-      // step 0（数据提取）：在 12%-25% 范围内缓慢爬行（0.2%/s）
+      // 慢速爬行：等待后端进度推送期间保持进度条缓慢移动
       if (currentStep === 0 && progress >= 12 && progress < 25) {
         state.setProgress(Math.min(progress + 0.2, 25));
-      }
-      // step 1（AI 研究）：在 32%-79% 范围内缓慢爬行（0.15%/s ≈ 5分钟从32到79）
-      else if (currentStep === 1 && progress >= 32 && progress < 79) {
+      } else if (currentStep === 1 && progress >= 32 && progress < 79) {
         state.setProgress(Math.min(progress + 0.15, 79));
-      }
-      // step 1 报告生成阶段：在 90%-97% 范围内缓慢爬行（0.05%/s）
-      else if (currentStep === 1 && progress >= 90 && progress < 97) {
+      } else if (currentStep === 1 && progress >= 90 && progress < 97) {
         state.setProgress(Math.min(progress + 0.05, 97));
       }
     }, 1000);
 
     return () => clearInterval(interval);
-  }, []); // 仅挂载时创建一次，通过 ref 访问最新状态
+  }, []);
 
   const startAnalysis = useCallback(async () => {
     if (!file) return;
@@ -98,83 +97,98 @@ export function useAnalysisPipeline() {
     setCurrentStep(0);
     setProgress(0);
     setEta(null);
-    setProgressMessage("正在上传文件并提取PDF文本...");
-
-    // 15 分钟超时（AI 深度分析流水线单次耗时可达 6-10 分钟）
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 15 * 60 * 1000);
+    setProgressMessage("正在上传文件...");
 
     try {
+      // ── 第一步：提交任务，获取 taskId（超时 2 分钟，覆盖大文件上传）──
       const formData = new FormData();
       formData.append("file", file);
 
-      const resp = await fetch(`${API_BASE}/api/analyze`, {
-        method: "POST",
-        body: formData,
-        signal: controller.signal,
-      });
+      const submitController = new AbortController();
+      const submitTimeout = setTimeout(() => submitController.abort(), 120_000);
 
-      // 验证错误（PDF 格式错误等）以普通 JSON 返回，此时不会有 SSE 流
-      if (!resp.ok) {
-        const errBody = await resp.json().catch(() => ({}));
-        throw new Error(errBody.error || `服务器错误 ${resp.status}`);
+      let taskId;
+      try {
+        const resp = await fetch(`${API_BASE}/api/analyze`, {
+          method: "POST",
+          body: formData,
+          signal: submitController.signal,
+        });
+        clearTimeout(submitTimeout);
+
+        if (!resp.ok) {
+          const errBody = await resp.json().catch(() => ({}));
+          throw new Error(errBody.error || `服务器错误 ${resp.status}`);
+        }
+
+        const body = await resp.json();
+        taskId = body.taskId;
+      } catch (submitErr) {
+        clearTimeout(submitTimeout);
+        throw submitErr;
       }
 
-      // ── 解析 SSE 流 ──
-      const reader = resp.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
+      if (!taskId) throw new Error("未获取到任务ID，请重试");
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
+      setProgressMessage("任务已提交，分析进行中...");
 
-        buffer += decoder.decode(value, { stream: true });
+      // ── 第二步：轮询任务状态，直到 complete 或 error ──
+      let consecutiveErrors = 0;
 
-        // SSE 帧以 "\n\n" 分隔
-        const frames = buffer.split("\n\n");
-        buffer = frames.pop(); // 保留未完整的帧
+      while (analyzingRef.current) {
+        // 等待轮询间隔
+        await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
+        if (!analyzingRef.current) break;
 
-        for (const frame of frames) {
-          // 每帧可能包含多行，取 "data: ..." 行
-          const dataLine = frame.split("\n").find((l) => l.startsWith("data: "));
-          if (!dataLine) continue;
+        // 发起轮询（15 秒超时）
+        let taskData;
+        try {
+          const pollController = new AbortController();
+          const pollTimeout = setTimeout(() => pollController.abort(), 15_000);
+          const pollResp = await fetch(`${API_BASE}/api/task/${taskId}`, {
+            signal: pollController.signal,
+          });
+          clearTimeout(pollTimeout);
 
-          let event;
-          try {
-            event = JSON.parse(dataLine.slice(6));
-          } catch {
-            continue;
+          if (!pollResp.ok) throw new Error(`轮询错误 ${pollResp.status}`);
+          taskData = await pollResp.json();
+          consecutiveErrors = 0;
+        } catch (_pollErr) {
+          consecutiveErrors++;
+          if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+            throw new Error(
+              `连续 ${MAX_CONSECUTIVE_ERRORS} 次轮询失败，请检查网络连接后重试`
+            );
           }
-
-          if (event.type === "progress") {
-            // 后端发来真实进度，直接使用（只单调递增，不允许倒退）
-            const current = useAnalysisStore.getState().progress;
-            if (event.percentage > current) {
-              setProgress(event.percentage);
-            }
-            if (event.message) setProgressMessage(event.message);
-
-            // 更新 step
-            const step = STAGE_TO_STEP[event.stage];
-            if (step !== undefined) {
-              setCurrentStep(step);
-            }
-          } else if (event.type === "complete") {
-            clearTimeout(timeoutId);
-            setProgress(100);
-            setProgressMessage("分析完成！");
-            setCurrentStep(2);
-            setResult(event.data);
-          } else if (event.type === "error") {
-            throw new Error(event.error || "分析失败，请重试");
-          }
+          // 单次失败：静默跳过，等待下次轮询
+          continue;
         }
+
+        // 更新进度（单调递增，不允许倒退）
+        const currentProgress = useAnalysisStore.getState().progress;
+        if (taskData.percentage > currentProgress) {
+          setProgress(taskData.percentage);
+        }
+        if (taskData.message) setProgressMessage(taskData.message);
+
+        const step = STAGE_TO_STEP[taskData.stage];
+        if (step !== undefined) setCurrentStep(step);
+
+        // 检查终止状态
+        if (taskData.status === "complete") {
+          setProgress(100);
+          setProgressMessage("分析完成！");
+          setCurrentStep(2);
+          setResult(taskData.result);
+          break;
+        } else if (taskData.status === "error") {
+          throw new Error(taskData.error || "分析失败，请重试");
+        }
+        // status === "running" → 继续轮询
       }
     } catch (err) {
-      clearTimeout(timeoutId);
       if (err.name === "AbortError") {
-        setError("分析超时（超过15分钟），请上传更小的文件后重试");
+        setError("文件上传超时，请检查网络后重试");
       } else if (err.message === "Failed to fetch") {
         setError("网络连接失败，服务器可能正在重启，请稍后重试");
       } else {

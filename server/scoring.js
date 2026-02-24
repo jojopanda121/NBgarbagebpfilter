@@ -194,7 +194,7 @@ function getGrade(totalScore) {
   } else if (totalScore >= 60) {
     return { grade: "C", label: "可以跟进 (Keep In View)", action: "早期留金 or 平台生高：商业逻辑穿透没准，但缺乏数据验证。建议盒金 VP 梳理 POC，关注签约，再评估天花板价值量，支支评估。", color: "#f59e0b" };
   } else {
-    return { grade: "D", label: "建议放弃 (Reject / Archive)", action: "结构性死亡：伪需求，烧钱无底洞 (LTV<CAC)，股权结构混乱，严重高估，严重低估处于1万期初的人工时间。", color: "#ef4444" };
+    return { grade: "D", label: "建议放弃 (Reject / Archive)", action: "项目风险过高：商业模式未经验证，市场天花板受限或竞争壁垒不足。建议暂停推进，除非创始人有重大战略调整或新数据验证。", color: "#ef4444" };
   }
 }
 

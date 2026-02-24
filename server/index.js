@@ -807,8 +807,15 @@ if (fs.existsSync(clientBuildDir)) {
 }
 
 // ── 启动 ──
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`\n🚀 GarbageBPFilter 后端已启动: http://localhost:${PORT}`);
   console.log(`   模型: ${MODEL}`);
   console.log(`   分析引擎: MiniMax 内置知识库 + DeepThink 深度研究\n`);
 });
+
+// 延长超时以支持长时间运行的 AI 分析流水线（约 6-10 分钟）
+// Node.js 18+ 的 requestTimeout 默认值为 300s（5 分钟），需显式覆盖
+const HTTP_TIMEOUT = 15 * 60 * 1000; // 15 分钟
+server.timeout = HTTP_TIMEOUT;           // socket 空闲超时
+server.requestTimeout = HTTP_TIMEOUT;    // 完整请求超时（Node.js 14.11+）
+server.keepAliveTimeout = HTTP_TIMEOUT + 1000; // keep-alive 超时需略高于 requestTimeout

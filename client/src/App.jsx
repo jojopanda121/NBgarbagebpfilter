@@ -22,9 +22,12 @@ const VerdictCard = memo(function VerdictCard({ result }) {
   if (!result?.verdict) return null;
   const verdict = result.verdict;
   const totalScore = verdict.total_score ?? 0;
-  // 使用新的 getGradeInfo 获取完整信息
+  // 优先使用服务端二维评级结果（score × risk），回退到前端纯分数评级
   const gradeInfo = getGradeInfo(totalScore);
   const grade = verdict.grade || gradeInfo.grade;
+  // 如果服务端返回了 2D 评级的 action/label，优先使用
+  const displayLabel = verdict.grade_label || gradeInfo.label;
+  const displayAction = verdict.grade_action || gradeInfo.action;
 
   return (
     <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5 sm:p-8">
@@ -63,14 +66,14 @@ const VerdictCard = memo(function VerdictCard({ result }) {
         <div className="flex-1 text-center md:text-left">
           <h3 className="text-xl font-bold mb-2">评分结果</h3>
           <div className={`text-2xl font-bold mb-2 ${gradeInfo.color}`}>
-            {grade} - {gradeInfo.label}
+            {grade} - {displayLabel}
           </div>
           <p className="text-base text-gray-300 mb-3">
             {verdict.verdict_summary || getVerdict(totalScore)}
           </p>
           <div className={`p-4 rounded-xl text-sm leading-relaxed border ${gradeInfo.bg} ${gradeInfo.border} ${gradeInfo.color}`}>
              <span className="font-bold mr-2">行动建议:</span>
-             {gradeInfo.action}
+             {displayAction}
           </div>
           {result.elapsed_seconds && (
             <p className="text-sm text-gray-500 mt-2">
@@ -172,7 +175,7 @@ export default function App() {
 
       {/* Footer */}
       <footer className="border-t border-gray-800 mt-16 py-6 text-center text-sm text-gray-600">
-        <p>垃圾BP过滤机 v2.1 · MiniMax 知识库深度研究引擎</p>
+        <p>垃圾BP过滤机 v4.0 · MiniMax 知识库深度研究引擎 · 五维定量评分</p>
         <p className="mt-1">Powered by MiniMax M2.5 DeepThink · 行业专家 + 投资专家 AI 团队</p>
       </footer>
     </div>

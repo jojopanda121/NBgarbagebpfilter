@@ -6,6 +6,7 @@ export function downloadReportAsPdf(result) {
   const verdict = result.verdict;
   const totalScore = verdict.total_score ?? 0;
   const grade = verdict.grade || getGrade(totalScore);
+  const gradeAction = verdict.grade_action || getGradeAction(grade);
   const dims = verdict.dimensions || {};
 
   // 估值温度计 HTML
@@ -107,13 +108,13 @@ export function downloadReportAsPdf(result) {
 </head>
 <body>
   <h1 class="title">BP 尽调分析报告</h1>
-  <p class="subtitle">由垃圾BP过滤机生成 · 5维标准化评分体系 · Powered by MiniMax M2.5 · ${new Date().toLocaleDateString("zh-CN")}</p>
+  <p class="subtitle">由垃圾BP过滤机生成 · 五维定量评分体系 v4.0 · Powered by MiniMax M2.5 · ${new Date().toLocaleDateString("zh-CN")}</p>
 
   <div class="score-card">
     <div class="score">${totalScore}</div>
     <div class="grade">${grade}</div>
-    <div class="grade-label">${getGradeLabel(grade)}</div>
-    <div class="verdict-text">${getGradeAction(grade)}</div>
+    <div class="grade-label">${verdict.grade_label || getGradeLabel(grade)}</div>
+    <div class="verdict-text">${gradeAction}</div>
     ${verdict.strengths?.length > 0 ? `<div class="tags">${verdict.strengths.map((s) => `<span class="tag-green">${s}</span>`).join("")}</div>` : ""}
     ${verdict.risk_flags?.length > 0 ? `<div class="tags" style="margin-top:8px">${verdict.risk_flags.map((r) => `<span class="tag-red">${r}</span>`).join("")}</div>` : ""}
     ${result.elapsed_seconds ? `<p style="color:#9ca3af;font-size:12px;margin-top:12px">分析耗时 ${result.elapsed_seconds}s</p>` : ""}
@@ -154,7 +155,7 @@ export function downloadReportAsPdf(result) {
 
   <div class="footer">
     本报告由 AI 自动生成，仅供参考，不构成投资建议。<br>
-    垃圾BP过滤机 v3.0 · 5维标准化评分体系 · Powered by MiniMax M2.5
+    垃圾BP过滤机 v4.0 · 五维定量评分体系 · Powered by MiniMax M2.5
   </div>
 </body>
 </html>`;

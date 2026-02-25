@@ -267,10 +267,10 @@ function DimensionDetailCard({ dimKey, dim, Icon }) {
             )}
             {dimKey === "external_risk" && dim.multiplier !== undefined && (
               <span className={`text-xs font-mono font-bold ${
-                dim.multiplier >= 0.9 ? "text-emerald-400" :
-                dim.multiplier >= 0.5 ? "text-yellow-400" : "text-red-400"
+                dim.multiplier >= 0.95 ? "text-emerald-400" :
+                dim.multiplier >= 0.85 ? "text-yellow-400" : "text-red-400"
               }`}>
-                ×{dim.multiplier.toFixed(1)} 乘数
+                ×{dim.multiplier.toFixed(2)} 乘数
               </span>
             )}
           </div>

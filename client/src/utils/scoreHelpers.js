@@ -1,8 +1,9 @@
-// ── 评分辅助函数 ──
+// ── 评分辅助函数 (v4.0 重构版) ──
+// 与 server/scoring.js 的二维评级系统保持一致
 
 export const getGrade = (s) =>
   s >= 85 ? "A" :
-  s >= 75 ? "B" :
+  s >= 70 ? "B" :
   s >= 60 ? "C" :
   "D";
 
@@ -15,9 +16,9 @@ export const getGradeColor = (grade) => {
 
 export const getGradeLabel = (grade) => {
   const labels = {
-    A: "推荐投资 (Fast Track)",
+    A: "强烈推荐投资 (Fast Track)",
     B: "谨慎推荐 (Proceed with DD)",
-    C: "可以跟进 (Keep In View)",
+    C: "观望跟踪 (Keep In View)",
     D: "建议放弃 (Reject / Archive)",
   };
   return labels[grade] || grade;
@@ -25,10 +26,10 @@ export const getGradeLabel = (grade) => {
 
 export const getGradeAction = (grade) => {
   const actions = {
-    A: "立刻推进：24小时内约见创始人，启动业务尽调和财务尽调，开始建模",
-    B: "空甲拟议：安排面聊，核心考察团队对短期的认知，在财务数据中申请行权测试，并始佑价。",
-    C: "早期留金 or 平台生高：商业逻辑穿透没准，但缺乏数据验证。建议盒金 VP 梳理 POC，关注签约，再评估天花板价值量，支支评估。",
-    D: "结构性死亡：伪需求，烧钱无底洞 (LTV<CAC)，股权结构混乱，严重高估，严重低估处于1万期初的人工时间。",
+    A: "立刻推进：建议 24 小时内约见创始人，同步启动业务尽调（客户访谈、竞品验证）和财务尽调（审计底稿、银行流水），并行开始估值建模。优先关注收入确认方式与客户集中度。",
+    B: "安排创始人面谈，重点考察团队对行业周期的认知深度与战略定力。要求提供近 12 个月的月度财务明细，验证单位经济模型（LTV/CAC、毛利率、回款周期），同步启动竞品客户交叉验证。",
+    C: "项目处于早期验证阶段，商业模式尚未完全跑通。建议保持季度跟踪频率，关注关键里程碑达成情况（首个标杆客户、产品 PMF 验证、单月盈亏平衡），如有显著进展可重新进入评审流程。",
+    D: "项目存在结构性硬伤：可能涉及伪需求（缺乏付费意愿验证）、商业模式不可持续（边际成本不收敛）、核心团队与赛道严重不匹配、或估值脱离基本面。建议归档并标注具体否决原因，供投委会复盘参考。",
   };
   return actions[grade] || "";
 };
@@ -38,7 +39,7 @@ export const getGradeInfo = (score) => {
   const color = getGradeColor(grade);
   const label = getGradeLabel(grade);
   const action = getGradeAction(grade);
-  
+
   let bg, border;
   if (grade === "A") {
     bg = "bg-emerald-500/10";

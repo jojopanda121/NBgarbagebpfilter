@@ -168,14 +168,14 @@ const DimensionBars = memo(function DimensionBars({ dimensions }) {
                 <span className="text-sm text-gray-500">乘数效果:</span>
                 <span
                   className={`text-sm font-mono font-bold ${
-                    dim.multiplier >= 0.9
+                    dim.multiplier >= 0.95
                       ? "text-emerald-400"
-                      : dim.multiplier >= 0.5
+                      : dim.multiplier >= 0.85
                       ? "text-yellow-400"
                       : "text-red-400"
                   }`}
                 >
-                  ×{dim.multiplier.toFixed(1)}
+                  ×{dim.multiplier.toFixed(2)}
                 </span>
               </div>
             </div>
@@ -235,9 +235,10 @@ const ScoreVisualizer = memo(function ScoreVisualizer({ verdict }) {
           五维雷达图
         </h4>
         <RadarChartPanel dimensions={verdict.dimensions} />
+        <DimensionBars dimensions={verdict.dimensions} />
       </div>
 
-      {/* 估值温度计 + 维度进度条 */}
+      {/* 估值温度计 */}
       <div className="bg-gray-900 border border-gray-800 rounded-2xl p-4 sm:p-6">
         <h4 className="text-lg font-semibold mb-4 flex items-center gap-2">
           <BarChart3 className="w-5 h-5 text-orange-400" />

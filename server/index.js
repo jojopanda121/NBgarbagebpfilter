@@ -885,7 +885,7 @@ async function runAgentBWithBatching(extractedData, bpText, onProgress) {
   const batchResults = await Promise.all(
     batches.map((batch, batchIdx) =>
       callLLM(
-        CLAIM_VERDICT_BATCH_PROMPT,
+        CLAIM_VERDICT_BATCH_PROMPT + "\n\n【重要】请严格只输出 JSON 数组，不要包含 ```json ... ``` 代码块标记，也不要包含任何其他解释文字。",
         `${bpContext}\n\n待核查声明批次 ${batchIdx + 1}/${batchCount}：\n${JSON.stringify(batch, null, 2)}`,
         8192
       ).then((raw) => {
@@ -1138,15 +1138,18 @@ async function runPipelineBackground(taskId, bpText) {
 
   // 如果 AI 没返回完整的 valuation_comparison，尝试自己构造
   if (!valuationComparison || !valuationComparison.bp_multiple) {
-    const bpValuation = scoringInput.BP_Valuation || 0;
-    const bpRevenue = scoringInput.BP_Revenue || 0;
+    // 修正：从 extractedData (Task A 结果) 获取 BP 原始估值/收入，而非从 scoringInput (Task B 结果)
+    // Task B 的 validated_data 不包含 BP_Valuation/BP_Revenue
+    const bpValuation = extractedData.BP_Valuation || 0;
+    const bpRevenue = extractedData.BP_Revenue || 0;
     const bpMultiple = (bpValuation && bpRevenue) ? Math.round(bpValuation / bpRevenue) : 0;
     
     // 尝试从 dimension_analysis.external_risk 中提取行业平均倍数
     // AI 可能会在 text 中提到 "行业平均PS=XX"
     let industryAvg = 0;
     const riskFinding = dimensionAnalysis.external_risk?.ai_finding || "";
-    const avgMatch = riskFinding.match(/行业平均(?:PS|PE|估值倍数)[=≈:：]\s*(\d+(?:\.\d+)?)/i);
+    // 增强正则：支持 "行业平均PS为XX"、"行业平均PS约XX" 等
+    const avgMatch = riskFinding.match(/行业平均(?:PS|PE|估值倍数)(?:[=≈:：]|为|约)?\s*(\d+(?:\.\d+)?)/i);
     if (avgMatch) {
       industryAvg = parseFloat(avgMatch[1]);
     }

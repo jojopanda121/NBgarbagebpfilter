@@ -98,11 +98,16 @@ function redeemToken(token, userId) {
         throw new Error("兑换码已被使用");
       }
 
-      // 4. 为用户增加额度
+      // 4. 为用户增加免费额度（Token 兑换属于免费额度）
       db.prepare(`
-        UPDATE quotas SET paid_quota = paid_quota + ?, updated_at = datetime('now')
+        UPDATE quotas SET free_quota = free_quota + ?, updated_at = datetime('now')
         WHERE user_id = ?
       `).run(tokenInfo.quota_amount, userId);
+
+      // 5. 标记用户已兑换过 Token（兑换后无需绑定联系方式）
+      db.prepare(`
+        UPDATE users SET has_redeemed = 1, updated_at = datetime('now') WHERE id = ?
+      `).run(userId);
 
       // 5. 记录到订单流水
       const orderNo = `REDEEM-${Date.now()}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;

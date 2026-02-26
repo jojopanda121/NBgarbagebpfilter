@@ -108,27 +108,73 @@ function calculateDimension3_CapitalEfficiencyAndScale(Industry_Capital_Score, I
 /**
  * 计算模块4: 团队基因 (S4, 权重 20%, 满分 100)
  *
- * Agent Prompt 约束:
- *   仅提取核心创始人在该赛道的直接相关从业经验年数，输出 Founder_Exp_Years (数字)。
+ * 多因子团队评分模型（v4.1 重构）：
  *
- * 公式: S4 = min(100, round(Exp × 10))
- *   即 10 年经验即可拿满分，不设上限惩罚。
+ * S4 = round(
+ *   0.30 × Experience_Score +      // 经验深度（对数递减曲线）
+ *   0.25 × Domain_Match_Score +    // 行业匹配度
+ *   0.20 × Team_Completeness +     // 团队完整性
+ *   0.15 × Track_Record_Score +    // 过往成绩
+ *   0.10 × Education_Score         // 教育背景
+ * )
  *
- * 重要变更: 废除原有的股权结构惩罚（Equity Penalty），
- *   因为股权结构属于交易条款而非团队能力指标，且早期项目股权结构多变，
- *   硬性惩罚会误杀连续创业者或学术背景创始人。
+ * 每个子因子由 LLM 输出 1-10 分，JS 端做加权计算。
+ * Experience_Score 使用递减曲线 min(10, 2.5 × ln(years + 1))，避免线性满分。
  *
- * @param {number} Founder_Exp_Years - 核心创始人赛道相关经验年数
+ * @param {object} teamData - 团队评分数据
+ * @param {number} teamData.Founder_Exp_Years - 核心创始人赛道相关经验年数（兼容旧接口）
+ * @param {number} teamData.Team_Experience_Score - 经验深度评分（1-10，LLM输出）
+ * @param {number} teamData.Team_Domain_Match_Score - 行业匹配度（1-10）
+ * @param {number} teamData.Team_Completeness_Score - 团队完整性（1-10）
+ * @param {number} teamData.Team_Track_Record_Score - 过往成绩（1-10）
+ * @param {number} teamData.Team_Education_Score - 教育背景（1-10）
  * @returns {number} 0-100 的整数得分
  */
-function calculateDimension4_Team(Founder_Exp_Years) {
-  const rawExp = (Founder_Exp_Years === null || Founder_Exp_Years === undefined) ? NaN : Number(Founder_Exp_Years);
+function calculateDimension4_Team(teamData) {
+  // 兼容旧接口：如果传入的是数字，按旧逻辑处理
+  if (typeof teamData === "number" || teamData === null || teamData === undefined) {
+    const rawExp = (teamData === null || teamData === undefined) ? NaN : Number(teamData);
+    const expVal = isNaN(rawExp) ? 3 : Math.max(0, rawExp);
+    // 使用对数递减曲线计算经验分
+    const expScore = Math.min(10, 2.5 * Math.log(expVal + 1));
+    // 没有其他子因子时，经验分占100%权重，归一化到0-100
+    return Math.min(100, Math.max(0, Math.round(expScore * 10)));
+  }
 
-  // 数据缺失默认 3 年（不至于归零，但也不给高分）
-  const expVal = isNaN(rawExp) ? 3 : Math.max(0, rawExp);
+  const data = teamData || {};
 
-  const score = Math.min(100, Math.round(expVal * 10));
-  return Math.max(0, score);
+  // 子因子提取（LLM 输出 1-10）
+  const clamp = (val, fallback) => {
+    const n = Number(val);
+    return (!isNaN(n) && n >= 1 && n <= 10) ? n : fallback;
+  };
+
+  // Experience: 如果 LLM 直接给了 Team_Experience_Score 就用，否则从 Founder_Exp_Years 计算
+  let experienceScore;
+  const rawTeamExp = Number(data.Team_Experience_Score);
+  if (!isNaN(rawTeamExp) && rawTeamExp >= 1 && rawTeamExp <= 10) {
+    experienceScore = rawTeamExp;
+  } else {
+    const rawExp = Number(data.Founder_Exp_Years);
+    const expVal = isNaN(rawExp) ? 3 : Math.max(0, rawExp);
+    experienceScore = Math.min(10, 2.5 * Math.log(expVal + 1));
+  }
+
+  const domainMatch = clamp(data.Team_Domain_Match_Score, 5);
+  const completeness = clamp(data.Team_Completeness_Score, 5);
+  const trackRecord = clamp(data.Team_Track_Record_Score, 5);
+  const education = clamp(data.Team_Education_Score, 5);
+
+  // 加权计算（每个因子 1-10，加权后 1-10，再 ×10 映射到 0-100）
+  const weighted =
+    0.30 * experienceScore +
+    0.25 * domainMatch +
+    0.20 * completeness +
+    0.15 * trackRecord +
+    0.10 * education;
+
+  const score = Math.round(weighted * 10);
+  return Math.min(100, Math.max(0, score));
 }
 
 /**
@@ -177,75 +223,44 @@ function calculateDimension5_ExternalRisk(Policy_Risk, Valuation_Gap) {
 }
 
 /**
- * 加权总分计算
+ * 五维简单平均总分
  *
- * Total_Score = (S1 × W1 + S2 × W2 + S3 × W3 + S4 × W4) × V5
+ * Total_Score = (S1 + S2 + S3 + S4 + S5) / 5
+ * 其中 S5 = V5 × 100（将 0-1 乘数转为 0-100 分）
  */
 function calculateTotalScore(S1, S2, S3, S4, V5) {
-  const W1 = 0.20;  // 时机与天花板: 20%
-  const W2 = 0.25;  // 产品与壁垒: 25%
-  const W3 = 0.35;  // 资本效率与规模效应: 35%
-  const W4 = 0.20;  // 团队基因: 20%
-
   const s1 = Number(S1) || 0;
   const s2 = Number(S2) || 0;
   const s3 = Number(S3) || 0;
   const s4 = Number(S4) || 0;
-  const v5 = Number(V5);
-  const safeV5 = isNaN(v5) ? 1 : Math.max(0, Math.min(1, v5));
-
-  const baseScore = s1 * W1 + s2 * W2 + s3 * W3 + s4 * W4;
-  const totalScore = baseScore * safeV5;
-
-  return Math.min(100, Math.max(0, Math.round(totalScore)));
+  const s5 = Math.round((Number(V5) || 1) * 100);
+  return Math.min(100, Math.max(0, Math.round((s1 + s2 + s3 + s4 + s5) / 5)));
 }
 
 /**
- * 二维评级系统 (分数 × 风险)
+ * 纯分数评级 A/B/C/D
  *
- * 基于总分和外部风险乘数的二维矩阵评级，提供语义通顺、严谨的结构化 VC 尽调行动建议。
- * 剔除一切可能由 LLM 幻觉产生的乱码短语。
+ * A ≥ 85 | B ≥ 70 | C ≥ 60 | D < 60
  *
- * @param {number} totalScore - 加权总分 (0-100)
- * @param {number} riskMultiplier - 外部风险乘数 (0-1)
+ * @param {number} totalScore - 总分 (0-100)
  * @returns {{ grade, label, action, color }}
  */
-function getGrade(totalScore, riskMultiplier) {
+function getGrade(totalScore) {
   const score = Number(totalScore) || 0;
-  const risk = Number(riskMultiplier);
-  const safeRisk = isNaN(risk) ? 1 : risk;
 
-  // 高风险标志：乘数 < 0.85 表示估值严重溢价或政策风险显著
-  const highRisk = safeRisk < 0.85;
-
-  if (score >= 85 && !highRisk) {
+  if (score >= 85) {
     return {
       grade: "A",
       label: "强烈推荐投资 (Fast Track)",
       action: "立刻推进：建议 24 小时内约见创始人，同步启动业务尽调（客户访谈、竞品验证）和财务尽调（审计底稿、银行流水），并行开始估值建模。优先关注收入确认方式与客户集中度。",
       color: "#10b981",
     };
-  } else if (score >= 85 && highRisk) {
-    // 分数高但风险高 → 降级为 B
-    return {
-      grade: "B",
-      label: "有条件推荐 (Conditional Proceed)",
-      action: "项目基本面优秀但存在估值溢价或政策合规风险。建议约见创始人深入沟通估值逻辑，要求提供经审计的财务数据和合规证明文件。在估值谈判取得实质进展前，暂缓出具投资意向书。",
-      color: "#3b82f6",
-    };
-  } else if (score >= 70 && !highRisk) {
+  } else if (score >= 70) {
     return {
       grade: "B",
       label: "谨慎推荐 (Proceed with DD)",
       action: "安排创始人面谈，重点考察团队对行业周期的认知深度与战略定力。要求提供近 12 个月的月度财务明细，验证单位经济模型（LTV/CAC、毛利率、回款周期），同步启动竞品客户交叉验证。",
       color: "#3b82f6",
-    };
-  } else if (score >= 70 && highRisk) {
-    return {
-      grade: "C",
-      label: "观望跟踪 (Keep In View)",
-      action: "商业逻辑有一定吸引力但风险敞口较大。建议将项目纳入跟踪池，与投后团队协商安排一次轻度业务尽调（POC 验证或客户回访），关注下一季度的签约转化率和现金流变化，待风险因素明朗化后再评估。",
-      color: "#f59e0b",
     };
   } else if (score >= 60) {
     return {
@@ -294,8 +309,15 @@ function scoreProject(data) {
     data.Industry_Scale_Score
   );
 
-  // 第四维度: 团队基因（废除股权惩罚，仅看经验）
-  const S4 = calculateDimension4_Team(data.Founder_Exp_Years);
+  // 第四维度: 团队基因（多因子评分模型）
+  const S4 = calculateDimension4_Team({
+    Founder_Exp_Years: data.Founder_Exp_Years,
+    Team_Experience_Score: data.Team_Experience_Score,
+    Team_Domain_Match_Score: data.Team_Domain_Match_Score,
+    Team_Completeness_Score: data.Team_Completeness_Score,
+    Team_Track_Record_Score: data.Team_Track_Record_Score,
+    Team_Education_Score: data.Team_Education_Score,
+  });
 
   // 第五维度: 外部风险（乘数，软着陆折扣）
   const policyRisk = (data.Policy_Risk !== undefined && data.Policy_Risk !== null)
@@ -303,11 +325,11 @@ function scoreProject(data) {
     : 1;
   const V5 = calculateDimension5_ExternalRisk(policyRisk, data.Valuation_Gap);
 
-  // 计算总分
+  // 计算总分（五维简单平均）
   const totalScore = calculateTotalScore(S1, S2, S3, S4, V5);
 
-  // 获取二维评级（分数 × 风险）
-  const grading = getGrade(totalScore, V5);
+  // 获取纯分数评级
+  const grading = getGrade(totalScore);
 
   return {
     dimensions: {
@@ -322,14 +344,14 @@ function scoreProject(data) {
         score: S2,
         label: "产品与壁垒",
         subtitle: "TRL + 竞品排名",
-        weight: 25,
+        weight: 20,
         inputs: { TRL: data.TRL, Competitor_Rank_Score: data.Competitor_Rank_Score },
       },
       business_validation: {
         score: S3,
         label: "资本效率与规模效应",
         subtitle: "行业资本效率 + 行业规模效应",
-        weight: 35,
+        weight: 20,
         inputs: { Industry_Capital_Score: data.Industry_Capital_Score, Industry_Scale_Score: data.Industry_Scale_Score },
       },
       team: {
@@ -343,7 +365,7 @@ function scoreProject(data) {
         score: Math.round(V5 * 100),
         label: "外部风险",
         subtitle: "政策风险 + 估值溢价折扣",
-        weight: 0, // 作为乘数，不是加权项
+        weight: 20,
         multiplier: V5,
         inputs: { Policy_Risk: data.Policy_Risk, Valuation_Gap: data.Valuation_Gap },
       },

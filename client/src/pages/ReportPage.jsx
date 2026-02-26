@@ -1,33 +1,47 @@
 import React, { useEffect, useState } from "react";
-import { useParams, useNavigate } from "react-router-dom";
-import { Gavel, ArrowLeft, Loader2 } from "lucide-react";
+import { useParams, useNavigate, useSearchParams } from "react-router-dom";
+import { Gavel, ArrowLeft, Loader2, Share2, Copy, CheckCircle } from "lucide-react";
 import api from "../services/api";
+import useAuthStore from "../store/useAuthStore";
 import VerdictCard from "../components/VerdictCard";
 import ScoreVisualizer from "../components/ScoreVisualizer";
 import DetailedReport from "../components/DetailedReport";
 
 export default function ReportPage() {
-  const { taskId } = useParams();
+  const { taskId, shareToken } = useParams();
+  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [result, setResult] = useState(null);
+  const [sharing, setSharing] = useState(false);
+  const [shareLink, setShareLink] = useState("");
+  const [copied, setCopied] = useState(false);
+
+  const token = useAuthStore((s) => s.token);
+  const user = useAuthStore((s) => s.user);
+  const isSharedMode = !!shareToken;
 
   useEffect(() => {
     async function fetchReport() {
-      if (!taskId) {
-        setError("缺少任务 ID");
-        setLoading(false);
-        return;
-      }
-
       try {
-        const data = await api.get(`/api/task/${taskId}`);
+        let data;
+        if (isSharedMode) {
+          // 分享模式：公开访问
+          data = await api.get(`/api/task/shared/${shareToken}`);
+        } else if (taskId) {
+          // 正常模式：需登录
+          data = await api.get(`/api/task/${taskId}`);
+        } else {
+          setError("缺少任务 ID");
+          setLoading(false);
+          return;
+        }
+
         if (!data || !data.result) {
           setError("报告不存在或尚未生成");
           return;
         }
-        // 解析 result 字符串
         const parsed = typeof data.result === "string" ? JSON.parse(data.result) : data.result;
         setResult(parsed);
       } catch (err) {
@@ -38,7 +52,33 @@ export default function ReportPage() {
     }
 
     fetchReport();
-  }, [taskId]);
+  }, [taskId, shareToken, isSharedMode]);
+
+  const handleShare = async () => {
+    if (!taskId) return;
+    setSharing(true);
+    try {
+      const data = await api.post(`/api/task/${taskId}/share`);
+      // 获取邀请码
+      let inviteCode = "";
+      try {
+        const inv = await api.get("/api/user/invite-code");
+        inviteCode = inv.invite_code || "";
+      } catch {}
+      const link = `${window.location.origin}/report/s/${data.share_token}${inviteCode ? `?ref=${inviteCode}` : ""}`;
+      setShareLink(link);
+    } catch (err) {
+      alert(err.message || "生成分享链接失败");
+    } finally {
+      setSharing(false);
+    }
+  };
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(shareLink);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
 
   if (loading) {
     return (
@@ -62,6 +102,9 @@ export default function ReportPage() {
     );
   }
 
+  // 是否是报告 owner（可以分享）
+  const canShare = !!token && !!taskId && !isSharedMode;
+
   return (
     <div className="min-h-screen bg-gray-950">
       {/* Header */}
@@ -77,25 +120,57 @@ export default function ReportPage() {
             <span className="text-lg font-bold">垃圾BP过滤机</span>
           </div>
 
-          <button
-            onClick={() => navigate("/app/dashboard")}
-            className="px-4 py-2 text-sm bg-gray-800 hover:bg-gray-700 rounded-lg transition-colors"
-          >
-            分析新 BP
-          </button>
+          <div className="flex items-center gap-2">
+            {canShare && (
+              <button
+                onClick={handleShare}
+                disabled={sharing}
+                className="px-4 py-2 text-sm bg-blue-600 hover:bg-blue-500 disabled:bg-gray-700 rounded-lg transition-colors flex items-center gap-1.5"
+              >
+                {sharing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Share2 className="w-4 h-4" />}
+                分享报告
+              </button>
+            )}
+            <button
+              onClick={() => navigate(token ? "/app/dashboard" : "/")}
+              className="px-4 py-2 text-sm bg-gray-800 hover:bg-gray-700 rounded-lg transition-colors"
+            >
+              {token ? "分析新 BP" : "返回首页"}
+            </button>
+          </div>
         </div>
       </header>
 
+      {/* 分享链接弹出 */}
+      {shareLink && (
+        <div className="max-w-6xl mx-auto px-4 py-3">
+          <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-4 flex items-center gap-3">
+            <div className="flex-1 min-w-0">
+              <p className="text-sm text-blue-400 mb-1">分享链接已生成（3天有效）</p>
+              <p className="text-xs text-gray-400 truncate">{shareLink}</p>
+            </div>
+            <button
+              onClick={handleCopy}
+              className="shrink-0 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 rounded-lg text-sm flex items-center gap-1.5"
+            >
+              {copied ? <><CheckCircle className="w-4 h-4" />已复制</> : <><Copy className="w-4 h-4" />复制</>}
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* 返回按钮 */}
-      <div className="max-w-6xl mx-auto px-4 py-4">
-        <button
-          onClick={() => navigate("/app/history")}
-          className="flex items-center gap-2 text-gray-400 hover:text-white transition-colors"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          返回历史报告
-        </button>
-      </div>
+      {!isSharedMode && (
+        <div className="max-w-6xl mx-auto px-4 py-4">
+          <button
+            onClick={() => navigate("/app/history")}
+            className="flex items-center gap-2 text-gray-400 hover:text-white transition-colors"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            返回历史报告
+          </button>
+        </div>
+      )}
 
       {/* 报告内容 */}
       <main className="max-w-6xl mx-auto px-4 pb-16">
@@ -122,6 +197,27 @@ export default function ReportPage() {
           <DetailedReport result={result} />
         </div>
       </main>
+
+      {/* 未登录用户注册引导 banner */}
+      {isSharedMode && !token && (
+        <div className="fixed bottom-0 left-0 right-0 bg-gray-900 border-t border-gray-800 p-4 z-50">
+          <div className="max-w-6xl mx-auto flex items-center justify-between">
+            <div>
+              <p className="font-medium">想分析自己的 BP？</p>
+              <p className="text-sm text-gray-400">注册即可免费体验</p>
+            </div>
+            <button
+              onClick={() => {
+                const ref = searchParams.get("ref");
+                navigate(ref ? `/login?ref=${ref}` : "/login");
+              }}
+              className="px-6 py-2.5 bg-blue-600 hover:bg-blue-500 rounded-lg font-medium transition-colors"
+            >
+              免费注册
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

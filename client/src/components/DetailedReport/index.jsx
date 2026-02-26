@@ -21,6 +21,7 @@ import useAnalysisStore from "../../store/useAnalysisStore";
 function VerdictBadge({ verdict }) {
   const map = {
     "诚实":      { bg: "bg-emerald-500/15", text: "text-emerald-400", border: "border-emerald-500/30", icon: <CheckCircle className="w-3 h-3" /> },
+    "保守低估":  { bg: "bg-teal-500/15",    text: "text-teal-400",    border: "border-teal-500/30",    icon: <CheckCircle className="w-3 h-3" /> },
     "夸大":      { bg: "bg-yellow-500/15",  text: "text-yellow-400",  border: "border-yellow-500/30",  icon: <TrendingDown className="w-3 h-3" /> },
     "严重夸大":  { bg: "bg-orange-500/15",  text: "text-orange-400",  border: "border-orange-500/30",  icon: <AlertTriangle className="w-3 h-3" /> },
     "信息不对称":{ bg: "bg-red-500/15",     text: "text-red-400",     border: "border-red-500/30",     icon: <Shield className="w-3 h-3" /> },
@@ -136,11 +137,16 @@ const ClaimVerdictsPanel = memo(function ClaimVerdictsPanel({ claimVerdicts }) {
 
   const filtered = filter === "all"
     ? claimVerdicts
+    : filter === "夸大"
+    ? claimVerdicts.filter(c => ["夸大", "严重夸大"].includes(c.verdict))
+    : filter === "证伪"
+    ? claimVerdicts.filter(c => ["证伪", "信息不对称"].includes(c.verdict))
     : claimVerdicts.filter(c => c.verdict === filter);
 
   const stats = {
     total: claimVerdicts.length,
     honest: claimVerdicts.filter(c => c.verdict === "诚实").length,
+    conservative: claimVerdicts.filter(c => c.verdict === "保守低估").length,
     exaggerated: claimVerdicts.filter(c => ["夸大", "严重夸大"].includes(c.verdict)).length,
     questionable: claimVerdicts.filter(c => c.verdict === "存疑").length,
     disproved: claimVerdicts.filter(c => ["证伪", "信息不对称"].includes(c.verdict)).length,
@@ -149,6 +155,7 @@ const ClaimVerdictsPanel = memo(function ClaimVerdictsPanel({ claimVerdicts }) {
   const FILTERS = [
     { key: "all",    label: `全部 (${stats.total})` },
     { key: "诚实",   label: `诚实 (${stats.honest})` },
+    { key: "保守低估", label: `保守 (${stats.conservative})` },
     { key: "夸大",   label: `夸大 (${stats.exaggerated})` },
     { key: "存疑",   label: `存疑 (${stats.questionable})` },
     { key: "证伪",   label: `证伪/信息不对称 (${stats.disproved})` },
@@ -164,6 +171,7 @@ const ClaimVerdictsPanel = memo(function ClaimVerdictsPanel({ claimVerdicts }) {
         AI 逐条声明核查
         <span className="ml-auto flex items-center gap-3 text-sm font-normal">
           <span className="text-emerald-400">{stats.honest} 诚实</span>
+          <span className="text-teal-400">{stats.conservative} 保守</span>
           <span className="text-yellow-400">{stats.exaggerated} 夸大</span>
           <span className="text-blue-400">{stats.questionable} 存疑</span>
           <span className="text-red-400">{stats.disproved} 证伪</span>
@@ -245,10 +253,11 @@ const ConflictsPanel = memo(function ConflictsPanel({ conflicts }) {
   );
 });
 
-// ── 五维评分详情（含 BP vs AI 对比）──
+// ── 五维评分详情（含 BP vs AI 对比 + 丰富化分析）──
 function DimensionDetailCard({ dimKey, dim, Icon }) {
   const [open, setOpen] = useState(false);
   const hasBpVsAi = dim.bp_claim || dim.ai_finding;
+  const hasEnrichedData = dim.bp_key_points?.length || dim.ai_research_findings?.length || dim.comprehensive_analysis;
 
   return (
     <div className="border border-gray-800 rounded-xl overflow-hidden">
@@ -297,8 +306,72 @@ function DimensionDetailCard({ dimKey, dim, Icon }) {
 
       {open && (
         <div className="border-t border-gray-800 p-4 space-y-4">
-          {/* AI 分析结论 */}
-          {dim.finding && (
+          {/* BP 核心声明列表 */}
+          {dim.bp_key_points?.length > 0 && (
+            <div>
+              <div className="text-xs font-bold text-blue-400 uppercase tracking-wider mb-2">📄 BP 核心声明</div>
+              <ul className="space-y-1">
+                {dim.bp_key_points.map((point, i) => (
+                  <li key={i} className="text-sm text-gray-400 leading-relaxed bg-gray-900/50 rounded-lg px-3 py-2 border-l-2 border-blue-500/40">
+                    {point}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {/* AI 研究发现（逐条对应） */}
+          {dim.ai_research_findings?.length > 0 && (
+            <div>
+              <div className="text-xs font-bold text-purple-400 uppercase tracking-wider mb-2">🔬 AI 研究发现</div>
+              <ul className="space-y-1">
+                {dim.ai_research_findings.map((finding, i) => (
+                  <li key={i} className="text-sm text-gray-400 leading-relaxed bg-gray-900/50 rounded-lg px-3 py-2 border-l-2 border-purple-500/40">
+                    {finding}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {/* 综合分析结论 */}
+          {dim.comprehensive_analysis && (
+            <div>
+              <div className="text-xs font-bold text-orange-400 uppercase tracking-wider mb-2">📋 综合分析</div>
+              <p className="text-sm text-gray-400 leading-relaxed bg-gray-900/50 rounded-lg p-3 border-l-2 border-orange-500/40">
+                {dim.comprehensive_analysis}
+              </p>
+            </div>
+          )}
+
+          {/* 评分理由 */}
+          {dim.score_rationale && (
+            <div>
+              <div className="text-xs font-bold text-cyan-400 uppercase tracking-wider mb-2">💡 评分理由</div>
+              <p className="text-sm text-gray-400 leading-relaxed bg-gray-900/50 rounded-lg p-3 border-l-2 border-cyan-500/40">
+                {dim.score_rationale}
+              </p>
+            </div>
+          )}
+
+          {/* 风险与亮点标签 */}
+          {(dim.risk_factors?.length > 0 || dim.positive_signals?.length > 0) && (
+            <div className="flex flex-wrap gap-2">
+              {dim.risk_factors?.map((risk, i) => (
+                <span key={`risk-${i}`} className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs bg-red-500/10 text-red-400 border border-red-500/20">
+                  <AlertTriangle className="w-3 h-3" />{risk}
+                </span>
+              ))}
+              {dim.positive_signals?.map((signal, i) => (
+                <span key={`pos-${i}`} className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                  <CheckCircle className="w-3 h-3" />{signal}
+                </span>
+              ))}
+            </div>
+          )}
+
+          {/* Fallback: 旧版 AI 分析结论 (when enriched data is unavailable) */}
+          {!hasEnrichedData && dim.finding && (
             <div>
               <div className="text-xs font-bold text-orange-400 uppercase tracking-wider mb-2">📋 AI 分析结论</div>
               <p className="text-sm text-gray-400 leading-relaxed bg-gray-900/50 rounded-lg p-3 border-l-2 border-orange-500/40">
@@ -307,8 +380,8 @@ function DimensionDetailCard({ dimKey, dim, Icon }) {
             </div>
           )}
 
-          {/* BP 声称 vs AI 发现 */}
-          {hasBpVsAi && (
+          {/* Fallback: 旧版 BP 声称 vs AI 发现 */}
+          {!hasEnrichedData && hasBpVsAi && (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {dim.bp_claim && (
                 <div>

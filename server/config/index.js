@@ -42,6 +42,24 @@ const config = {
   alipayAppId: process.env.ALIPAY_APP_ID || "",
   alipayPrivateKey: process.env.ALIPAY_PRIVATE_KEY || "",
   alipayPublicKey: process.env.ALIPAY_PUBLIC_KEY || "",
+
+  // CORS 允许的域名（逗号分隔，生产环境必须配置）
+  allowedOrigins: process.env.ALLOWED_ORIGINS || "",
 };
+
+// ── 生产环境安全检查 ──
+if (config.env === "production") {
+  if (
+    !process.env.JWT_SECRET ||
+    config.jwtSecret === "dev-secret-change-in-production"
+  ) {
+    console.error(
+      "\n[FATAL] 生产环境必须设置 JWT_SECRET 环境变量！\n" +
+      "  请在 .env 中设置一个至少 32 位的随机字符串。\n" +
+      "  示例: JWT_SECRET=$(openssl rand -hex 32)\n"
+    );
+    process.exit(1);
+  }
+}
 
 module.exports = config;

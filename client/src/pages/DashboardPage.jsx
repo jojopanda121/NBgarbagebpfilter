@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useRef } from "react";
 import useAnalysisStore from "../store/useAnalysisStore";
 import useAuthStore from "../store/useAuthStore";
 import UploadSection from "../components/UploadSection";
@@ -6,13 +6,26 @@ import PipelineTracker from "../components/PipelineTracker";
 import ScoreVisualizer from "../components/ScoreVisualizer";
 import DetailedReport from "../components/DetailedReport";
 import VerdictCard from "../components/VerdictCard";
+import { useAnalysisPipeline } from "../hooks/useAnalysisPipeline";
 import { Zap, CreditCard } from "lucide-react";
 
 export default function DashboardPage() {
   const result = useAnalysisStore((s) => s.result);
+  const analyzing = useAnalysisStore((s) => s.analyzing);
   const token = useAuthStore((s) => s.token);
   const quota = useAuthStore((s) => s.quota);
   const setRequirePayment = useAuthStore((s) => s.setRequirePayment);
+  const { resumeAnalysis, getPendingTask } = useAnalysisPipeline();
+
+  // 页面加载时检测是否有后台进行中的任务（绑定 userId），有则自动恢复轮询
+  const resumeRef = useRef(resumeAnalysis);
+  const getPendingRef = useRef(getPendingTask);
+  useEffect(() => {
+    const pendingTaskId = getPendingRef.current();
+    if (pendingTaskId) {
+      resumeRef.current(pendingTaskId);
+    }
+  }, []);
 
   return (
     <main className="max-w-6xl mx-auto px-4 py-6 sm:px-6 sm:py-8">

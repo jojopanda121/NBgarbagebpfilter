@@ -101,9 +101,36 @@ function getTask(taskId) {
 function getTasksByUser(userId) {
   try {
     const db = getDb();
-    return db.prepare(
-      "SELECT id, status, percentage, stage, message, created_at, updated_at FROM tasks WHERE user_id = ? ORDER BY created_at DESC LIMIT 20"
+    // 动态检测可选列是否存在
+    const tableInfo = db.prepare("PRAGMA table_info(tasks)").all();
+    const colNames = tableInfo.map((col) => col.name);
+    const hasTitle = colNames.includes("title");
+    const hasIndustryCategory = colNames.includes("industry_category");
+
+    const extraCols = [
+      hasTitle ? "title" : null,
+      hasIndustryCategory ? "industry_category" : null,
+      "result",
+    ].filter(Boolean).map(c => `, ${c}`).join("");
+
+    const rows = db.prepare(
+      `SELECT id, status, percentage, stage, message, created_at, updated_at${extraCols} FROM tasks WHERE user_id = ? ORDER BY created_at DESC LIMIT 50`
     ).all(userId);
+
+    // 从 result JSON 中提取 total_score 和 industry，然后移除 result 原始字段（太大）
+    return rows.map((row) => {
+      let total_score = null;
+      let industry = null;
+      if (row.result) {
+        try {
+          const r = typeof row.result === "string" ? JSON.parse(row.result) : row.result;
+          total_score = r?.verdict?.total_score ?? null;
+          industry = r?.extracted_data?.industry ?? r?.industry ?? null;
+        } catch {}
+      }
+      const { result, ...rest } = row;
+      return { ...rest, total_score, industry };
+    });
   } catch {
     return [];
   }

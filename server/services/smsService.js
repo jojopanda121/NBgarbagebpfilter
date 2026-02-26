@@ -5,6 +5,7 @@
 
 const config = require("../config");
 const crypto = require("crypto");
+const { saveCode, verifyCode: dbVerifyCode, canSend } = require("./verificationStore");
 
 // 腾讯云 SMS 配置
 const SMS_CONFIG = {
@@ -15,9 +16,6 @@ const SMS_CONFIG = {
   templateId: process.env.TENCENT_SMS_TEMPLATE_ID || "", // 验证码模板 ID
   region: process.env.TENCENT_SMS_REGION || "ap-guangzhou",
 };
-
-// 验证码缓存（生产环境建议用 Redis）
-const verificationCodes = new Map();
 
 // 验证码有效期（5分钟）
 const CODE_EXPIRE_TIME = 5 * 60 * 1000;
@@ -41,20 +39,15 @@ async function sendVerificationCode(phoneNumber) {
 
   const code = generateCode();
 
-  // 存储验证码
-  verificationCodes.set(phoneNumber, {
-    code,
-    expiresAt: Date.now() + CODE_EXPIRE_TIME,
-    attempts: 0,
-  });
+  // 存储验证码到 SQLite
+  saveCode(phoneNumber, code, CODE_EXPIRE_TIME);
 
   // 调用腾讯云短信 API
   try {
     await sendSmsTencentCloud(phoneNumber, [code, "5"]);
     return { success: true, expiresIn: CODE_EXPIRE_TIME / 1000 };
   } catch (err) {
-    // 发送失败时删除缓存
-    verificationCodes.delete(phoneNumber);
+    // 发送失败时无需手动清理，验证码会自动过期
     throw err;
   }
 }
@@ -173,33 +166,7 @@ function generateSignature(secretId, secretKey, timestamp, region, action, param
  * @returns {boolean}
  */
 function verifyCode(phoneNumber, code) {
-  const record = verificationCodes.get(phoneNumber);
-
-  if (!record) {
-    return false;
-  }
-
-  // 检查是否过期
-  if (Date.now() > record.expiresAt) {
-    verificationCodes.delete(phoneNumber);
-    return false;
-  }
-
-  // 验证码匹配
-  if (record.code === code) {
-    verificationCodes.delete(phoneNumber);
-    return true;
-  }
-
-  // 记录失败次数
-  record.attempts += 1;
-
-  // 错误次数过多，删除验证码
-  if (record.attempts >= 3) {
-    verificationCodes.delete(phoneNumber);
-  }
-
-  return false;
+  return dbVerifyCode(phoneNumber, code);
 }
 
 /**
@@ -208,19 +175,7 @@ function verifyCode(phoneNumber, code) {
  * @returns {boolean}
  */
 function canSendCode(phoneNumber) {
-  const record = verificationCodes.get(phoneNumber);
-
-  if (!record) {
-    return true;
-  }
-
-  // 1分钟内只能发送一次
-  const cooldown = 60 * 1000;
-  if (Date.now() - (record.expiresAt - CODE_EXPIRE_TIME) < cooldown) {
-    return false;
-  }
-
-  return true;
+  return canSend(phoneNumber);
 }
 
 module.exports = {

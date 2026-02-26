@@ -1,12 +1,31 @@
 // server/routes/auth.js — 认证路由
 const { Router } = require("express");
+const rateLimit = require("express-rate-limit");
 const { requireAuth } = require("../middleware/auth");
 const { register, login, getMe, bindContact } = require("../controllers/authController");
 
 const router = Router();
 
-router.post("/register", register);
-router.post("/login", login);
+// 登录速率限制：防止暴力破解
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 分钟
+  max: 5, // 最多 5 次尝试
+  message: { error: "登录尝试次数过多，请 15 分钟后再试" },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// 注册速率限制：防止批量注册
+const registerLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 小时
+  max: 3, // 最多 3 次注册
+  message: { error: "注册次数过多，请 1 小时后再试" },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+router.post("/register", registerLimiter, register);
+router.post("/login", loginLimiter, login);
 router.get("/me", requireAuth, getMe);
 router.post("/bind-contact", requireAuth, bindContact);
 

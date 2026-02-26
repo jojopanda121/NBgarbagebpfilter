@@ -1,24 +1,37 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { CreditCard, X } from "lucide-react";
 import api from "../../services/api";
 import useAuthStore from "../../store/useAuthStore";
 
 export default function PaymentModal() {
   const [channel, setChannel] = useState("wechat");
-  const [amount, setAmount] = useState(10);
+  const [selectedPackage, setSelectedPackage] = useState(null);
   const [loading, setLoading] = useState(false);
   const [orderInfo, setOrderInfo] = useState(null);
   const [error, setError] = useState("");
+  const [packages, setPackages] = useState([]);
 
   const setRequirePayment = useAuthStore((s) => s.setRequirePayment);
 
+  useEffect(() => {
+    api.get("/api/packages")
+      .then((d) => {
+        setPackages(d.packages || []);
+        if (d.packages?.length > 0) {
+          setSelectedPackage(d.packages[0]);
+        }
+      })
+      .catch(console.error);
+  }, []);
+
   const handleCreateOrder = async () => {
+    if (!selectedPackage) return;
     setError("");
     setLoading(true);
     try {
       const data = await api.post("/api/payment/create", {
         channel,
-        quota_amount: amount,
+        quota_amount: selectedPackage.quota_amount,
       });
       setOrderInfo(data);
     } catch (err) {
@@ -27,13 +40,6 @@ export default function PaymentModal() {
       setLoading(false);
     }
   };
-
-  const prices = [
-    { amount: 5, label: "5次", price: "49.50" },
-    { amount: 10, label: "10次", price: "99.00" },
-    { amount: 30, label: "30次", price: "297.00", tag: "热门" },
-    { amount: 50, label: "50次", price: "495.00", tag: "超值" },
-  ];
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
@@ -53,23 +59,23 @@ export default function PaymentModal() {
         {!orderInfo ? (
           <>
             <div className="grid grid-cols-2 gap-3 mb-4">
-              {prices.map((p) => (
+              {packages.map((p, index) => (
                 <button
-                  key={p.amount}
-                  onClick={() => setAmount(p.amount)}
+                  key={p.id}
+                  onClick={() => setSelectedPackage(p)}
                   className={`p-3 rounded-xl border text-center transition-all relative ${
-                    amount === p.amount
+                    selectedPackage?.id === p.id
                       ? "border-blue-500 bg-blue-500/10"
                       : "border-gray-700 hover:border-gray-600"
                   }`}
                 >
-                  {p.tag && (
+                  {index === 1 && (
                     <span className="absolute -top-2 right-2 text-[10px] bg-orange-500 text-white px-1.5 py-0.5 rounded-full">
-                      {p.tag}
+                      热门
                     </span>
                   )}
-                  <div className="font-bold text-lg">{p.label}</div>
-                  <div className="text-sm text-gray-400">&yen;{p.price}</div>
+                  <div className="font-bold text-lg">{p.quota_amount}次</div>
+                  <div className="text-sm text-gray-400">¥{(p.price_cents / 100).toFixed(2)}</div>
                 </button>
               ))}
             </div>
@@ -97,10 +103,10 @@ export default function PaymentModal() {
 
             <button
               onClick={handleCreateOrder}
-              disabled={loading}
+              disabled={loading || !selectedPackage}
               className="w-full py-2.5 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-700 rounded-lg font-medium transition-colors"
             >
-              {loading ? "创建订单中..." : `支付 ¥${(amount * 9.9).toFixed(2)}`}
+              {loading ? "创建订单中..." : `支付 ¥${selectedPackage ? (selectedPackage.price_cents / 100).toFixed(2) : "0.00"}`}
             </button>
           </>
         ) : (

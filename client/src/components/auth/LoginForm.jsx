@@ -1,9 +1,10 @@
 import React, { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { LogIn, UserPlus } from "lucide-react";
 import api from "../../services/api";
 import useAuthStore from "../../store/useAuthStore";
 
-export default function LoginForm({ onSuccess }) {
+export default function LoginForm({ onSuccess, defaultRedirect = "/app/dashboard" }) {
   const [isRegister, setIsRegister] = useState(false);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -11,6 +12,7 @@ export default function LoginForm({ onSuccess }) {
   const [error, setError] = useState("");
 
   const setAuth = useAuthStore((s) => s.setAuth);
+  const navigate = useNavigate();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -21,7 +23,13 @@ export default function LoginForm({ onSuccess }) {
       const url = isRegister ? "/api/auth/register" : "/api/auth/login";
       const data = await api.post(url, { username, password });
       setAuth(data.token, data.user, data.quota);
-      onSuccess?.();
+      // 登录成功后跳转到指定页面或默认页面
+      if (onSuccess) {
+        onSuccess();
+      } else {
+        const redirectUrl = new URLSearchParams(window.location.search).get("redirect");
+        navigate(redirectUrl || defaultRedirect);
+      }
     } catch (err) {
       setError(err.message || "操作失败");
     } finally {

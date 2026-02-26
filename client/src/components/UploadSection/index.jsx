@@ -69,7 +69,7 @@ const UploadSection = memo(function UploadSection() {
         <div className="inline-flex items-center gap-2 px-4 py-2 bg-gray-800/50 rounded-full border border-gray-700/50">
           <Lock className="w-3.5 h-3.5 text-emerald-400" />
           <span className="text-sm text-gray-400">
-            本程序不储存您的 BP，请放心上传
+            您的文件将安全存储，仅用于本次分析
           </span>
         </div>
       </div>

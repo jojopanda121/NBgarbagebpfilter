@@ -1,0 +1,113 @@
+# ============================================================
+# docker-compose.yml — GarbageBPFilter v3.0 多服务部署
+#
+# 服务列表：
+#   1. app       — Node.js 后端 + React 前端（主服务）
+#   2. doc-service — Python FastAPI 文档提取微服务
+#   3. redis     — 任务队列 & 缓存
+#   4. nginx     — 反向代理（生产环境）
+#
+# 启动命令：
+#   docker-compose up -d              # 后台启动所有服务
+#   docker-compose up -d --build      # 重新构建并启动
+#   docker-compose logs -f app        # 查看主服务日志
+#   docker-compose down               # 停止并移除容器
+#
+# 部署到腾讯云：
+#   1. 将代码上传到服务器
+#   2. cp .env.example .env 并填写配置
+#   3. docker-compose up -d --build
+# ============================================================
+
+version: "3.8"
+
+services:
+  # ── 主应用（Node.js 后端 + React 前端）──
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: bp-filter-app
+    restart: always
+    ports:
+      - "${PORT:-3001}:3001"
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=production
+      - PORT=3001
+      - REDIS_URL=redis://redis:6379
+      - DOC_SERVICE_URL=http://doc-service:8001
+      - DB_PATH=/app/data/app.db
+    volumes:
+      - app-data:/app/data        # 数据库持久化
+      - app-logs:/app/logs        # 日志持久化
+    depends_on:
+      redis:
+        condition: service_healthy
+      doc-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3001/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # ── 文档提取微服务（Python FastAPI）──
+  doc-service:
+    build:
+      context: ./doc-service
+      dockerfile: Dockerfile
+    container_name: bp-filter-doc
+    restart: always
+    expose:
+      - "8001"
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+  # ── Redis（任务队列 & 缓存）──
+  redis:
+    image: redis:7-alpine
+    container_name: bp-filter-redis
+    restart: always
+    expose:
+      - "6379"
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Nginx 反向代理（生产环境，可选）──
+  nginx:
+    image: nginx:alpine
+    container_name: bp-filter-nginx
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - nginx-certs:/etc/nginx/certs       # SSL 证书目录
+    depends_on:
+      - app
+    profiles:
+      - production   # 仅在 --profile production 时启动
+
+volumes:
+  app-data:
+    driver: local
+  app-logs:
+    driver: local
+  redis-data:
+    driver: local
+  nginx-certs:
+    driver: local

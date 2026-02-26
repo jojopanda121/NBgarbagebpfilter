@@ -1,6 +1,6 @@
 {
   "name": "bp-filter",
-  "version": "2.0.0",
+  "version": "3.0.0",
   "private": true,
   "engines": {
     "node": ">=18"
@@ -14,6 +14,11 @@
     "stop": "pm2 stop garbagebpfilter",
     "restart": "pm2 restart garbagebpfilter",
     "logs": "pm2 logs garbagebpfilter",
-    "deploy": "npm run install:python && npm run build && npm start"
+    "deploy": "npm run install:python && npm run build && npm start",
+    "docker:up": "docker-compose up -d --build",
+    "docker:down": "docker-compose down",
+    "docker:logs": "docker-compose logs -f app",
+    "docker:prod": "docker-compose --profile production up -d --build",
+    "lint": "cd server && npx eslint . --ext .js"
   }
 }

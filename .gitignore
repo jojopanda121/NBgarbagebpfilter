@@ -2,7 +2,10 @@ node_modules
 /build
 dist
 client/node_modules
+server/node_modules
 .env
+.env.local
+.env.production
 .DS_Store
 coverage
 .vscode
@@ -10,5 +13,14 @@ coverage
 __pycache__
 uploads/
 
-# PM2 日志（保留目录结构，忽略日志内容）
+# PM2 日志
 logs/*.log
+
+# 数据库（生产数据不入库）
+data/
+*.db
+*.db-journal
+*.db-wal
+
+# Docker 数据卷
+docker-data/

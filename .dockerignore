@@ -4,7 +4,8 @@ server/node_modules
 client/build
 npm-debug.log*
 .env
-.env.*
+.env.local
+.env.production
 logs
 *.log
 .git
@@ -17,3 +18,7 @@ start.bat
 start.sh
 verdict_payload.json
 test_bp.txt
+data/
+*.db
+.github/
+doc-service/

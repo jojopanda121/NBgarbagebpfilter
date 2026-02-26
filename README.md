@@ -1,60 +1,61 @@
-# 🗑️ 垃圾 BP 过滤器
+# 垃圾 BP 过滤器
 
 AI 驱动的商业计划书尽职调查工具。上传 BP，10维评分，秒级出报告。
 
-## 一键启动
+## Docker 一键启动（推荐）
 
-### Mac / Linux
 ```bash
-chmod +x start.sh
-./start.sh
+# 1. 复制并填写环境变量
+cp .env.example .env
+
+# 2. 启动所有服务
+docker-compose up -d --build
+
+# 3. 查看日志
+docker-compose logs -f app
 ```
 
-### Windows
-双击 `start.bat`
+浏览器打开 `http://localhost:3001`
 
-浏览器会自动打开 `http://localhost:3000`
-
-## 手动启动
+## 本地开发启动
 
 ```bash
-# 1. 安装依赖 (首次)
-npm install
-npm install http-proxy-middleware --save
+# 1. 安装依赖（首次）
+npm run install:all
 
-# 2. 启动后端 API 代理 (新终端)
-node server.js
+# 2. 启动后端（server/ 目录，新终端）
+cd server && npm run dev
 
-# 3. 启动前端 (新终端)
-npm start
+# 3. 启动前端（client/ 目录，新终端）
+cd client && npm start
 ```
 
 ## 切换 AI 模型
 
-编辑 `server.js` 顶部的 CONFIG：
-
-- **MiniMax** (默认): 已配置好
-- **Anthropic Claude**: 取消注释 Anthropic 配置，填入你的 API Key
-
-## 用 Cursor 编辑
-
-1. 用 Cursor 打开整个 `bp-filter-project` 文件夹
-2. 主要代码在 `src/App.js`
-3. 后端代理在 `server.js`
-4. 改完代码会自动热更新
+编辑 `.env` 文件中的 `MINIMAX_API_KEY` / `ANTHROPIC_API_KEY` 字段，
+并在 `server/services/llmService.js` 中选择对应的客户端。
 
 ## 项目结构
 
 ```
-bp-filter-project/
-├── start.sh          # Mac/Linux 一键启动
-├── start.bat         # Windows 一键启动
-├── server.js         # API 代理后端
-├── package.json
-├── public/
-│   └── index.html
-└── src/
-    ├── index.js      # 入口
-    ├── App.js        # 主程序 (所有逻辑和UI)
-    └── setupProxy.js # 开发代理配置
+NBgarbagebpfilter/
+├── client/               # React 前端
+│   └── src/
+│       ├── index.js      # 入口
+│       └── App.jsx       # 主界面
+├── server/               # Express 后端
+│   ├── config/           # 统一环境变量配置
+│   ├── controllers/      # 路由处理器
+│   ├── db/               # SQLite 数据库 & 迁移
+│   ├── middleware/       # 认证、配额等中间件
+│   ├── routes/           # API 路由定义
+│   ├── services/         # 核心业务逻辑
+│   └── index.js          # 服务器入口
+├── doc-service/          # Python FastAPI 文档提取微服务
+├── scripts/              # 本地辅助脚本（PDF/DOCX 提取）
+├── data/                 # SQLite 数据库文件（自动创建，已 gitignore）
+├── logs/                 # 运行日志（已 gitignore）
+├── docker-compose.yml    # Docker 编排
+├── ecosystem.config.js   # PM2 进程管理（非 Docker 部署用）
+└── .env.example          # 环境变量模板
 ```

@@ -1,8 +1,9 @@
 // ============================================================
 // server/services/taskService.js — 任务管理服务
-// 支持两种存储后端：
-//   1. 内存 Map（开发/单实例模式）
-//   2. SQLite（生产模式，支持持久化）
+// 存储策略：内存 Map（实时读写） + SQLite（持久化）双写
+//
+// 故障恢复：进程启动时自动将数据库中滞留的 running 任务标记为
+// failed，避免它们永久卡死在"进行中"状态。
 // ============================================================
 
 const crypto = require("crypto");
@@ -107,6 +108,31 @@ function getTasksByUser(userId) {
     return [];
   }
 }
+
+// ── 启动时故障恢复 ────────────────────────────────────────────
+// 进程崩溃或重启后，将数据库中所有处于 running 状态的任务标记为
+// failed，防止它们永远卡在"进行中"。
+function recoverStaleTasks() {
+  try {
+    const db = getDb();
+    const now = new Date().toISOString();
+    const result = db
+      .prepare(
+        `UPDATE tasks SET status = 'failed', error = '进程重启，任务中断', updated_at = ?
+         WHERE status = 'running'`
+      )
+      .run(now);
+    if (result.changes > 0) {
+      console.log(`[TaskService] 故障恢复：${result.changes} 个滞留任务已标记为 failed`);
+    }
+  } catch (err) {
+    console.warn("[TaskService] 故障恢复失败（DB 可能尚未初始化）:", err.message);
+  }
+}
+
+// 在模块加载（即进程启动）时立即执行一次恢复
+recoverStaleTasks();
+// ──────────────────────────────────────────────────────────────
 
 // 定期清理：内存中超过 1 小时的旧任务
 setInterval(() => {

@@ -2,16 +2,20 @@
 # docker-compose.yml — GarbageBPFilter v3.0 多服务部署
 #
 # 服务列表：
-#   1. app       — Node.js 后端 + React 前端（主服务）
+#   1. app        — Node.js 后端 + React 前端（主服务）
 #   2. doc-service — Python FastAPI 文档提取微服务
-#   3. redis     — 任务队列 & 缓存
-#   4. nginx     — 反向代理（生产环境）
+#   3. nginx      — 反向代理（生产环境，--profile production）
+#
+# 数据持久化说明：
+#   ./data  → 容器内 /app/data（SQLite 数据库，宿主机直接可见、可备份）
+#   ./logs  → 容器内 /app/logs（运行日志）
+#   执行 docker-compose down 不会丢失任何数据。
 #
 # 启动命令：
 #   docker-compose up -d              # 后台启动所有服务
 #   docker-compose up -d --build      # 重新构建并启动
 #   docker-compose logs -f app        # 查看主服务日志
-#   docker-compose down               # 停止并移除容器
+#   docker-compose down               # 停止并移除容器（数据保留在 ./data）
 #
 # 部署到腾讯云：
 #   1. 将代码上传到服务器
@@ -36,15 +40,12 @@ services:
     environment:
       - NODE_ENV=production
       - PORT=3001
-      - REDIS_URL=redis://redis:6379
       - DOC_SERVICE_URL=http://doc-service:8001
       - DB_PATH=/app/data/app.db
     volumes:
-      - app-data:/app/data        # 数据库持久化
-      - app-logs:/app/logs        # 日志持久化
+      - ./data:/app/data        # 数据库持久化（宿主机直接可见，易于备份）
+      - ./logs:/app/logs        # 日志持久化
     depends_on:
-      redis:
-        condition: service_healthy
       doc-service:
         condition: service_healthy
     healthcheck:
@@ -70,22 +71,6 @@ services:
       retries: 3
       start_period: 15s
 
-  # ── Redis（任务队列 & 缓存）──
-  redis:
-    image: redis:7-alpine
-    container_name: bp-filter-redis
-    restart: always
-    expose:
-      - "6379"
-    volumes:
-      - redis-data:/data
-    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
   # ── Nginx 反向代理（生产环境，可选）──
   nginx:
     image: nginx:alpine
@@ -103,11 +88,5 @@ services:
       - production   # 仅在 --profile production 时启动
 
 volumes:
-  app-data:
-    driver: local
-  app-logs:
-    driver: local
-  redis-data:
-    driver: local
   nginx-certs:
     driver: local

@@ -3,10 +3,33 @@
 // ============================================================
 
 const fs = require("fs");
+const crypto = require("crypto");
+const { getDb } = require("../db");
 const { extractDocText } = require("../services/extractionService");
 const { runPipeline } = require("../services/pipelineService");
 const { createTask, updateTask } = require("../services/taskService");
 const { deductQuota, refundQuota } = require("../middleware/quota");
+
+/** 计算文件内容的 SHA256 哈希 */
+function computeFileHash(filePath) {
+  const content = fs.readFileSync(filePath);
+  return crypto.createHash("sha256").update(content).digest("hex");
+}
+
+/** 查找同一用户已完成的相同文件分析结果 */
+function findExistingResult(userId, fileHash) {
+  try {
+    const db = getDb();
+    const row = db.prepare(
+      "SELECT id, result FROM tasks WHERE user_id = ? AND file_hash = ? AND status = 'complete' ORDER BY created_at DESC LIMIT 1"
+    ).get(userId, fileHash);
+    if (row && row.result) {
+      try { row.result = JSON.parse(row.result); } catch {}
+      return row;
+    }
+  } catch {}
+  return null;
+}
 
 /** POST /api/analyze — 上传文件并启动分析 */
 function analyze(req, res) {
@@ -26,9 +49,42 @@ function analyze(req, res) {
     }
   }
 
-  // 扣减额度（原子操作）
+  // 扣减额度（原子操作）；管理员无限次使用，跳过扣减
   const userId = req.user?.id || null;
+  let isAdmin = false;
   if (userId) {
+    const db = getDb();
+    const userRow = db.prepare("SELECT role FROM users WHERE id = ?").get(userId);
+    isAdmin = userRow?.role === "admin";
+  }
+
+  // 文件去重：计算哈希，检查是否有已完成的相同文件结果
+  let fileHash = null;
+  if (req.file) {
+    try {
+      fileHash = computeFileHash(req.file.path);
+      if (userId && fileHash) {
+        const existing = findExistingResult(userId, fileHash);
+        if (existing) {
+          // 相同文件已分析过，直接返回之前的结果（不扣额度）
+          fs.unlink(req.file.path, () => {});
+          // 创建一个新任务记录指向旧结果，方便历史记录追踪
+          const task = createTask(userId);
+          updateTask(task.id, {
+            status: "complete",
+            percentage: 100,
+            stage: "complete",
+            message: "检测到相同文件，已复用之前的分析结果",
+            result: existing.result,
+            file_hash: fileHash,
+          });
+          return res.json({ taskId: task.id, cached: true });
+        }
+      }
+    } catch {}
+  }
+
+  if (!isAdmin && userId) {
     const deductResult = deductQuota(userId);
     if (!deductResult.success) {
       if (req.file) fs.unlink(req.file.path, () => {});
@@ -82,18 +138,31 @@ function analyze(req, res) {
 
       const result = await runPipeline(bpText, onProgress);
 
-      updateTask(task.id, {
+      // 保存额外的任务元数据（title, industry_category, client_ip, file_hash）
+      const extraFields = {
         status: "complete",
         percentage: 100,
         stage: "complete",
         message: "分析完成！",
         result,
-      });
+      };
+
+      // 安全写入新字段（列可能尚未通过迁移创建）
+      try {
+        if (result.title) extraFields.title = result.title;
+        if (result.industry_category) extraFields.industry_category = result.industry_category;
+        if (fileHash) extraFields.file_hash = fileHash;
+        // 获取客户端 IP
+        const clientIp = req.headers["x-forwarded-for"]?.split(",")[0]?.trim() || req.ip || req.socket?.remoteAddress;
+        if (clientIp) extraFields.client_ip = clientIp;
+      } catch (_) { /* ignore - new columns may not exist yet */ }
+
+      updateTask(task.id, extraFields);
     } catch (err) {
       console.error(`[任务 ${task.id.slice(0, 8)}] 错误:`, err.message);
       updateTask(task.id, { status: "error", error: err.message || "服务器内部错误" });
-      // 分析失败时退还额度
-      if (userId) {
+      // 分析失败时退还额度（管理员无需退还）
+      if (userId && !isAdmin) {
         refundQuota(userId);
       }
     }

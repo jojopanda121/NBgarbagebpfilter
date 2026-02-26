@@ -36,12 +36,35 @@ const packagesRoutes = require("./routes/packages");
 
 // 中间件
 const { errorHandler } = require("./middleware/errorHandler");
+const { requestId } = require("./middleware/requestId");
 const { getModelName } = require("./services/llmService");
 
 const app = express();
 
+// ── 信任代理（修复 express-rate-limit 的 X-Forwarded-For 校验） ──
+app.set("trust proxy", 1);
+
 // ── 全局中间件 ──
-app.use(cors());
+const corsOptions = (() => {
+  if (config.env === "production" && config.allowedOrigins) {
+    const whitelist = config.allowedOrigins.split(",").map((s) => s.trim());
+    return {
+      origin(origin, callback) {
+        // 允许无 origin 的请求（如服务端回调、curl）
+        if (!origin || whitelist.includes(origin)) {
+          callback(null, true);
+        } else {
+          callback(new Error(`CORS 拒绝来源: ${origin}`));
+        }
+      },
+      credentials: true,
+    };
+  }
+  // 开发模式：允许所有来源
+  return { origin: true, credentials: true };
+})();
+app.use(cors(corsOptions));
+app.use(requestId);
 app.use(express.json({ limit: "50mb" }));
 
 // ── API 路由 ──

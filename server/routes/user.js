@@ -10,6 +10,9 @@ const {
   updatePassword,
   getOrders,
   getUsage,
+  getStats,
+  getInviteCode,
+  getReferralStats,
 } = require("../controllers/userController");
 
 const router = Router();
@@ -20,5 +23,8 @@ router.put("/profile", requireAuth, updateProfile);
 router.put("/password", requireAuth, updatePassword);
 router.get("/orders", requireAuth, getOrders);
 router.get("/usage", requireAuth, getUsage);
+router.get("/stats", requireAuth, getStats);
+router.get("/invite-code", requireAuth, getInviteCode);
+router.get("/referral-stats", requireAuth, getReferralStats);
 
 module.exports = router;

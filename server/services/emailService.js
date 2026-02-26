@@ -3,7 +3,7 @@
 // ============================================================
 
 const nodemailer = require("nodemailer");
-const crypto = require("crypto");
+const { saveCode, verifyCode: dbVerifyCode, canSend } = require("./verificationStore");
 
 // 邮箱配置
 const EMAIL_CONFIG = {
@@ -14,8 +14,6 @@ const EMAIL_CONFIG = {
   pass: process.env.EMAIL_PASS || "",
 };
 
-// 验证码缓存
-const verificationCodes = new Map();
 const CODE_EXPIRE_TIME = 10 * 60 * 1000; // 10分钟
 
 /**
@@ -28,12 +26,8 @@ async function sendEmailCode(toEmail) {
 
   const code = Math.floor(100000 + Math.random() * 900000).toString();
 
-  // 存储验证码
-  verificationCodes.set(toEmail, {
-    code,
-    expiresAt: Date.now() + CODE_EXPIRE_TIME,
-    attempts: 0,
-  });
+  // 存储验证码到 SQLite
+  saveCode(toEmail, code, CODE_EXPIRE_TIME);
 
   // 创建 transporter
   const transporter = nodemailer.createTransport({
@@ -68,39 +62,14 @@ async function sendEmailCode(toEmail) {
  * 验证邮箱验证码
  */
 function verifyEmailCode(email, code) {
-  const record = verificationCodes.get(email);
-
-  if (!record) {
-    return false;
-  }
-
-  if (Date.now() > record.expiresAt) {
-    verificationCodes.delete(email);
-    return false;
-  }
-
-  if (record.code === code) {
-    verificationCodes.delete(email);
-    return true;
-  }
-
-  record.attempts += 1;
-  if (record.attempts >= 3) {
-    verificationCodes.delete(email);
-  }
-
-  return false;
+  return dbVerifyCode(email, code);
 }
 
 /**
  * 检查是否可以发送验证码
  */
 function canSendEmailCode(email) {
-  const record = verificationCodes.get(email);
-  if (!record) return true;
-
-  const cooldown = 60 * 1000;
-  return Date.now() - (record.expiresAt - CODE_EXPIRE_TIME) >= cooldown;
+  return canSend(email);
 }
 
 module.exports = {

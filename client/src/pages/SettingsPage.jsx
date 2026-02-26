@@ -31,6 +31,7 @@ import useAuthStore from "../store/useAuthStore";
 
 // Tab 配置
 const TABS = [
+  { key: "mystats", label: "我的数据", icon: BarChart3 },
   { key: "account", label: "账户安全", icon: User },
   { key: "billing", label: "财务与额度", icon: Wallet },
   { key: "recharge", label: "充值收银台", icon: CreditCard },
@@ -97,6 +98,7 @@ export default function SettingsPage() {
 
   // 数据统计状态
   const [stats, setStats] = useState(null);
+  const [myStats, setMyStats] = useState(null);
 
   // 反馈状态
   const [myFeedback, setMyFeedback] = useState([]);
@@ -148,6 +150,19 @@ export default function SettingsPage() {
 
   // 加载数据
   useEffect(() => {
+    // 加载我的数据看板
+    if (activeTab === "mystats") {
+      async function loadMyStats() {
+        try {
+          const data = await api.get("/api/user/stats");
+          setMyStats(data);
+        } catch (err) {
+          console.error("加载个人数据失败:", err);
+        }
+      }
+      loadMyStats();
+    }
+
     // 加载订单和消费记录
     if (activeTab === "billing") {
       async function loadBilling() {
@@ -485,6 +500,9 @@ export default function SettingsPage() {
 
       {renderMessage()}
 
+      {/* 我的数据 Tab */}
+      {activeTab === "mystats" && <MyStatsTab stats={myStats} />}
+
       {/* 账户安全 Tab */}
       {activeTab === "account" && (
         <AccountTab
@@ -582,6 +600,135 @@ export default function SettingsPage() {
           adminAvailable={adminAvailable} setAdminAvailable={setAdminAvailable}
           loading={loading} setLoading={setLoading}
         />
+      )}
+    </div>
+  );
+}
+
+// 我的数据看板组件
+function MyStatsTab({ stats }) {
+  if (!stats) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
+      </div>
+    );
+  }
+
+  const GRADE_COLORS = {
+    "A": "bg-green-500", "B": "bg-blue-500", "C": "bg-yellow-500", "D": "bg-red-500",
+  };
+
+  const INDUSTRY_COLORS = [
+    "bg-blue-500", "bg-purple-500", "bg-green-500", "bg-orange-500",
+    "bg-pink-500", "bg-cyan-500", "bg-yellow-500", "bg-gray-500",
+  ];
+
+  const maxIndustryCount = stats.industry_dist.length > 0
+    ? Math.max(...stats.industry_dist.map(d => d.count))
+    : 1;
+
+  const maxGradeCount = stats.grade_dist.length > 0
+    ? Math.max(...stats.grade_dist.map(d => d.count))
+    : 1;
+
+  return (
+    <div className="space-y-6">
+      {/* 汇总指标卡 */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+        <div className="bg-gray-900 border border-gray-800 rounded-xl p-5 text-center">
+          <div className="text-3xl font-bold text-blue-400">{stats.total_count}</div>
+          <div className="text-sm text-gray-400 mt-1">累计分析 BP</div>
+        </div>
+        <div className="bg-gray-900 border border-gray-800 rounded-xl p-5 text-center">
+          <div className="text-3xl font-bold text-emerald-400">
+            {stats.avg_score !== null ? stats.avg_score : "—"}
+          </div>
+          <div className="text-sm text-gray-400 mt-1">平均评分</div>
+        </div>
+        <div className="bg-gray-900 border border-gray-800 rounded-xl p-5 text-center col-span-2 sm:col-span-1">
+          <div className="text-3xl font-bold text-purple-400">
+            {stats.industry_dist.length > 0 ? stats.industry_dist[0].industry : "—"}
+          </div>
+          <div className="text-sm text-gray-400 mt-1">最多分析赛道</div>
+        </div>
+      </div>
+
+      {/* 赛道分布 */}
+      {stats.industry_dist.length > 0 && (
+        <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
+          <h3 className="text-base font-semibold mb-4">赛道分布</h3>
+          <div className="space-y-3">
+            {stats.industry_dist.map((item, i) => (
+              <div key={item.industry}>
+                <div className="flex items-center justify-between text-sm mb-1">
+                  <span className="text-gray-300">{item.industry}</span>
+                  <span className="text-gray-400 tabular-nums">{item.count} 次</span>
+                </div>
+                <div className="h-2 bg-gray-800 rounded-full overflow-hidden">
+                  <div
+                    className={`h-full rounded-full transition-all ${INDUSTRY_COLORS[i % INDUSTRY_COLORS.length]}`}
+                    style={{ width: `${(item.count / maxIndustryCount) * 100}%` }}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* 评级分布 */}
+      {stats.grade_dist.length > 0 && (
+        <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
+          <h3 className="text-base font-semibold mb-4">评级分布</h3>
+          <div className="flex items-end gap-3 h-32">
+            {["A", "B", "C", "D"].map((grade) => {
+              const item = stats.grade_dist.find(d => d.grade === grade);
+              const count = item?.count || 0;
+              const pct = count > 0 ? (count / maxGradeCount) * 100 : 0;
+              return (
+                <div key={grade} className="flex-1 flex flex-col items-center gap-1">
+                  <span className="text-xs text-gray-400 tabular-nums">{count || ""}</span>
+                  <div className="w-full flex items-end" style={{ height: "80px" }}>
+                    <div
+                      className={`w-full rounded-t transition-all ${count > 0 ? (GRADE_COLORS[grade] || "bg-gray-500") : "bg-gray-800"}`}
+                      style={{ height: `${Math.max(pct, count > 0 ? 10 : 0)}%` }}
+                    />
+                  </div>
+                  <span className="text-xs text-gray-500">{grade}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* 最近分析 */}
+      {stats.recent.length > 0 && (
+        <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
+          <h3 className="text-base font-semibold mb-4">最近分析</h3>
+          <div className="space-y-2">
+            {stats.recent.map((task) => (
+              <div key={task.id} className="flex items-center justify-between py-2 border-b border-gray-800 last:border-0">
+                <div>
+                  <div className="text-sm font-medium">{task.title}</div>
+                  <div className="text-xs text-gray-500 mt-0.5">{task.industry_category}</div>
+                </div>
+                <div className="text-xs text-gray-500 shrink-0 ml-4">
+                  {new Date(task.created_at).toLocaleDateString("zh-CN")}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {stats.total_count === 0 && (
+        <div className="text-center py-16 bg-gray-900/50 rounded-xl border border-gray-800">
+          <BarChart3 className="w-12 h-12 text-gray-600 mx-auto mb-4" />
+          <p className="text-gray-400">暂无分析数据</p>
+          <p className="text-sm text-gray-600 mt-1">上传 BP 开始第一次分析吧</p>
+        </div>
       )}
     </div>
   );
@@ -704,40 +851,60 @@ function BillingTab({ profile, orders, usage }) {
 // 充值收银台组件
 function RechargeTab() {
   const [channel, setChannel] = useState("wechat");
-  const [amount, setAmount] = useState(10);
+  const [selectedPackage, setSelectedPackage] = useState(null);
   const [loading, setLoading] = useState(false);
   const [orderInfo, setOrderInfo] = useState(null);
   const [error, setError] = useState("");
   const [packages, setPackages] = useState([]);
+  const [inviteCode, setInviteCode] = useState("");
+  const [referralStats, setReferralStats] = useState(null);
+  const [inviteCopied, setInviteCopied] = useState(false);
 
   useEffect(() => {
-    api.get("/api/packages").then((d) => setPackages(d.packages || [])).catch(console.error);
+    api.get("/api/packages").then((d) => {
+      const pkgs = d.packages || [];
+      setPackages(pkgs);
+      if (pkgs.length > 0) setSelectedPackage(pkgs[0]);
+    }).catch(console.error);
+    // 加载邀请码和统计
+    api.get("/api/user/invite-code").then((d) => setInviteCode(d.invite_code || "")).catch(() => {});
+    api.get("/api/user/referral-stats").then((d) => setReferralStats(d)).catch(() => {});
   }, []);
 
   const handleCreateOrder = async () => {
+    if (!selectedPackage) return;
     setError(""); setLoading(true);
-    try { const data = await api.post("/api/payment/create", { channel, quota_amount: amount }); setOrderInfo(data); } catch (err) { setError(err.message); } finally { setLoading(false); }
+    try { const data = await api.post("/api/payment/create", { channel, quota_amount: selectedPackage.quota_amount }); setOrderInfo(data); } catch (err) { setError(err.message); } finally { setLoading(false); }
   };
 
   return (
+    <>
     <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
-      <h3 className="text-lg font-bold mb-4">充值额度</h3>
+      <h3 className="text-lg font-bold mb-4">选择套餐</h3>
       {!orderInfo ? (
         <>
           <div className="grid grid-cols-2 gap-3 mb-4">
-            {packages.map((p) => (
-              <button key={p.id} onClick={() => setAmount(p.quota_amount)} className={`p-3 rounded-xl border text-center transition-all ${amount === p.quota_amount ? "border-blue-500 bg-blue-500/10" : "border-gray-700 hover:border-gray-600"}`}>
-                <div className="font-bold text-lg">{p.quota_amount}次</div>
-                <div className="text-sm text-gray-400">¥{(p.price_cents / 100).toFixed(2)}</div>
-              </button>
-            ))}
+            {packages.map((p, index) => {
+              const unitPrice = p.quota_amount > 0 ? (p.price_cents / 100 / p.quota_amount).toFixed(1) : "0";
+              return (
+                <button key={p.id} onClick={() => setSelectedPackage(p)} className={`p-4 rounded-xl border text-center transition-all relative ${selectedPackage?.id === p.id ? "border-blue-500 bg-blue-500/10 ring-1 ring-blue-500/30" : "border-gray-700 hover:border-gray-600"}`}>
+                  {index === 1 && (
+                    <span className="absolute -top-2 right-2 text-[10px] bg-orange-500 text-white px-1.5 py-0.5 rounded-full">热门</span>
+                  )}
+                  <div className="font-bold text-lg mb-1">{p.name}</div>
+                  <div className="text-2xl font-bold text-blue-400">{p.quota_amount}<span className="text-sm font-normal text-gray-400">次</span></div>
+                  <div className="text-lg font-medium text-white mt-1">¥{(p.price_cents / 100).toFixed(0)}</div>
+                  <div className="text-xs text-gray-500">¥{unitPrice}/次</div>
+                </button>
+              );
+            })}
           </div>
           <div className="flex gap-2 mb-4">
             <button onClick={() => setChannel("wechat")} className={`flex-1 py-2 rounded-lg text-sm font-medium border ${channel === "wechat" ? "border-green-500 bg-green-500/10 text-green-400" : "border-gray-700"}`}>微信支付</button>
             <button onClick={() => setChannel("alipay")} className={`flex-1 py-2 rounded-lg text-sm font-medium border ${channel === "alipay" ? "border-blue-500 bg-blue-500/10 text-blue-400" : "border-gray-700"}`}>支付宝</button>
           </div>
           {error && <p className="text-sm text-red-400 mb-3">{error}</p>}
-          <button onClick={handleCreateOrder} disabled={loading} className="w-full py-2.5 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-700 rounded-lg">{loading ? "创建订单中..." : `支付 ¥${packages.find(p => p.quota_amount === amount)?.price_cents ? (packages.find(p => p.quota_amount === amount).price_cents / 100).toFixed(2) : "0.00"}`}</button>
+          <button onClick={handleCreateOrder} disabled={loading || !selectedPackage} className="w-full py-2.5 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-700 rounded-lg font-medium">{loading ? "创建订单中..." : `支付 ¥${selectedPackage ? (selectedPackage.price_cents / 100).toFixed(2) : "0.00"}`}</button>
         </>
       ) : (
         <div className="text-center py-4">
@@ -748,10 +915,50 @@ function RechargeTab() {
         </div>
       )}
     </div>
+
+    {/* 邀请好友区块 */}
+    <div className="bg-gray-900 border border-gray-800 rounded-xl p-6 mt-6">
+      <h3 className="text-lg font-bold mb-4">邀请好友得额度</h3>
+      <p className="text-sm text-gray-400 mb-4">每成功邀请一位好友注册，您将获得 2 次免费分析额度</p>
+      {inviteCode ? (
+        <div className="space-y-3">
+          <div>
+            <label className="block text-sm text-gray-400 mb-1">您的专属邀请链接</label>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                readOnly
+                value={`${window.location.origin}/login?ref=${inviteCode}`}
+                className="flex-1 px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-sm text-gray-300"
+              />
+              <button
+                onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/login?ref=${inviteCode}`); setInviteCopied(true); setTimeout(() => setInviteCopied(false), 2000); }}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-sm flex items-center gap-1.5 shrink-0"
+              >
+                {inviteCopied ? <><CheckCircle className="w-4 h-4" />已复制</> : <><Copy className="w-4 h-4" />复制</>}
+              </button>
+            </div>
+          </div>
+          {referralStats && (
+            <div className="flex gap-4 pt-2">
+              <div className="text-center">
+                <div className="text-xl font-bold text-blue-400">{referralStats.invited_count}</div>
+                <div className="text-xs text-gray-500">已邀请人数</div>
+              </div>
+              <div className="text-center">
+                <div className="text-xl font-bold text-green-400">{referralStats.earned_quota}</div>
+                <div className="text-xs text-gray-500">获得额度</div>
+              </div>
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="text-center py-4"><Loader2 className="w-5 h-5 animate-spin mx-auto text-gray-500" /></div>
+      )}
+    </div>
+    </>
   );
 }
-
-// 意见反馈组件
 function FeedbackTab({ feedback, feedbackForm, setFeedbackForm, submitting, handleSubmit }) {
   return (
     <div className="space-y-6">
@@ -957,7 +1164,18 @@ function TaskDetailModal({ task, onClose }) {
             {detail.error && <div><h4 className="font-medium mb-2 text-red-400">错误信息</h4><div className="p-3 bg-red-500/10 rounded text-sm text-red-400">{detail.error}</div></div>}
             {detail.result && (
               <div>
-                <h4 className="font-medium mb-2">分析结果</h4>
+                <div className="flex items-center justify-between mb-2">
+                  <h4 className="font-medium">分析结果</h4>
+                  {detail.status === "complete" && (
+                    <button
+                      onClick={() => window.open(`/report/${detail.id}`, "_blank")}
+                      className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 rounded-lg text-sm flex items-center gap-1.5"
+                    >
+                      <Eye className="w-4 h-4" />
+                      查看完整报告
+                    </button>
+                  )}
+                </div>
                 <div className="p-3 bg-gray-800 rounded text-sm max-h-60 overflow-auto">
                   <pre className="whitespace-pre-wrap">{typeof detail.result === "string" ? detail.result : JSON.stringify(detail.result, null, 2)}</pre>
                 </div>
@@ -976,8 +1194,8 @@ function StatsTab({ stats }) {
 
   // 计算分析状态分布的饼图数据
   const totalTasks = stats.taskStatusDist?.reduce((sum, item) => sum + item.count, 0) || 0;
-  const statusColors = { complete: "#22c55e", running: "#3b82f6", error: "#ef4444", queued: "#6b7280" };
-  const statusLabels = { complete: "已完成", running: "分析中", error: "失败", queued: "排队中" };
+  const statusColors = { complete: "#22c55e", running: "#3b82f6", error: "#ef4444", queued: "#6b7280", failed: "#f59e0b" };
+  const statusLabels = { complete: "已完成", running: "分析中", error: "失败", queued: "排队中", failed: "中断" };
 
   // 计算饼图渐变
   let cumulativePercent = 0;
@@ -991,6 +1209,22 @@ function StatsTab({ stats }) {
   // 计算趋势图最大值的归一化
   const maxUserCount = Math.max(...(stats.userTrend?.map(t => t.count) || [1]), 1);
   const maxRevenue = Math.max(...(stats.revenueTrend?.map(t => t.total) || [1]), 1);
+  const maxDailyAnalysis = Math.max(...(stats.dailyAnalysisTrend?.map(t => t.count) || [1]), 1);
+
+  // 评分等级分布
+  const gradeColors = { A: "#22c55e", B: "#3b82f6", C: "#f59e0b", D: "#ef4444" };
+  const totalGraded = stats.gradeDist?.reduce((sum, g) => sum + g.count, 0) || 0;
+
+  // 行业分布
+  const industryColors = ["#8b5cf6", "#3b82f6", "#22c55e", "#f59e0b", "#ef4444", "#ec4899", "#06b6d4", "#6b7280"];
+  let industryCumulativePercent = 0;
+  const totalIndustry = stats.industryDist?.reduce((sum, i) => sum + i.count, 0) || 0;
+  const industryPieData = stats.industryDist?.map((item, idx) => {
+    const percent = totalIndustry > 0 ? (item.count / totalIndustry) * 100 : 0;
+    const start = industryCumulativePercent;
+    industryCumulativePercent += percent;
+    return { ...item, percent, start, end: industryCumulativePercent, color: industryColors[idx % industryColors.length] };
+  }) || [];
 
   return (
     <div className="space-y-6">
@@ -1002,13 +1236,20 @@ function StatsTab({ stats }) {
         <div className="bg-gray-900 border border-gray-800 rounded-xl p-6"><div className="text-sm text-gray-400 mb-1">总分析次数</div><div className="text-2xl font-bold text-blue-400">{stats.totalAnalyzes}</div></div>
       </div>
 
-      {/* 可视化仪表盘 */}
+      {/* 第二行指标卡片 */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="bg-gray-900 border border-gray-800 rounded-xl p-6"><div className="text-sm text-gray-400 mb-1">用户留存率</div><div className="text-2xl font-bold text-purple-400">{stats.retentionRate || 0}%</div><div className="text-xs text-gray-500">注册后7天内回访</div></div>
+        <div className="bg-gray-900 border border-gray-800 rounded-xl p-6"><div className="text-sm text-gray-400 mb-1">兑换码总数</div><div className="text-2xl font-bold">{stats.tokenStats?.total || 0}</div><div className="text-xs text-gray-500">已用 {stats.tokenStats?.used || 0} · 可用 {stats.tokenStats?.available || 0}</div></div>
+        <div className="bg-gray-900 border border-gray-800 rounded-xl p-6"><div className="text-sm text-gray-400 mb-1">兑换码使用率</div><div className="text-2xl font-bold text-cyan-400">{stats.tokenStats?.total > 0 ? Math.round((stats.tokenStats.used / stats.tokenStats.total) * 100) : 0}%</div></div>
+        <div className="bg-gray-900 border border-gray-800 rounded-xl p-6"><div className="text-sm text-gray-400 mb-1">平均评分</div><div className="text-2xl font-bold text-orange-400">{totalGraded > 0 ? (() => { const scoreMap = { A: 90, B: 75, C: 65, D: 45 }; const avg = stats.gradeDist.reduce((s, g) => s + (scoreMap[g.grade] || 0) * g.count, 0) / totalGraded; return avg.toFixed(0); })() : "-"}</div></div>
+      </div>
+
+      {/* 可视化仪表盘 Row 1 */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* 分析状态分布饼图 */}
         <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
           <h3 className="text-lg font-bold mb-4">分析状态分布</h3>
           <div className="flex items-center gap-8">
-            {/* 饼图 */}
             <div className="relative w-32 h-32">
               <svg viewBox="0 0 100 100" className="w-full h-full -rotate-90">
                 {pieData.map((item, i) => (
@@ -1028,7 +1269,6 @@ function StatsTab({ stats }) {
                 <span className="text-lg font-bold">{totalTasks}</span>
               </div>
             </div>
-            {/* 图例 */}
             <div className="space-y-2">
               {pieData.map((item) => (
                 <div key={item.status} className="flex items-center gap-2">
@@ -1041,7 +1281,87 @@ function StatsTab({ stats }) {
           </div>
         </div>
 
-        {/* 用户增长趋势条形图 */}
+        {/* 评分等级分布柱状图 */}
+        <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
+          <h3 className="text-lg font-bold mb-4">评分等级分布</h3>
+          {totalGraded === 0 ? <p className="text-gray-500 text-center py-8">暂无数据</p> : (
+            <div className="flex items-end justify-center gap-6 h-40">
+              {["A", "B", "C", "D"].map((grade) => {
+                const item = stats.gradeDist?.find(g => g.grade === grade) || { count: 0 };
+                const heightPct = totalGraded > 0 ? (item.count / totalGraded) * 100 : 0;
+                return (
+                  <div key={grade} className="flex flex-col items-center gap-1">
+                    <span className="text-xs text-gray-400">{item.count}</span>
+                    <div className="w-12 rounded-t-md" style={{ height: `${Math.max(heightPct, 4)}%`, backgroundColor: gradeColors[grade] }} />
+                    <span className="text-sm font-bold" style={{ color: gradeColors[grade] }}>{grade}</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* 可视化仪表盘 Row 2 */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* BP 行业分布饼图 */}
+        <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
+          <h3 className="text-lg font-bold mb-4">BP 行业分布</h3>
+          {totalIndustry === 0 ? <p className="text-gray-500 text-center py-8">暂无数据</p> : (
+            <div className="flex items-center gap-8">
+              <div className="relative w-32 h-32">
+                <svg viewBox="0 0 100 100" className="w-full h-full -rotate-90">
+                  {industryPieData.map((item, i) => (
+                    <circle
+                      key={i}
+                      cx="50" cy="50" r="40"
+                      fill="none"
+                      stroke={item.color}
+                      strokeWidth="20"
+                      strokeDasharray={`${item.percent * 2.51} ${251 - item.percent * 2.51}`}
+                      strokeDashoffset={`${-item.start * 2.51}`}
+                    />
+                  ))}
+                  <circle cx="50" cy="50" r="25" fill="#1f2937" />
+                </svg>
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <span className="text-lg font-bold">{totalIndustry}</span>
+                </div>
+              </div>
+              <div className="space-y-1 max-h-40 overflow-y-auto">
+                {industryPieData.map((item) => (
+                  <div key={item.category} className="flex items-center gap-2">
+                    <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: item.color }} />
+                    <span className="text-sm text-gray-400 truncate">{item.category}:</span>
+                    <span className="text-sm font-medium">{item.count}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* 套餐销售占比 */}
+        <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
+          <h3 className="text-lg font-bold mb-4">套餐销售统计</h3>
+          {(!stats.packageSalesDist || stats.packageSalesDist.length === 0) ? <p className="text-gray-500 text-center py-8">暂无数据</p> : (
+            <div className="space-y-3">
+              {stats.packageSalesDist.map((p) => (
+                <div key={p.quota_amount} className="flex items-center justify-between p-3 bg-gray-800 rounded-lg">
+                  <div>
+                    <span className="font-medium">{p.quota_amount}次套餐</span>
+                    <span className="text-xs text-gray-500 ml-2">共{p.count}单</span>
+                  </div>
+                  <span className="font-bold text-green-400">¥{(p.revenue / 100).toFixed(0)}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* 用户增长趋势条形图 */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
           <h3 className="text-lg font-bold mb-4">用户增长趋势（最近30天）</h3>
           {stats.userTrend.length === 0 ? <p className="text-gray-500 text-center py-8">暂无数据</p> : (
@@ -1050,10 +1370,25 @@ function StatsTab({ stats }) {
                 <div key={t.date} className="flex items-center gap-2">
                   <span className="text-xs text-gray-500 w-20">{t.date.slice(5)}</span>
                   <div className="flex-1 h-4 bg-gray-800 rounded overflow-hidden">
-                    <div
-                      className="h-full bg-gradient-to-r from-blue-500 to-blue-400 rounded"
-                      style={{ width: `${(t.count / maxUserCount) * 100}%` }}
-                    />
+                    <div className="h-full bg-gradient-to-r from-blue-500 to-blue-400 rounded" style={{ width: `${(t.count / maxUserCount) * 100}%` }} />
+                  </div>
+                  <span className="text-xs text-gray-400 w-8 text-right">{t.count}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* 日均分析量趋势 */}
+        <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
+          <h3 className="text-lg font-bold mb-4">日均分析量（最近30天）</h3>
+          {(!stats.dailyAnalysisTrend || stats.dailyAnalysisTrend.length === 0) ? <p className="text-gray-500 text-center py-8">暂无数据</p> : (
+            <div className="space-y-1">
+              {stats.dailyAnalysisTrend.slice(-10).map((t) => (
+                <div key={t.date} className="flex items-center gap-2">
+                  <span className="text-xs text-gray-500 w-20">{t.date.slice(5)}</span>
+                  <div className="flex-1 h-4 bg-gray-800 rounded overflow-hidden">
+                    <div className="h-full bg-gradient-to-r from-purple-500 to-purple-400 rounded" style={{ width: `${(t.count / maxDailyAnalysis) * 100}%` }} />
                   </div>
                   <span className="text-xs text-gray-400 w-8 text-right">{t.count}</span>
                 </div>
@@ -1072,10 +1407,7 @@ function StatsTab({ stats }) {
               <div key={t.date} className="flex items-center gap-2">
                 <span className="text-xs text-gray-500 w-20">{t.date.slice(5)}</span>
                 <div className="flex-1 h-4 bg-gray-800 rounded overflow-hidden">
-                  <div
-                    className="h-full bg-gradient-to-r from-green-500 to-green-400 rounded"
-                    style={{ width: `${(t.total / maxRevenue) * 100}%` }}
-                  />
+                  <div className="h-full bg-gradient-to-r from-green-500 to-green-400 rounded" style={{ width: `${(t.total / maxRevenue) * 100}%` }} />
                 </div>
                 <span className="text-xs text-gray-400 w-16 text-right">¥{(t.total / 100).toFixed(0)}</span>
               </div>
@@ -1238,6 +1570,7 @@ function SystemSettingsTab({ settings, setSettings, setMessage }) {
 function AdminPanel({ tokenQuota, setTokenQuota, tokenCount, setTokenCount, generating, setGenerating, setGeneratedToken, setMessage, adminTokens, setAdminTokens, adminAvailable, setAdminAvailable, loading, setLoading }) {
   const [allTokens, setAllTokens] = useState([]);
   const [tokenPage, setTokenPage] = useState(1);
+  const [generatedTokens, setGeneratedTokens] = useState([]);
 
   useEffect(() => {
     loadAllTokens();
@@ -1256,8 +1589,11 @@ function AdminPanel({ tokenQuota, setTokenQuota, tokenCount, setTokenCount, gene
     setGenerating(true); setMessage(null);
     try {
       const result = await api.post("/api/token/generate", { quotaAmount: tokenQuota, expireDays: 30, count: tokenCount });
+      // API returns array for count > 1, single object for count = 1
+      const tokens = Array.isArray(result) ? result : [result];
+      setGeneratedTokens(tokens);
       setGeneratedToken(result);
-      setMessage({ type: "success", text: `成功生成 ${tokenCount} 个兑换码` });
+      setMessage({ type: "success", text: `成功生成 ${tokens.length} 个兑换码` });
       loadAllTokens();
       const data = await api.get("/api/token/list");
       setAdminTokens(data.tokens || []); setAdminAvailable(data.available || 0);
@@ -1275,6 +1611,17 @@ function AdminPanel({ tokenQuota, setTokenQuota, tokenCount, setTokenCount, gene
     }
   };
 
+  const copyToClipboard = (text) => {
+    navigator.clipboard.writeText(text);
+    setMessage({ type: "success", text: "已复制到剪贴板" });
+  };
+
+  const copyAllTokens = () => {
+    const text = generatedTokens.map(t => t.token).join("\n");
+    navigator.clipboard.writeText(text);
+    setMessage({ type: "success", text: `已复制 ${generatedTokens.length} 个兑换码` });
+  };
+
   return (
     <div className="space-y-6">
       {/* 生成兑换码 */}
@@ -1285,6 +1632,27 @@ function AdminPanel({ tokenQuota, setTokenQuota, tokenCount, setTokenCount, gene
           <div><label className="block text-sm text-gray-400 mb-1">生成数量</label><select value={tokenCount} onChange={(e) => setTokenCount(parseInt(e.target.value))} className="px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg"><option value={1}>1 个</option><option value={5}>5 个</option><option value={10}>10 个</option></select></div>
           <div className="flex-1 flex items-end"><button onClick={handleGenerate} disabled={generating} className="w-full px-6 py-2 bg-yellow-600 hover:bg-yellow-500 disabled:bg-gray-700 rounded-lg font-medium flex items-center justify-center gap-2">{generating && <Loader2 className="w-4 h-4 animate-spin" />}生成</button></div>
         </div>
+
+        {/* 生成结果面板 */}
+        {generatedTokens.length > 0 && (
+          <div className="mt-4 p-4 bg-gray-800 rounded-lg border border-yellow-500/20">
+            <div className="flex items-center justify-between mb-3">
+              <div className="text-sm font-medium text-yellow-400">刚生成的兑换码（有效期30天）</div>
+              <button onClick={copyAllTokens} className="flex items-center gap-1 px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded text-sm">
+                <Copy className="w-3 h-3" />全部复制
+              </button>
+            </div>
+            <div className="space-y-2 max-h-60 overflow-y-auto">
+              {generatedTokens.map((t, i) => (
+                <div key={i} className="flex items-center gap-3 p-2 bg-gray-900 rounded">
+                  <code className="flex-1 font-mono font-bold text-green-400">{t.token}</code>
+                  <span className="text-xs text-gray-500">{t.quotaAmount} 次</span>
+                  <button onClick={() => copyToClipboard(t.token)} className="p-1 hover:bg-gray-700 rounded"><Copy className="w-4 h-4 text-gray-400" /></button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* 兑换码列表 */}

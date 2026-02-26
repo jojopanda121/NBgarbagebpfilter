@@ -28,13 +28,13 @@ const getUsers = (options = {}) => {
     whereClause += " AND u.is_banned = 1";
   }
 
-  // 获取总数
-  const countStmt = db.prepare(`SELECT COUNT(*) as total FROM users u WHERE ${whereClause}`);
-  const { total } = countStmt.get(...params);
+  // 获取总数 - 使用参数化查询
+  const countQuery = `SELECT COUNT(*) as total FROM users u WHERE ${whereClause}`;
+  const { total } = db.prepare(countQuery).get(...params);
 
-  // 获取列表 - 使用条件列名
+  // 获取列表 - 使用条件列名和参数化查询
   const isBannedSelect = hasBanned ? "u.is_banned," : "0 as is_banned,";
-  const stmt = db.prepare(`
+  const listQuery = `
     SELECT
       u.id, u.username, u.email, u.phone, u.usage_count, ${isBannedSelect} u.created_at, u.updated_at,
       COALESCE(q.free_quota, 0) + COALESCE(q.paid_quota, 0) as total_quota,
@@ -44,17 +44,23 @@ const getUsers = (options = {}) => {
     WHERE ${whereClause}
     ORDER BY u.created_at DESC
     LIMIT ? OFFSET ?
-  `);
-  const users = stmt.all(...params, pageSize, offset);
+  `;
+  const users = db.prepare(listQuery).all(...params, pageSize, offset);
 
   return { users, total, page, pageSize };
 };
 
 const getUserById = (id) => {
   const db = getDb();
+
+  // 动态检测 is_banned 列
+  const tableInfo = db.prepare("PRAGMA table_info(users)").all();
+  const hasBanned = tableInfo.some((col) => col.name === "is_banned");
+  const isBannedSelect = hasBanned ? "u.is_banned," : "0 as is_banned,";
+
   const user = db.prepare(`
     SELECT
-      u.id, u.username, u.email, u.phone, u.usage_count, u.is_banned, u.created_at, u.updated_at,
+      u.id, u.username, u.email, u.phone, u.usage_count, ${isBannedSelect} u.created_at, u.updated_at,
       COALESCE(q.free_quota, 0) as free_quota,
       COALESCE(q.paid_quota, 0) as paid_quota
     FROM users u
@@ -137,6 +143,89 @@ const getStats = () => {
     ORDER BY date
   `).all();
 
+  // 评分等级分布（从 result JSON 中提取 grade）
+  let gradeDist = [];
+  try {
+    const completeTasks = db.prepare(`
+      SELECT result FROM tasks WHERE status = 'complete' AND result IS NOT NULL
+    `).all();
+    const gradeCount = { A: 0, B: 0, C: 0, D: 0 };
+    for (const task of completeTasks) {
+      try {
+        const result = typeof task.result === "string" ? JSON.parse(task.result) : task.result;
+        const grade = result?.verdict?.grade;
+        if (grade && gradeCount[grade] !== undefined) {
+          gradeCount[grade]++;
+        }
+      } catch (_) { /* ignore parse errors */ }
+    }
+    gradeDist = Object.entries(gradeCount).map(([grade, count]) => ({ grade, count }));
+  } catch (_) { /* ignore */ }
+
+  // 日均分析量趋势（最近30天）
+  const dailyAnalysisTrend = db.prepare(`
+    SELECT DATE(created_at) as date, COUNT(*) as count
+    FROM tasks
+    WHERE created_at >= datetime('now', '-30 days')
+    GROUP BY DATE(created_at)
+    ORDER BY date
+  `).all();
+
+  // 行业分布（从 industry_category 字段）
+  let industryDist = [];
+  try {
+    // 动态检测列是否存在
+    const tableInfo = db.prepare("PRAGMA table_info(tasks)").all();
+    const hasIndustryCategory = tableInfo.some((col) => col.name === "industry_category");
+    if (hasIndustryCategory) {
+      industryDist = db.prepare(`
+        SELECT industry_category as category, COUNT(*) as count
+        FROM tasks
+        WHERE status = 'complete' AND industry_category IS NOT NULL AND industry_category != ''
+        GROUP BY industry_category
+        ORDER BY count DESC
+      `).all();
+    }
+  } catch (_) { /* ignore */ }
+
+  // 套餐销售占比
+  let packageSalesDist = [];
+  try {
+    packageSalesDist = db.prepare(`
+      SELECT quota_amount, COUNT(*) as count, SUM(amount_cents) as revenue
+      FROM orders
+      WHERE status = 'PAID' AND payment_channel != 'REDEEM'
+      GROUP BY quota_amount
+      ORDER BY count DESC
+    `).all();
+  } catch (_) { /* ignore */ }
+
+  // 兑换码使用率
+  let tokenStats = { total: 0, used: 0, expired: 0, available: 0 };
+  try {
+    const total = db.prepare("SELECT COUNT(*) as count FROM tokens").get().count;
+    const used = db.prepare("SELECT COUNT(*) as count FROM tokens WHERE used_at IS NOT NULL").get().count;
+    const expired = db.prepare("SELECT COUNT(*) as count FROM tokens WHERE used_at IS NULL AND expires_at < datetime('now')").get().count;
+    tokenStats = { total, used, expired, available: total - used - expired };
+  } catch (_) { /* ignore */ }
+
+  // 用户留存率（注册后7天内是否再次使用）
+  let retentionRate = 0;
+  try {
+    const recentUsers = db.prepare(`
+      SELECT COUNT(*) as count FROM users
+      WHERE created_at >= datetime('now', '-30 days')
+    `).get().count;
+    const retainedUsers = db.prepare(`
+      SELECT COUNT(DISTINCT u.id) as count
+      FROM users u
+      INNER JOIN tasks t ON u.id = t.user_id
+      WHERE u.created_at >= datetime('now', '-30 days')
+        AND t.created_at > datetime(u.created_at, '+1 day')
+    `).get().count;
+    retentionRate = recentUsers > 0 ? Math.round((retainedUsers / recentUsers) * 100) : 0;
+  } catch (_) { /* ignore */ }
+
   return {
     totalUsers,
     activeUsers,
@@ -145,6 +234,12 @@ const getStats = () => {
     taskStatusDist,
     userTrend,
     revenueTrend,
+    gradeDist,
+    dailyAnalysisTrend,
+    industryDist,
+    packageSalesDist,
+    tokenStats,
+    retentionRate,
   };
 };
 
@@ -162,18 +257,18 @@ const getFeedbackList = (options = {}) => {
     params.push(status);
   }
 
-  const countStmt = db.prepare(`SELECT COUNT(*) as total FROM feedback f WHERE ${whereClause}`);
-  const { total } = countStmt.get(...params);
+  const countQuery = `SELECT COUNT(*) as total FROM feedback f WHERE ${whereClause}`;
+  const { total } = db.prepare(countQuery).get(...params);
 
-  const stmt = db.prepare(`
+  const listQuery = `
     SELECT f.*, u.username
     FROM feedback f
     LEFT JOIN users u ON f.user_id = u.id
     WHERE ${whereClause}
     ORDER BY f.created_at DESC
     LIMIT ? OFFSET ?
-  `);
-  const feedback = stmt.all(...params, pageSize, offset);
+  `;
+  const feedback = db.prepare(listQuery).all(...params, pageSize, offset);
 
   return { feedback, total, page, pageSize };
 };
@@ -234,9 +329,13 @@ const updatePackage = (id, data) => {
   if (data.is_active !== undefined) { fields.push("is_active = ?"); params.push(data.is_active); }
   if (data.sort_order !== undefined) { fields.push("sort_order = ?"); params.push(data.sort_order); }
 
+  if (fields.length === 0) {
+    throw new Error("No fields to update");
+  }
+
   params.push(id);
-  const stmt = db.prepare(`UPDATE packages SET ${fields.join(", ")} WHERE id = ?`);
-  return stmt.run(...params);
+  const query = `UPDATE packages SET ${fields.join(", ")} WHERE id = ?`;
+  return db.prepare(query).run(...params);
 };
 
 const deletePackage = (id) => {
@@ -263,18 +362,18 @@ const getAllTasks = (options = {}) => {
     params.push(`%${search}%`, `%${search}%`);
   }
 
-  const countStmt = db.prepare(`SELECT COUNT(*) as total FROM tasks t LEFT JOIN users u ON t.user_id = u.id WHERE ${whereClause}`);
-  const { total } = countStmt.get(...params);
+  const countQuery = `SELECT COUNT(*) as total FROM tasks t LEFT JOIN users u ON t.user_id = u.id WHERE ${whereClause}`;
+  const { total } = db.prepare(countQuery).get(...params);
 
-  const stmt = db.prepare(`
+  const listQuery = `
     SELECT t.*, u.username
     FROM tasks t
     LEFT JOIN users u ON t.user_id = u.id
     WHERE ${whereClause}
     ORDER BY t.created_at DESC
     LIMIT ? OFFSET ?
-  `);
-  const tasks = stmt.all(...params, pageSize, offset);
+  `;
+  const tasks = db.prepare(listQuery).all(...params, pageSize, offset);
 
   return { tasks, total, page, pageSize };
 };
@@ -354,4 +453,8 @@ module.exports = {
   deletePackage,
   getSettings,
   updateSettings,
+  getAllTasks,
+  getTaskDetail,
+  getTokenList,
+  deleteToken,
 };

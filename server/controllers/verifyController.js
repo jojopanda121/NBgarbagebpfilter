@@ -4,6 +4,7 @@
 
 const { sendVerificationCode, verifyCode, canSendCode } = require("../services/smsService");
 const { sendEmailCode, verifyEmailCode, canSendEmailCode } = require("../services/emailService");
+const { isValidEmail, isValidPhone } = require("../utils/validation");
 
 /** POST /api/verify/send — 发送验证码（手机或邮箱） */
 async function sendCode(req, res) {
@@ -12,8 +13,7 @@ async function sendCode(req, res) {
   // 手机号验证码
   if (phone) {
     // 手机号格式验证（中国大陆）
-    const phoneRegex = /^1[3-9]\d{9}$/;
-    if (!phoneRegex.test(phone)) {
+    if (!isValidPhone(phone)) {
       return res.status(400).json({ error: "手机号格式不正确" });
     }
 
@@ -35,8 +35,7 @@ async function sendCode(req, res) {
   // 邮箱验证码
   if (email) {
     // 邮箱格式验证
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
+    if (!isValidEmail(email)) {
       return res.status(400).json({ error: "邮箱格式不正确" });
     }
 

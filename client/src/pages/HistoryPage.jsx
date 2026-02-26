@@ -1,13 +1,53 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import { FileText, Clock, ChevronRight, Loader2, RefreshCw } from "lucide-react";
+import {
+  FileText,
+  Clock,
+  ChevronRight,
+  Loader2,
+  RefreshCw,
+  ArrowUpDown,
+  Filter,
+} from "lucide-react";
 import api from "../services/api";
+
+const INDUSTRY_FILTERS = [
+  "全部",
+  "人工智能",
+  "新能源",
+  "生物医药",
+  "先进制造",
+  "企业服务/SaaS",
+  "消费/零售",
+  "金融科技",
+  "其他",
+];
+
+// 评分圆圈组件
+function ScoreCircle({ score }) {
+  if (score == null) return null;
+  const color =
+    score >= 75
+      ? "text-emerald-400 border-emerald-500/40"
+      : score >= 50
+      ? "text-yellow-400 border-yellow-500/40"
+      : "text-red-400 border-red-500/40";
+  return (
+    <div
+      className={`w-10 h-10 rounded-full border-2 flex items-center justify-center text-sm font-bold ${color}`}
+    >
+      {score}
+    </div>
+  );
+}
 
 export default function HistoryPage() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [tasks, setTasks] = useState([]);
+  const [sortBy, setSortBy] = useState("time"); // "time" | "score"
+  const [filterIndustry, setFilterIndustry] = useState("全部");
 
   const fetchTasks = async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true);
@@ -26,21 +66,37 @@ export default function HistoryPage() {
     fetchTasks();
   }, []);
 
+  // 筛选 + 排序
+  const filteredTasks = useMemo(() => {
+    let list = [...tasks];
+
+    // 行业筛选
+    if (filterIndustry !== "全部") {
+      list = list.filter((t) => {
+        const cat = t.industry_category || "";
+        const ind = t.industry || "";
+        return cat.includes(filterIndustry) || ind.includes(filterIndustry);
+      });
+    }
+
+    // 排序
+    if (sortBy === "score") {
+      list.sort((a, b) => (b.total_score ?? -1) - (a.total_score ?? -1));
+    }
+    // sortBy === "time" 默认已按 created_at DESC
+
+    return list;
+  }, [tasks, sortBy, filterIndustry]);
+
   // 格式化时间
   const formatTime = (dateStr) => {
     const date = new Date(dateStr);
     const now = new Date();
     const diff = now - date;
-
-    // 小于 1 分钟
     if (diff < 60000) return "刚刚";
-    // 小于 1 小时
     if (diff < 3600000) return `${Math.floor(diff / 60000)} 分钟前`;
-    // 小于 1 天
     if (diff < 86400000) return `${Math.floor(diff / 3600000)} 小时前`;
-    // 小于 7 天
     if (diff < 604800000) return `${Math.floor(diff / 86400000)} 天前`;
-    // 超过 7 天
     return date.toLocaleDateString("zh-CN");
   };
 
@@ -75,10 +131,15 @@ export default function HistoryPage() {
     }
   };
 
-  // 查看报告详情
+  // 查看报告详情 / 恢复分析进度
   const handleViewReport = (task) => {
     if (task.status === "complete") {
       navigate(`/report/${task.id}`);
+    } else if (task.status === "running") {
+      const currentUser = JSON.parse(localStorage.getItem("bp_user") || "null");
+      const pendingData = { taskId: task.id, userId: currentUser?.id || null };
+      localStorage.setItem("bp_pending_task", JSON.stringify(pendingData));
+      navigate("/app/dashboard");
     }
   };
 
@@ -92,7 +153,8 @@ export default function HistoryPage() {
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-8">
-      <div className="flex items-center justify-between mb-6">
+      {/* 标题栏 */}
+      <div className="flex items-center justify-between mb-4">
         <h1 className="text-2xl font-bold">历史报告</h1>
         <button
           onClick={() => fetchTasks(true)}
@@ -103,6 +165,52 @@ export default function HistoryPage() {
           刷新
         </button>
       </div>
+
+      {/* 排序 + 筛选栏 */}
+      {tasks.length > 0 && (
+        <div className="flex flex-wrap items-center gap-3 mb-5">
+          {/* 排序切换 */}
+          <div className="flex items-center gap-1.5 text-sm">
+            <ArrowUpDown className="w-4 h-4 text-gray-500" />
+            <button
+              onClick={() => setSortBy("time")}
+              className={`px-3 py-1 rounded-full border transition-colors ${
+                sortBy === "time"
+                  ? "bg-blue-500/20 text-blue-400 border-blue-500/40"
+                  : "bg-gray-800 text-gray-500 border-gray-700 hover:border-gray-500"
+              }`}
+            >
+              按时间
+            </button>
+            <button
+              onClick={() => setSortBy("score")}
+              className={`px-3 py-1 rounded-full border transition-colors ${
+                sortBy === "score"
+                  ? "bg-blue-500/20 text-blue-400 border-blue-500/40"
+                  : "bg-gray-800 text-gray-500 border-gray-700 hover:border-gray-500"
+              }`}
+            >
+              按评分
+            </button>
+          </div>
+
+          {/* 行业筛选 */}
+          <div className="flex items-center gap-1.5 text-sm ml-auto">
+            <Filter className="w-4 h-4 text-gray-500" />
+            <select
+              value={filterIndustry}
+              onChange={(e) => setFilterIndustry(e.target.value)}
+              className="bg-gray-800 border border-gray-700 text-gray-300 text-sm rounded-lg px-3 py-1.5 focus:outline-none focus:border-blue-500"
+            >
+              {INDUSTRY_FILTERS.map((ind) => (
+                <option key={ind} value={ind}>
+                  {ind}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+      )}
 
       {tasks.length === 0 ? (
         <div className="text-center py-16 bg-gray-900/50 rounded-xl border border-gray-800">
@@ -115,38 +223,63 @@ export default function HistoryPage() {
             开始第一次分析
           </button>
         </div>
+      ) : filteredTasks.length === 0 ? (
+        <div className="text-center py-12 bg-gray-900/50 rounded-xl border border-gray-800">
+          <p className="text-gray-400">当前筛选条件下无匹配报告</p>
+        </div>
       ) : (
         <div className="space-y-3">
-          {tasks.map((task) => (
+          {filteredTasks.map((task) => (
             <div
               key={task.id}
               onClick={() => handleViewReport(task)}
               className={`p-4 bg-gray-900 border border-gray-800 rounded-xl transition-colors ${
-                task.status === "complete"
+                task.status === "complete" || task.status === "running"
                   ? "cursor-pointer hover:border-gray-700 hover:bg-gray-800/50"
                   : "opacity-75"
               }`}
             >
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-4">
-                  <div className="w-10 h-10 bg-gray-800 rounded-lg flex items-center justify-center">
-                    <FileText className="w-5 h-5 text-gray-400" />
-                  </div>
-                  <div>
-                    <div className="font-medium mb-1">BP 尽调分析</div>
-                    <div className="flex items-center gap-3 text-sm text-gray-500">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-4 flex-1 min-w-0">
+                  {/* 评分圆圈 or 文件图标 */}
+                  {task.status === "complete" && task.total_score != null ? (
+                    <ScoreCircle score={task.total_score} />
+                  ) : (
+                    <div className="w-10 h-10 bg-gray-800 rounded-lg flex items-center justify-center shrink-0">
+                      <FileText className="w-5 h-5 text-gray-400" />
+                    </div>
+                  )}
+                  <div className="min-w-0">
+                    <div className="font-medium mb-1 truncate">
+                      {task.title || "BP 尽调分析"}
+                    </div>
+                    <div className="flex items-center gap-2 flex-wrap text-sm text-gray-500">
                       <span className="flex items-center gap-1">
                         <Clock className="w-3 h-3" />
                         {formatTime(task.created_at)}
                       </span>
-                      {task.stage && <span>{task.message}</span>}
+                      {/* 赛道标签 */}
+                      {task.industry_category && (
+                        <span className="px-2 py-0.5 rounded text-xs bg-purple-500/15 text-purple-400">
+                          {task.industry_category}
+                        </span>
+                      )}
+                      {/* 细分行业标签 */}
+                      {task.industry && task.industry !== task.industry_category && (
+                        <span className="px-2 py-0.5 rounded text-xs bg-cyan-500/15 text-cyan-400">
+                          {task.industry}
+                        </span>
+                      )}
+                      {task.stage && task.status === "running" && (
+                        <span>{task.message}</span>
+                      )}
                     </div>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-3 shrink-0">
                   {getStatusBadge(task.status)}
-                  {task.status === "complete" && (
+                  {(task.status === "complete" || task.status === "running") && (
                     <ChevronRight className="w-5 h-5 text-gray-500" />
                   )}
                 </div>

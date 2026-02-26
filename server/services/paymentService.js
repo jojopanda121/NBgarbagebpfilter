@@ -46,15 +46,59 @@ class WechatPayStrategy extends PaymentStrategy {
   }
 
   verifyCallback(rawBody, headers) {
-    // TODO: 微信支付 V3 签名验证
-    // 使用平台证书公钥验证 Wechatpay-Signature
-    if (!config.wechatPayApiKey) return false;
-    return true; // placeholder
+    // 微信支付 V3 HMAC-SHA256 签名验证
+    const apiKey = config.wechatPayApiKey;
+    if (!apiKey) {
+      console.error("[Payment] 微信支付 API Key 未配置，拒绝回调");
+      return false;
+    }
+
+    try {
+      const timestamp = headers["wechatpay-timestamp"];
+      const nonce = headers["wechatpay-nonce"];
+      const signature = headers["wechatpay-signature"];
+
+      if (!timestamp || !nonce || !signature) {
+        console.error("[Payment] 微信回调缺少签名头: timestamp/nonce/signature");
+        return false;
+      }
+
+      // 防止时间戳过旧的回放攻击（5分钟窗口）
+      const now = Math.floor(Date.now() / 1000);
+      if (Math.abs(now - parseInt(timestamp, 10)) > 300) {
+        console.error("[Payment] 微信回调时间戳过期");
+        return false;
+      }
+
+      // 构造验签串: timestamp + \n + nonce + \n + body + \n
+      const message = `${timestamp}\n${nonce}\n${rawBody}\n`;
+      const expectedSign = crypto
+        .createHmac("sha256", apiKey)
+        .update(message)
+        .digest("hex")
+        .toUpperCase();
+
+      const result = crypto.timingSafeEqual(
+        Buffer.from(expectedSign),
+        Buffer.from(String(signature).toUpperCase())
+      );
+
+      if (!result) {
+        console.error("[Payment] 微信回调签名不匹配");
+      }
+      return result;
+    } catch (err) {
+      console.error("[Payment] 微信签名验证异常:", err.message);
+      return false;
+    }
   }
 
   parseCallback(rawBody) {
-    // TODO: 解密微信支付回调数据
-    return JSON.parse(rawBody);
+    try {
+      return JSON.parse(rawBody);
+    } catch {
+      throw new Error("微信回调数据解析失败");
+    }
   }
 }
 
@@ -72,15 +116,67 @@ class AlipayStrategy extends PaymentStrategy {
     };
   }
 
-  verifyCallback(rawBody, headers) {
-    // TODO: 支付宝异步通知签名验证
-    if (!config.alipayPublicKey) return false;
-    return true; // placeholder
+  verifyCallback(rawBody /*, headers */) {
+    // 支付宝异步通知 RSA-SHA256 签名验证
+    const publicKey = config.alipayPublicKey;
+    if (!publicKey) {
+      console.error("[Payment] 支付宝公钥未配置，拒绝回调");
+      return false;
+    }
+
+    try {
+      const params = this.parseCallback(rawBody);
+      const sign = params.sign;
+      const signType = params.sign_type || "RSA2";
+
+      if (!sign) {
+        console.error("[Payment] 支付宝回调缺少 sign 字段");
+        return false;
+      }
+
+      // 按参数名 ASCII 排序，排除 sign 和 sign_type
+      const sortedStr = Object.keys(params)
+        .filter((k) => k !== "sign" && k !== "sign_type" && params[k] !== "")
+        .sort()
+        .map((k) => `${k}=${params[k]}`)
+        .join("&");
+
+      // 使用支付宝公钥验证签名
+      const algorithm = signType === "RSA2" ? "RSA-SHA256" : "RSA-SHA1";
+      const pemKey = publicKey.includes("BEGIN PUBLIC KEY")
+        ? publicKey
+        : `-----BEGIN PUBLIC KEY-----\n${publicKey}\n-----END PUBLIC KEY-----`;
+
+      const verifier = crypto.createVerify(algorithm);
+      verifier.update(sortedStr, "utf8");
+      const result = verifier.verify(pemKey, sign, "base64");
+
+      if (!result) {
+        console.error("[Payment] 支付宝回调签名不匹配");
+      }
+      return result;
+    } catch (err) {
+      console.error("[Payment] 支付宝签名验证异常:", err.message);
+      return false;
+    }
   }
 
   parseCallback(rawBody) {
-    // TODO: 解析支付宝回调表单数据
-    return {};
+    // 支付宝回调为 application/x-www-form-urlencoded 格式
+    if (typeof rawBody === "object") return rawBody;
+    try {
+      const params = {};
+      const pairs = rawBody.split("&");
+      for (const pair of pairs) {
+        const idx = pair.indexOf("=");
+        if (idx > 0) {
+          params[decodeURIComponent(pair.slice(0, idx))] = decodeURIComponent(pair.slice(idx + 1));
+        }
+      }
+      return params;
+    } catch {
+      throw new Error("支付宝回调数据解析失败");
+    }
   }
 }
 
@@ -110,8 +206,9 @@ async function createPaymentOrder(userId, channel, quotaAmount) {
   const db = getDb();
   const orderNo = generateOrderNo();
 
-  // 定价逻辑（可配置化）
-  const pricePerQuota = 990; // 9.90 元 / 次，单位：分
+  // 从数据库读取定价配置（可动态调整）
+  const priceSetting = db.prepare("SELECT value FROM settings WHERE key = 'price_per_quota'").get();
+  const pricePerQuota = priceSetting ? parseInt(priceSetting.value, 10) : 990; // 默认 9.90 元 / 次
   const amountCents = quotaAmount * pricePerQuota;
 
   // 写入数据库

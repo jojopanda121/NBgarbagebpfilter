@@ -4,10 +4,11 @@ import useAuthStore from "../store/useAuthStore";
 import api, { ApiError } from "../services/api";
 
 /**
- * useAnalysisPipeline (v3.0)
+ * useAnalysisPipeline (v3.2)
  *
- * 使用统一 API 服务层，自动携带 JWT token，
- * 全局拦截 4031（绑定联系方式）和 4032（额度不足）状态码。
+ * - 支持后台分析：提交后将 taskId 存入 localStorage，用户离开页面后可在历史记录查看结果
+ * - 支持恢复轮询：DashboardPage 挂载时检测到 localStorage 中的 pending taskId，可恢复
+ * - pending task 绑定 userId，防止多账号串号
  */
 
 const STAGE_TO_STEP = {
@@ -21,6 +22,34 @@ const STAGE_TO_STEP = {
 
 const POLL_INTERVAL_MS = 2500;
 const MAX_CONSECUTIVE_ERRORS = 8;
+const PENDING_TASK_KEY = "bp_pending_task";
+
+/** 读取当前用户的 pending task（绑定 userId 防串号） */
+function getPendingTask() {
+  try {
+    const raw = localStorage.getItem(PENDING_TASK_KEY);
+    if (!raw) return null;
+    // 兼容旧格式（纯 taskId 字符串）
+    if (!raw.startsWith("{")) {
+      // 旧格式无法验证归属，清除
+      localStorage.removeItem(PENDING_TASK_KEY);
+      return null;
+    }
+    const data = JSON.parse(raw);
+    const currentUser = useAuthStore.getState().user;
+    if (!currentUser || data.userId !== currentUser.id) return null;
+    return data.taskId;
+  } catch {
+    return null;
+  }
+}
+
+/** 保存 pending task（绑定当前 userId） */
+function savePendingTask(taskId) {
+  const currentUser = useAuthStore.getState().user;
+  const data = { taskId, userId: currentUser?.id || null };
+  localStorage.setItem(PENDING_TASK_KEY, JSON.stringify(data));
+}
 
 export function useAnalysisPipeline() {
   const {
@@ -64,6 +93,57 @@ export function useAnalysisPipeline() {
     return () => clearInterval(interval);
   }, []);
 
+  /** 核心轮询逻辑，传入 taskId 开始轮询 */
+  const pollUntilDone = useCallback(async (taskId) => {
+    let consecutiveErrors = 0;
+
+    while (analyzingRef.current) {
+      await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
+      if (!analyzingRef.current) break;
+
+      let taskData;
+      try {
+        taskData = await api.pollTask(taskId);
+        consecutiveErrors = 0;
+      } catch (_pollErr) {
+        consecutiveErrors++;
+        if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+          throw new Error(`连续 ${MAX_CONSECUTIVE_ERRORS} 次轮询失败，请检查网络`);
+        }
+        continue;
+      }
+
+      const currentProgress = useAnalysisStore.getState().progress;
+      if (taskData.percentage > currentProgress) {
+        setProgress(taskData.percentage);
+      }
+      if (taskData.message) setProgressMessage(taskData.message);
+
+      const step = STAGE_TO_STEP[taskData.stage];
+      if (step !== undefined) setCurrentStep(step);
+
+      if (taskData.status === "complete") {
+        setProgress(100);
+        setProgressMessage("分析完成！");
+        setCurrentStep(2);
+        setResult(taskData.result);
+        localStorage.removeItem(PENDING_TASK_KEY);  // 完成后清除
+
+        // 刷新额度
+        try {
+          const quotaData = await api.get("/api/quota");
+          useAuthStore.getState().setQuota(quotaData);
+        } catch {}
+
+        break;
+      } else if (taskData.status === "error") {
+        localStorage.removeItem(PENDING_TASK_KEY);
+        throw new Error(taskData.error || "分析失败，请重试");
+      }
+    }
+  }, [setCurrentStep, setProgress, setProgressMessage, setResult]);
+
+  /** 从头开始分析（上传文件） */
   const startAnalysis = useCallback(async () => {
     if (!file) return;
 
@@ -92,54 +172,15 @@ export function useAnalysisPipeline() {
       }
 
       if (!taskId) throw new Error("未获取到任务ID，请重试");
-      setProgressMessage("任务已提交，分析进行中...");
 
-      // Step 2: 轮询任务状态
-      let consecutiveErrors = 0;
+      // 保存到 localStorage（绑定 userId），支持离开页面后后台继续
+      savePendingTask(taskId);
+      setProgressMessage("任务已提交，分析在后台进行中...");
 
-      while (analyzingRef.current) {
-        await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
-        if (!analyzingRef.current) break;
-
-        let taskData;
-        try {
-          taskData = await api.pollTask(taskId);
-          consecutiveErrors = 0;
-        } catch (_pollErr) {
-          consecutiveErrors++;
-          if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
-            throw new Error(`连续 ${MAX_CONSECUTIVE_ERRORS} 次轮询失败，请检查网络`);
-          }
-          continue;
-        }
-
-        const currentProgress = useAnalysisStore.getState().progress;
-        if (taskData.percentage > currentProgress) {
-          setProgress(taskData.percentage);
-        }
-        if (taskData.message) setProgressMessage(taskData.message);
-
-        const step = STAGE_TO_STEP[taskData.stage];
-        if (step !== undefined) setCurrentStep(step);
-
-        if (taskData.status === "complete") {
-          setProgress(100);
-          setProgressMessage("分析完成！");
-          setCurrentStep(2);
-          setResult(taskData.result);
-
-          // 刷新额度
-          try {
-            const quotaData = await api.get("/api/quota");
-            useAuthStore.getState().setQuota(quotaData);
-          } catch {}
-
-          break;
-        } else if (taskData.status === "error") {
-          throw new Error(taskData.error || "分析失败，请重试");
-        }
-      }
+      // Step 2: 轮询
+      await pollUntilDone(taskId);
     } catch (err) {
+      localStorage.removeItem(PENDING_TASK_KEY);
       if (err.name === "AbortError") {
         setError("文件上传超时，请检查网络");
       } else if (err.message === "Failed to fetch") {
@@ -151,7 +192,33 @@ export function useAnalysisPipeline() {
       analyzingRef.current = false;
       setAnalyzing(false);
     }
-  }, [file, setAnalyzing, setCurrentStep, setProgress, setEta, setProgressMessage, setResult, setError]);
+  }, [file, setAnalyzing, setCurrentStep, setProgress, setEta, setProgressMessage, setResult, setError, pollUntilDone]);
 
-  return { startAnalysis };
+  /** 恢复对已提交任务的轮询（用户返回页面时调用） */
+  const resumeAnalysis = useCallback(async (taskId) => {
+    if (!taskId || analyzingRef.current) return;
+
+    startTimeRef.current = Date.now();
+    analyzingRef.current = true;
+
+    setAnalyzing(true);
+    setError("");
+    setResult(null);
+    setCurrentStep(1);
+    setProgress(10);
+    setEta(null);
+    setProgressMessage("正在恢复分析进度...");
+
+    try {
+      await pollUntilDone(taskId);
+    } catch (err) {
+      localStorage.removeItem(PENDING_TASK_KEY);
+      setError(err.message || "恢复分析失败，请在历史记录中查看");
+    } finally {
+      analyzingRef.current = false;
+      setAnalyzing(false);
+    }
+  }, [setAnalyzing, setCurrentStep, setProgress, setEta, setProgressMessage, setResult, setError, pollUntilDone]);
+
+  return { startAnalysis, resumeAnalysis, getPendingTask };
 }

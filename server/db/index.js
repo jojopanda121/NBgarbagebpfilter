@@ -34,13 +34,43 @@ function getDb() {
 
 function runMigrations(database) {
   const migrationsDir = path.join(__dirname, "migrations");
+
+  // 首先确保迁移追踪表存在
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS schema_migrations (
+      version TEXT PRIMARY KEY,
+      applied_at DATETIME DEFAULT (datetime('now'))
+    )
+  `);
+
+  // 获取所有迁移文件
   const files = fs.readdirSync(migrationsDir)
     .filter((f) => f.endsWith(".sql"))
     .sort();
 
+  // 获取已应用的迁移
+  const appliedMigrations = new Set(
+    database.prepare("SELECT version FROM schema_migrations").all().map(row => row.version)
+  );
+
+  // 只运行未应用的迁移
   for (const file of files) {
+    // 跳过迁移追踪表本身
+    if (file === "000_schema_migrations.sql") continue;
+
+    if (appliedMigrations.has(file)) {
+      console.log(`[DB] Migration already applied: ${file}`);
+      continue;
+    }
+
     const sql = fs.readFileSync(path.join(migrationsDir, file), "utf-8");
-    database.exec(sql);
+
+    // 在事务中执行迁移
+    database.transaction(() => {
+      database.exec(sql);
+      database.prepare("INSERT INTO schema_migrations (version) VALUES (?)").run(file);
+    })();
+
     console.log(`[DB] Migration applied: ${file}`);
   }
 }

@@ -1,9 +1,17 @@
-// ── Markdown 简易渲染 ──
+import DOMPurify from 'dompurify';
+
+// ── Markdown 简易渲染（带 XSS 防护）──
 export function renderMarkdown(text) {
   if (!text) return null;
   const lines = text.split("\n");
   const elements = [];
   let i = 0;
+
+  // 配置 DOMPurify：只允许 strong 标签和 class 属性
+  const sanitizeConfig = {
+    ALLOWED_TAGS: ['strong'],
+    ALLOWED_ATTR: ['class']
+  };
 
   while (i < lines.length) {
     const line = lines[i];
@@ -33,35 +41,37 @@ export function renderMarkdown(text) {
         </p>
       );
     } else if (line.startsWith("- ") || line.startsWith("* ")) {
+      const htmlContent = line
+        .slice(2)
+        .replace(
+          /\*\*(.*?)\*\*/g,
+          '<strong class="text-gray-200">$1</strong>'
+        );
+      const sanitizedHtml = DOMPurify.sanitize(htmlContent, sanitizeConfig);
+
       elements.push(
         <div key={i} className="flex gap-2 ml-4 my-0.5">
           <span className="text-gray-500 shrink-0">•</span>
           <span
             className="text-gray-400"
-            dangerouslySetInnerHTML={{
-              __html: line
-                .slice(2)
-                .replace(
-                  /\*\*(.*?)\*\*/g,
-                  '<strong class="text-gray-200">$1</strong>'
-                ),
-            }}
+            dangerouslySetInnerHTML={{ __html: sanitizedHtml }}
           />
         </div>
       );
     } else if (line.trim() === "") {
       elements.push(<div key={i} className="h-2" />);
     } else {
+      const htmlContent = line.replace(
+        /\*\*(.*?)\*\*/g,
+        '<strong class="text-gray-200">$1</strong>'
+      );
+      const sanitizedHtml = DOMPurify.sanitize(htmlContent, sanitizeConfig);
+
       elements.push(
         <p
           key={i}
           className="text-gray-400 my-1 leading-relaxed"
-          dangerouslySetInnerHTML={{
-            __html: line.replace(
-              /\*\*(.*?)\*\*/g,
-              '<strong class="text-gray-200">$1</strong>'
-            ),
-          }}
+          dangerouslySetInnerHTML={{ __html: sanitizedHtml }}
         />
       );
     }

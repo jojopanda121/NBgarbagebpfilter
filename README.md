@@ -59,3 +59,28 @@ NBgarbagebpfilter/
 ├── ecosystem.config.js   # PM2 进程管理（非 Docker 部署用）
 └── .env.example          # 环境变量模板
 ```
+
+## 设置管理员账号
+
+部署后需要手动设置管理员账号，方法有两种：
+
+### 方法一：环境变量（推荐，部署时设置）
+
+在 `.env` 中添加：
+```env
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD=your_password
+```
+重启服务后自动创建管理员。
+
+### 方法二：命令行工具
+
+```bash
+# 进入容器
+docker exec -it bp-filter-app sh
+
+# 设置管理员
+node scripts/set-admin.js your_username
+```
+
+详细说明见 [腾讯云部署指南.md](腾讯云部署指南.md)

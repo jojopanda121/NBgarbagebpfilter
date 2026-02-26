@@ -6,6 +6,7 @@ npm-debug.log*
 .env
 .env.local
 .env.production
+.env.example
 logs
 *.log
 .git
@@ -21,4 +22,4 @@ test_bp.txt
 data/
 *.db
 .github/
-doc-service/
+# doc-service/ - 不能排除，需要单独构建

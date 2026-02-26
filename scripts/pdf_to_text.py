@@ -6,12 +6,58 @@ PDF → 纯文本（String）
 - 若每页文字很少则用 OCR（扫描版 PDF，需安装 tesseract + chi_sim）
 用法: python pdf_to_text.py <path_to.pdf>
 输出: 纯文本到 stdout；错误时 stderr + exit 1
+
+依赖检查（启动时执行）：
+  核心依赖 fitz (PyMuPDF) 必须存在，否则直接退出并给出安装提示。
+  OCR 依赖（pdf2image、pytesseract）仅在扫描版 PDF 时才需要，缺失时给出警告。
 """
 
 import sys
 import os
 import re
 import json
+
+# ── 启动时依赖检查 ─────────────────────────────────────────────
+def _check_dependencies():
+    """在模块加载时立即验证核心依赖是否可用，给出明确的安装提示。"""
+    missing_core = []
+    try:
+        import fitz  # noqa: F401
+    except ImportError:
+        missing_core.append("pymupdf  # pip install pymupdf")
+
+    if missing_core:
+        print(
+            "[pdf_to_text] 缺少核心依赖，请先安装：\n  pip install "
+            + " ".join(missing_core),
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    # OCR 依赖是可选的，缺失时仅警告
+    missing_ocr = []
+    try:
+        import pdf2image  # noqa: F401
+    except ImportError:
+        missing_ocr.append("pdf2image")
+    try:
+        import pytesseract  # noqa: F401
+    except ImportError:
+        missing_ocr.append("pytesseract")
+
+    if missing_ocr:
+        print(
+            "[pdf_to_text] 警告：OCR 可选依赖未安装（"
+            + ", ".join(missing_ocr)
+            + "），扫描版 PDF 将无法识别。\n"
+            "  安装方法: pip install pdf2image pytesseract Pillow\n"
+            "  系统依赖: tesseract-ocr, poppler-utils",
+            file=sys.stderr,
+        )
+
+
+_check_dependencies()
+# ──────────────────────────────────────────────────────────────
 
 def extract_with_pymupdf(pdf_path: str):
     try:

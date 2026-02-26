@@ -23,9 +23,6 @@ const config = {
   // Serper (web search)
   serperApiKey: process.env.SERPER_API_KEY || "",
 
-  // Redis (task queue)
-  redisUrl: process.env.REDIS_URL || "redis://localhost:6379",
-
   // Document extraction service
   docServiceUrl: process.env.DOC_SERVICE_URL || "",
 

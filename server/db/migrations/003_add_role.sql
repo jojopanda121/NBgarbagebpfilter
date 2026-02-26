@@ -1,0 +1,2 @@
+-- Migration 003 already applied (role column exists)
+-- This file is kept for reference only

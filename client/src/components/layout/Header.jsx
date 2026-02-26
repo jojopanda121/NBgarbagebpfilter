@@ -1,5 +1,5 @@
-import React from "react";
-import { Gavel, Download, LogOut, User, Zap } from "lucide-react";
+import React, { useState, useRef, useEffect } from "react";
+import { Gavel, Download, LogOut, User, Zap, Settings, FileText, ChevronDown } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import useAuthStore from "../../store/useAuthStore";
 import useAnalysisStore from "../../store/useAnalysisStore";
@@ -13,6 +13,26 @@ export default function Header() {
   const token = useAuthStore((s) => s.token);
   const quota = useAuthStore((s) => s.quota);
   const logout = useAuthStore((s) => s.logout);
+  const setRequirePayment = useAuthStore((s) => s.setRequirePayment);
+
+  const [showDropdown, setShowDropdown] = useState(false);
+  const dropdownRef = useRef(null);
+
+  // 点击外部关闭下拉菜单
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+        setShowDropdown(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const handleLogout = () => {
+    logout();
+    navigate("/");
+  };
 
   return (
     <header className="border-b border-gray-800 bg-gray-950/80 backdrop-blur-sm sticky top-0 z-50">
@@ -20,7 +40,7 @@ export default function Header() {
         {/* Logo */}
         <div
           className="flex items-center gap-2 sm:gap-3 min-w-0 cursor-pointer"
-          onClick={() => { reset(); navigate("/"); }}
+          onClick={() => { reset(); navigate(token ? "/app/dashboard" : "/"); }}
         >
           <div className="w-9 h-9 sm:w-10 sm:h-10 shrink-0 rounded-xl bg-gradient-to-br from-red-500 to-orange-500 flex items-center justify-center">
             <Gavel className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
@@ -70,25 +90,84 @@ export default function Header() {
           {/* 用户菜单 */}
           {token ? (
             <div className="flex items-center gap-2">
-              <span className="hidden sm:inline text-sm text-gray-400">
-                <User className="w-3.5 h-3.5 inline mr-1" />
-                {user?.username}
-              </span>
+              {/* 充值按钮 - 高亮 */}
               <button
-                onClick={() => { logout(); navigate("/login"); }}
-                className="p-1.5 text-gray-500 hover:text-white rounded-lg transition-colors"
-                title="退出登录"
+                onClick={() => setRequirePayment(true)}
+                className="px-3 py-1.5 sm:px-4 sm:py-2 text-sm bg-gradient-to-r from-yellow-500 to-orange-500 hover:from-yellow-400 hover:to-orange-400 rounded-lg transition-colors flex items-center gap-1.5 font-medium text-gray-900"
               >
-                <LogOut className="w-4 h-4" />
+                <Zap className="w-4 h-4" />
+                <span className="hidden sm:inline">充值</span>
               </button>
+
+              {/* 头像下拉菜单 */}
+              <div className="relative" ref={dropdownRef}>
+                <button
+                  onClick={() => setShowDropdown(!showDropdown)}
+                  className="flex items-center gap-2 px-2 py-1.5 hover:bg-gray-800 rounded-lg transition-colors"
+                >
+                  <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center text-white font-medium text-sm">
+                    {user?.username?.charAt(0).toUpperCase() || "U"}
+                  </div>
+                  <span className="hidden sm:inline text-sm text-gray-300">
+                    {user?.username}
+                  </span>
+                  <ChevronDown className={`w-4 h-4 text-gray-500 transition-transform ${showDropdown ? "rotate-180" : ""}`} />
+                </button>
+
+                {/* 下拉菜单 */}
+                {showDropdown && (
+                  <div className="absolute right-0 mt-2 w-48 bg-gray-900 border border-gray-700 rounded-xl shadow-xl overflow-hidden">
+                    <div className="py-1">
+                      <button
+                        onClick={() => { setShowDropdown(false); navigate("/settings"); }}
+                        className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-gray-300 hover:bg-gray-800 transition-colors"
+                      >
+                        <User className="w-4 h-4" />
+                        个人中心
+                      </button>
+                      <button
+                        onClick={() => { setShowDropdown(false); navigate("/app/history"); }}
+                        className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-gray-300 hover:bg-gray-800 transition-colors"
+                      >
+                        <FileText className="w-4 h-4" />
+                        历史报告
+                      </button>
+                      <button
+                        onClick={() => { setShowDropdown(false); navigate("/settings?tab=recharge"); }}
+                        className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-gray-300 hover:bg-gray-800 transition-colors"
+                      >
+                        <Zap className="w-4 h-4 text-yellow-400" />
+                        充值额度
+                      </button>
+                      <div className="border-t border-gray-800 mt-1 pt-1">
+                        <button
+                          onClick={handleLogout}
+                          className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-red-400 hover:bg-gray-800 transition-colors"
+                        >
+                          <LogOut className="w-4 h-4" />
+                          退出登录
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           ) : (
-            <button
-              onClick={() => navigate("/login")}
-              className="px-3 py-1.5 text-sm bg-gray-800 hover:bg-gray-700 rounded-lg transition-colors"
-            >
-              登录
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => navigate("/login", { state: { from: location } })}
+                className="px-3 py-1.5 text-sm text-gray-300 hover:text-white transition-colors"
+              >
+                登录
+              </button>
+              <button
+                onClick={() => navigate("/login", { state: { from: location } })}
+                className="px-3 py-1.5 text-sm bg-blue-600 hover:bg-blue-500 rounded-lg transition-colors font-medium"
+              >
+                注册
+              </button>
+            </div>
           )}
         </div>
       </div>

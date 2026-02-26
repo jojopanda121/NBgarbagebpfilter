@@ -6,7 +6,7 @@ const fs = require("fs");
 const { extractDocText } = require("../services/extractionService");
 const { runPipeline } = require("../services/pipelineService");
 const { createTask, updateTask } = require("../services/taskService");
-const { deductQuota } = require("../middleware/quota");
+const { deductQuota, refundQuota } = require("../middleware/quota");
 
 /** POST /api/analyze — 上传文件并启动分析 */
 function analyze(req, res) {
@@ -92,6 +92,10 @@ function analyze(req, res) {
     } catch (err) {
       console.error(`[任务 ${task.id.slice(0, 8)}] 错误:`, err.message);
       updateTask(task.id, { status: "error", error: err.message || "服务器内部错误" });
+      // 分析失败时退还额度
+      if (userId) {
+        refundQuota(userId);
+      }
     }
   })();
 }

@@ -88,4 +88,21 @@ function deductQuota(userId) {
   return result;
 }
 
-module.exports = { checkQuota, deductQuota };
+/**
+ * 退还额度（分析失败时调用）
+ * 优先退还免费额度
+ */
+function refundQuota(userId) {
+  const db = getDb();
+  try {
+    db.prepare(
+      "UPDATE quotas SET free_quota = free_quota + 1, updated_at = datetime('now') WHERE user_id = ?"
+    ).run(userId);
+    return { success: true };
+  } catch (err) {
+    console.error("[Quota] 退还额度失败:", err.message);
+    return { success: false };
+  }
+}
+
+module.exports = { checkQuota, deductQuota, refundQuota };

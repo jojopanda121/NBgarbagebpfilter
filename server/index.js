@@ -27,6 +27,12 @@ const analyzeRoutes = require("./routes/analyze");
 const taskRoutes = require("./routes/task");
 const quotaRoutes = require("./routes/quota");
 const paymentRoutes = require("./routes/payment");
+const userRoutes = require("./routes/user");
+const verifyRoutes = require("./routes/verify");
+const tokenRoutes = require("./routes/token");
+const adminRoutes = require("./routes/admin");
+const feedbackRoutes = require("./routes/feedback");
+const packagesRoutes = require("./routes/packages");
 
 // 中间件
 const { errorHandler } = require("./middleware/errorHandler");
@@ -44,6 +50,12 @@ app.use("/api/analyze", analyzeRoutes);
 app.use("/api/task", taskRoutes);
 app.use("/api/quota", quotaRoutes);
 app.use("/api/payment", paymentRoutes);
+app.use("/api/user", userRoutes);
+app.use("/api/verify", verifyRoutes);
+app.use("/api/token", tokenRoutes);
+app.use("/api/admin", adminRoutes);
+app.use("/api/feedback", feedbackRoutes);
+app.use("/api/packages", packagesRoutes);
 
 // ── 健康检查 ──
 app.get("/api/health", (_req, res) => {

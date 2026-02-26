@@ -1,0 +1,1318 @@
+import React, { useState, useEffect } from "react";
+import {
+  User,
+  CreditCard,
+  Wallet,
+  Lock,
+  Mail,
+  Phone,
+  Save,
+  Loader2,
+  CheckCircle,
+  AlertCircle,
+  Send,
+  Gift,
+  Copy,
+  Shield,
+  Users,
+  BarChart3,
+  MessageSquare,
+  Package,
+  Settings as SettingsIcon,
+  Search,
+  Trash2,
+  Edit,
+  Eye,
+  X,
+  FileText,
+} from "lucide-react";
+import api from "../services/api";
+import useAuthStore from "../store/useAuthStore";
+
+// Tab 配置
+const TABS = [
+  { key: "account", label: "账户安全", icon: User },
+  { key: "billing", label: "财务与额度", icon: Wallet },
+  { key: "recharge", label: "充值收银台", icon: CreditCard },
+  { key: "feedback", label: "意见反馈", icon: MessageSquare },
+  { key: "token", label: "兑换码", icon: Gift },
+];
+
+const ADMIN_TABS = [
+  { key: "users", label: "用户管理", icon: Users },
+  { key: "tasks", label: "分析记录", icon: FileText },
+  { key: "stats", label: "数据统计", icon: BarChart3 },
+  { key: "admin_feedback", label: "反馈管理", icon: MessageSquare },
+  { key: "packages", label: "套餐配置", icon: Package },
+  { key: "settings", label: "系统设置", icon: SettingsIcon },
+  ...TABS,
+  { key: "admin", label: "兑换码管理", icon: Shield },
+];
+
+export default function SettingsPage() {
+  const [activeTab, setActiveTab] = useState("account");
+  const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState(null);
+  const [isAdmin, setIsAdmin] = useState(false);
+
+  // 账户安全状态
+  const [profile, setProfile] = useState(null);
+  const [email, setEmail] = useState("");
+  const [emailCode, setEmailCode] = useState("");
+  const [sendingEmailCode, setSendingEmailCode] = useState(false);
+  const [emailCountdown, setEmailCountdown] = useState(0);
+
+  const [phone, setPhone] = useState("");
+  const [phoneCode, setPhoneCode] = useState("");
+  const [sendingPhoneCode, setSendingPhoneCode] = useState(false);
+  const [phoneCountdown, setPhoneCountdown] = useState(0);
+
+  const [oldPassword, setOldPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+
+  // 财务额度状态
+  const [orders, setOrders] = useState([]);
+  const [usage, setUsage] = useState([]);
+
+  // Token 状态
+  const [redeemToken, setRedeemToken] = useState("");
+  const [redeeming, setRedeeming] = useState(false);
+  const [generatedToken, setGeneratedToken] = useState(null);
+  const [generating, setGenerating] = useState(false);
+  const [tokenQuota, setTokenQuota] = useState(10);
+
+  // 管理员状态
+  const [adminTokens, setAdminTokens] = useState([]);
+  const [adminAvailable, setAdminAvailable] = useState(0);
+  const [tokenCount, setTokenCount] = useState(1);
+
+  // 用户管理状态
+  const [users, setUsers] = useState([]);
+  const [usersTotal, setUsersTotal] = useState(0);
+  const [userPage, setUserPage] = useState(1);
+  const [userSearch, setUserSearch] = useState("");
+  const [userStatus, setUserStatus] = useState("");
+  const [selectedUser, setSelectedUser] = useState(null);
+
+  // 数据统计状态
+  const [stats, setStats] = useState(null);
+
+  // 反馈状态
+  const [myFeedback, setMyFeedback] = useState([]);
+  const [feedbackList, setFeedbackList] = useState([]);
+  const [feedbackTotal, setFeedbackTotal] = useState(0);
+  const [feedbackPage, setFeedbackPage] = useState(1);
+  const [feedbackStatus, setFeedbackStatus] = useState("");
+  const [feedbackReply, setFeedbackReply] = useState("");
+  const [showReplyModal, setShowReplyModal] = useState(null);
+
+  // 用户反馈表单
+  const [feedbackForm, setFeedbackForm] = useState({ type: "suggestion", title: "", content: "" });
+  const [submittingFeedback, setSubmittingFeedback] = useState(false);
+
+  // 套餐状态
+  const [packages, setPackages] = useState([]);
+
+  // 系统设置状态
+  const [systemSettings, setSystemSettings] = useState({});
+
+  // 分析记录状态
+  const [tasks, setTasks] = useState([]);
+  const [tasksTotal, setTasksTotal] = useState(0);
+  const [taskPage, setTaskPage] = useState(1);
+  const [taskStatus, setTaskStatus] = useState("");
+  const [taskSearch, setTaskSearch] = useState("");
+  const [selectedTask, setSelectedTask] = useState(null);
+
+  const setQuota = useAuthStore((s) => s.setQuota);
+
+  // 加载用户信息和角色
+  useEffect(() => {
+    async function loadProfile() {
+      try {
+        const [profileData, roleData] = await Promise.all([
+          api.get("/api/user/profile"),
+          api.get("/api/token/role"),
+        ]);
+        setProfile(profileData);
+        setEmail(profileData.email || "");
+        setPhone(profileData.phone || "");
+        setIsAdmin(roleData.isAdmin || false);
+      } catch (err) {
+        console.error("加载用户信息失败:", err);
+      }
+    }
+    loadProfile();
+  }, []);
+
+  // 加载数据
+  useEffect(() => {
+    // 加载订单和消费记录
+    if (activeTab === "billing") {
+      async function loadBilling() {
+        try {
+          const [ordersData, usageData] = await Promise.all([
+            api.get("/api/user/orders"),
+            api.get("/api/user/usage"),
+          ]);
+          setOrders(ordersData || []);
+          setUsage(usageData || []);
+        } catch (err) {
+          console.error("加载账单失败:", err);
+        }
+      }
+      loadBilling();
+    }
+
+    // 加载管理员数据
+    if (activeTab === "admin" && isAdmin) {
+      async function loadAdminData() {
+        try {
+          const data = await api.get("/api/token/list");
+          setAdminTokens(data.tokens || []);
+          setAdminAvailable(data.available || 0);
+        } catch (err) {
+          console.error("加载管理员数据失败:", err);
+        }
+      }
+      loadAdminData();
+    }
+
+    // 加载用户列表
+    if (activeTab === "users" && isAdmin) {
+      loadUsers();
+    }
+
+    // 加载统计数据
+    if (activeTab === "stats" && isAdmin) {
+      async function loadStats() {
+        try {
+          const data = await api.get("/api/admin/stats");
+          setStats(data);
+        } catch (err) {
+          console.error("加载统计数据失败:", err);
+        }
+      }
+      loadStats();
+    }
+
+    // 加载我的反馈
+    if (activeTab === "feedback") {
+      async function loadMyFeedback() {
+        try {
+          const data = await api.get("/api/feedback/my");
+          setMyFeedback(data.feedback || []);
+        } catch (err) {
+          console.error("加载反馈失败:", err);
+        }
+      }
+      loadMyFeedback();
+    }
+
+    // 加载反馈列表（管理员）
+    if (activeTab === "admin_feedback" && isAdmin) {
+      loadFeedbackList();
+    }
+
+    // 加载套餐列表
+    if (activeTab === "packages" && isAdmin) {
+      async function loadPackages() {
+        try {
+          const data = await api.get("/api/admin/packages");
+          setPackages(data.packages || []);
+        } catch (err) {
+          console.error("加载套餐失败:", err);
+        }
+      }
+      loadPackages();
+    }
+
+    // 加载系统设置
+    if (activeTab === "settings" && isAdmin) {
+      async function loadSettings() {
+        try {
+          const data = await api.get("/api/admin/settings");
+          setSystemSettings(data.settings || {});
+        } catch (err) {
+          console.error("加载设置失败:", err);
+        }
+      }
+      loadSettings();
+    }
+
+    // 加载分析记录
+    if (activeTab === "tasks" && isAdmin) {
+      loadTasks();
+    }
+  }, [activeTab, isAdmin, userPage, userSearch, userStatus, feedbackPage, feedbackStatus, taskPage, taskStatus, taskSearch]);
+
+  const loadUsers = async () => {
+    try {
+      const data = await api.get(`/api/admin/users?page=${userPage}&pageSize=20&search=${userSearch}&status=${userStatus}`);
+      setUsers(data.users || []);
+      setUsersTotal(data.total || 0);
+    } catch (err) {
+      console.error("加载用户失败:", err);
+    }
+  };
+
+  const loadFeedbackList = async () => {
+    try {
+      const data = await api.get(`/api/admin/feedback?page=${feedbackPage}&pageSize=20&status=${feedbackStatus}`);
+      setFeedbackList(data.feedback || []);
+      setFeedbackTotal(data.total || 0);
+    } catch (err) {
+      console.error("加载反馈失败:", err);
+    }
+  };
+
+  const loadTasks = async () => {
+    try {
+      const data = await api.get(`/api/admin/tasks?page=${taskPage}&pageSize=20&status=${taskStatus}&search=${taskSearch}`);
+      setTasks(data.tasks || []);
+      setTasksTotal(data.total || 0);
+    } catch (err) {
+      console.error("加载分析记录失败:", err);
+    }
+  };
+
+  // 发送邮箱验证码
+  const handleSendEmailCode = async () => {
+    if (!email || !email.includes("@")) {
+      setMessage({ type: "error", text: "请输入正确的邮箱" });
+      return;
+    }
+
+    setSendingEmailCode(true);
+    setMessage(null);
+    try {
+      await api.post("/api/verify/send", { email });
+      setMessage({ type: "success", text: "验证码已发送到邮箱" });
+      setEmailCountdown(60);
+      const timer = setInterval(() => {
+        setEmailCountdown((prev) => {
+          if (prev <= 1) {
+            clearInterval(timer);
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    } catch (err) {
+      setMessage({ type: "error", text: err.message || "发送失败" });
+    } finally {
+      setSendingEmailCode(false);
+    }
+  };
+
+  // 发送手机验证码
+  const handleSendPhoneCode = async () => {
+    if (!phone || phone.length !== 11) {
+      setMessage({ type: "error", text: "请输入正确的手机号" });
+      return;
+    }
+
+    setSendingPhoneCode(true);
+    setMessage(null);
+    try {
+      await api.post("/api/verify/send", { phone });
+      setMessage({ type: "success", text: "验证码已发送" });
+      setPhoneCountdown(60);
+      const timer = setInterval(() => {
+        setPhoneCountdown((prev) => {
+          if (prev <= 1) {
+            clearInterval(timer);
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    } catch (err) {
+      setMessage({ type: "error", text: err.message || "发送失败" });
+    } finally {
+      setSendingPhoneCode(false);
+    }
+  };
+
+  // 绑定邮箱
+  const handleBindEmail = async () => {
+    if (!emailCode) {
+      setMessage({ type: "error", text: "请输入验证码" });
+      return;
+    }
+
+    setLoading(true);
+    setMessage(null);
+    try {
+      await api.post("/api/verify/check", { email, code: emailCode });
+      await api.put("/api/user/profile", { email });
+      setMessage({ type: "success", text: "邮箱绑定成功" });
+      setEmailCode("");
+      const data = await api.get("/api/user/profile");
+      setProfile(data);
+    } catch (err) {
+      setMessage({ type: "error", text: err.message || "绑定失败" });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // 绑定手机号
+  const handleBindPhone = async () => {
+    if (!phoneCode) {
+      setMessage({ type: "error", text: "请输入验证码" });
+      return;
+    }
+
+    setLoading(true);
+    setMessage(null);
+    try {
+      await api.post("/api/verify/check", { phone, code: phoneCode });
+      await api.put("/api/user/profile", { phone });
+      setMessage({ type: "success", text: "手机号绑定成功" });
+      setPhoneCode("");
+      const data = await api.get("/api/user/profile");
+      setProfile(data);
+    } catch (err) {
+      setMessage({ type: "error", text: err.message || "绑定失败" });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // 生成兑换码
+  const handleGenerateToken = async () => {
+    setGenerating(true);
+    setMessage(null);
+    try {
+      const result = await api.post("/api/token/generate", {
+        quotaAmount: tokenQuota,
+        expireDays: 30
+      });
+      setGeneratedToken(result);
+      setMessage({ type: "success", text: "兑换码生成成功" });
+    } catch (err) {
+      setMessage({ type: "error", text: err.message || "生成失败" });
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  // 兑换
+  const handleRedeemToken = async () => {
+    if (!redeemToken) {
+      setMessage({ type: "error", text: "请输入兑换码" });
+      return;
+    }
+
+    setRedeeming(true);
+    setMessage(null);
+    try {
+      const result = await api.post("/api/token/redeem", { token: redeemToken });
+      setMessage({ type: "success", text: result.message });
+      setRedeemToken("");
+      const data = await api.get("/api/quota");
+      setQuota(data);
+    } catch (err) {
+      setMessage({ type: "error", text: err.message || "兑换失败" });
+    } finally {
+      setRedeeming(false);
+    }
+  };
+
+  // 复制兑换码
+  const copyToken = () => {
+    if (generatedToken?.token) {
+      navigator.clipboard.writeText(generatedToken.token);
+      setMessage({ type: "success", text: "已复制到剪贴板" });
+    }
+  };
+
+  // 提交反馈
+  const handleSubmitFeedback = async () => {
+    if (!feedbackForm.title || !feedbackForm.content) {
+      setMessage({ type: "error", text: "请填写标题和内容" });
+      return;
+    }
+    setSubmittingFeedback(true);
+    setMessage(null);
+    try {
+      await api.post("/api/feedback", feedbackForm);
+      setMessage({ type: "success", text: "反馈提交成功" });
+      setFeedbackForm({ type: "suggestion", title: "", content: "" });
+      const data = await api.get("/api/feedback/my");
+      setMyFeedback(data.feedback || []);
+    } catch (err) {
+      setMessage({ type: "error", text: err.message || "提交失败" });
+    } finally {
+      setSubmittingFeedback(false);
+    }
+  };
+
+  // 渲染消息
+  const renderMessage = () => {
+    if (!message) return null;
+    return (
+      <div className={`flex items-center gap-2 p-3 rounded-lg mb-4 ${
+        message.type === "success" ? "bg-green-500/10 text-green-400 border border-green-500/20" : "bg-red-500/10 text-red-400 border border-red-500/20"
+      }`}>
+        {message.type === "success" ? <CheckCircle className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
+        {message.text}
+      </div>
+    );
+  };
+
+  return (
+    <div className="max-w-6xl mx-auto px-4 py-8">
+      <h1 className="text-2xl font-bold mb-6">用户中心 {isAdmin && <span className="text-xs bg-yellow-500/20 text-yellow-400 px-2 py-0.5 rounded">管理员</span>}</h1>
+
+      {/* Tab 切换 */}
+      <div className="flex gap-2 mb-6 border-b border-gray-800 pb-4 overflow-x-auto">
+        {(isAdmin ? ADMIN_TABS : TABS).map((tab) => (
+          <button
+            key={tab.key}
+            onClick={() => setActiveTab(tab.key)}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors whitespace-nowrap ${
+              activeTab === tab.key ? "bg-blue-600 text-white" : "text-gray-400 hover:text-white hover:bg-gray-800"
+            }`}
+          >
+            <tab.icon className="w-4 h-4" />
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {renderMessage()}
+
+      {/* 账户安全 Tab */}
+      {activeTab === "account" && (
+        <AccountTab
+          profile={profile} email={setEmail} emailCode={emailCode} setEmailCode={setEmailCode}
+          sendingEmailCode={sendingEmailCode} emailCountdown={emailCountdown}
+          handleSendEmailCode={handleSendEmailCode} handleBindEmail={handleBindEmail}
+          phone={phone} setPhone={setPhone} phoneCode={phoneCode} setPhoneCode={setPhoneCode}
+          sendingPhoneCode={sendingPhoneCode} phoneCountdown={phoneCountdown}
+          handleSendPhoneCode={handleSendPhoneCode} handleBindPhone={handleBindPhone}
+          oldPassword={oldPassword} setOldPassword={setOldPassword}
+          newPassword={newPassword} setNewPassword={setNewPassword}
+          confirmPassword={confirmPassword} setConfirmPassword={setConfirmPassword}
+          loading={loading} setMessage={setMessage}
+        />
+      )}
+
+      {/* 财务与额度 Tab */}
+      {activeTab === "billing" && <BillingTab profile={profile} orders={orders} usage={usage} />}
+
+      {/* 充值收银台 Tab */}
+      {activeTab === "recharge" && <RechargeTab />}
+
+      {/* 意见反馈 Tab */}
+      {activeTab === "feedback" && (
+        <FeedbackTab
+          feedback={myFeedback} feedbackForm={feedbackForm} setFeedbackForm={setFeedbackForm}
+          submitting={submittingFeedback} handleSubmit={handleSubmitFeedback}
+        />
+      )}
+
+      {/* 兑换码 Tab */}
+      {activeTab === "token" && (
+        <TokenTab
+          redeemToken={redeemToken} setRedeemToken={setRedeemToken}
+          redeeming={redeeming} handleRedeem={handleRedeemToken}
+          generatedToken={generatedToken} generating={generating}
+          tokenQuota={tokenQuota} setTokenQuota={setTokenQuota}
+          handleGenerate={handleGenerateToken} copyToken={copyToken}
+          isAdmin={isAdmin}
+        />
+      )}
+
+      {/* 用户管理 Tab (管理员) */}
+      {activeTab === "users" && isAdmin && (
+        <UsersTab
+          users={users} total={usersTotal} page={userPage} setPage={setUserPage}
+          search={userSearch} setSearch={setUserSearch} status={userStatus} setStatus={setUserStatus}
+          loadUsers={loadUsers} setSelectedUser={setSelectedUser} selectedUser={selectedUser}
+          loading={loading} setLoading={setLoading} setMessage={setMessage}
+        />
+      )}
+
+      {/* 分析记录 Tab (管理员) */}
+      {activeTab === "tasks" && isAdmin && (
+        <TasksTab
+          tasks={tasks} total={tasksTotal} page={taskPage} setPage={setTaskPage}
+          status={taskStatus} setStatus={setTaskStatus}
+          search={taskSearch} setSearch={setTaskSearch}
+          loadTasks={loadTasks}
+          selectedTask={selectedTask} setSelectedTask={setSelectedTask}
+        />
+      )}
+
+      {/* 数据统计 Tab (管理员) */}
+      {activeTab === "stats" && isAdmin && <StatsTab stats={stats} />}
+
+      {/* 反馈管理 Tab (管理员) */}
+      {activeTab === "admin_feedback" && isAdmin && (
+        <AdminFeedbackTab
+          feedback={feedbackList} total={feedbackTotal} page={feedbackPage} setPage={setFeedbackPage}
+          status={feedbackStatus} setStatus={setFeedbackStatus} loadFeedback={loadFeedbackList}
+          reply={feedbackReply} setReply={setFeedbackReply}
+          showModal={showReplyModal} setShowModal={setShowReplyModal}
+        />
+      )}
+
+      {/* 套餐配置 Tab (管理员) */}
+      {activeTab === "packages" && isAdmin && (
+        <PackagesTab packages={packages} setPackages={setPackages} setMessage={setMessage} />
+      )}
+
+      {/* 系统设置 Tab (管理员) */}
+      {activeTab === "settings" && isAdmin && (
+        <SystemSettingsTab settings={systemSettings} setSettings={setSystemSettings} setMessage={setMessage} />
+      )}
+
+      {/* 管理员面板 Tab */}
+      {activeTab === "admin" && isAdmin && (
+        <AdminPanel
+          tokenQuota={tokenQuota} setTokenQuota={setTokenQuota}
+          tokenCount={tokenCount} setTokenCount={setTokenCount}
+          generating={generating} setGenerating={setGenerating}
+          setGeneratedToken={setGeneratedToken} setMessage={setMessage}
+          adminTokens={adminTokens} setAdminTokens={setAdminTokens}
+          adminAvailable={adminAvailable} setAdminAvailable={setAdminAvailable}
+          loading={loading} setLoading={setLoading}
+        />
+      )}
+    </div>
+  );
+}
+
+// 账户安全组件
+function AccountTab({ profile, email, setEmail, emailCode, setEmailCode, sendingEmailCode, emailCountdown, handleSendEmailCode, handleBindEmail, phone, setPhone, phoneCode, setPhoneCode, sendingPhoneCode, phoneCountdown, handleSendPhoneCode, handleBindPhone, oldPassword, setOldPassword, newPassword, setNewPassword, confirmPassword, setConfirmPassword, loading, setMessage }) {
+  return (
+    <div className="space-y-6">
+      <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
+        <h3 className="text-lg font-bold mb-4">基本信息</h3>
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm text-gray-400 mb-1">用户名</label>
+            <input type="text" value={profile?.username || ""} disabled className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-gray-500" />
+          </div>
+          <div>
+            <label className="block text-sm text-gray-400 mb-1">邮箱</label>
+            <div className="space-y-2">
+              <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="请输入邮箱" disabled={profile?.email} className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg focus:border-blue-500 focus:outline-none disabled:opacity-50" />
+              {profile?.email ? (
+                <p className="text-sm text-green-400 flex items-center gap-1"><CheckCircle className="w-4 h-4" /> 已绑定邮箱</p>
+              ) : (
+                <div className="flex gap-2">
+                  <input type="text" value={emailCode} onChange={(e) => setEmailCode(e.target.value)} placeholder="输入验证码" className="flex-1 px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg focus:border-blue-500 focus:outline-none" />
+                  <button onClick={handleSendEmailCode} disabled={sendingEmailCode || emailCountdown > 0} className="px-4 py-2 bg-gray-700 hover:bg-gray-600 disabled:bg-gray-800 disabled:text-gray-500 rounded-lg font-medium flex items-center gap-2">
+                    {sendingEmailCode ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                    {emailCountdown > 0 ? `${emailCountdown}s` : "发送验证码"}
+                  </button>
+                  <button onClick={handleBindEmail} disabled={loading || !emailCode} className="px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-700 rounded-lg">绑定</button>
+                </div>
+              )}
+            </div>
+          </div>
+          <div>
+            <label className="block text-sm text-gray-400 mb-1">手机号</label>
+            <div className="space-y-2">
+              <input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="请输入手机号" disabled={profile?.phone} className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg focus:border-blue-500 focus:outline-none disabled:opacity-50" />
+              {profile?.phone ? (
+                <p className="text-sm text-green-400 flex items-center gap-1"><CheckCircle className="w-4 h-4" /> 已绑定手机号</p>
+              ) : (
+                <div className="flex gap-2">
+                  <input type="text" value={phoneCode} onChange={(e) => setPhoneCode(e.target.value)} placeholder="输入验证码" className="flex-1 px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg focus:border-blue-500 focus:outline-none" />
+                  <button onClick={handleSendPhoneCode} disabled={sendingPhoneCode || phoneCountdown > 0} className="px-4 py-2 bg-gray-700 hover:bg-gray-600 disabled:bg-gray-800 disabled:text-gray-500 rounded-lg font-medium flex items-center gap-2">
+                    {sendingPhoneCode ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                    {phoneCountdown > 0 ? `${phoneCountdown}s` : "发送验证码"}
+                  </button>
+                  <button onClick={handleBindPhone} disabled={loading || !phoneCode} className="px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-700 rounded-lg">绑定</button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+      <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
+        <h3 className="text-lg font-bold mb-4 flex items-center gap-2"><Lock className="w-5 h-5" />修改密码</h3>
+        <div className="space-y-4">
+          <div><label className="block text-sm text-gray-400 mb-1">旧密码</label><input type="password" value={oldPassword} onChange={(e) => setOldPassword(e.target.value)} className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg" /></div>
+          <div><label className="block text-sm text-gray-400 mb-1">新密码</label><input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg" /></div>
+          <div><label className="block text-sm text-gray-400 mb-1">确认新密码</label><input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg" /></div>
+          <button onClick={async () => {
+            if (newPassword !== confirmPassword) { setMessage({ type: "error", text: "两次密码不一致" }); return; }
+            if (newPassword.length < 6) { setMessage({ type: "error", text: "密码至少6位" }); return; }
+            loading = true;
+            try { await api.put("/api/user/password", { oldPassword, newPassword }); setMessage({ type: "success", text: "密码修改成功" }); setOldPassword(""); setNewPassword(""); setConfirmPassword(""); } catch (err) { setMessage({ type: "error", text: err.message || "修改失败" }); } loading = false;
+          }} disabled={loading || !oldPassword || !newPassword} className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-700 rounded-lg">
+            {loading && <Loader2 className="w-4 h-4 animate-spin" />}修改密码
+          </button>
+        </div>
+      </div>
+      <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
+        <h3 className="text-lg font-bold mb-4">账户状态</h3>
+        <div className="grid grid-cols-2 gap-4">
+          <div className="p-4 bg-gray-800 rounded-lg"><div className="text-sm text-gray-400 mb-1">账号绑定</div><div className="font-medium">{profile?.contact_bound ? <span className="text-green-400">已绑定</span> : <span className="text-yellow-400">未绑定</span>}</div></div>
+          <div className="p-4 bg-gray-800 rounded-lg"><div className="text-sm text-gray-400 mb-1">累计使用</div><div className="font-medium">{profile?.usage_count || 0} 次</div></div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// 财务与额度组件
+function BillingTab({ profile, orders, usage }) {
+  return (
+    <div className="space-y-6">
+      <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
+        <h3 className="text-lg font-bold mb-4">额度概览</h3>
+        <div className="grid grid-cols-3 gap-4">
+          <div className="p-4 bg-gray-800 rounded-lg text-center"><div className="text-2xl font-bold text-green-400">{profile?.quota?.free || 0}</div><div className="text-sm text-gray-400">免费额度</div></div>
+          <div className="p-4 bg-gray-800 rounded-lg text-center"><div className="text-2xl font-bold text-blue-400">{profile?.quota?.paid || 0}</div><div className="text-sm text-gray-400">付费额度</div></div>
+          <div className="p-4 bg-gray-800 rounded-lg text-center"><div className="text-2xl font-bold text-white">{profile?.quota?.total || 0}</div><div className="text-sm text-gray-400">剩余总额</div></div>
+        </div>
+      </div>
+      <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
+        <h3 className="text-lg font-bold mb-4">充值记录</h3>
+        {orders.length === 0 ? <p className="text-gray-500 text-center py-8">暂无充值记录</p> : (
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead><tr className="text-left text-sm text-gray-400 border-b border-gray-800"><th className="pb-3">订单号</th><th className="pb-3">金额</th><th className="pb-3">额度</th><th className="pb-3">状态</th><th className="pb-3">时间</th></tr></thead>
+              <tbody>{orders.map((o) => (<tr key={o.id} className="border-b border-gray-800/50 text-sm"><td className="py-3 font-mono text-gray-400">{o.order_no?.slice(0, 12)}...</td><td className="py-3">¥{o.amount}</td><td className="py-3">{o.quota_amount} 次</td><td className="py-3"><span className={`px-2 py-0.5 rounded text-xs ${o.status === "PAID" ? "bg-green-500/20 text-green-400" : o.status === "PENDING" ? "bg-yellow-500/20 text-yellow-400" : "bg-red-500/20 text-red-400"}`}>{o.status === "PAID" ? "已支付" : o.status === "PENDING" ? "待支付" : "失败"}</span></td><td className="py-3 text-gray-400">{new Date(o.created_at).toLocaleDateString("zh-CN")}</td></tr>))}</tbody>
+            </table>
+          </div>
+        )}
+      </div>
+      <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
+        <h3 className="text-lg font-bold mb-4">消费明细</h3>
+        {usage.length === 0 ? <p className="text-gray-500 text-center py-8">暂无消费记录</p> : (
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead><tr className="text-left text-sm text-gray-400 border-b border-gray-800"><th className="pb-3">时间</th><th className="pb-3">类型</th><th className="pb-3">消耗</th><th className="pb-3">状态</th></tr></thead>
+              <tbody>{usage.map((u) => (<tr key={u.id} className="border-b border-gray-800/50 text-sm"><td className="py-3 text-gray-400">{new Date(u.created_at).toLocaleDateString("zh-CN")}</td><td className="py-3">{u.type}</td><td className="py-3">- {u.amount} 次</td><td className="py-3"><span className={`px-2 py-0.5 rounded text-xs ${u.status === "complete" ? "bg-green-500/20 text-green-400" : "bg-red-500/20 text-red-400"}`}>{u.status === "complete" ? "成功" : "失败"}</span></td></tr>))}</tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// 充值收银台组件
+function RechargeTab() {
+  const [channel, setChannel] = useState("wechat");
+  const [amount, setAmount] = useState(10);
+  const [loading, setLoading] = useState(false);
+  const [orderInfo, setOrderInfo] = useState(null);
+  const [error, setError] = useState("");
+  const [packages, setPackages] = useState([]);
+
+  useEffect(() => {
+    api.get("/api/packages").then((d) => setPackages(d.packages || [])).catch(console.error);
+  }, []);
+
+  const handleCreateOrder = async () => {
+    setError(""); setLoading(true);
+    try { const data = await api.post("/api/payment/create", { channel, quota_amount: amount }); setOrderInfo(data); } catch (err) { setError(err.message); } finally { setLoading(false); }
+  };
+
+  return (
+    <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
+      <h3 className="text-lg font-bold mb-4">充值额度</h3>
+      {!orderInfo ? (
+        <>
+          <div className="grid grid-cols-2 gap-3 mb-4">
+            {packages.map((p) => (
+              <button key={p.id} onClick={() => setAmount(p.quota_amount)} className={`p-3 rounded-xl border text-center transition-all ${amount === p.quota_amount ? "border-blue-500 bg-blue-500/10" : "border-gray-700 hover:border-gray-600"}`}>
+                <div className="font-bold text-lg">{p.quota_amount}次</div>
+                <div className="text-sm text-gray-400">¥{(p.price_cents / 100).toFixed(2)}</div>
+              </button>
+            ))}
+          </div>
+          <div className="flex gap-2 mb-4">
+            <button onClick={() => setChannel("wechat")} className={`flex-1 py-2 rounded-lg text-sm font-medium border ${channel === "wechat" ? "border-green-500 bg-green-500/10 text-green-400" : "border-gray-700"}`}>微信支付</button>
+            <button onClick={() => setChannel("alipay")} className={`flex-1 py-2 rounded-lg text-sm font-medium border ${channel === "alipay" ? "border-blue-500 bg-blue-500/10 text-blue-400" : "border-gray-700"}`}>支付宝</button>
+          </div>
+          {error && <p className="text-sm text-red-400 mb-3">{error}</p>}
+          <button onClick={handleCreateOrder} disabled={loading} className="w-full py-2.5 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-700 rounded-lg">{loading ? "创建订单中..." : `支付 ¥${packages.find(p => p.quota_amount === amount)?.price_cents ? (packages.find(p => p.quota_amount === amount).price_cents / 100).toFixed(2) : "0.00"}`}</button>
+        </>
+      ) : (
+        <div className="text-center py-4">
+          <p className="text-sm text-gray-400 mb-2">请使用{channel === "wechat" ? "微信" : "支付宝"}扫码支付</p>
+          <div className="w-48 h-48 mx-auto bg-white rounded-xl flex items-center justify-center mb-3"><p className="text-gray-500 text-xs">支付二维码</p></div>
+          <p className="text-xs text-gray-500">订单号：{orderInfo.order_no}</p>
+          <button onClick={() => setOrderInfo(null)} className="mt-4 text-sm text-blue-400 hover:text-blue-300">选择其他套餐</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// 意见反馈组件
+function FeedbackTab({ feedback, feedbackForm, setFeedbackForm, submitting, handleSubmit }) {
+  return (
+    <div className="space-y-6">
+      <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
+        <h3 className="text-lg font-bold mb-4">提交反馈</h3>
+        <div className="space-y-4">
+          <div><label className="block text-sm text-gray-400 mb-1">反馈类型</label><select value={feedbackForm.type} onChange={(e) => setFeedbackForm({ ...feedbackForm, type: e.target.value })} className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg"><option value="suggestion">功能建议</option><option value="bug">Bug 反馈</option><option value="complaint">投诉建议</option></select></div>
+          <div><label className="block text-sm text-gray-400 mb-1">标题</label><input type="text" value={feedbackForm.title} onChange={(e) => setFeedbackForm({ ...feedbackForm, title: e.target.value })} placeholder="请输入标题" className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg" /></div>
+          <div><label className="block text-sm text-gray-400 mb-1">内容</label><textarea value={feedbackForm.content} onChange={(e) => setFeedbackForm({ ...feedbackForm, content: e.target.value })} placeholder="请详细描述您的问题或建议" rows={4} className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg" /></div>
+          <button onClick={handleSubmit} disabled={submitting} className="px-6 py-2 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-700 rounded-lg font-medium flex items-center gap-2">{submitting && <Loader2 className="w-4 h-4 animate-spin" />}提交反馈</button>
+        </div>
+      </div>
+      <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
+        <h3 className="text-lg font-bold mb-4">我的反馈</h3>
+        {feedback.length === 0 ? <p className="text-gray-500 text-center py-8">暂无反馈记录</p> : (
+          <div className="space-y-3">
+            {feedback.map((f) => (
+              <div key={f.id} className="p-4 bg-gray-800 rounded-lg">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="font-medium">{f.title}</span>
+                  <span className={`px-2 py-0.5 rounded text-xs ${f.status === "pending" ? "bg-yellow-500/20 text-yellow-400" : f.status === "processed" ? "bg-blue-500/20 text-blue-400" : "bg-green-500/20 text-green-400"}`}>
+                    {f.status === "pending" ? "待处理" : f.status === "processed" ? "已处理" : "已解决"}
+                  </span>
+                </div>
+                <p className="text-sm text-gray-400 mb-2">{f.content}</p>
+                {f.admin_reply && <div className="text-sm text-green-400 border-t border-gray-700 pt-2 mt-2"><span className="font-medium">回复：</span>{f.admin_reply}</div>}
+                <div className="text-xs text-gray-500 mt-2">{new Date(f.created_at).toLocaleString("zh-CN")}</div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// 兑换码组件
+function TokenTab({ redeemToken, setRedeemToken, redeeming, handleRedeem, generatedToken, generating, tokenQuota, setTokenQuota, handleGenerate, copyToken, isAdmin }) {
+  return (
+    <div className="space-y-6">
+      <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
+        <h3 className="text-lg font-bold mb-4">兑换额度</h3>
+        <div className="flex gap-2">
+          <input type="text" value={redeemToken} onChange={(e) => setRedeemToken(e.target.value)} placeholder="输入兑换码" className="flex-1 px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg" />
+          <button onClick={handleRedeem} disabled={redeeming || !redeemToken} className="px-6 py-2 bg-green-600 hover:bg-green-500 disabled:bg-gray-700 rounded-lg font-medium flex items-center gap-2">
+            {redeeming && <Loader2 className="w-4 h-4 animate-spin" />}兑换
+          </button>
+        </div>
+      </div>
+      {isAdmin && (
+        <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
+          <h3 className="text-lg font-bold mb-4">生成兑换码</h3>
+          <div className="flex gap-2 mb-4">
+            <select value={tokenQuota} onChange={(e) => setTokenQuota(parseInt(e.target.value))} className="px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg">
+              <option value={1}>1 次</option><option value={5}>5 次</option><option value={10}>10 次</option><option value={30}>30 次</option><option value={50}>50 次</option>
+            </select>
+            <button onClick={handleGenerate} disabled={generating} className="px-6 py-2 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-700 rounded-lg font-medium flex items-center gap-2">
+              {generating && <Loader2 className="w-4 h-4 animate-spin" />}生成
+            </button>
+          </div>
+          {generatedToken && (
+            <div className="p-4 bg-gray-800 rounded-lg">
+              <div className="text-sm text-gray-400 mb-2">兑换码（有效期30天）</div>
+              <div className="flex items-center gap-2">
+                <code className="flex-1 text-xl font-mono font-bold text-green-400">{generatedToken.token}</code>
+                <button onClick={copyToken} className="p-2 hover:bg-gray-700 rounded-lg"><Copy className="w-5 h-5" /></button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// 用户管理组件
+function UsersTab({ users, total, page, setPage, search, setSearch, status, setStatus, loadUsers, setSelectedUser, selectedUser, loading, setLoading, setMessage }) {
+  const handleBan = async (userId, banned) => {
+    try {
+      await api.post(`/api/admin/users/${userId}/ban`, { banned });
+      setMessage({ type: "success", text: banned ? "已禁用用户" : "已启用用户" });
+      loadUsers();
+    } catch (err) {
+      setMessage({ type: "error", text: err.message });
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
+        <div className="flex gap-4 mb-4">
+          <div className="flex-1 relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <input type="text" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="搜索用户名/邮箱" className="w-full pl-10 pr-4 py-2 bg-gray-800 border border-gray-700 rounded-lg" />
+          </div>
+          <select value={status} onChange={(e) => setStatus(e.target.value)} className="px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg">
+            <option value="">全部</option><option value="active">正常</option><option value="banned">已禁用</option>
+          </select>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead><tr className="text-left text-sm text-gray-400 border-b border-gray-800"><th className="pb-3">ID</th><th className="pb-3">用户名</th><th className="pb-3">邮箱</th><th className="pb-3">额度</th><th className="pb-3">使用次数</th><th className="pb-3">状态</th><th className="pb-3">注册时间</th><th className="pb-3">操作</th></tr></thead>
+            <tbody>{users.map((u) => (<tr key={u.id} className="border-b border-gray-800/50 text-sm"><td className="py-3">{u.id}</td><td className="py-3 font-medium">{u.username}</td><td className="py-3 text-gray-400">{u.email || "-"}</td><td className="py-3">{u.total_quota || 0}</td><td className="py-3">{u.usage_count || 0}</td><td className="py-3"><span className={`px-2 py-0.5 rounded text-xs ${u.is_banned ? "bg-red-500/20 text-red-400" : "bg-green-500/20 text-green-400"}`}>{u.is_banned ? "已禁用" : "正常"}</span></td><td className="py-3 text-gray-400">{new Date(u.created_at).toLocaleDateString("zh-CN")}</td><td className="py-3"><div className="flex gap-2"><button onClick={() => setSelectedUser(u)} className="p-1 hover:bg-gray-700 rounded"><Eye className="w-4 h-4" /></button><button onClick={() => handleBan(u.id, !u.is_banned)} className={`p-1 rounded ${u.is_banned ? "hover:bg-green-500/20 text-green-400" : "hover:bg-red-500/20 text-red-400"}`}>{u.is_banned ? "启用" : "禁用"}</button></div></td></tr>))}</tbody>
+          </table>
+        </div>
+        {total > 20 && <div className="flex justify-center gap-2 mt-4">
+          <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1} className="px-3 py-1 bg-gray-800 rounded disabled:opacity-50">上一页</button>
+          <span className="px-3 py-1">第 {page} / {Math.ceil(total / 20)} 页</span>
+          <button onClick={() => setPage(p => p + 1)} disabled={page * 20 >= total} className="px-3 py-1 bg-gray-800 rounded disabled:opacity-50">下一页</button>
+        </div>}
+      </div>
+      {selectedUser && <UserDetailModal user={selectedUser} onClose={() => setSelectedUser(null)} />}
+    </div>
+  );
+}
+
+function UserDetailModal({ user, onClose }) {
+  const [details, setDetails] = useState(null);
+  useEffect(() => { api.get(`/api/admin/users/${user.id}`).then((d) => setDetails(d)).catch(console.error); }, [user.id]);
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+      <div className="bg-gray-900 border border-gray-800 rounded-xl p-6 w-full max-w-2xl max-h-[80vh] overflow-y-auto">
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="text-lg font-bold">用户详情</h3>
+          <button onClick={onClose}><X className="w-5 h-5" /></button>
+        </div>
+        {details ? (
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div><div className="text-sm text-gray-400">用户名</div><div className="font-medium">{user.username}</div></div>
+              <div><div className="text-sm text-gray-400">邮箱</div><div className="font-medium">{user.email || "-"}</div></div>
+              <div><div className="text-sm text-gray-400">免费额度</div><div className="font-medium">{details.user.free_quota}</div></div>
+              <div><div className="text-sm text-gray-400">付费额度</div><div className="font-medium">{details.user.paid_quota}</div></div>
+            </div>
+            <div><h4 className="font-medium mb-2">最近订单</h4>
+              {details.orders.length === 0 ? <p className="text-gray-500">暂无</p> : <div className="space-y-2">{details.orders.map((o) => (<div key={o.id} className="p-2 bg-gray-800 rounded text-sm"><span className="font-mono">{o.order_no?.slice(0, 16)}</span> - ¥{o.amount_cents/100} - <span className={o.status === "PAID" ? "text-green-400" : "text-gray-400"}>{o.status}</span></div>))}</div>}
+            </div>
+            <div><h4 className="font-medium mb-2">最近分析</h4>
+              {details.tasks.length === 0 ? <p className="text-gray-500">暂无</p> : <div className="space-y-2">{details.tasks.map((t) => (<div key={t.id} className="p-2 bg-gray-800 rounded text-sm"><span className="font-mono">{t.id?.slice(0, 8)}</span> - {t.stage} - {t.percentage}%</div>))}</div>}
+            </div>
+          </div>
+        ) : <div className="text-center py-8"><Loader2 className="w-6 h-6 animate-spin mx-auto" /></div>}
+      </div>
+    </div>
+  );
+}
+
+// 分析记录组件
+function TasksTab({ tasks, total, page, setPage, status, setStatus, search, setSearch, loadTasks, selectedTask, setSelectedTask }) {
+  return (
+    <div className="space-y-6">
+      <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
+        <div className="flex gap-4 mb-4">
+          <div className="flex-1 relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <input type="text" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="搜索用户名/任务ID" className="w-full pl-10 pr-4 py-2 bg-gray-800 border border-gray-700 rounded-lg" />
+          </div>
+          <select value={status} onChange={(e) => setStatus(e.target.value)} className="px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg">
+            <option value="">全部状态</option>
+            <option value="running">分析中</option>
+            <option value="complete">已完成</option>
+            <option value="error">失败</option>
+          </select>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead><tr className="text-left text-sm text-gray-400 border-b border-gray-800"><th className="pb-3">任务ID</th><th className="pb-3">用户</th><th className="pb-3">状态</th><th className="pb-3">进度</th><th className="pb-3">阶段</th><th className="pb-3">创建时间</th><th className="pb-3">操作</th></tr></thead>
+            <tbody>{tasks.map((t) => (<tr key={t.id} className="border-b border-gray-800/50 text-sm"><td className="py-3 font-mono text-gray-400">{t.id?.slice(0, 12)}...</td><td className="py-3">{t.username || "匿名"}</td><td className="py-3"><span className={`px-2 py-0.5 rounded text-xs ${t.status === "complete" ? "bg-green-500/20 text-green-400" : t.status === "running" ? "bg-blue-500/20 text-blue-400" : "bg-red-500/20 text-red-400"}`}>{t.status === "complete" ? "已完成" : t.status === "running" ? "分析中" : "失败"}</span></td><td className="py-3">{t.percentage}%</td><td className="py-3 text-gray-400">{t.stage}</td><td className="py-3 text-gray-400">{new Date(t.created_at).toLocaleString("zh-CN")}</td><td className="py-3"><button onClick={() => setSelectedTask(t)} className="p-1 hover:bg-gray-700 rounded"><Eye className="w-4 h-4" /></button></td></tr>))}</tbody>
+          </table>
+        </div>
+        {total > 20 && <div className="flex justify-center gap-2 mt-4">
+          <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1} className="px-3 py-1 bg-gray-800 rounded disabled:opacity-50">上一页</button>
+          <span className="px-3 py-1">第 {page} / {Math.ceil(total / 20)} 页</span>
+          <button onClick={() => setPage(p => p + 1)} disabled={page * 20 >= total} className="px-3 py-1 bg-gray-800 rounded disabled:opacity-50">下一页</button>
+        </div>}
+      </div>
+      {selectedTask && <TaskDetailModal task={selectedTask} onClose={() => setSelectedTask(null)} />}
+    </div>
+  );
+}
+
+function TaskDetailModal({ task, onClose }) {
+  const [detail, setDetail] = useState(null);
+  useEffect(() => { api.get(`/api/admin/tasks/${task.id}`).then((d) => setDetail(d.task)).catch(console.error); }, [task.id]);
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+      <div className="bg-gray-900 border border-gray-800 rounded-xl p-6 w-full max-w-2xl max-h-[80vh] overflow-y-auto">
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="text-lg font-bold">分析详情</h3>
+          <button onClick={onClose}><X className="w-5 h-5" /></button>
+        </div>
+        {detail ? (
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div><div className="text-sm text-gray-400">任务ID</div><div className="font-mono text-sm">{detail.id}</div></div>
+              <div><div className="text-sm text-gray-400">用户</div><div className="font-medium">{detail.username || "匿名"}</div></div>
+              <div><div className="text-sm text-gray-400">状态</div><div className={`px-2 py-0.5 rounded text-xs inline-block ${detail.status === "complete" ? "bg-green-500/20 text-green-400" : detail.status === "running" ? "bg-blue-500/20 text-blue-400" : "bg-red-500/20 text-red-400"}`}>{detail.status === "complete" ? "已完成" : detail.status === "running" ? "分析中" : "失败"}</div></div>
+              <div><div className="text-sm text-gray-400">进度</div><div className="font-medium">{detail.percentage}%</div></div>
+              <div><div className="text-sm text-gray-400">阶段</div><div className="font-medium">{detail.stage}</div></div>
+              <div><div className="text-sm text-gray-400">创建时间</div><div className="font-medium">{new Date(detail.created_at).toLocaleString("zh-CN")}</div></div>
+            </div>
+            {detail.message && <div><h4 className="font-medium mb-2">消息</h4><div className="p-3 bg-gray-800 rounded text-sm">{detail.message}</div></div>}
+            {detail.error && <div><h4 className="font-medium mb-2 text-red-400">错误信息</h4><div className="p-3 bg-red-500/10 rounded text-sm text-red-400">{detail.error}</div></div>}
+            {detail.result && (
+              <div>
+                <h4 className="font-medium mb-2">分析结果</h4>
+                <div className="p-3 bg-gray-800 rounded text-sm max-h-60 overflow-auto">
+                  <pre className="whitespace-pre-wrap">{typeof detail.result === "string" ? detail.result : JSON.stringify(detail.result, null, 2)}</pre>
+                </div>
+              </div>
+            )}
+          </div>
+        ) : <div className="text-center py-8"><Loader2 className="w-6 h-6 animate-spin mx-auto" /></div>}
+      </div>
+    </div>
+  );
+}
+
+// 数据统计组件
+function StatsTab({ stats }) {
+  if (!stats) return <div className="text-center py-8"><Loader2 className="w-6 h-6 animate-spin mx-auto" /></div>;
+
+  // 计算分析状态分布的饼图数据
+  const totalTasks = stats.taskStatusDist?.reduce((sum, item) => sum + item.count, 0) || 0;
+  const statusColors = { complete: "#22c55e", running: "#3b82f6", error: "#ef4444", queued: "#6b7280" };
+  const statusLabels = { complete: "已完成", running: "分析中", error: "失败", queued: "排队中" };
+
+  // 计算饼图渐变
+  let cumulativePercent = 0;
+  const pieData = stats.taskStatusDist?.map(item => {
+    const percent = totalTasks > 0 ? (item.count / totalTasks) * 100 : 0;
+    const start = cumulativePercent;
+    cumulativePercent += percent;
+    return { ...item, percent, start, end: cumulativePercent, color: statusColors[item.status] || "#6b7280" };
+  }) || [];
+
+  // 计算趋势图最大值的归一化
+  const maxUserCount = Math.max(...(stats.userTrend?.map(t => t.count) || [1]), 1);
+  const maxRevenue = Math.max(...(stats.revenueTrend?.map(t => t.total) || [1]), 1);
+
+  return (
+    <div className="space-y-6">
+      {/* 核心指标卡片 */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="bg-gray-900 border border-gray-800 rounded-xl p-6"><div className="text-sm text-gray-400 mb-1">总用户</div><div className="text-2xl font-bold">{stats.totalUsers}</div></div>
+        <div className="bg-gray-900 border border-gray-800 rounded-xl p-6"><div className="text-sm text-gray-400 mb-1">活跃用户(7天)</div><div className="text-2xl font-bold text-green-400">{stats.activeUsers}</div></div>
+        <div className="bg-gray-900 border border-gray-800 rounded-xl p-6"><div className="text-sm text-gray-400 mb-1">累计收入</div><div className="text-2xl font-bold text-yellow-400">¥{(stats.totalRevenue / 100).toFixed(2)}</div></div>
+        <div className="bg-gray-900 border border-gray-800 rounded-xl p-6"><div className="text-sm text-gray-400 mb-1">总分析次数</div><div className="text-2xl font-bold text-blue-400">{stats.totalAnalyzes}</div></div>
+      </div>
+
+      {/* 可视化仪表盘 */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* 分析状态分布饼图 */}
+        <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
+          <h3 className="text-lg font-bold mb-4">分析状态分布</h3>
+          <div className="flex items-center gap-8">
+            {/* 饼图 */}
+            <div className="relative w-32 h-32">
+              <svg viewBox="0 0 100 100" className="w-full h-full -rotate-90">
+                {pieData.map((item, i) => (
+                  <circle
+                    key={i}
+                    cx="50" cy="50" r="40"
+                    fill="none"
+                    stroke={item.color}
+                    strokeWidth="20"
+                    strokeDasharray={`${item.percent * 2.51} ${251 - item.percent * 2.51}`}
+                    strokeDashoffset={`${-item.start * 2.51}`}
+                  />
+                ))}
+                <circle cx="50" cy="50" r="25" fill="#1f2937" />
+              </svg>
+              <div className="absolute inset-0 flex items-center justify-center">
+                <span className="text-lg font-bold">{totalTasks}</span>
+              </div>
+            </div>
+            {/* 图例 */}
+            <div className="space-y-2">
+              {pieData.map((item) => (
+                <div key={item.status} className="flex items-center gap-2">
+                  <div className="w-3 h-3 rounded-full" style={{ backgroundColor: item.color }} />
+                  <span className="text-sm text-gray-400">{statusLabels[item.status] || item.status}:</span>
+                  <span className="text-sm font-medium">{item.count} ({item.percent.toFixed(1)}%)</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* 用户增长趋势条形图 */}
+        <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
+          <h3 className="text-lg font-bold mb-4">用户增长趋势（最近30天）</h3>
+          {stats.userTrend.length === 0 ? <p className="text-gray-500 text-center py-8">暂无数据</p> : (
+            <div className="space-y-1">
+              {stats.userTrend.slice(-10).map((t) => (
+                <div key={t.date} className="flex items-center gap-2">
+                  <span className="text-xs text-gray-500 w-20">{t.date.slice(5)}</span>
+                  <div className="flex-1 h-4 bg-gray-800 rounded overflow-hidden">
+                    <div
+                      className="h-full bg-gradient-to-r from-blue-500 to-blue-400 rounded"
+                      style={{ width: `${(t.count / maxUserCount) * 100}%` }}
+                    />
+                  </div>
+                  <span className="text-xs text-gray-400 w-8 text-right">{t.count}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* 收入趋势 */}
+      <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
+        <h3 className="text-lg font-bold mb-4">收入趋势（最近30天）</h3>
+        {stats.revenueTrend.length === 0 ? <p className="text-gray-500 text-center py-8">暂无数据</p> : (
+          <div className="space-y-1">
+            {stats.revenueTrend.slice(-10).map((t) => (
+              <div key={t.date} className="flex items-center gap-2">
+                <span className="text-xs text-gray-500 w-20">{t.date.slice(5)}</span>
+                <div className="flex-1 h-4 bg-gray-800 rounded overflow-hidden">
+                  <div
+                    className="h-full bg-gradient-to-r from-green-500 to-green-400 rounded"
+                    style={{ width: `${(t.total / maxRevenue) * 100}%` }}
+                  />
+                </div>
+                <span className="text-xs text-gray-400 w-16 text-right">¥{(t.total / 100).toFixed(0)}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// 管理员反馈管理组件
+function AdminFeedbackTab({ feedback, total, page, setPage, status, setStatus, loadFeedback, reply, setReply, showModal, setShowModal }) {
+  const handleReply = async (id) => {
+    if (!reply) return;
+    try { await api.post(`/api/admin/feedback/${id}/reply`, { reply }); setShowModal(null); setReply(""); loadFeedback(); } catch (err) { console.error(err); }
+  };
+  return (
+    <div className="space-y-6">
+      <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
+        <div className="flex gap-4 mb-4">
+          <select value={status} onChange={(e) => setStatus(e.target.value)} className="px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg">
+            <option value="">全部</option><option value="pending">待处理</option><option value="processed">已处理</option><option value="resolved">已解决</option>
+          </select>
+        </div>
+        {feedback.length === 0 ? <p className="text-gray-500 text-center py-8">暂无反馈</p> : (
+          <div className="space-y-3">
+            {feedback.map((f) => (
+              <div key={f.id} className="p-4 bg-gray-800 rounded-lg">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="font-medium">{f.title}</span>
+                  <span className={`px-2 py-0.5 rounded text-xs ${f.status === "pending" ? "bg-yellow-500/20 text-yellow-400" : f.status === "processed" ? "bg-blue-500/20 text-blue-400" : "bg-green-500/20 text-green-400"}`}>
+                    {f.status === "pending" ? "待处理" : f.status === "processed" ? "已处理" : "已解决"}
+                  </span>
+                </div>
+                <p className="text-sm text-gray-400 mb-1">{f.content}</p>
+                <div className="text-xs text-gray-500 mb-2">用户：{f.username || "匿名"} · {new Date(f.created_at).toLocaleString("zh-CN")}</div>
+                {f.admin_reply && <div className="text-sm text-green-400 border-t border-gray-700 pt-2 mt-2"><span className="font-medium">回复：</span>{f.admin_reply}</div>}
+                {f.status !== "resolved" && <button onClick={() => setShowModal(f.id)} className="mt-2 px-3 py-1 bg-blue-600 hover:bg-blue-500 rounded text-sm">回复</button>}
+              </div>
+            ))}
+          </div>
+        )}
+        {total > 20 && <div className="flex justify-center gap-2 mt-4">
+          <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1} className="px-3 py-1 bg-gray-800 rounded disabled:opacity-50">上一页</button>
+          <span className="px-3 py-1">第 {page} / {Math.ceil(total / 20)} 页</span>
+          <button onClick={() => setPage(p => p + 1)} disabled={page * 20 >= total} className="px-3 py-1 bg-gray-800 rounded disabled:opacity-50">下一页</button>
+        </div>}
+      </div>
+      {showModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-gray-900 border border-gray-800 rounded-xl p-6 w-full max-w-md">
+            <h3 className="text-lg font-bold mb-4">回复反馈</h3>
+            <textarea value={reply} onChange={(e) => setReply(e.target.value)} placeholder="请输入回复内容" rows={4} className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg mb-4" />
+            <div className="flex gap-2">
+              <button onClick={() => setShowModal(null)} className="flex-1 px-4 py-2 bg-gray-700 rounded-lg">取消</button>
+              <button onClick={() => handleReply(showModal)} className="flex-1 px-4 py-2 bg-blue-600 rounded-lg">提交回复</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// 套餐配置组件
+function PackagesTab({ packages, setPackages, setMessage }) {
+  const [editing, setEditing] = useState(null);
+  const [form, setForm] = useState({ name: "", quota_amount: "", price_cents: "", is_active: 1 });
+  const handleSave = async () => {
+    try {
+      if (editing) { await api.put(`/api/admin/packages/${editing}`, form); }
+      else { await api.post("/api/admin/packages", { ...form, sort_order: packages.length }); }
+      const data = await api.get("/api/admin/packages");
+      setPackages(data.packages || []);
+      setEditing(null); setForm({ name: "", quota_amount: "", price_cents: "", is_active: 1 });
+      setMessage({ type: "success", text: "保存成功" });
+    } catch (err) { setMessage({ type: "error", text: err.message }); }
+  };
+  const handleDelete = async (id) => {
+    if (!confirm("确定删除此套餐？")) return;
+    try { await api.delete(`/api/admin/packages/${id}`); const data = await api.get("/api/admin/packages"); setPackages(data.packages || []); } catch (err) { setMessage({ type: "error", text: err.message }); }
+  };
+  return (
+    <div className="space-y-6">
+      <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="text-lg font-bold">套餐列表</h3>
+          <button onClick={() => { setEditing(null); setForm({ name: "", quota_amount: "", price_cents: "", is_active: 1 }); }} className="px-3 py-1 bg-blue-600 rounded text-sm">新增套餐</button>
+        </div>
+        <div className="space-y-3">
+          {packages.map((p) => (
+            <div key={p.id} className="p-4 bg-gray-800 rounded-lg flex items-center justify-between">
+              <div>
+                <div className="font-medium">{p.name}</div>
+                <div className="text-sm text-gray-400">{p.quota_amount} 次 · ¥{(p.price_cents / 100).toFixed(2)}</div>
+              </div>
+              <div className="flex gap-2">
+                <button onClick={() => { setEditing(p.id); setForm({ name: p.name, quota_amount: p.quota_amount, price_cents: p.price_cents, is_active: p.is_active }); }} className="p-2 hover:bg-gray-700 rounded"><Edit className="w-4 h-4" /></button>
+                <button onClick={() => handleDelete(p.id)} className="p-2 hover:bg-red-500/20 text-red-400 rounded"><Trash2 className="w-4 h-4" /></button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+      {(editing || form.name) && (
+        <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
+          <h3 className="text-lg font-bold mb-4">{editing ? "编辑套餐" : "新增套餐"}</h3>
+          <div className="grid grid-cols-2 gap-4 mb-4">
+            <div><label className="block text-sm text-gray-400 mb-1">套餐名称</label><input type="text" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg" /></div>
+            <div><label className="block text-sm text-gray-400 mb-1">额度次数</label><input type="number" value={form.quota_amount} onChange={(e) => setForm({ ...form, quota_amount: e.target.value })} className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg" /></div>
+            <div><label className="block text-sm text-gray-400 mb-1">价格(分)</label><input type="number" value={form.price_cents} onChange={(e) => setForm({ ...form, price_cents: e.target.value })} className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg" /></div>
+            <div><label className="block text-sm text-gray-400 mb-1">状态</label><select value={form.is_active} onChange={(e) => setForm({ ...form, is_active: parseInt(e.target.value) })} className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg"><option value={1}>启用</option><option value={0}>禁用</option></select></div>
+          </div>
+          <button onClick={handleSave} className="px-6 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg">保存</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// 系统设置组件
+function SystemSettingsTab({ settings, setSettings, setMessage }) {
+  const [form, setForm] = useState(settings);
+  const handleSave = async () => {
+    try { await api.put("/api/admin/settings", form); setSettings(form); setMessage({ type: "success", text: "保存成功" }); } catch (err) { setMessage({ type: "error", text: err.message }); }
+  };
+  useEffect(() => { setForm(settings); }, [settings]);
+  return (
+    <div className="space-y-6">
+      <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
+        <h3 className="text-lg font-bold mb-4">系统设置</h3>
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm text-gray-400 mb-1">网站名称</label>
+            <input type="text" value={form.site_name || ""} onChange={(e) => setForm({ ...form, site_name: e.target.value })} className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg" />
+            <p className="text-xs text-gray-500 mt-1">显示在网站导航栏的名称</p>
+          </div>
+          <div>
+            <label className="block text-sm text-gray-400 mb-1">新用户免费额度</label>
+            <input type="number" value={form.free_quota || ""} onChange={(e) => setForm({ ...form, free_quota: e.target.value })} className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg" />
+            <p className="text-xs text-gray-500 mt-1">新用户注册时赠送的免费分析次数（默认3次）</p>
+          </div>
+          <div>
+            <label className="block text-sm text-gray-400 mb-1">维护模式</label>
+            <select value={form.maintenance_mode || "false"} onChange={(e) => setForm({ ...form, maintenance_mode: e.target.value })} className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg">
+              <option value="false">关闭</option>
+              <option value="true">开启</option>
+            </select>
+            <p className="text-xs text-gray-500 mt-1">开启后普通用户无法使用分析功能，仅管理员可访问</p>
+          </div>
+          <button onClick={handleSave} className="px-6 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg">保存设置</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// 管理员面板组件
+function AdminPanel({ tokenQuota, setTokenQuota, tokenCount, setTokenCount, generating, setGenerating, setGeneratedToken, setMessage, adminTokens, setAdminTokens, adminAvailable, setAdminAvailable, loading, setLoading }) {
+  const [allTokens, setAllTokens] = useState([]);
+  const [tokenPage, setTokenPage] = useState(1);
+
+  useEffect(() => {
+    loadAllTokens();
+  }, [tokenPage]);
+
+  const loadAllTokens = async () => {
+    try {
+      const data = await api.get(`/api/admin/tokens?page=${tokenPage}&pageSize=50`);
+      setAllTokens(data.tokens || []);
+    } catch (err) {
+      console.error("加载兑换码列表失败:", err);
+    }
+  };
+
+  const handleGenerate = async () => {
+    setGenerating(true); setMessage(null);
+    try {
+      const result = await api.post("/api/token/generate", { quotaAmount: tokenQuota, expireDays: 30, count: tokenCount });
+      setGeneratedToken(result);
+      setMessage({ type: "success", text: `成功生成 ${tokenCount} 个兑换码` });
+      loadAllTokens();
+      const data = await api.get("/api/token/list");
+      setAdminTokens(data.tokens || []); setAdminAvailable(data.available || 0);
+    } catch (err) { setMessage({ type: "error", text: err.message || "生成失败" }); } finally { setGenerating(false); }
+  };
+
+  const handleDeleteToken = async (token) => {
+    if (!confirm(`确定删除兑换码 ${token} 吗？删除后该兑换码将无法使用。`)) return;
+    try {
+      await api.delete(`/api/admin/tokens/${token}`);
+      setMessage({ type: "success", text: "兑换码已删除" });
+      loadAllTokens();
+    } catch (err) {
+      setMessage({ type: "error", text: err.message || "删除失败" });
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* 生成兑换码 */}
+      <div className="bg-gray-900 border border-yellow-500/30 rounded-xl p-6">
+        <h3 className="text-lg font-bold mb-4 text-yellow-400">生成兑换码</h3>
+        <div className="flex gap-4 mb-4">
+          <div><label className="block text-sm text-gray-400 mb-1">每个额度</label><select value={tokenQuota} onChange={(e) => setTokenQuota(parseInt(e.target.value))} className="px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg"><option value={1}>1 次</option><option value={5}>5 次</option><option value={10}>10 次</option><option value={30}>30 次</option><option value={50}>50 次</option></select></div>
+          <div><label className="block text-sm text-gray-400 mb-1">生成数量</label><select value={tokenCount} onChange={(e) => setTokenCount(parseInt(e.target.value))} className="px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg"><option value={1}>1 个</option><option value={5}>5 个</option><option value={10}>10 个</option></select></div>
+          <div className="flex-1 flex items-end"><button onClick={handleGenerate} disabled={generating} className="w-full px-6 py-2 bg-yellow-600 hover:bg-yellow-500 disabled:bg-gray-700 rounded-lg font-medium flex items-center justify-center gap-2">{generating && <Loader2 className="w-4 h-4 animate-spin" />}生成</button></div>
+        </div>
+      </div>
+
+      {/* 兑换码列表 */}
+      <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
+        <h3 className="text-lg font-bold mb-4">兑换码列表</h3>
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead><tr className="text-left text-sm text-gray-400 border-b border-gray-800"><th className="pb-3">兑换码</th><th className="pb-3">额度</th><th className="pb-3">状态</th><th className="pb-3">过期时间</th><th className="pb-3">使用者</th><th className="pb-3">创建时间</th><th className="pb-3">操作</th></tr></thead>
+            <tbody>{allTokens.map((t) => {
+              const isUsed = t.used_at;
+              const isExpired = new Date(t.expires_at) < new Date();
+              return (
+                <tr key={t.token} className="border-b border-gray-800/50 text-sm">
+                  <td className="py-3 font-mono font-medium">{t.token}</td>
+                  <td className="py-3">{t.quota_amount} 次</td>
+                  <td className="py-3"><span className={`px-2 py-0.5 rounded text-xs ${isUsed ? "bg-gray-500/20 text-gray-400" : isExpired ? "bg-red-500/20 text-red-400" : "bg-green-500/20 text-green-400"}`}>{isUsed ? "已使用" : isExpired ? "已过期" : "可用"}</span></td>
+                  <td className="py-3 text-gray-400">{new Date(t.expires_at).toLocaleDateString("zh-CN")}</td>
+                  <td className="py-3 text-gray-400">{t.used_by || "-"}</td>
+                  <td className="py-3 text-gray-400">{new Date(t.created_at).toLocaleDateString("zh-CN")}</td>
+                  <td className="py-3">
+                    {!isUsed && <button onClick={() => handleDeleteToken(t.token)} className="p-1 hover:bg-red-500/20 text-red-400 rounded" title="删除"><Trash2 className="w-4 h-4" /></button>}
+                  </td>
+                </tr>
+              );
+            })}</tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}

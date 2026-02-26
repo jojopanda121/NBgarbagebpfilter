@@ -73,6 +73,19 @@ class ApiService {
     });
   }
 
+  put(url, data) {
+    return this.request(url, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    });
+  }
+
+  delete(url) {
+    return this.request(url, {
+      method: "DELETE",
+    });
+  }
+
   /** 上传文件（带进度） */
   async uploadFile(file) {
     const formData = new FormData();

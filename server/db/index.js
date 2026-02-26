@@ -66,12 +66,41 @@ function runMigrations(database) {
     const sql = fs.readFileSync(path.join(migrationsDir, file), "utf-8");
 
     // 在事务中执行迁移
-    database.transaction(() => {
-      database.exec(sql);
-      database.prepare("INSERT INTO schema_migrations (version) VALUES (?)").run(file);
-    })();
+    try {
+      database.transaction(() => {
+        database.exec(sql);
+        database.prepare("INSERT INTO schema_migrations (version) VALUES (?)").run(file);
+      })();
+      console.log(`[DB] Migration applied: ${file}`);
+    } catch (err) {
+      // 如果迁移失败（比如列已存在），记录警告但继续
+      console.log(`[DB] Migration ${file} skipped: ${err.message}`);
+    }
+  }
 
-    console.log(`[DB] Migration applied: ${file}`);
+  // 确保关键列存在（兼容旧数据库）
+  ensureColumnsExist(database);
+}
+
+// 确保关键列存在 - 修复旧数据库缺失列的问题
+function ensureColumnsExist(database) {
+  try {
+    // 检查 users 表的 role 列
+    const userTableInfo = database.prepare("PRAGMA table_info(users)").all();
+    const userColumns = userTableInfo.map(col => col.name);
+
+    if (!userColumns.includes("role")) {
+      console.log("[DB] Adding missing 'role' column to users table...");
+      database.exec("ALTER TABLE users ADD COLUMN role TEXT DEFAULT 'user'");
+    }
+
+    // 检查 users 表的 is_banned 列
+    if (!userColumns.includes("is_banned")) {
+      console.log("[DB] Adding missing 'is_banned' column to users table...");
+      database.exec("ALTER TABLE users ADD COLUMN is_banned INTEGER DEFAULT 0");
+    }
+  } catch (err) {
+    console.log(`[DB] Column check warning: ${err.message}`);
   }
 }
 

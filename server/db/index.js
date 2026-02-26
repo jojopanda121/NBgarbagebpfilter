@@ -102,6 +102,47 @@ function ensureColumnsExist(database) {
   } catch (err) {
     console.log(`[DB] Column check warning: ${err.message}`);
   }
+
+  // 自动初始化管理员账号（如果配置了环境变量）
+  initializeAdminUser(database);
+}
+
+// 根据环境变量自动创建管理员
+function initializeAdminUser(database) {
+  const adminUsername = process.env.ADMIN_USERNAME;
+  const adminPassword = process.env.ADMIN_PASSWORD;
+
+  if (!adminUsername || !adminPassword) {
+    // 没有配置管理员环境变量，跳过
+    return;
+  }
+
+  try {
+    // 检查是否已存在管理员
+    const existingAdmin = database.prepare("SELECT id FROM users WHERE username = ? AND role = 'admin'").get(adminUsername);
+
+    if (existingAdmin) {
+      console.log(`[DB] Admin user "${adminUsername}" already exists`);
+      return;
+    }
+
+    // 检查用户是否存在
+    const existingUser = database.prepare("SELECT id, password_hash FROM users WHERE username = ?").get(adminUsername);
+
+    if (existingUser) {
+      // 用户存在，将现有用户升级为管理员
+      database.prepare("UPDATE users SET role = 'admin' WHERE username = ?").run(adminUsername);
+      console.log(`[DB] Promoted user "${adminUsername}" to admin`);
+    } else {
+      // 创建新的管理员账号
+      const bcrypt = require("bcryptjs");
+      const passwordHash = bcrypt.hashSync(adminPassword, 12);
+      database.prepare("INSERT INTO users (username, password_hash, role) VALUES (?, ?, 'admin')").run(adminUsername, passwordHash);
+      console.log(`[DB] Created admin user: ${adminUsername}`);
+    }
+  } catch (err) {
+    console.log(`[DB] Admin initialization warning: ${err.message}`);
+  }
 }
 
 function closeDb() {

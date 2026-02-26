@@ -11,7 +11,7 @@ const { saveCode, verifyCode: dbVerifyCode, canSend } = require("./verificationS
 const SMS_CONFIG = {
   secretId: process.env.TENCENT_SMS_SECRET_ID || "",
   secretKey: process.env.TENCENT_SMS_SECRET_KEY || "",
-  sdkAppId: process.env.TENCENT_SMS_SDK_APP_ID || "",
+  sdkAppId: process.env.TENCENT_SMS_SDK_APP_ID || process.env.TENCENT_SMS_APP_ID || "", // 兼容两种写法
   signName: process.env.TENCENT_SMS_SIGN_NAME || "", // 短信签名
   templateId: process.env.TENCENT_SMS_TEMPLATE_ID || "", // 验证码模板 ID
   region: process.env.TENCENT_SMS_REGION || "ap-guangzhou",

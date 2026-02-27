@@ -74,10 +74,34 @@ export default function ReportPage() {
     }
   };
 
-  const handleCopy = () => {
-    navigator.clipboard.writeText(shareLink);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  const handleCopy = async () => {
+    if (!shareLink) {
+      alert("分享链接不存在，请先生成分享链接");
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(shareLink);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      // 降级方案：使用传统方法复制
+      const textArea = document.createElement("textarea");
+      textArea.value = shareLink;
+      textArea.style.position = "fixed";
+      textArea.style.left = "-999999px";
+      textArea.style.top = "-999999px";
+      document.body.appendChild(textArea);
+      textArea.focus();
+      textArea.select();
+      try {
+        document.execCommand("copy");
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      } catch (e) {
+        alert("复制失败，请手动复制链接");
+      }
+      document.body.removeChild(textArea);
+    }
   };
 
   if (loading) {

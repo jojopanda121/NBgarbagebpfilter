@@ -437,10 +437,27 @@ export default function SettingsPage() {
   };
 
   // 复制兑换码
-  const copyToken = () => {
+  const copyToken = async () => {
     if (generatedToken?.token) {
-      navigator.clipboard.writeText(generatedToken.token);
-      setMessage({ type: "success", text: "已复制到剪贴板" });
+      try {
+        await navigator.clipboard.writeText(generatedToken.token);
+        setMessage({ type: "success", text: "已复制到剪贴板" });
+      } catch (err) {
+        // 降级方案
+        const textArea = document.createElement("textarea");
+        textArea.value = generatedToken.token;
+        textArea.style.position = "fixed";
+        textArea.style.left = "-999999px";
+        document.body.appendChild(textArea);
+        textArea.select();
+        try {
+          document.execCommand("copy");
+          setMessage({ type: "success", text: "已复制到剪贴板" });
+        } catch (e) {
+          setMessage({ type: "error", text: "复制失败" });
+        }
+        document.body.removeChild(textArea);
+      }
     }
   };
 
@@ -932,7 +949,32 @@ function RechargeTab() {
                 className="flex-1 px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-sm text-gray-300"
               />
               <button
-                onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/login?ref=${inviteCode}`); setInviteCopied(true); setTimeout(() => setInviteCopied(false), 2000); }}
+                onClick={async () => {
+                  const link = `${window.location.origin}/login?ref=${inviteCode}`;
+                  try {
+                    await navigator.clipboard.writeText(link);
+                    setInviteCopied(true);
+                    setTimeout(() => setInviteCopied(false), 2000);
+                  } catch (err) {
+                    // 降级方案：使用传统方法复制
+                    const textArea = document.createElement("textarea");
+                    textArea.value = link;
+                    textArea.style.position = "fixed";
+                    textArea.style.left = "-999999px";
+                    textArea.style.top = "-999999px";
+                    document.body.appendChild(textArea);
+                    textArea.focus();
+                    textArea.select();
+                    try {
+                      document.execCommand("copy");
+                      setInviteCopied(true);
+                      setTimeout(() => setInviteCopied(false), 2000);
+                    } catch (e) {
+                      alert("复制失败，请手动复制链接");
+                    }
+                    document.body.removeChild(textArea);
+                  }
+                }}
                 className="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-sm flex items-center gap-1.5 shrink-0"
               >
                 {inviteCopied ? <><CheckCircle className="w-4 h-4" />已复制</> : <><Copy className="w-4 h-4" />复制</>}
@@ -1611,15 +1653,49 @@ function AdminPanel({ tokenQuota, setTokenQuota, tokenCount, setTokenCount, gene
     }
   };
 
-  const copyToClipboard = (text) => {
-    navigator.clipboard.writeText(text);
-    setMessage({ type: "success", text: "已复制到剪贴板" });
+  const copyToClipboard = async (text) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setMessage({ type: "success", text: "已复制到剪贴板" });
+    } catch (err) {
+      // 降级方案
+      const textArea = document.createElement("textarea");
+      textArea.value = text;
+      textArea.style.position = "fixed";
+      textArea.style.left = "-999999px";
+      document.body.appendChild(textArea);
+      textArea.select();
+      try {
+        document.execCommand("copy");
+        setMessage({ type: "success", text: "已复制到剪贴板" });
+      } catch (e) {
+        setMessage({ type: "error", text: "复制失败" });
+      }
+      document.body.removeChild(textArea);
+    }
   };
 
-  const copyAllTokens = () => {
+  const copyAllTokens = async () => {
     const text = generatedTokens.map(t => t.token).join("\n");
-    navigator.clipboard.writeText(text);
-    setMessage({ type: "success", text: `已复制 ${generatedTokens.length} 个兑换码` });
+    try {
+      await navigator.clipboard.writeText(text);
+      setMessage({ type: "success", text: `已复制 ${generatedTokens.length} 个兑换码` });
+    } catch (err) {
+      // 降级方案
+      const textArea = document.createElement("textarea");
+      textArea.value = text;
+      textArea.style.position = "fixed";
+      textArea.style.left = "-999999px";
+      document.body.appendChild(textArea);
+      textArea.select();
+      try {
+        document.execCommand("copy");
+        setMessage({ type: "success", text: `已复制 ${generatedTokens.length} 个兑换码` });
+      } catch (e) {
+        setMessage({ type: "error", text: "复制失败" });
+      }
+      document.body.removeChild(textArea);
+    }
   };
 
   return (

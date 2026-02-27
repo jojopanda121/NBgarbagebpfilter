@@ -45,6 +45,10 @@ const config = {
 
   // CORS 允许的域名（逗号分隔，生产环境必须配置）
   allowedOrigins: process.env.ALLOWED_ORIGINS || "",
+
+  // Admin（自动初始化管理员账号）
+  adminUsername: process.env.ADMIN_USERNAME || "",
+  adminPassword: process.env.ADMIN_PASSWORD || "",
 };
 
 // ── 生产环境安全检查 ──

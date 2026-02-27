@@ -6,16 +6,18 @@
 #   2. doc-service — Python FastAPI 文档提取微服务
 #   3. nginx      — 反向代理（生产环境，--profile production）
 #
-# 数据持久化说明：
+# ⚠️ 重要：数据持久化说明
 #   ./data  → 容器内 /app/data（SQLite 数据库，宿主机直接可见、可备份）
 #   ./logs  → 容器内 /app/logs（运行日志）
 #   执行 docker-compose down 不会丢失任何数据。
+#   ⚠️ 绝对不要执行 docker-compose down -v （-v 会删除所有数据卷！）
 #
 # 启动命令：
 #   docker-compose up -d              # 后台启动所有服务
-#   docker-compose up -d --build      # 重新构建并启动
+#   docker-compose up -d --build      # 重新构建并启动（不删除数据！）
 #   docker-compose logs -f app        # 查看主服务日志
 #   docker-compose down               # 停止并移除容器（数据保留在 ./data）
+#   docker-compose down -v           # ❌ 危险！会删除所有数据！
 #
 # 部署到腾讯云：
 #   1. 将代码上传到服务器
@@ -81,12 +83,26 @@ services:
       - "443:443"
     volumes:
       - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
-      - nginx-certs:/etc/nginx/certs       # SSL 证书目录
+      - ./nginx-certs:/etc/nginx/certs:ro  # SSL 证书目录（bind mount，方便管理）
     depends_on:
       - app
     profiles:
       - production   # 仅在 --profile production 时启动
 
-volumes:
-  nginx-certs:
-    driver: local
+  # ── 数据库定时备份（每天凌晨3点） ──
+  backup:
+    image: alpine:3.19
+    container_name: bp-filter-backup
+    restart: always
+    volumes:
+      - ./data:/data
+    entrypoint: /bin/sh
+    command:
+      - -c
+      - |
+        apk add --no-cache sqlite && \
+        echo "0 3 * * * sqlite3 /data/app.db '.backup /data/backups/app_$$(date +\%Y\%m\%d_\%H\%M\%S).db' && find /data/backups -name '*.db' -mtime +30 -delete" | crontab - && \
+        mkdir -p /data/backups && \
+        crond -f -l 2
+    profiles:
+      - production

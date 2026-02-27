@@ -4,8 +4,7 @@ server/node_modules
 client/build
 npm-debug.log*
 .env
-.env.local
-.env.production
+.env.*
 .env.example
 logs
 *.log

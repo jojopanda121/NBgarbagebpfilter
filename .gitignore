@@ -1,6 +1,7 @@
 node_modules
 /build
 dist
+client/build/
 client/node_modules
 server/node_modules
 .env
@@ -13,9 +14,6 @@ coverage
 __pycache__
 uploads/
 
-# PM2 日志
-logs/*.log
-
 # 数据库（生产数据不入库，但保留目录占位符）
 data/*.db
 data/*.db-journal
@@ -26,3 +24,8 @@ data/*.db-wal
 
 # 日志文件（保留目录占位符）
 logs/*.log
+
+# SSL 证书（绝对不能入库）
+nginx-certs/*.pem
+nginx-certs/*.key
+nginx-certs/*.crt

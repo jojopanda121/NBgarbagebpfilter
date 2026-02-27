@@ -109,8 +109,8 @@ function ensureColumnsExist(database) {
 
 // 根据环境变量自动创建管理员
 function initializeAdminUser(database) {
-  const adminUsername = process.env.ADMIN_USERNAME;
-  const adminPassword = process.env.ADMIN_PASSWORD;
+  const adminUsername = config.adminUsername;
+  const adminPassword = config.adminPassword;
 
   if (!adminUsername || !adminPassword) {
     // 没有配置管理员环境变量，跳过

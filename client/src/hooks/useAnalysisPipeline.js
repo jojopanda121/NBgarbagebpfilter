@@ -21,6 +21,7 @@ const STAGE_TO_STEP = {
 };
 
 const POLL_INTERVAL_MS = 2500;
+const MAX_POLL_COUNT = 120;           // 最多轮询 120 次（约 5 分钟）
 const MAX_CONSECUTIVE_ERRORS = 8;
 const PENDING_TASK_KEY = "bp_pending_task";
 
@@ -96,8 +97,14 @@ export function useAnalysisPipeline() {
   /** 核心轮询逻辑，传入 taskId 开始轮询 */
   const pollUntilDone = useCallback(async (taskId) => {
     let consecutiveErrors = 0;
+    let pollCount = 0;
 
     while (analyzingRef.current) {
+      pollCount++;
+      if (pollCount > MAX_POLL_COUNT) {
+        localStorage.removeItem(PENDING_TASK_KEY);
+        throw new Error("分析超时，请稍后在历史记录中查看结果");
+      }
       await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
       if (!analyzingRef.current) break;
 

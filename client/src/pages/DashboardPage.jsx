@@ -7,17 +7,16 @@ import ScoreVisualizer from "../components/ScoreVisualizer";
 import DetailedReport from "../components/DetailedReport";
 import VerdictCard from "../components/VerdictCard";
 import { useAnalysisPipeline } from "../hooks/useAnalysisPipeline";
-import { Zap, CreditCard } from "lucide-react";
+import { Zap } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 
 export default function DashboardPage() {
   const result = useAnalysisStore((s) => s.result);
-  const analyzing = useAnalysisStore((s) => s.analyzing);
   const token = useAuthStore((s) => s.token);
   const quota = useAuthStore((s) => s.quota);
-  const setRequirePayment = useAuthStore((s) => s.setRequirePayment);
   const { resumeAnalysis, getPendingTask } = useAnalysisPipeline();
+  const navigate = useNavigate();
 
-  // 页面加载时检测是否有后台进行中的任务（绑定 userId），有则自动恢复轮询
   const resumeRef = useRef(resumeAnalysis);
   const getPendingRef = useRef(getPendingTask);
   useEffect(() => {
@@ -29,12 +28,12 @@ export default function DashboardPage() {
 
   return (
     <main className="max-w-6xl mx-auto px-4 py-6 sm:px-6 sm:py-8">
-      {/* 额度提示条（已登录时显示） */}
+      {/* 额度提示条 */}
       {token && quota && !result && (
-        <div className="flex items-center justify-between bg-gray-900 border border-gray-800 rounded-xl px-4 py-3 mb-6">
+        <div className="flex items-center justify-between bg-slate-900/50 border border-white/10 rounded-xl px-4 py-3 mb-6">
           <div className="flex items-center gap-2 text-sm">
             <Zap className="w-4 h-4 text-yellow-400" />
-            <span className="text-gray-300">
+            <span className="text-slate-300">
               剩余额度：
               <span className="text-white font-medium">{quota.free || 0}</span> 次免费
               {quota.paid > 0 && (
@@ -43,16 +42,15 @@ export default function DashboardPage() {
             </span>
           </div>
           <button
-            onClick={() => setRequirePayment(true)}
+            onClick={() => navigate("/settings?tab=token")}
             className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-blue-600 hover:bg-blue-500 rounded-lg transition-colors"
           >
-            <CreditCard className="w-3.5 h-3.5" />
-            充值
+            <Zap className="w-3.5 h-3.5" />
+            兑换额度
           </button>
         </div>
       )}
 
-      {/* 上传 + 流水线进度 */}
       {!result && (
         <>
           <UploadSection />
@@ -60,7 +58,6 @@ export default function DashboardPage() {
         </>
       )}
 
-      {/* 结果面板 */}
       {result && (
         <div className="space-y-6">
           <VerdictCard result={result} />

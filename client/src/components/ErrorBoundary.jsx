@@ -24,13 +24,13 @@ export default class ErrorBoundary extends React.Component {
   render() {
     if (this.state.hasError) {
       return (
-        <div className="min-h-screen bg-gray-950 flex items-center justify-center p-6">
-          <div className="max-w-md w-full bg-gray-900 border border-gray-700 rounded-xl p-8 text-center">
+        <div className="min-h-screen bg-slate-950 flex items-center justify-center p-6">
+          <div className="max-w-md w-full bg-slate-900 border border-white/10 rounded-xl p-8 text-center">
             <div className="text-4xl mb-4">⚠️</div>
-            <h2 className="text-xl font-semibold text-gray-100 mb-2">
+            <h2 className="text-xl font-semibold text-slate-100 mb-2">
               页面渲染出错
             </h2>
-            <p className="text-gray-400 mb-4 text-sm">
+            <p className="text-slate-400 mb-4 text-sm">
               {this.state.error?.message || "发生了意外错误，请刷新页面重试。"}
             </p>
             <div className="flex gap-3 justify-center">
@@ -42,7 +42,7 @@ export default class ErrorBoundary extends React.Component {
               </button>
               <button
                 onClick={() => window.location.reload()}
-                className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-200 rounded-lg text-sm transition-colors"
+                className="px-4 py-2 bg-slate-700 hover:bg-gray-600 text-slate-200 rounded-lg text-sm transition-colors"
               >
                 刷新页面
               </button>

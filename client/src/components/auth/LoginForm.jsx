@@ -52,19 +52,19 @@ export default function LoginForm({ onSuccess, defaultRedirect = "/app/dashboard
   };
 
   return (
-    <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 sm:p-8 max-w-md mx-auto">
+    <div className="bg-slate-900 border border-white/10 rounded-2xl p-6 sm:p-8 max-w-md mx-auto">
       <h2 className="text-xl font-bold text-center mb-6">
         {isRegister ? "注册账号" : "登录"}
       </h2>
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
-          <label className="block text-sm text-gray-400 mb-1">用户名</label>
+          <label className="block text-sm text-slate-400 mb-1">用户名</label>
           <input
             type="text"
             value={username}
             onChange={(e) => setUsername(e.target.value)}
-            className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg focus:outline-none focus:border-blue-500 text-white"
+            className="w-full px-4 py-2 bg-slate-800 border border-white/10 rounded-lg focus:outline-none focus:border-blue-500 text-white"
             placeholder="2-32个字符"
             required
             minLength={2}
@@ -73,12 +73,12 @@ export default function LoginForm({ onSuccess, defaultRedirect = "/app/dashboard
         </div>
 
         <div>
-          <label className="block text-sm text-gray-400 mb-1">密码</label>
+          <label className="block text-sm text-slate-400 mb-1">密码</label>
           <input
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg focus:outline-none focus:border-blue-500 text-white"
+            className="w-full px-4 py-2 bg-slate-800 border border-white/10 rounded-lg focus:outline-none focus:border-blue-500 text-white"
             placeholder="至少6个字符"
             required
             minLength={6}
@@ -87,12 +87,12 @@ export default function LoginForm({ onSuccess, defaultRedirect = "/app/dashboard
 
         {isRegister && (
           <div>
-            <label className="block text-sm text-gray-400 mb-1">确认密码</label>
+            <label className="block text-sm text-slate-400 mb-1">确认密码</label>
             <input
               type="password"
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
-              className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg focus:outline-none focus:border-blue-500 text-white"
+              className="w-full px-4 py-2 bg-slate-800 border border-white/10 rounded-lg focus:outline-none focus:border-blue-500 text-white"
               placeholder="再次输入密码"
               required
               minLength={6}
@@ -109,7 +109,7 @@ export default function LoginForm({ onSuccess, defaultRedirect = "/app/dashboard
         <button
           type="submit"
           disabled={loading}
-          className="w-full py-2.5 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-700 rounded-lg font-medium transition-colors flex items-center justify-center gap-2"
+          className="w-full py-2.5 bg-blue-600 hover:bg-blue-500 disabled:bg-slate-700 rounded-lg font-medium transition-colors flex items-center justify-center gap-2"
         >
           {loading ? (
             <span className="animate-spin w-5 h-5 border-2 border-white/30 border-t-white rounded-full" />
@@ -127,7 +127,7 @@ export default function LoginForm({ onSuccess, defaultRedirect = "/app/dashboard
         </button>
       </form>
 
-      <p className="text-center text-sm text-gray-500 mt-4">
+      <p className="text-center text-sm text-slate-500 mt-4">
         {isRegister ? "已有账号？" : "没有账号？"}
         <button
           onClick={() => { setIsRegister(!isRegister); setError(""); setConfirmPassword(""); }}

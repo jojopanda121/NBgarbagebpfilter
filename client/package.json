@@ -5,7 +5,10 @@
   "description": "GarbageBPFilter 前端 — React + Tailwind + Recharts",
   "proxy": "http://localhost:3001",
   "dependencies": {
+    "@tsparticles/react": "^3.0.0",
+    "@tsparticles/slim": "^3.9.1",
     "dompurify": "^3.3.1",
+    "framer-motion": "^12.35.0",
     "lucide-react": "^0.469.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",

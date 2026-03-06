@@ -15,7 +15,7 @@ const {
   DEEP_RESEARCH_PROMPT,
 } = require("../utils/prompts");
 
-const CLAIM_BATCH_SIZE = 3;
+const MAX_CONCURRENT_BATCHES = 3; // 将声明分为最多3个并发批次
 
 /** 行业大类映射 — 通过关键词匹配将细分行业归类到统计大类 */
 const INDUSTRY_CATEGORIES = [
@@ -74,14 +74,15 @@ async function verifySingleClaim(claim, bpContext, batchLabel) {
   };
 }
 
-/** Agent B 核心调度函数 */
-async function runAgentBWithBatching(extractedData, bpText, onProgress) {
+/** Agent B 核心调度函数 + 深度研究并行 */
+async function runAgentBWithBatchingAndResearch(extractedData, bpText, onProgress) {
   const claims = extractedData.key_claims || [];
 
-  // Phase 1: 微观声明核查
+  // Phase 1: 微观声明核查 — 平均分成最多 3 个并发批次
   const batches = [];
-  for (let i = 0; i < claims.length; i += CLAIM_BATCH_SIZE) {
-    batches.push(claims.slice(i, i + CLAIM_BATCH_SIZE));
+  const batchSize = Math.ceil(claims.length / MAX_CONCURRENT_BATCHES);
+  for (let i = 0; i < claims.length; i += batchSize) {
+    batches.push(claims.slice(i, i + batchSize));
   }
 
   const batchCount = batches.length;
@@ -153,9 +154,9 @@ async function runAgentBWithBatching(extractedData, bpText, onProgress) {
     }
   }
   logger.info("[B.1] 声明核查完成", { total: allClaimVerdicts.length });
-  onProgress({ type: "progress", stage: "claims_verified", percentage: 62, message: `声明核查完成（${allClaimVerdicts.length} 条），进行五维评分...` });
+  onProgress({ type: "progress", stage: "claims_verified", percentage: 55, message: `声明核查完成（${allClaimVerdicts.length} 条），并行启动评分+深度研究...` });
 
-  // Phase 2: 宏观五维结构化打分
+  // Phase 2: 并行执行 结构化打分 + 深度研究报告
   const compressedVerdicts = compressVerdicts(allClaimVerdicts);
   const dynamicPrompt = buildStructuralPrompt(extractedData);
 
@@ -165,34 +166,58 @@ async function runAgentBWithBatching(extractedData, bpText, onProgress) {
     `\n\n【BP原文节选（前3000字）】\n${bpText.slice(0, 3000)}`,
   ].join("");
 
-  // 层1: DeepThink
-  const judgeResult = await callLLMWithThinking(dynamicPrompt, structuralInput, 20000, 3000);
-  let structuralResult = extractJson(judgeResult.text);
+  // 深度研究所需输入（基于已有数据，不依赖结构化评分结果）
+  const earlyDeepResearchInput = [
+    `【商业计划书原文节选（前12000字）】\n${bpText.slice(0, 12000)}`,
+    `\n\n【项目基本信息】\n公司：${extractedData.company_name || "未知"}，赛道：${extractedData.industry || "未知"}`,
+    `\n\n【声明核查结果】\n${JSON.stringify(compressedVerdicts, null, 2)}`,
+    `\n\n【BP提取数据】\n${JSON.stringify(extractedData, null, 2)}`,
+  ].join("");
 
-  // 层2: 普通模式
-  if (!structuralResult || !structuralResult.validated_data) {
-    logger.warn("[B.2] 首次解析失败，重试层2...");
-    onProgress({ type: "progress", stage: "scoring_retry", percentage: 74, message: "评分结果解析失败，重试中..." });
-    const retry1Raw = await callLLM(dynamicPrompt + "\n\n【紧急提醒】只输出 JSON 对象。", structuralInput, 20000);
-    structuralResult = extractJson(retry1Raw);
-  }
+  // 并行执行：结构化评分（DeepThink）+ 深度研究
+  const [structuralOutcome, deepResearch] = await Promise.all([
+    // Task A: 结构化评分
+    (async () => {
+      // 层1: DeepThink
+      const judgeResult = await callLLMWithThinking(dynamicPrompt, structuralInput, 20000, 3000);
+      let result = extractJson(judgeResult.text);
 
-  // 层3: 精简模式
-  if (!structuralResult || !structuralResult.validated_data) {
-    logger.warn("[B.2] 重试层2仍失败，启用兜底层3...");
-    onProgress({ type: "progress", stage: "scoring_retry2", percentage: 78, message: "启用精简模式重试..." });
-    const minimalInput = [
-      `【BP提取数据】\n${JSON.stringify(extractedData, null, 2)}`,
-      `\n\n【声明核查报告（top-10）】\n${JSON.stringify(compressedVerdicts.slice(0, 10), null, 2)}`,
-    ].join("");
-    const retry2Raw = await callLLM(EXPERT_JUDGE_MINIMAL_PROMPT, minimalInput, 8192);
-    structuralResult = extractJson(retry2Raw);
-  }
+      // 层2: 普通模式
+      if (!result || !result.validated_data) {
+        logger.warn("[B.2] 首次解析失败，重试层2...");
+        onProgress({ type: "progress", stage: "scoring_retry", percentage: 74, message: "评分结果解析失败，重试中..." });
+        const retry1Raw = await callLLM(dynamicPrompt + "\n\n【紧急提醒】只输出 JSON 对象。", structuralInput, 20000);
+        result = extractJson(retry1Raw);
+      }
+
+      // 层3: 精简模式
+      if (!result || !result.validated_data) {
+        logger.warn("[B.2] 重试层2仍失败，启用兜底层3...");
+        onProgress({ type: "progress", stage: "scoring_retry2", percentage: 78, message: "启用精简模式重试..." });
+        const minimalInput = [
+          `【BP提取数据】\n${JSON.stringify(extractedData, null, 2)}`,
+          `\n\n【声明核查报告（top-10）】\n${JSON.stringify(compressedVerdicts.slice(0, 10), null, 2)}`,
+        ].join("");
+        const retry2Raw = await callLLM(EXPERT_JUDGE_MINIMAL_PROMPT, minimalInput, 8192);
+        result = extractJson(retry2Raw);
+      }
+
+      return { structuralResult: result, thinking: judgeResult.thinking || "" };
+    })(),
+    // Task B: 深度研究（与评分并行）
+    (async () => {
+      onProgress({ type: "progress", stage: "report_parallel", percentage: 60, message: "深度研究报告生成中（与评分并行）..." });
+      return await callLLM(DEEP_RESEARCH_PROMPT, earlyDeepResearchInput, 8192);
+    })(),
+  ]);
+
+  onProgress({ type: "progress", stage: "parallel_done", percentage: 82, message: "评分与深度研究均已完成..." });
 
   return {
     claimVerdicts: allClaimVerdicts,
-    structuralResult,
-    thinking: judgeResult.thinking || "",
+    structuralResult: structuralOutcome.structuralResult,
+    thinking: structuralOutcome.thinking,
+    deepResearch,
   };
 }
 
@@ -342,31 +367,8 @@ function buildValuationComparison(validatedData, extractedData, scoringInput, sc
 }
 
 /**
- * Step 4: 生成深度研究报告
- */
-async function generateDeepResearch(truncatedText, extractedData, scoringResult, scoringInput, validatedData, onProgress) {
-  onProgress({ type: "progress", stage: "report", percentage: 90, message: "生成深度研究报告..." });
-
-  const deepResearchInput = [
-    `【商业计划书原文节选（前12000字）】\n${truncatedText.slice(0, 12000)}`,
-    `\n\n【项目基本信息】\n公司：${extractedData.company_name || "未知"}，赛道：${extractedData.industry || "未知"}`,
-    `\n\n【AI专家深度分析结果】\n${JSON.stringify({
-      scoring: { total_score: scoringResult.total_score, grade: scoringResult.grade, dimensions: scoringResult.dimensions },
-      scoring_inputs: scoringInput,
-      claim_verdicts: validatedData.claim_verdicts?.slice(0, 15),
-      dimension_analysis: validatedData.dimension_analysis,
-      risk_flags: validatedData.risk_flags,
-      strengths: validatedData.strengths,
-      conflicts: validatedData.conflicts,
-      valuation_comparison: validatedData.valuation_comparison,
-    }, null, 2)}`,
-  ].join("");
-
-  return await callLLM(DEEP_RESEARCH_PROMPT, deepResearchInput, 8192);
-}
-
-/**
  * 完整分析流水线（后台执行）
+ * 优化：声明核查3批并发 + 深度研究与结构化评分并行
  */
 async function runPipeline(bpText, onProgress) {
   const startTime = Date.now();
@@ -376,9 +378,10 @@ async function runPipeline(bpText, onProgress) {
   // Step 1: 数据提取
   const { extractedData, truncatedText } = await extractBPData(bpText, onProgress);
 
-  // Step 2: Agent B 核查与评分
-  onProgress({ type: "progress", stage: "agent_b_start", percentage: 32, message: "Agent B 启动..." });
-  const { claimVerdicts, structuralResult, thinking } = await runAgentBWithBatching(extractedData, truncatedText, onProgress);
+  // Step 2: 声明核查（3批并发）
+  onProgress({ type: "progress", stage: "agent_b_start", percentage: 32, message: "Agent B 启动（3批并发核查）..." });
+  const { claimVerdicts, structuralResult, thinking, deepResearch } =
+    await runAgentBWithBatchingAndResearch(extractedData, truncatedText, onProgress);
 
   if (!structuralResult || !structuralResult.validated_data) {
     throw new Error("AI 专家评分失败，请重试");
@@ -386,16 +389,13 @@ async function runPipeline(bpText, onProgress) {
 
   const validatedData = { ...structuralResult, claim_verdicts: claimVerdicts };
 
-  // Step 3: 评分计算
+  // Step 3: 评分计算（CPU，瞬间完成）
   const { scoringInput, scoringResult } = calculateScoring(validatedData, onProgress);
 
   // Step 4: 构建维度数据和估值对比
   const dimensionAnalysis = validatedData.dimension_analysis || {};
   const valuationComparison = buildValuationComparison(validatedData, extractedData, scoringInput, scoringResult);
   const verdict = buildVerdictResponse(scoringResult, structuralResult, validatedData, dimensionAnalysis, valuationComparison);
-
-  // Step 5: 生成深度研究报告
-  const deepResearch = await generateDeepResearch(truncatedText, extractedData, scoringResult, scoringInput, validatedData, onProgress);
 
   const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
   onProgress({ type: "progress", stage: "finalizing", percentage: 98, message: "报告生成完成，整理结果..." });

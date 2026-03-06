@@ -2,7 +2,6 @@ import React, { Suspense, lazy, useEffect } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import useAuthStore from "./store/useAuthStore";
 import ContactBindingModal from "./components/auth/ContactBindingModal";
-import PaymentModal from "./components/auth/PaymentModal";
 import AuthGuard from "./components/AuthGuard";
 import AppLayout from "./components/AppLayout";
 import ErrorBoundary from "./components/ErrorBoundary";
@@ -19,10 +18,10 @@ const HistoryPage = lazy(() => import("./pages/HistoryPage"));
 // 加载中组件
 function LoadingFallback() {
   return (
-    <div className="min-h-screen bg-gray-950 flex items-center justify-center">
+    <div className="min-h-screen bg-slate-950 flex items-center justify-center">
       <div className="text-center">
         <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
-        <p className="mt-4 text-gray-400">加载中...</p>
+        <p className="mt-4 text-slate-400">加载中...</p>
       </div>
     </div>
   );
@@ -31,7 +30,6 @@ function LoadingFallback() {
 // ── 根组件（路由协调器 + 全局弹层）──
 export default function App() {
   const requireContactBinding = useAuthStore((s) => s.requireContactBinding);
-  const requirePayment = useAuthStore((s) => s.requirePayment);
   const initialized = useAuthStore((s) => s.initialized);
   const initAuth = useAuthStore((s) => s.initAuth);
 
@@ -48,10 +46,9 @@ export default function App() {
   return (
     <ErrorBoundary>
       <BrowserRouter>
-        <div className="min-h-screen bg-gray-950 text-gray-100">
-          {/* 全局弹层：联系方式绑定 & 支付 */}
+        <div className="min-h-screen bg-slate-950 text-slate-100">
+          {/* 全局弹层：联系方式绑定 */}
           {requireContactBinding && <ContactBindingModal />}
-          {requirePayment && <PaymentModal />}
 
           <Suspense fallback={<LoadingFallback />}>
             <Routes>

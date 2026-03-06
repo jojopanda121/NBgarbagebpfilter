@@ -291,9 +291,9 @@ export default function DemoReportPage() {
   const navigate = useNavigate();
 
   return (
-    <div className="min-h-screen bg-gray-950">
+    <div className="min-h-screen bg-slate-950">
       {/* Header */}
-      <header className="border-b border-gray-800 bg-gray-950/80 backdrop-blur-sm sticky top-0 z-50">
+      <header className="border-b border-white/10 bg-slate-950/80 backdrop-blur-sm sticky top-0 z-50">
         <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
           <div
             className="flex items-center gap-2 cursor-pointer"
@@ -323,7 +323,7 @@ export default function DemoReportPage() {
       <div className="max-w-6xl mx-auto px-4 py-4">
         <button
           onClick={() => navigate("/")}
-          className="flex items-center gap-2 text-gray-400 hover:text-white transition-colors"
+          className="flex items-center gap-2 text-slate-400 hover:text-white transition-colors"
         >
           <ArrowLeft className="w-4 h-4" />
           返回首页
@@ -337,7 +337,7 @@ export default function DemoReportPage() {
           <h1 className="text-2xl font-bold mb-2">
             {DEMO_RESULT.extracted_data.company_name}
           </h1>
-          <p className="text-gray-400">
+          <p className="text-slate-400">
             {DEMO_RESULT.extracted_data.industry} · {DEMO_RESULT.extracted_data.product_name}
           </p>
         </div>

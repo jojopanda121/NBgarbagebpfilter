@@ -28,7 +28,7 @@ function VerdictBadge({ verdict }) {
     "存疑":      { bg: "bg-blue-500/15",    text: "text-blue-400",    border: "border-blue-500/30",    icon: <HelpCircle className="w-3 h-3" /> },
     "证伪":      { bg: "bg-red-600/20",     text: "text-red-500",     border: "border-red-600/40",     icon: <XCircle className="w-3 h-3" /> },
   };
-  const style = map[verdict] || { bg: "bg-gray-700/50", text: "text-gray-400", border: "border-gray-600/30", icon: <HelpCircle className="w-3 h-3" /> };
+  const style = map[verdict] || { bg: "bg-slate-700/50", text: "text-slate-400", border: "border-gray-600/30", icon: <HelpCircle className="w-3 h-3" /> };
   return (
     <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold border ${style.bg} ${style.text} ${style.border}`}>
       {style.icon}{verdict || "未判定"}
@@ -45,7 +45,7 @@ function SeverityBadge({ severity }) {
     "中等": "bg-yellow-500/20 text-yellow-400 border-yellow-500/30",
     "低":   "bg-blue-500/20 text-blue-400 border-blue-500/30",
   };
-  const cls = map[severity] || "bg-gray-700/50 text-gray-400 border-gray-600/30";
+  const cls = map[severity] || "bg-slate-700/50 text-slate-400 border-gray-600/30";
   return (
     <span className={`px-2 py-0.5 text-xs font-bold rounded border ${cls}`}>{severity}</span>
   );
@@ -61,9 +61,9 @@ function CategoryBadge({ category }) {
     team:         { label: "团队",     cls: "bg-green-500/15 text-green-400" },
     financial:    { label: "财务",     cls: "bg-yellow-500/15 text-yellow-400" },
     valuation:    { label: "估值",     cls: "bg-red-500/15 text-red-400" },
-    policy:       { label: "政策",     cls: "bg-gray-500/15 text-gray-400" },
+    policy:       { label: "政策",     cls: "bg-gray-500/15 text-slate-400" },
   };
-  const m = map[category] || { label: category, cls: "bg-gray-700/50 text-gray-400" };
+  const m = map[category] || { label: category, cls: "bg-slate-700/50 text-slate-400" };
   return <span className={`px-2 py-0.5 rounded text-xs font-medium ${m.cls}`}>{m.label}</span>;
 }
 
@@ -72,53 +72,53 @@ function ClaimVerdictCard({ item }) {
   const [open, setOpen] = useState(false);
   return (
     <div
-      className="border border-gray-800 rounded-xl overflow-hidden cursor-pointer hover:border-gray-700 transition-colors"
+      className="border border-white/10 rounded-xl overflow-hidden cursor-pointer hover:border-white/10 transition-colors"
       onClick={() => setOpen(!open)}
     >
-      <div className="flex items-start gap-3 p-3 bg-gray-800/30">
+      <div className="flex items-start gap-3 p-3 bg-slate-800/30">
         <div className="flex items-center gap-2 flex-wrap flex-1 min-w-0">
           <CategoryBadge category={item.category} />
-          <span className="text-sm text-gray-300 flex-1 min-w-0 truncate">
+          <span className="text-sm text-slate-300 flex-1 min-w-0 truncate">
             {item.original_claim || item.bp_claim || item.claim || "—"}
           </span>
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <VerdictBadge verdict={item.verdict} />
           {open
-            ? <ChevronUp className="w-3 h-3 text-gray-500" />
-            : <ChevronDown className="w-3 h-3 text-gray-500" />}
+            ? <ChevronUp className="w-3 h-3 text-slate-500" />
+            : <ChevronDown className="w-3 h-3 text-slate-500" />}
         </div>
       </div>
 
       {open && (
-        <div className="border-t border-gray-800">
+        <div className="border-t border-white/10">
           {/* BP 声称 vs AI 研究 */}
           <div className="grid grid-cols-1 sm:grid-cols-2 divide-y sm:divide-y-0 sm:divide-x divide-gray-800">
             <div className="p-3">
               <div className="text-xs font-bold text-blue-400 uppercase tracking-wider mb-2">📄 BP 声称</div>
-              <p className="text-sm text-gray-400 leading-relaxed">{item.bp_claim || item.original_claim || "—"}</p>
+              <p className="text-sm text-slate-400 leading-relaxed">{item.bp_claim || item.original_claim || "—"}</p>
             </div>
             <div className="p-3">
               <div className="text-xs font-bold text-purple-400 uppercase tracking-wider mb-2">🔬 AI 研究发现</div>
-              <p className="text-sm text-gray-400 leading-relaxed">{item.ai_research || "—"}</p>
+              <p className="text-sm text-slate-400 leading-relaxed">{item.ai_research || "—"}</p>
             </div>
           </div>
 
           {/* 差异量化 & 影响 */}
           {(item.diff || item.severity || item.score_impact) && (
-            <div className="px-3 py-2 bg-gray-900/50 border-t border-gray-800 flex flex-wrap items-center gap-3">
+            <div className="px-3 py-2 bg-slate-900/50 border-t border-white/10 flex flex-wrap items-center gap-3">
               {item.diff && (
                 <span className="text-xs text-orange-400">
                   <span className="font-bold">差异：</span>{item.diff}
                 </span>
               )}
               {item.severity && (
-                <span className="flex items-center gap-1 text-xs text-gray-500">
+                <span className="flex items-center gap-1 text-xs text-slate-500">
                   影响程度：<SeverityBadge severity={item.severity} />
                 </span>
               )}
               {item.score_impact && (
-                <span className="text-xs text-gray-500 italic">{item.score_impact}</span>
+                <span className="text-xs text-slate-500 italic">{item.score_impact}</span>
               )}
             </div>
           )}
@@ -162,7 +162,7 @@ const ClaimVerdictsPanel = memo(function ClaimVerdictsPanel({ claimVerdicts }) {
   ];
 
   return (
-    <div className="bg-gray-900 border border-gray-800 rounded-2xl p-4 sm:p-6">
+    <div className="bg-slate-900 border border-white/10 rounded-2xl p-4 sm:p-6">
       <button
         onClick={() => setExpanded(!expanded)}
         className="flex items-center gap-2 text-lg font-semibold w-full mb-1"
@@ -176,11 +176,11 @@ const ClaimVerdictsPanel = memo(function ClaimVerdictsPanel({ claimVerdicts }) {
           <span className="text-blue-400">{stats.questionable} 存疑</span>
           <span className="text-red-400">{stats.disproved} 证伪</span>
           {expanded
-            ? <ChevronUp className="w-4 h-4 text-gray-500" />
-            : <ChevronDown className="w-4 h-4 text-gray-500" />}
+            ? <ChevronUp className="w-4 h-4 text-slate-500" />
+            : <ChevronDown className="w-4 h-4 text-slate-500" />}
         </span>
       </button>
-      <p className="text-xs text-gray-600 mb-4 ml-7">
+      <p className="text-xs text-slate-600 mb-4 ml-7">
         MiniMax AI 基于知识库对每条 BP 声明进行独立核查，点击展开查看详情
       </p>
 
@@ -195,7 +195,7 @@ const ClaimVerdictsPanel = memo(function ClaimVerdictsPanel({ claimVerdicts }) {
                 className={`px-3 py-1 text-xs rounded-full border transition-colors ${
                   filter === f.key
                     ? "bg-blue-500/20 text-blue-400 border-blue-500/40"
-                    : "bg-gray-800 text-gray-500 border-gray-700 hover:border-gray-500"
+                    : "bg-slate-800 text-slate-500 border-white/10 hover:border-gray-500"
                 }`}
               >
                 {f.label}
@@ -208,7 +208,7 @@ const ClaimVerdictsPanel = memo(function ClaimVerdictsPanel({ claimVerdicts }) {
               <ClaimVerdictCard key={i} item={item} />
             ))}
             {filtered.length === 0 && (
-              <p className="text-sm text-gray-600 text-center py-4">该类别下暂无声明</p>
+              <p className="text-sm text-slate-600 text-center py-4">该类别下暂无声明</p>
             )}
           </div>
         </>
@@ -222,27 +222,27 @@ const ConflictsPanel = memo(function ConflictsPanel({ conflicts }) {
   if (!conflicts?.length) return null;
 
   return (
-    <div className="bg-gray-900 border border-gray-800 rounded-2xl p-4 sm:p-6">
+    <div className="bg-slate-900 border border-white/10 rounded-2xl p-4 sm:p-6">
       <h4 className="text-lg font-semibold mb-4 flex items-center gap-2">
         <AlertTriangle className="w-5 h-5 text-yellow-400" />
         核心冲突汇总（BP 诉求 vs AI 研究结论）
       </h4>
       <div className="space-y-3">
         {conflicts.map((c, i) => (
-          <div key={i} className="p-4 rounded-xl bg-gray-800/50 border border-gray-700">
+          <div key={i} className="p-4 rounded-xl bg-slate-800/50 border border-white/10">
             <div className="flex items-start gap-3">
               <SeverityBadge severity={c.severity} />
               <div className="flex-1 space-y-2 min-w-0">
                 {c.field && (
-                  <span className="text-xs text-gray-500 font-mono">[{c.field}]</span>
+                  <span className="text-xs text-slate-500 font-mono">[{c.field}]</span>
                 )}
                 <p className="text-sm">
                   <span className="text-orange-400 font-medium">BP 声称：</span>
-                  <span className="text-gray-300">{c.claim}</span>
+                  <span className="text-slate-300">{c.claim}</span>
                 </p>
                 <p className="text-sm">
                   <span className="text-blue-400 font-medium">AI 研究：</span>
-                  <span className="text-gray-400">{c.evidence}</span>
+                  <span className="text-slate-400">{c.evidence}</span>
                 </p>
               </div>
             </div>
@@ -260,19 +260,19 @@ function DimensionDetailCard({ dimKey, dim, Icon }) {
   const hasEnrichedData = dim.bp_key_points?.length || dim.ai_research_findings?.length || dim.comprehensive_analysis;
 
   return (
-    <div className="border border-gray-800 rounded-xl overflow-hidden">
+    <div className="border border-white/10 rounded-xl overflow-hidden">
       <div
-        className="flex items-center gap-3 p-4 bg-gray-800/30 cursor-pointer hover:bg-gray-800/50 transition-colors"
+        className="flex items-center gap-3 p-4 bg-slate-800/30 cursor-pointer hover:bg-slate-800/50 transition-colors"
         onClick={() => setOpen(!open)}
       >
-        <div className="w-10 h-10 rounded-lg flex items-center justify-center bg-gray-800">
-          <Icon className="w-5 h-5 text-gray-400" />
+        <div className="w-10 h-10 rounded-lg flex items-center justify-center bg-slate-800">
+          <Icon className="w-5 h-5 text-slate-400" />
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="font-semibold">{dim.label || dimKey}</span>
             {dim.subtitle && (
-              <span className="text-xs text-gray-500 hidden sm:inline">{dim.subtitle}</span>
+              <span className="text-xs text-slate-500 hidden sm:inline">{dim.subtitle}</span>
             )}
             {dimKey === "external_risk" && dim.multiplier !== undefined && (
               <span className={`text-xs font-mono font-bold ${
@@ -287,9 +287,9 @@ function DimensionDetailCard({ dimKey, dim, Icon }) {
         <div className="flex items-center gap-3 shrink-0">
           <div className="text-right">
             <span className={`text-2xl font-bold ${getScoreColor(dim.score)}`}>{dim.score}</span>
-            <span className="text-xs text-gray-600 ml-0.5">/100</span>
+            <span className="text-xs text-slate-600 ml-0.5">/100</span>
           </div>
-          <div className="w-14 h-2 bg-gray-800 rounded-full overflow-hidden">
+          <div className="w-14 h-2 bg-slate-800 rounded-full overflow-hidden">
             <div
               className={`h-full rounded-full ${
                 dim.score >= 70 ? "bg-emerald-500" :
@@ -299,20 +299,20 @@ function DimensionDetailCard({ dimKey, dim, Icon }) {
             />
           </div>
           {open
-            ? <ChevronUp className="w-4 h-4 text-gray-500" />
-            : <ChevronDown className="w-4 h-4 text-gray-500" />}
+            ? <ChevronUp className="w-4 h-4 text-slate-500" />
+            : <ChevronDown className="w-4 h-4 text-slate-500" />}
         </div>
       </div>
 
       {open && (
-        <div className="border-t border-gray-800 p-4 space-y-4">
+        <div className="border-t border-white/10 p-4 space-y-4">
           {/* BP 核心声明列表 */}
           {dim.bp_key_points?.length > 0 && (
             <div>
               <div className="text-xs font-bold text-blue-400 uppercase tracking-wider mb-2">📄 BP 核心声明</div>
               <ul className="space-y-1">
                 {dim.bp_key_points.map((point, i) => (
-                  <li key={i} className="text-sm text-gray-400 leading-relaxed bg-gray-900/50 rounded-lg px-3 py-2 border-l-2 border-blue-500/40">
+                  <li key={i} className="text-sm text-slate-400 leading-relaxed bg-slate-900/50 rounded-lg px-3 py-2 border-l-2 border-blue-500/40">
                     {point}
                   </li>
                 ))}
@@ -326,7 +326,7 @@ function DimensionDetailCard({ dimKey, dim, Icon }) {
               <div className="text-xs font-bold text-purple-400 uppercase tracking-wider mb-2">🔬 AI 研究发现</div>
               <ul className="space-y-1">
                 {dim.ai_research_findings.map((finding, i) => (
-                  <li key={i} className="text-sm text-gray-400 leading-relaxed bg-gray-900/50 rounded-lg px-3 py-2 border-l-2 border-purple-500/40">
+                  <li key={i} className="text-sm text-slate-400 leading-relaxed bg-slate-900/50 rounded-lg px-3 py-2 border-l-2 border-purple-500/40">
                     {finding}
                   </li>
                 ))}
@@ -338,7 +338,7 @@ function DimensionDetailCard({ dimKey, dim, Icon }) {
           {dim.comprehensive_analysis && (
             <div>
               <div className="text-xs font-bold text-orange-400 uppercase tracking-wider mb-2">📋 综合分析</div>
-              <p className="text-sm text-gray-400 leading-relaxed bg-gray-900/50 rounded-lg p-3 border-l-2 border-orange-500/40">
+              <p className="text-sm text-slate-400 leading-relaxed bg-slate-900/50 rounded-lg p-3 border-l-2 border-orange-500/40">
                 {dim.comprehensive_analysis}
               </p>
             </div>
@@ -348,7 +348,7 @@ function DimensionDetailCard({ dimKey, dim, Icon }) {
           {dim.score_rationale && (
             <div>
               <div className="text-xs font-bold text-cyan-400 uppercase tracking-wider mb-2">💡 评分理由</div>
-              <p className="text-sm text-gray-400 leading-relaxed bg-gray-900/50 rounded-lg p-3 border-l-2 border-cyan-500/40">
+              <p className="text-sm text-slate-400 leading-relaxed bg-slate-900/50 rounded-lg p-3 border-l-2 border-cyan-500/40">
                 {dim.score_rationale}
               </p>
             </div>
@@ -374,7 +374,7 @@ function DimensionDetailCard({ dimKey, dim, Icon }) {
           {!hasEnrichedData && dim.finding && (
             <div>
               <div className="text-xs font-bold text-orange-400 uppercase tracking-wider mb-2">📋 AI 分析结论</div>
-              <p className="text-sm text-gray-400 leading-relaxed bg-gray-900/50 rounded-lg p-3 border-l-2 border-orange-500/40">
+              <p className="text-sm text-slate-400 leading-relaxed bg-slate-900/50 rounded-lg p-3 border-l-2 border-orange-500/40">
                 {dim.finding}
               </p>
             </div>
@@ -386,7 +386,7 @@ function DimensionDetailCard({ dimKey, dim, Icon }) {
               {dim.bp_claim && (
                 <div>
                   <div className="text-xs font-bold text-blue-400 uppercase tracking-wider mb-2">📄 BP 声称</div>
-                  <p className="text-sm text-gray-400 leading-relaxed bg-gray-900/50 rounded-lg p-3 border-l-2 border-blue-500/40">
+                  <p className="text-sm text-slate-400 leading-relaxed bg-slate-900/50 rounded-lg p-3 border-l-2 border-blue-500/40">
                     {dim.bp_claim}
                   </p>
                 </div>
@@ -394,7 +394,7 @@ function DimensionDetailCard({ dimKey, dim, Icon }) {
               {dim.ai_finding && (
                 <div>
                   <div className="text-xs font-bold text-purple-400 uppercase tracking-wider mb-2">🔬 AI 专家研究</div>
-                  <p className="text-sm text-gray-400 leading-relaxed bg-gray-900/50 rounded-lg p-3 border-l-2 border-purple-500/40">
+                  <p className="text-sm text-slate-400 leading-relaxed bg-slate-900/50 rounded-lg p-3 border-l-2 border-purple-500/40">
                     {dim.ai_finding}
                   </p>
                 </div>
@@ -411,12 +411,12 @@ const DimensionsDetail = memo(function DimensionsDetail({ dimensions }) {
   if (!dimensions) return null;
 
   return (
-    <div className="bg-gray-900 border border-gray-800 rounded-2xl p-4 sm:p-6">
+    <div className="bg-slate-900 border border-white/10 rounded-2xl p-4 sm:p-6">
       <h4 className="text-lg font-semibold mb-2 flex items-center gap-2">
         <Target className="w-5 h-5 text-blue-400" />
         五维评分详情
       </h4>
-      <p className="text-xs text-gray-600 mb-4 ml-7">
+      <p className="text-xs text-slate-600 mb-4 ml-7">
         点击每个维度查看 BP 声明 vs AI 专家研究对比
       </p>
       <div className="space-y-3">
@@ -438,7 +438,7 @@ const DeepResearchPanel = memo(function DeepResearchPanel({ deepResearch, thinki
   if (!hasContent) return null;
 
   return (
-    <div className="bg-gray-900 border border-gray-800 rounded-2xl p-4 sm:p-6">
+    <div className="bg-slate-900 border border-white/10 rounded-2xl p-4 sm:p-6">
       <button
         onClick={() => setShowResearch(!showResearch)}
         className="flex items-center gap-2 text-lg font-semibold w-full"
@@ -446,10 +446,10 @@ const DeepResearchPanel = memo(function DeepResearchPanel({ deepResearch, thinki
         <Microscope className="w-5 h-5 text-purple-400" />
         AI 深度研究报告（DeepResearch）
         {showResearch
-          ? <ChevronUp className="w-5 h-5 ml-auto text-gray-500" />
-          : <ChevronDown className="w-5 h-5 ml-auto text-gray-500" />}
+          ? <ChevronUp className="w-5 h-5 ml-auto text-slate-500" />
+          : <ChevronDown className="w-5 h-5 ml-auto text-slate-500" />}
       </button>
-      <p className="text-xs text-gray-600 mt-1 ml-7">
+      <p className="text-xs text-slate-600 mt-1 ml-7">
         MiniMax M2.5 知识库全量分析 · 市场数据 · 可比公司 · 估值分析 · 投资建议
       </p>
 
@@ -462,7 +462,7 @@ const DeepResearchPanel = memo(function DeepResearchPanel({ deepResearch, thinki
                 <Brain className="w-4 h-4" />
                 DeepThink 推理过程（AI 专家团队分析思路）
               </p>
-              <div className="text-sm text-gray-400 leading-relaxed whitespace-pre-wrap font-mono">
+              <div className="text-sm text-slate-400 leading-relaxed whitespace-pre-wrap font-mono">
                 {thinking}
               </div>
             </div>
@@ -470,7 +470,7 @@ const DeepResearchPanel = memo(function DeepResearchPanel({ deepResearch, thinki
 
           {/* 深度研究正文 */}
           {deepResearch && (
-            <div className="p-4 sm:p-6 bg-gray-800/50 rounded-xl overflow-x-auto">
+            <div className="p-4 sm:p-6 bg-slate-800/50 rounded-xl overflow-x-auto">
               {renderMarkdown(deepResearch)}
             </div>
           )}

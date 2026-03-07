@@ -23,7 +23,7 @@ router.get("/feedback", adminController.requireAdmin, adminController.getFeedbac
 router.post("/feedback/:id/reply", adminController.requireAdmin, adminController.replyFeedback);
 
 // 套餐管理
-router.get("/packages", adminController.getPackages);
+router.get("/packages", adminController.requireAdmin, adminController.getPackages);
 router.post("/packages", adminController.requireAdmin, adminController.createPackage);
 router.put("/packages/:id", adminController.requireAdmin, adminController.updatePackage);
 router.delete("/packages/:id", adminController.requireAdmin, adminController.deletePackage);

@@ -42,7 +42,11 @@ export default function LoginForm({ onSuccess, defaultRedirect = "/app/dashboard
         onSuccess();
       } else {
         const redirectUrl = new URLSearchParams(window.location.search).get("redirect");
-        navigate(redirectUrl || defaultRedirect);
+        // 安全校验：只允许相对路径跳转，防止开放重定向攻击
+        const safeRedirect = redirectUrl && redirectUrl.startsWith("/") && !redirectUrl.startsWith("//")
+          ? redirectUrl
+          : defaultRedirect;
+        navigate(safeRedirect);
       }
     } catch (err) {
       setError(err.message || "操作失败");

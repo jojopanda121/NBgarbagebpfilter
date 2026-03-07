@@ -5,19 +5,51 @@
 const { getDb } = require("../db");
 const adminService = require("../services/adminService");
 
-// 验证是否为管理员
+// 验证是否为管理员 + 审计日志
 const requireAdmin = (req, res, next) => {
   if (!req.user) {
     return res.status(401).json({ error: "未登录" });
   }
   // 检查用户是否为管理员
   const db = getDb();
-  const user = db.prepare("SELECT role FROM users WHERE id = ?").get(req.user.id);
+  const user = db.prepare("SELECT role, username FROM users WHERE id = ?").get(req.user.id);
   if (!user || user.role !== "admin") {
     return res.status(403).json({ error: "需要管理员权限" });
   }
+
+  // 对写操作记录审计日志（GET 请求不记录，避免日志过多）
+  if (req.method !== "GET") {
+    const ip = req.headers["x-forwarded-for"] || req.socket?.remoteAddress || "unknown";
+    const action = deriveAction(req.method, req.path);
+    const targetId = req.params.id || req.params.taskId || req.params.token || null;
+
+    // 使用 res.on('finish') 在请求完成后记录，这样可以捕获完整的请求体
+    const bodySnapshot = JSON.stringify(req.body || {});
+    res.on("finish", () => {
+      try {
+        db.prepare(
+          `INSERT INTO admin_audit_logs (admin_id, admin_username, action, method, path, ip, target_id, after_value)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+        ).run(req.user.id, user.username, action, req.method, req.originalUrl, ip, targetId, bodySnapshot);
+      } catch (err) {
+        console.error("[Audit] 审计日志写入失败:", err.message);
+      }
+    });
+  }
+
   next();
 };
+
+// 根据请求方法和路径推导操作类型
+function deriveAction(method, path) {
+  if (path.includes("/ban")) return "ban_user";
+  if (path.includes("/feedback") && path.includes("/reply")) return "reply_feedback";
+  if (path.includes("/packages")) return method === "POST" ? "create_package" : method === "PUT" ? "update_package" : "delete_package";
+  if (path.includes("/settings")) return "update_settings";
+  if (path.includes("/tokens")) return "delete_token";
+  if (path.includes("/users")) return "manage_user";
+  return `${method.toLowerCase()}_operation`;
+}
 
 // 用户管理
 const getUsers = async (req, res, next) => {
@@ -238,6 +270,28 @@ const deleteToken = async (req, res, next) => {
   }
 };
 
+// 审计日志查询
+const getAuditLogs = async (req, res, next) => {
+  try {
+    const { page, pageSize, action, admin_id } = req.query;
+    const db = getDb();
+    const limit = parseInt(pageSize) || 50;
+    const offset = ((parseInt(page) || 1) - 1) * limit;
+
+    let where = "1=1";
+    const params = [];
+    if (action) { where += " AND action = ?"; params.push(action); }
+    if (admin_id) { where += " AND admin_id = ?"; params.push(parseInt(admin_id)); }
+
+    const total = db.prepare(`SELECT COUNT(*) as count FROM admin_audit_logs WHERE ${where}`).get(...params).count;
+    const logs = db.prepare(`SELECT * FROM admin_audit_logs WHERE ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`).all(...params, limit, offset);
+
+    res.json({ logs, total, page: parseInt(page) || 1, pageSize: limit });
+  } catch (err) {
+    next(err);
+  }
+};
+
 module.exports = {
   requireAdmin,
   getUsers,
@@ -258,4 +312,5 @@ module.exports = {
   getTaskDetail,
   getTokenList,
   deleteToken,
+  getAuditLogs,
 };

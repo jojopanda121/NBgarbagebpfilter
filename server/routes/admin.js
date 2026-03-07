@@ -40,4 +40,7 @@ router.get("/tasks/:taskId", adminController.requireAdmin, adminController.getTa
 router.get("/tokens", adminController.requireAdmin, adminController.getTokenList);
 router.delete("/tokens/:token", adminController.requireAdmin, adminController.deleteToken);
 
+// 审计日志
+router.get("/audit-logs", adminController.requireAdmin, adminController.getAuditLogs);
+
 module.exports = router;

@@ -82,8 +82,8 @@ function shareTask(req, res) {
     return res.json({ share_token: task.share_token });
   }
 
-  // 生成新的 share_token（32位）
-  const shareToken = crypto.randomBytes(16).toString("hex");
+  // 生成新的 share_token（64位十六进制 = 256位熵）
+  const shareToken = crypto.randomBytes(32).toString("hex");
   const expiresAt = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString(); // 3天
 
   const db = getDb();

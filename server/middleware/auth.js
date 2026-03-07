@@ -16,7 +16,7 @@ function requireAuth(req, res, next) {
 
   const token = authHeader.slice(7);
   try {
-    const payload = jwt.verify(token, config.jwtSecret);
+    const payload = jwt.verify(token, config.jwtSecret, { algorithms: ["HS256"] });
     req.user = { id: payload.sub, username: payload.username };
     next();
   } catch (err) {
@@ -39,7 +39,7 @@ function optionalAuth(req, _res, next) {
 
   const token = authHeader.slice(7);
   try {
-    const payload = jwt.verify(token, config.jwtSecret);
+    const payload = jwt.verify(token, config.jwtSecret, { algorithms: ["HS256"] });
     req.user = { id: payload.sub, username: payload.username };
   } catch {
     req.user = null;
@@ -54,7 +54,7 @@ function signToken(user) {
   return jwt.sign(
     { sub: user.id, username: user.username },
     config.jwtSecret,
-    { expiresIn: config.jwtExpiresIn }
+    { algorithm: "HS256", expiresIn: config.jwtExpiresIn }
   );
 }
 

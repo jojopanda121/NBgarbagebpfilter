@@ -71,7 +71,7 @@ if [ "$1" = "--cos" ] || [ "$1" = "-c" ]; then
     fi
     
     # 配置coscmd
-    coscmd config -a $COS_SECRET_ID -s $COS_SECRET_KEY -r $COS_REGION -b $COS_BUCKET
+    coscmd config -a "$COS_SECRET_ID" -s "$COS_SECRET_KEY" -r "$COS_REGION" -b "$COS_BUCKET"
     
     # 上传备份
     BACKUP_KEY="backups/${DB_NAME}_${DATE}.backup.db"
@@ -102,16 +102,17 @@ if [ "$1" = "--install-cron" ] || [ "$1" = "-i" ]; then
     echo -e "${YELLOW}安装定时备份任务...${NC}"
     
     # 创建定时任务脚本（不包含COS上传）
+    PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
     CRON_SCRIPT="$(dirname "$0")/auto-backup.sh"
-    cat > "${CRON_SCRIPT}" << 'EOF'
+    cat > "${CRON_SCRIPT}" << CRONEOF
 #!/bin/bash
-cd /root/NBgarbagebpfilter
+cd "${PROJECT_DIR}"
 ./scripts/backup-db.sh
-EOF
+CRONEOF
     chmod +x "${CRON_SCRIPT}"
-    
+
     # 添加定时任务（每天凌晨3点）
-    (crontab -l 2>/dev/null | grep -v "backup-db.sh"; echo "0 3 * * * /root/NBgarbagebpfilter/scripts/backup-db.sh") | crontab -
+    (crontab -l 2>/dev/null | grep -v "backup-db.sh"; echo "0 3 * * * ${PROJECT_DIR}/scripts/backup-db.sh") | crontab -
     
     echo -e "${GREEN}✓ 已安装定时任务：每天凌晨3点自动备份${NC}"
     echo "查看定时任务: crontab -l"

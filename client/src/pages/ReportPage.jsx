@@ -233,7 +233,9 @@ export default function ReportPage() {
             <button
               onClick={() => {
                 const ref = searchParams.get("ref");
-                navigate(ref ? `/login?ref=${ref}` : "/login");
+                // 安全校验：只允许字母数字邀请码，防止参数注入
+                const safeRef = ref && /^[A-Za-z0-9]+$/.test(ref) ? ref : "";
+                navigate(safeRef ? `/login?ref=${safeRef}` : "/login");
               }}
               className="px-6 py-2.5 bg-blue-600 hover:bg-blue-500 rounded-lg font-medium transition-colors"
             >

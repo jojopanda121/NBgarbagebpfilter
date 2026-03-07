@@ -40,8 +40,11 @@ COPY . .
 # 构建前端
 RUN cd client && npm run build
 
-# 创建数据和日志目录
-RUN mkdir -p /app/data /app/logs
+# 创建数据和日志目录，以非 root 用户运行（安全加固）
+RUN groupadd -r appuser && useradd -r -g appuser -d /app appuser && \
+    mkdir -p /app/data /app/logs && \
+    chown -R appuser:appuser /app
+USER appuser
 
 # 暴露端口（默认 3001）
 EXPOSE 3001

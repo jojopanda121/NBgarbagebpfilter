@@ -64,6 +64,15 @@ if (config.env === "production") {
     );
     process.exit(1);
   }
+
+  if (!config.allowedOrigins) {
+    console.error(
+      "\n[FATAL] 生产环境必须设置 ALLOWED_ORIGINS 环境变量！\n" +
+      "  否则 CORS 将拒绝所有跨域请求。\n" +
+      "  示例: ALLOWED_ORIGINS=https://your-domain.com\n"
+    );
+    process.exit(1);
+  }
 }
 
 module.exports = config;

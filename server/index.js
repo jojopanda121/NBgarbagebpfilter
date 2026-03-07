@@ -10,6 +10,7 @@
 // ============================================================
 
 const express = require("express");
+const helmet = require("helmet");
 const cors = require("cors");
 const path = require("path");
 const fs = require("fs");
@@ -63,6 +64,10 @@ const corsOptions = (() => {
   // 开发模式：允许所有来源
   return { origin: true, credentials: true };
 })();
+app.use(helmet({
+  contentSecurityPolicy: false, // CSP 由前端框架管理
+  crossOriginEmbedderPolicy: false, // 允许嵌入外部资源
+}));
 app.use(cors(corsOptions));
 app.use(requestId);
 app.use(express.json({ limit: "50mb" }));

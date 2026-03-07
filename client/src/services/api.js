@@ -45,10 +45,9 @@ class ApiService {
         throw new ApiError(body.error || "请先绑定手机或邮箱", 4031);
       }
 
-      // 4032: 额度不足
+      // 4032: 额度不足 — 提示用户线下购买兑换码
       if (body.code === 4032) {
-        useAuthStore.getState().setRequirePayment(true);
-        throw new ApiError(body.error || "额度不足，请充值", 4032);
+        throw new ApiError(body.error || "额度不足，请联系客服购买兑换码", 4032);
       }
 
       throw new ApiError(body.error || "权限不足", 403);

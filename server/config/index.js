@@ -35,13 +35,7 @@ const config = {
   // Quota defaults
   defaultFreeQuota: parseInt(process.env.DEFAULT_FREE_QUOTA, 10) || 3,
 
-  // Payment
-  wechatPayAppId: process.env.WECHAT_PAY_APP_ID || "",
-  wechatPayMchId: process.env.WECHAT_PAY_MCH_ID || "",
-  wechatPayApiKey: process.env.WECHAT_PAY_API_KEY || "",
-  alipayAppId: process.env.ALIPAY_APP_ID || "",
-  alipayPrivateKey: process.env.ALIPAY_PRIVATE_KEY || "",
-  alipayPublicKey: process.env.ALIPAY_PUBLIC_KEY || "",
+  // [已移除] 微信/支付宝支付配置 — 改为线下兑换码模式
 
   // CORS 允许的域名（逗号分隔，生产环境必须配置）
   allowedOrigins: process.env.ALLOWED_ORIGINS || "",

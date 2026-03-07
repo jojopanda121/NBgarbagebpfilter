@@ -18,7 +18,6 @@ const useAuthStore = create((set, get) => ({
 
   // UI 状态
   requireContactBinding: false,
-  requirePayment: false,
 
   // 是否已登录
   get isLoggedIn() {
@@ -89,7 +88,6 @@ const useAuthStore = create((set, get) => ({
 
   // 业务拦截状态
   setRequireContactBinding: (v) => set({ requireContactBinding: v }),
-  setRequirePayment: (v) => set({ requirePayment: v }),
 }));
 
 export default useAuthStore;

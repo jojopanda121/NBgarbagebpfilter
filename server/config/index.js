@@ -37,6 +37,12 @@ const config = {
 
   // [已移除] 微信/支付宝支付配置 — 改为线下兑换码模式
 
+  // 腾讯云 SES 邮件服务
+  tencentSesSecretId: process.env.TENCENT_SES_SECRET_ID || "",
+  tencentSesSecretKey: process.env.TENCENT_SES_SECRET_KEY || "",
+  tencentSesFromEmail: process.env.TENCENT_SES_FROM_EMAIL || "",
+  tencentSesRegion: process.env.TENCENT_SES_REGION || "ap-hongkong",
+
   // CORS 允许的域名（逗号分隔，生产环境必须配置）
   allowedOrigins: process.env.ALLOWED_ORIGINS || "",
 

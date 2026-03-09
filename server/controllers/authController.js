@@ -153,6 +153,17 @@ function bindContact(req, res) {
     return res.status(400).json({ error: "手机号格式不正确" });
   }
 
+  // 检查邮箱是否已被其他用户绑定
+  if (email) {
+    const db = getDb();
+    const existingUser = db.prepare(
+      "SELECT id FROM users WHERE email = ? AND id != ?"
+    ).get(email, req.user.id);
+    if (existingUser) {
+      return res.status(409).json({ error: "该邮箱已被其他账号绑定" });
+    }
+  }
+
   const contact = {};
   if (email) contact.email = email;
   if (phone) contact.phone = phone;

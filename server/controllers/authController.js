@@ -102,6 +102,7 @@ async function login(req, res) {
       phone: user.phone,
       contact_bound: !!user.contact_bound,
       usage_count: user.usage_count,
+      role: user.role || "user",
     },
     quota: {
       free: quota.free,
@@ -128,6 +129,7 @@ function getMe(req, res) {
       phone: user.phone,
       contact_bound: !!user.contact_bound,
       usage_count: user.usage_count,
+      role: user.role || "user",
       created_at: user.created_at,
     },
     quota: {

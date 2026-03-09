@@ -2,8 +2,16 @@
 // adminController.js — 管理员控制器
 // ============================================================
 
+const path = require("path");
+const fs = require("fs");
 const { getDb } = require("../db");
 const adminService = require("../services/adminService");
+
+// 图片上传目录
+const UPLOAD_DIR = path.join(__dirname, "..", "..", "client", "public", "uploads");
+if (!fs.existsSync(UPLOAD_DIR)) {
+  fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+}
 
 // 验证是否为管理员 + 审计日志
 const requireAdmin = (req, res, next) => {
@@ -292,6 +300,126 @@ const getAuditLogs = async (req, res, next) => {
   }
 };
 
+// ── 站点内容管理 ──
+
+// 获取站点内容（公开接口，无需管理员权限）
+const getSiteContent = async (req, res, next) => {
+  try {
+    const { slug } = req.params;
+    const db = getDb();
+    const content = db.prepare("SELECT * FROM site_content WHERE slug = ?").get(slug);
+    if (!content) {
+      return res.json({ slug, title: "", body: "", images: [] });
+    }
+    res.json({
+      ...content,
+      images: JSON.parse(content.images || "[]"),
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// 更新站点内容（管理员）
+const updateSiteContent = async (req, res, next) => {
+  try {
+    const { slug } = req.params;
+    const { title, body } = req.body;
+    const db = getDb();
+
+    const existing = db.prepare("SELECT id FROM site_content WHERE slug = ?").get(slug);
+    if (existing) {
+      db.prepare(
+        "UPDATE site_content SET title = ?, body = ?, updated_at = datetime('now') WHERE slug = ?"
+      ).run(title || "", body || "", slug);
+    } else {
+      db.prepare(
+        "INSERT INTO site_content (slug, title, body) VALUES (?, ?, ?)"
+      ).run(slug, title || "", body || "");
+    }
+
+    res.json({ success: true });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// 上传站点内容图片（管理员，最多5张）
+const uploadSiteImage = async (req, res, next) => {
+  try {
+    const { slug } = req.params;
+    if (!req.file) {
+      return res.status(400).json({ error: "请上传图片文件" });
+    }
+
+    const db = getDb();
+    const content = db.prepare("SELECT images FROM site_content WHERE slug = ?").get(slug);
+    const images = content ? JSON.parse(content.images || "[]") : [];
+
+    if (images.length >= 5) {
+      // 删除上传的临时文件
+      fs.unlinkSync(req.file.path);
+      return res.status(400).json({ error: "最多上传 5 张图片" });
+    }
+
+    // 移动文件到 uploads 目录
+    const ext = path.extname(req.file.originalname) || ".png";
+    const filename = `site_${slug}_${Date.now()}${ext}`;
+    const destPath = path.join(UPLOAD_DIR, filename);
+    fs.renameSync(req.file.path, destPath);
+
+    const imageUrl = `/uploads/${filename}`;
+    images.push(imageUrl);
+
+    if (content) {
+      db.prepare(
+        "UPDATE site_content SET images = ?, updated_at = datetime('now') WHERE slug = ?"
+      ).run(JSON.stringify(images), slug);
+    } else {
+      db.prepare(
+        "INSERT INTO site_content (slug, images) VALUES (?, ?)"
+      ).run(slug, JSON.stringify(images));
+    }
+
+    res.json({ success: true, imageUrl, images });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// 删除站点内容图片（管理员）
+const deleteSiteImage = async (req, res, next) => {
+  try {
+    const { slug } = req.params;
+    const { imageUrl } = req.body;
+    if (!imageUrl) {
+      return res.status(400).json({ error: "请指定要删除的图片" });
+    }
+
+    const db = getDb();
+    const content = db.prepare("SELECT images FROM site_content WHERE slug = ?").get(slug);
+    if (!content) {
+      return res.status(404).json({ error: "内容不存在" });
+    }
+
+    const images = JSON.parse(content.images || "[]").filter((img) => img !== imageUrl);
+    db.prepare(
+      "UPDATE site_content SET images = ?, updated_at = datetime('now') WHERE slug = ?"
+    ).run(JSON.stringify(images), slug);
+
+    // 删除文件
+    const filename = path.basename(imageUrl);
+    const filePath = path.join(UPLOAD_DIR, filename);
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+    }
+
+    res.json({ success: true, images });
+  } catch (err) {
+    next(err);
+  }
+};
+
 module.exports = {
   requireAdmin,
   getUsers,
@@ -313,4 +441,8 @@ module.exports = {
   getTokenList,
   deleteToken,
   getAuditLogs,
+  getSiteContent,
+  updateSiteContent,
+  uploadSiteImage,
+  deleteSiteImage,
 };

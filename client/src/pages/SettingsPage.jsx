@@ -4,7 +4,6 @@ import {
   Wallet,
   Lock,
   Mail,
-  Phone,
   Save,
   Loader2,
   CheckCircle,
@@ -38,20 +37,26 @@ const TABS = [
   { key: "feedback", label: "意见反馈", icon: MessageSquare },
 ];
 
-const ADMIN_TABS = [
+// 管理员专属 tab（管理员中心显示）
+const ADMIN_ONLY_TABS = [
   { key: "users", label: "用户管理", icon: Users },
   { key: "tasks", label: "分析记录", icon: FileText },
   { key: "stats", label: "数据统计", icon: BarChart3 },
   { key: "admin_feedback", label: "反馈管理", icon: MessageSquare },
   { key: "packages", label: "套餐配置", icon: Package },
+  { key: "site_content", label: "内容管理", icon: Edit },
   { key: "settings", label: "系统设置", icon: SettingsIcon },
-  ...TABS,
   { key: "admin", label: "兑换码管理", icon: Shield },
 ];
 
-export default function SettingsPage() {
+const ADMIN_TABS = [
+  ...ADMIN_ONLY_TABS,
+  ...TABS,
+];
+
+export default function SettingsPage({ adminMode = false }) {
   const [searchParams] = useSearchParams();
-  const initialTab = searchParams.get("tab") || "account";
+  const initialTab = searchParams.get("tab") || (adminMode ? "users" : "account");
   const [activeTab, setActiveTab] = useState(initialTab);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState(null);
@@ -63,11 +68,6 @@ export default function SettingsPage() {
   const [emailCode, setEmailCode] = useState("");
   const [sendingEmailCode, setSendingEmailCode] = useState(false);
   const [emailCountdown, setEmailCountdown] = useState(0);
-
-  const [phone, setPhone] = useState("");
-  const [phoneCode, setPhoneCode] = useState("");
-  const [sendingPhoneCode, setSendingPhoneCode] = useState(false);
-  const [phoneCountdown, setPhoneCountdown] = useState(0);
 
   const [oldPassword, setOldPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -140,7 +140,6 @@ export default function SettingsPage() {
         ]);
         setProfile(profileData);
         setEmail(profileData.email || "");
-        setPhone(profileData.phone || "");
         setIsAdmin(roleData.isAdmin || false);
       } catch (err) {
         console.error("加载用户信息失败:", err);
@@ -322,35 +321,6 @@ export default function SettingsPage() {
     }
   };
 
-  // 发送手机验证码
-  const handleSendPhoneCode = async () => {
-    if (!phone || phone.length !== 11) {
-      setMessage({ type: "error", text: "请输入正确的手机号" });
-      return;
-    }
-
-    setSendingPhoneCode(true);
-    setMessage(null);
-    try {
-      await api.post("/api/verify/send", { phone });
-      setMessage({ type: "success", text: "验证码已发送" });
-      setPhoneCountdown(60);
-      const timer = setInterval(() => {
-        setPhoneCountdown((prev) => {
-          if (prev <= 1) {
-            clearInterval(timer);
-            return 0;
-          }
-          return prev - 1;
-        });
-      }, 1000);
-    } catch (err) {
-      setMessage({ type: "error", text: err.message || "发送失败" });
-    } finally {
-      setSendingPhoneCode(false);
-    }
-  };
-
   // 绑定邮箱
   const handleBindEmail = async () => {
     if (!emailCode) {
@@ -362,32 +332,9 @@ export default function SettingsPage() {
     setMessage(null);
     try {
       await api.post("/api/verify/check", { email, code: emailCode });
-      await api.put("/api/user/profile", { email });
+      await api.post("/api/auth/bind-contact", { email });
       setMessage({ type: "success", text: "邮箱绑定成功" });
       setEmailCode("");
-      const data = await api.get("/api/user/profile");
-      setProfile(data);
-    } catch (err) {
-      setMessage({ type: "error", text: err.message || "绑定失败" });
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // 绑定手机号
-  const handleBindPhone = async () => {
-    if (!phoneCode) {
-      setMessage({ type: "error", text: "请输入验证码" });
-      return;
-    }
-
-    setLoading(true);
-    setMessage(null);
-    try {
-      await api.post("/api/verify/check", { phone, code: phoneCode });
-      await api.put("/api/user/profile", { phone });
-      setMessage({ type: "success", text: "手机号绑定成功" });
-      setPhoneCode("");
       const data = await api.get("/api/user/profile");
       setProfile(data);
     } catch (err) {
@@ -498,11 +445,14 @@ export default function SettingsPage() {
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-8">
-      <h1 className="text-2xl font-bold mb-6">用户中心 {isAdmin && <span className="text-xs bg-yellow-500/20 text-yellow-400 px-2 py-0.5 rounded">管理员</span>}</h1>
+      <h1 className="text-2xl font-bold mb-6">
+        {adminMode ? "管理员中心" : "用户中心"}
+        {!adminMode && isAdmin && <span className="text-xs bg-yellow-500/20 text-yellow-400 px-2 py-0.5 rounded ml-2">管理员</span>}
+      </h1>
 
       {/* Tab 切换 */}
       <div className="flex gap-2 mb-6 border-b border-white/10 pb-4 overflow-x-auto">
-        {(isAdmin ? ADMIN_TABS : TABS).map((tab) => (
+        {(adminMode ? ADMIN_ONLY_TABS : isAdmin ? ADMIN_TABS : TABS).map((tab) => (
           <button
             key={tab.key}
             onClick={() => setActiveTab(tab.key)}
@@ -524,12 +474,9 @@ export default function SettingsPage() {
       {/* 账户安全 Tab */}
       {activeTab === "account" && (
         <AccountTab
-          profile={profile} email={setEmail} emailCode={emailCode} setEmailCode={setEmailCode}
+          profile={profile} email={email} setEmail={setEmail} emailCode={emailCode} setEmailCode={setEmailCode}
           sendingEmailCode={sendingEmailCode} emailCountdown={emailCountdown}
           handleSendEmailCode={handleSendEmailCode} handleBindEmail={handleBindEmail}
-          phone={phone} setPhone={setPhone} phoneCode={phoneCode} setPhoneCode={setPhoneCode}
-          sendingPhoneCode={sendingPhoneCode} phoneCountdown={phoneCountdown}
-          handleSendPhoneCode={handleSendPhoneCode} handleBindPhone={handleBindPhone}
           oldPassword={oldPassword} setOldPassword={setOldPassword}
           newPassword={newPassword} setNewPassword={setNewPassword}
           confirmPassword={confirmPassword} setConfirmPassword={setConfirmPassword}
@@ -597,6 +544,11 @@ export default function SettingsPage() {
       {/* 套餐配置 Tab (管理员) */}
       {activeTab === "packages" && isAdmin && (
         <PackagesTab packages={packages} setPackages={setPackages} setMessage={setMessage} />
+      )}
+
+      {/* 内容管理 Tab (管理员) */}
+      {activeTab === "site_content" && isAdmin && (
+        <SiteContentTab setMessage={setMessage} />
       )}
 
       {/* 系统设置 Tab (管理员) */}
@@ -750,7 +702,7 @@ function MyStatsTab({ stats }) {
 }
 
 // 账户安全组件
-function AccountTab({ profile, email, setEmail, emailCode, setEmailCode, sendingEmailCode, emailCountdown, handleSendEmailCode, handleBindEmail, phone, setPhone, phoneCode, setPhoneCode, sendingPhoneCode, phoneCountdown, handleSendPhoneCode, handleBindPhone, oldPassword, setOldPassword, newPassword, setNewPassword, confirmPassword, setConfirmPassword, loading, setMessage }) {
+function AccountTab({ profile, email, setEmail, emailCode, setEmailCode, sendingEmailCode, emailCountdown, handleSendEmailCode, handleBindEmail, oldPassword, setOldPassword, newPassword, setNewPassword, confirmPassword, setConfirmPassword, loading, setMessage }) {
   return (
     <div className="space-y-6">
       <div className="bg-slate-900/50 border border-white/10 rounded-xl p-6">
@@ -763,7 +715,7 @@ function AccountTab({ profile, email, setEmail, emailCode, setEmailCode, sending
           <div>
             <label className="block text-sm text-slate-400 mb-1">邮箱</label>
             <div className="space-y-2">
-              <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="请输入邮箱" disabled={profile?.email} className="w-full px-4 py-2 bg-slate-800 border border-white/10 rounded-lg focus:border-blue-500 focus:outline-none disabled:opacity-50" />
+              <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="请输入邮箱" disabled={!!profile?.email} className="w-full px-4 py-2 bg-slate-800 border border-white/10 rounded-lg focus:border-blue-500 focus:outline-none disabled:opacity-50" />
               {profile?.email ? (
                 <p className="text-sm text-green-400 flex items-center gap-1"><CheckCircle className="w-4 h-4" /> 已绑定邮箱</p>
               ) : (
@@ -774,24 +726,6 @@ function AccountTab({ profile, email, setEmail, emailCode, setEmailCode, sending
                     {emailCountdown > 0 ? `${emailCountdown}s` : "发送验证码"}
                   </button>
                   <button onClick={handleBindEmail} disabled={loading || !emailCode} className="px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:bg-slate-700 rounded-lg">绑定</button>
-                </div>
-              )}
-            </div>
-          </div>
-          <div>
-            <label className="block text-sm text-slate-400 mb-1">手机号</label>
-            <div className="space-y-2">
-              <input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="请输入手机号" disabled={profile?.phone} className="w-full px-4 py-2 bg-slate-800 border border-white/10 rounded-lg focus:border-blue-500 focus:outline-none disabled:opacity-50" />
-              {profile?.phone ? (
-                <p className="text-sm text-green-400 flex items-center gap-1"><CheckCircle className="w-4 h-4" /> 已绑定手机号</p>
-              ) : (
-                <div className="flex gap-2">
-                  <input type="text" value={phoneCode} onChange={(e) => setPhoneCode(e.target.value)} placeholder="输入验证码" className="flex-1 px-4 py-2 bg-slate-800 border border-white/10 rounded-lg focus:border-blue-500 focus:outline-none" />
-                  <button onClick={handleSendPhoneCode} disabled={sendingPhoneCode || phoneCountdown > 0} className="px-4 py-2 bg-slate-700 hover:bg-slate-600 disabled:bg-slate-800 disabled:text-slate-500 rounded-lg font-medium flex items-center gap-2">
-                    {sendingPhoneCode ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-                    {phoneCountdown > 0 ? `${phoneCountdown}s` : "发送验证码"}
-                  </button>
-                  <button onClick={handleBindPhone} disabled={loading || !phoneCode} className="px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:bg-slate-700 rounded-lg">绑定</button>
                 </div>
               )}
             </div>
@@ -817,7 +751,7 @@ function AccountTab({ profile, email, setEmail, emailCode, setEmailCode, sending
       <div className="bg-slate-900/50 border border-white/10 rounded-xl p-6">
         <h3 className="text-lg font-bold mb-4">账户状态</h3>
         <div className="grid grid-cols-2 gap-4">
-          <div className="p-4 bg-slate-800 rounded-lg"><div className="text-sm text-slate-400 mb-1">账号绑定</div><div className="font-medium">{profile?.contact_bound ? <span className="text-green-400">已绑定</span> : <span className="text-yellow-400">未绑定</span>}</div></div>
+          <div className="p-4 bg-slate-800 rounded-lg"><div className="text-sm text-slate-400 mb-1">邮箱绑定</div><div className="font-medium">{profile?.email ? <span className="text-green-400">已绑定</span> : <span className="text-yellow-400">未绑定</span>}</div></div>
           <div className="p-4 bg-slate-800 rounded-lg"><div className="text-sm text-slate-400 mb-1">累计使用</div><div className="font-medium">{profile?.usage_count || 0} 次</div></div>
         </div>
       </div>
@@ -904,10 +838,12 @@ function TokenTab({ redeemToken, setRedeemToken, redeeming, handleRedeem, genera
   const [inviteCode, setInviteCode] = useState("");
   const [referralStats, setReferralStats] = useState(null);
   const [inviteCopied, setInviteCopied] = useState(false);
+  const [purchaseInfo, setPurchaseInfo] = useState(null);
 
   useEffect(() => {
     api.get("/api/user/invite-code").then((d) => setInviteCode(d.invite_code || "")).catch(() => {});
     api.get("/api/user/referral-stats").then((d) => setReferralStats(d)).catch(() => {});
+    api.get("/api/admin/site-content/purchase_info").then((d) => setPurchaseInfo(d)).catch(() => {});
   }, []);
 
   const PRICING_PLANS = [
@@ -957,20 +893,26 @@ function TokenTab({ redeemToken, setRedeemToken, redeeming, handleRedeem, genera
           ))}
         </div>
 
-        {/* 管理员微信二维码 */}
-        <div className="flex flex-col sm:flex-row items-center gap-4 p-4 bg-slate-800/50 border border-white/10 rounded-xl">
-          <img
-            src="/wechat-qr.png"
-            alt="管理员微信二维码"
-            className="w-32 h-32 rounded-lg bg-white p-1"
-            onError={(e) => { e.target.style.display = 'none'; }}
-          />
-          <div className="text-center sm:text-left">
-            <p className="text-white font-medium mb-1">扫码添加管理员微信购买兑换码</p>
-            <p className="text-sm text-slate-400">微信号：<span className="text-blue-400">pe_ren</span></p>
-            <p className="text-xs text-slate-500 mt-2">付款后管理员会发送兑换码给您，在上方输入即可充值</p>
+        {/* 购买说明（管理员可配置） */}
+        {purchaseInfo && (
+          <div className="p-4 bg-slate-800/50 border border-white/10 rounded-xl">
+            <div className="flex flex-col sm:flex-row items-center gap-4">
+              {purchaseInfo.images?.length > 0 && (
+                <div className="flex gap-3 shrink-0">
+                  {purchaseInfo.images.map((img, i) => (
+                    <img key={i} src={img} alt={`购买说明图片${i + 1}`} className="w-32 h-32 rounded-lg bg-white p-1 object-contain" />
+                  ))}
+                </div>
+              )}
+              <div className="text-center sm:text-left">
+                {purchaseInfo.title && <p className="text-white font-medium mb-1">{purchaseInfo.title}</p>}
+                {purchaseInfo.body && purchaseInfo.body.split("\n").map((line, i) => (
+                  <p key={i} className="text-sm text-slate-400">{line}</p>
+                ))}
+              </div>
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
       {/* 邀请好友得额度 */}
@@ -1583,6 +1525,149 @@ function SystemSettingsTab({ settings, setSettings, setMessage }) {
             <p className="text-xs text-slate-500 mt-1">开启后普通用户无法使用分析功能，仅管理员可访问</p>
           </div>
           <button onClick={handleSave} className="px-6 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg">保存设置</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// 站点内容管理组件
+function SiteContentTab({ setMessage }) {
+  const [content, setContent] = useState({ title: "", body: "", images: [] });
+  const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = React.useRef(null);
+
+  useEffect(() => {
+    api.get("/api/admin/site-content/purchase_info").then((d) => {
+      setContent({ title: d.title || "", body: d.body || "", images: d.images || [] });
+    }).catch(() => {});
+  }, []);
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await api.put("/api/admin/site-content/purchase_info", { title: content.title, body: content.body });
+      setMessage({ type: "success", text: "内容已保存" });
+    } catch (err) {
+      setMessage({ type: "error", text: err.message });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleUploadImage = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    if (content.images.length >= 5) {
+      setMessage({ type: "error", text: "最多上传 5 张图片" });
+      return;
+    }
+    setUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append("image", file);
+      const result = await api.post("/api/admin/site-content/purchase_info/image", formData);
+      setContent({ ...content, images: result.images });
+      setMessage({ type: "success", text: "图片上传成功" });
+    } catch (err) {
+      setMessage({ type: "error", text: err.message });
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
+  const handleDeleteImage = async (imageUrl) => {
+    try {
+      const result = await api.delete("/api/admin/site-content/purchase_info/image", { imageUrl });
+      setContent({ ...content, images: result.images || content.images.filter((img) => img !== imageUrl) });
+      setMessage({ type: "success", text: "图片已删除" });
+    } catch (err) {
+      setMessage({ type: "error", text: err.message });
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="bg-slate-900/50 border border-white/10 rounded-xl p-6">
+        <h3 className="text-lg font-bold mb-4">购买说明内容管理</h3>
+        <p className="text-sm text-slate-400 mb-4">此内容展示在"兑换额度"页面的购买说明区域</p>
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm text-slate-400 mb-1">标题</label>
+            <input
+              type="text"
+              value={content.title}
+              onChange={(e) => setContent({ ...content, title: e.target.value })}
+              placeholder="如：扫码添加管理员微信购买兑换码"
+              className="w-full px-4 py-2 bg-slate-800 border border-white/10 rounded-lg text-white"
+            />
+          </div>
+          <div>
+            <label className="block text-sm text-slate-400 mb-1">正文（支持换行）</label>
+            <textarea
+              value={content.body}
+              onChange={(e) => setContent({ ...content, body: e.target.value })}
+              placeholder="如：微信号：xxx&#10;付款后管理员会发送兑换码"
+              rows={4}
+              className="w-full px-4 py-2 bg-slate-800 border border-white/10 rounded-lg text-white"
+            />
+          </div>
+          <button onClick={handleSave} disabled={saving} className="px-6 py-2 bg-blue-600 hover:bg-blue-500 disabled:bg-slate-700 rounded-lg flex items-center gap-2">
+            {saving && <Loader2 className="w-4 h-4 animate-spin" />}保存文字内容
+          </button>
+        </div>
+      </div>
+
+      <div className="bg-slate-900/50 border border-white/10 rounded-xl p-6">
+        <h3 className="text-lg font-bold mb-4">图片管理（最多 5 张）</h3>
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-4 mb-4">
+          {content.images.map((img, i) => (
+            <div key={i} className="relative group">
+              <img src={img} alt={`图片${i + 1}`} className="w-full h-32 object-contain bg-white rounded-lg p-1" />
+              <button
+                onClick={() => handleDeleteImage(img)}
+                className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 hover:bg-red-400 rounded-full flex items-center justify-center text-white text-xs opacity-0 group-hover:opacity-100 transition-opacity"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </div>
+          ))}
+          {content.images.length < 5 && (
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploading}
+              className="w-full h-32 border-2 border-dashed border-white/10 hover:border-white/30 rounded-lg flex flex-col items-center justify-center gap-1 text-slate-500 hover:text-slate-300 transition-colors"
+            >
+              {uploading ? <Loader2 className="w-6 h-6 animate-spin" /> : <span className="text-2xl">+</span>}
+              <span className="text-xs">上传图片</span>
+            </button>
+          )}
+        </div>
+        <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleUploadImage} />
+        <p className="text-xs text-slate-500">支持 PNG、JPG 格式，单张最大 5MB</p>
+      </div>
+
+      {/* 预览 */}
+      <div className="bg-slate-900/50 border border-white/10 rounded-xl p-6">
+        <h3 className="text-lg font-bold mb-4">预览效果</h3>
+        <div className="p-4 bg-slate-800/50 border border-white/10 rounded-xl">
+          <div className="flex flex-col sm:flex-row items-center gap-4">
+            {content.images.length > 0 && (
+              <div className="flex gap-3 shrink-0">
+                {content.images.map((img, i) => (
+                  <img key={i} src={img} alt="" className="w-32 h-32 rounded-lg bg-white p-1 object-contain" />
+                ))}
+              </div>
+            )}
+            <div className="text-center sm:text-left">
+              {content.title && <p className="text-white font-medium mb-1">{content.title}</p>}
+              {content.body && content.body.split("\n").map((line, i) => (
+                <p key={i} className="text-sm text-slate-400">{line}</p>
+              ))}
+            </div>
+          </div>
         </div>
       </div>
     </div>

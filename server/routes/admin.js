@@ -3,12 +3,31 @@
 // ============================================================
 
 const express = require("express");
+const os = require("os");
+const multer = require("multer");
 const router = express.Router();
 const { requireAuth } = require("../middleware/auth");
 const adminController = require("../controllers/adminController");
 
+const imageUpload = multer({
+  dest: os.tmpdir(),
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    if (file.mimetype.startsWith("image/")) cb(null, true);
+    else cb(new Error("仅支持图片文件"));
+  },
+});
+
+// 公开接口：获取站点内容（无需登录）
+router.get("/site-content/:slug", adminController.getSiteContent);
+
 // 所有路由需要登录
 router.use(requireAuth);
+
+// 站点内容管理（管理员）
+router.put("/site-content/:slug", adminController.requireAdmin, adminController.updateSiteContent);
+router.post("/site-content/:slug/image", adminController.requireAdmin, imageUpload.single("image"), adminController.uploadSiteImage);
+router.delete("/site-content/:slug/image", adminController.requireAdmin, adminController.deleteSiteImage);
 
 // 用户管理
 router.get("/users", adminController.requireAdmin, adminController.getUsers);

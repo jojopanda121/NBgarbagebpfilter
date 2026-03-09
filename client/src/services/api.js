@@ -42,7 +42,7 @@ class ApiService {
       // 4031: 需要绑定联系方式
       if (body.code === 4031) {
         useAuthStore.getState().setRequireContactBinding(true);
-        throw new ApiError(body.error || "请先绑定手机或邮箱", 4031);
+        throw new ApiError(body.error || "请先绑定邮箱", 4031);
       }
 
       // 4032: 额度不足 — 提示用户线下购买兑换码
@@ -79,10 +79,10 @@ class ApiService {
     });
   }
 
-  delete(url) {
-    return this.request(url, {
-      method: "DELETE",
-    });
+  delete(url, data) {
+    const options = { method: "DELETE" };
+    if (data) options.body = JSON.stringify(data);
+    return this.request(url, options);
   }
 
   /** 上传文件（带进度） */

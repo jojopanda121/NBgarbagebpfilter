@@ -14,7 +14,7 @@ const { getDb } = require("../db");
 function getUserById(userId) {
   const db = getDb();
   return db.prepare(
-    "SELECT id, username, email, phone, contact_bound, usage_count, created_at FROM users WHERE id = ?"
+    "SELECT id, username, email, phone, contact_bound, usage_count, role, created_at FROM users WHERE id = ?"
   ).get(userId);
 }
 
@@ -26,7 +26,7 @@ function getUserById(userId) {
 function getUserByUsername(username) {
   const db = getDb();
   return db.prepare(
-    "SELECT id, username, password_hash, email, phone, contact_bound FROM users WHERE username = ?"
+    "SELECT id, username, password_hash, email, phone, contact_bound, role FROM users WHERE username = ?"
   ).get(username);
 }
 

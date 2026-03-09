@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from "react";
-import { Brain, Download, LogOut, User, Zap, FileText, ChevronDown } from "lucide-react";
+import { Brain, Download, LogOut, User, Zap, FileText, ChevronDown, Shield } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import useAuthStore from "../../store/useAuthStore";
 import useAnalysisStore from "../../store/useAnalysisStore";
@@ -134,6 +134,16 @@ export default function Header() {
                       <Zap className="w-4 h-4 text-yellow-400" />
                       兑换额度
                     </button>
+                    {user?.role === "admin" && (
+                      <button
+                        onClick={() => { setShowDropdown(false); navigate("/admin"); }}
+                        className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-yellow-400 hover:bg-slate-800 transition-colors"
+                        role="menuitem"
+                      >
+                        <Shield className="w-4 h-4" />
+                        管理员中心
+                      </button>
+                    )}
                     <div className="border-t border-white/10 mt-1 pt-1">
                       <button
                         onClick={handleLogout}

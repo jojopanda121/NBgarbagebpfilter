@@ -4,14 +4,15 @@
 // ============================================================
 
 const crypto = require("crypto");
+const config = require("../config");
 const { saveCode, verifyCode: dbVerifyCode, canSend } = require("./verificationStore");
 
-// 腾讯云 SES 配置
+// 腾讯云 SES 配置（从集中配置读取，不直接读 process.env）
 const SES_CONFIG = {
-  secretId: process.env.TENCENT_SES_SECRET_ID || "",
-  secretKey: process.env.TENCENT_SES_SECRET_KEY || "",
-  fromEmail: process.env.TENCENT_SES_FROM_EMAIL || "",
-  region: process.env.TENCENT_SES_REGION || "ap-hongkong",
+  secretId: config.tencentSesSecretId,
+  secretKey: config.tencentSesSecretKey,
+  fromEmail: config.tencentSesFromEmail,
+  region: config.tencentSesRegion,
 };
 
 const CODE_EXPIRE_TIME = 5 * 60 * 1000; // 5 分钟

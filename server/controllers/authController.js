@@ -5,7 +5,7 @@
 
 const bcrypt = require("bcryptjs");
 const { signToken } = require("../middleware/auth");
-const { isValidUsername, isValidPassword, isValidEmail, isValidPhone } = require("../utils/validation");
+const { isValidUsername, isValidPassword, isValidEmail } = require("../utils/validation");
 const { createUser, getUserByUsername, bindUserContact, getUserById } = require("../services/userService");
 const { initializeQuota, getUserQuota } = require("../services/quotaService");
 const { getUserByInviteCode, processReferral } = require("../services/referralService");
@@ -63,6 +63,8 @@ async function register(req, res) {
       id: result.id,
       username: result.username,
       contact_bound: false,
+      role: "user",
+      usage_count: 0,
     },
     quota: {
       free: defaultFreeQuota,
@@ -99,9 +101,8 @@ async function login(req, res) {
       id: user.id,
       username: user.username,
       email: user.email,
-      phone: user.phone,
       contact_bound: !!user.contact_bound,
-      usage_count: user.usage_count,
+      usage_count: user.usage_count || 0,
       role: user.role || "user",
     },
     quota: {
@@ -126,9 +127,8 @@ function getMe(req, res) {
       id: user.id,
       username: user.username,
       email: user.email,
-      phone: user.phone,
       contact_bound: !!user.contact_bound,
-      usage_count: user.usage_count,
+      usage_count: user.usage_count || 0,
       role: user.role || "user",
       created_at: user.created_at,
     },
@@ -139,40 +139,30 @@ function getMe(req, res) {
   });
 }
 
-/** POST /api/auth/bind-contact — 绑定手机或邮箱（渐进式认证） */
+/** POST /api/auth/bind-contact — 绑定邮箱（渐进式认证） */
 function bindContact(req, res) {
-  const { email, phone } = req.body;
+  const { email } = req.body;
 
-  if (!email && !phone) {
-    return res.status(400).json({ error: "请提供邮箱或手机号" });
+  if (!email) {
+    return res.status(400).json({ error: "请提供邮箱地址" });
   }
 
-  // 简单格式校验
-  if (email && !isValidEmail(email)) {
+  if (!isValidEmail(email)) {
     return res.status(400).json({ error: "邮箱格式不正确" });
-  }
-  if (phone && !isValidPhone(phone)) {
-    return res.status(400).json({ error: "手机号格式不正确" });
   }
 
   // 检查邮箱是否已被其他用户绑定
-  if (email) {
-    const db = getDb();
-    const existingUser = db.prepare(
-      "SELECT id FROM users WHERE email = ? AND id != ?"
-    ).get(email, req.user.id);
-    if (existingUser) {
-      return res.status(409).json({ error: "该邮箱已被其他账号绑定" });
-    }
+  const db = getDb();
+  const existingUser = db.prepare(
+    "SELECT id FROM users WHERE email = ? AND id != ?"
+  ).get(email, req.user.id);
+  if (existingUser) {
+    return res.status(409).json({ error: "该邮箱已被其他账号绑定" });
   }
 
-  const contact = {};
-  if (email) contact.email = email;
-  if (phone) contact.phone = phone;
+  bindUserContact(req.user.id, { email });
 
-  bindUserContact(req.user.id, contact);
-
-  res.json({ success: true, message: "联系方式绑定成功" });
+  res.json({ success: true, message: "邮箱绑定成功" });
 }
 
 module.exports = { register, login, getMe, bindContact };

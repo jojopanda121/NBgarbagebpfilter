@@ -23,9 +23,8 @@ function getProfile(req, res) {
     id: user.id,
     username: user.username,
     email: user.email,
-    phone: user.phone,
     contact_bound: !!user.contact_bound,
-    usage_count: user.usage_count,
+    usage_count: user.usage_count || 0,
     created_at: user.created_at,
     quota,
   });

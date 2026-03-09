@@ -358,8 +358,8 @@ const getAllTasks = (options = {}) => {
   }
 
   if (search) {
-    whereClause += " AND (u.username LIKE ? OR t.id LIKE ?)";
-    params.push(`%${search}%`, `%${search}%`);
+    whereClause += " AND (u.username LIKE ? OR t.id LIKE ? OR t.archive_number LIKE ?)";
+    params.push(`%${search}%`, `%${search}%`, `%${search}%`);
   }
 
   const countQuery = `SELECT COUNT(*) as total FROM tasks t LEFT JOIN users u ON t.user_id = u.id WHERE ${whereClause}`;

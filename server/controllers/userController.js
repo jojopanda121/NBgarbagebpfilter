@@ -125,8 +125,20 @@ function getOrders(req, res) {
 /** GET /api/user/usage — 获取消费明细 */
 function getUsage(req, res) {
   const db = getDb();
+
+  // 动态检测可选列
+  const tableInfo = db.prepare("PRAGMA table_info(tasks)").all();
+  const colNames = tableInfo.map((col) => col.name);
+  const hasTitle = colNames.includes("title");
+  const hasArchiveNumber = colNames.includes("archive_number");
+
+  const extraCols = [
+    hasTitle ? ", title" : "",
+    hasArchiveNumber ? ", archive_number" : "",
+  ].join("");
+
   const usage = db.prepare(`
-    SELECT id, status, percentage, stage, message, created_at, updated_at
+    SELECT id, status, percentage, stage, message${extraCols}, created_at, updated_at
     FROM tasks
     WHERE user_id = ? AND status IN ('complete', 'error')
     ORDER BY created_at DESC
@@ -136,6 +148,8 @@ function getUsage(req, res) {
   res.json(usage.map(t => ({
     id: t.id,
     type: "分析",
+    title: t.title || "BP 尽调分析",
+    archive_number: t.archive_number || null,
     amount: 1,
     status: t.status,
     created_at: t.created_at,

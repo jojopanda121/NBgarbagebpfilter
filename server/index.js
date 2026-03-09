@@ -91,6 +91,11 @@ app.get("/api/health", (_req, res) => {
   res.json({ status: "ok", model: getModelName(), search: "minimax_builtin", version: "3.0.0" });
 });
 
+// ── 静态文件：上传的图片 ──
+const uploadsDir = path.join(__dirname, "..", "client", "public", "uploads");
+if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
+app.use("/uploads", express.static(uploadsDir));
+
 // ── 静态文件服务（生产模式：SPA）──
 const clientBuildDir = path.join(__dirname, "..", "client", "build");
 if (fs.existsSync(clientBuildDir)) {

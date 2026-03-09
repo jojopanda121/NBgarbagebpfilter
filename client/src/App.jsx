@@ -14,6 +14,7 @@ const DemoReportPage = lazy(() => import("./pages/DemoReportPage"));
 const ReportPage = lazy(() => import("./pages/ReportPage"));
 const SettingsPage = lazy(() => import("./pages/SettingsPage"));
 const HistoryPage = lazy(() => import("./pages/HistoryPage"));
+const AdminPage = lazy(() => import("./pages/AdminPage"));
 
 // 加载中组件
 function LoadingFallback() {
@@ -85,6 +86,9 @@ export default function App() {
 
                 {/* 用户中心 */}
                 <Route path="/settings" element={<SettingsPage />} />
+
+                {/* 管理员中心 */}
+                <Route path="/admin" element={<AdminPage />} />
               </Route>
 
               {/* 404 重定向到首页 */}

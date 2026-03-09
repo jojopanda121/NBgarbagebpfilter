@@ -1,6 +1,8 @@
 import React, { useRef, useCallback, memo } from "react";
-import { Upload, FileText, XCircle, Lock, Loader2 } from "lucide-react";
+import { Upload, FileText, XCircle, Lock, Loader2, Mail } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import useAnalysisStore from "../../store/useAnalysisStore";
+import useAuthStore from "../../store/useAuthStore";
 import { useAnalysisPipeline } from "../../hooks/useAnalysisPipeline";
 
 /**
@@ -22,6 +24,10 @@ const UploadSection = memo(function UploadSection() {
   const setFile = useAnalysisStore((s) => s.setFile);
   const setDragOver = useAnalysisStore((s) => s.setDragOver);
   const setError = useAnalysisStore((s) => s.setError);
+
+  const user = useAuthStore((s) => s.user);
+  const navigate = useNavigate();
+  const emailBound = !!(user?.email);
 
   const { startAnalysis } = useAnalysisPipeline();
   const fileInputRef = useRef(null);
@@ -60,6 +66,21 @@ const UploadSection = memo(function UploadSection() {
 
   return (
     <div className="max-w-2xl mx-auto">
+      {/* 未绑定邮箱提示 */}
+      {!emailBound && (
+        <div className="mb-6 p-5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-center">
+          <Mail className="w-8 h-8 text-amber-400 mx-auto mb-2" />
+          <p className="text-amber-300 font-medium mb-1">请先绑定邮箱后再使用分析功能</p>
+          <p className="text-sm text-slate-400 mb-3">绑定邮箱后即可开始分析商业计划书</p>
+          <button
+            onClick={() => navigate("/settings?tab=account")}
+            className="px-5 py-2 bg-amber-500 hover:bg-amber-400 text-slate-900 font-medium rounded-lg transition-colors text-sm"
+          >
+            前往绑定邮箱
+          </button>
+        </div>
+      )}
+
       {/* 标题 */}
       <div className="text-center mb-6 sm:mb-8">
         <h2 className="text-xl sm:text-2xl font-bold mb-2">上传商业计划书</h2>
@@ -129,11 +150,11 @@ const UploadSection = memo(function UploadSection() {
       {/* 分析按钮 */}
       <button
         onClick={startAnalysis}
-        disabled={!file || analyzing}
+        disabled={!file || analyzing || !emailBound}
         className={`
           mt-6 w-full py-4 rounded-xl text-lg font-semibold transition-all
           ${
-            file && !analyzing
+            file && !analyzing && emailBound
               ? "bg-gradient-to-r from-red-500 to-orange-500 hover:from-red-600 hover:to-orange-600 text-white shadow-lg shadow-red-500/20"
               : "bg-slate-800 text-slate-500 cursor-not-allowed"
           }
@@ -144,6 +165,8 @@ const UploadSection = memo(function UploadSection() {
             <Loader2 className="w-5 h-5 animate-spin" />
             分析中...
           </span>
+        ) : !emailBound ? (
+          "请先绑定邮箱"
         ) : (
           "开始辩证分析"
         )}

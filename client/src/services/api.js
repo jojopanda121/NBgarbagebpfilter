@@ -79,10 +79,10 @@ class ApiService {
     });
   }
 
-  delete(url) {
-    return this.request(url, {
-      method: "DELETE",
-    });
+  delete(url, data) {
+    const options = { method: "DELETE" };
+    if (data) options.body = JSON.stringify(data);
+    return this.request(url, options);
   }
 
   /** 上传文件（带进度） */

@@ -132,12 +132,20 @@ function initializeAdminUser(database) {
     if (existingUser) {
       // 用户存在，将现有用户升级为管理员
       database.prepare("UPDATE users SET role = 'admin' WHERE username = ?").run(adminUsername);
+      // 确保已升级的管理员有额度记录
+      const existingQuota = database.prepare("SELECT id FROM quotas WHERE user_id = ?").get(existingUser.id);
+      if (!existingQuota) {
+        database.prepare("INSERT INTO quotas (user_id, free_quota, paid_quota) VALUES (?, 999, 0)").run(existingUser.id);
+      }
       console.log(`[DB] Promoted user "${adminUsername}" to admin`);
     } else {
       // 创建新的管理员账号
       const bcrypt = require("bcryptjs");
       const passwordHash = bcrypt.hashSync(adminPassword, 12);
-      database.prepare("INSERT INTO users (username, password_hash, role) VALUES (?, ?, 'admin')").run(adminUsername, passwordHash);
+      const info = database.prepare("INSERT INTO users (username, password_hash, role) VALUES (?, ?, 'admin')").run(adminUsername, passwordHash);
+      // 为管理员初始化额度记录
+      const adminId = info.lastInsertRowid;
+      database.prepare("INSERT INTO quotas (user_id, free_quota, paid_quota) VALUES (?, 999, 0)").run(adminId);
       console.log(`[DB] Created admin user: ${adminUsername}`);
     }
   } catch (err) {

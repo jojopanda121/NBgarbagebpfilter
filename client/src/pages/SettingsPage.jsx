@@ -4,7 +4,6 @@ import {
   Wallet,
   Lock,
   Mail,
-  Phone,
   Save,
   Loader2,
   CheckCircle,
@@ -63,11 +62,6 @@ export default function SettingsPage() {
   const [emailCode, setEmailCode] = useState("");
   const [sendingEmailCode, setSendingEmailCode] = useState(false);
   const [emailCountdown, setEmailCountdown] = useState(0);
-
-  const [phone, setPhone] = useState("");
-  const [phoneCode, setPhoneCode] = useState("");
-  const [sendingPhoneCode, setSendingPhoneCode] = useState(false);
-  const [phoneCountdown, setPhoneCountdown] = useState(0);
 
   const [oldPassword, setOldPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -140,7 +134,6 @@ export default function SettingsPage() {
         ]);
         setProfile(profileData);
         setEmail(profileData.email || "");
-        setPhone(profileData.phone || "");
         setIsAdmin(roleData.isAdmin || false);
       } catch (err) {
         console.error("加载用户信息失败:", err);
@@ -322,35 +315,6 @@ export default function SettingsPage() {
     }
   };
 
-  // 发送手机验证码
-  const handleSendPhoneCode = async () => {
-    if (!phone || phone.length !== 11) {
-      setMessage({ type: "error", text: "请输入正确的手机号" });
-      return;
-    }
-
-    setSendingPhoneCode(true);
-    setMessage(null);
-    try {
-      await api.post("/api/verify/send", { phone });
-      setMessage({ type: "success", text: "验证码已发送" });
-      setPhoneCountdown(60);
-      const timer = setInterval(() => {
-        setPhoneCountdown((prev) => {
-          if (prev <= 1) {
-            clearInterval(timer);
-            return 0;
-          }
-          return prev - 1;
-        });
-      }, 1000);
-    } catch (err) {
-      setMessage({ type: "error", text: err.message || "发送失败" });
-    } finally {
-      setSendingPhoneCode(false);
-    }
-  };
-
   // 绑定邮箱
   const handleBindEmail = async () => {
     if (!emailCode) {
@@ -362,32 +326,9 @@ export default function SettingsPage() {
     setMessage(null);
     try {
       await api.post("/api/verify/check", { email, code: emailCode });
-      await api.put("/api/user/profile", { email });
+      await api.post("/api/auth/bind-contact", { email });
       setMessage({ type: "success", text: "邮箱绑定成功" });
       setEmailCode("");
-      const data = await api.get("/api/user/profile");
-      setProfile(data);
-    } catch (err) {
-      setMessage({ type: "error", text: err.message || "绑定失败" });
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // 绑定手机号
-  const handleBindPhone = async () => {
-    if (!phoneCode) {
-      setMessage({ type: "error", text: "请输入验证码" });
-      return;
-    }
-
-    setLoading(true);
-    setMessage(null);
-    try {
-      await api.post("/api/verify/check", { phone, code: phoneCode });
-      await api.put("/api/user/profile", { phone });
-      setMessage({ type: "success", text: "手机号绑定成功" });
-      setPhoneCode("");
       const data = await api.get("/api/user/profile");
       setProfile(data);
     } catch (err) {
@@ -524,12 +465,9 @@ export default function SettingsPage() {
       {/* 账户安全 Tab */}
       {activeTab === "account" && (
         <AccountTab
-          profile={profile} email={setEmail} emailCode={emailCode} setEmailCode={setEmailCode}
+          profile={profile} email={email} setEmail={setEmail} emailCode={emailCode} setEmailCode={setEmailCode}
           sendingEmailCode={sendingEmailCode} emailCountdown={emailCountdown}
           handleSendEmailCode={handleSendEmailCode} handleBindEmail={handleBindEmail}
-          phone={phone} setPhone={setPhone} phoneCode={phoneCode} setPhoneCode={setPhoneCode}
-          sendingPhoneCode={sendingPhoneCode} phoneCountdown={phoneCountdown}
-          handleSendPhoneCode={handleSendPhoneCode} handleBindPhone={handleBindPhone}
           oldPassword={oldPassword} setOldPassword={setOldPassword}
           newPassword={newPassword} setNewPassword={setNewPassword}
           confirmPassword={confirmPassword} setConfirmPassword={setConfirmPassword}
@@ -750,7 +688,7 @@ function MyStatsTab({ stats }) {
 }
 
 // 账户安全组件
-function AccountTab({ profile, email, setEmail, emailCode, setEmailCode, sendingEmailCode, emailCountdown, handleSendEmailCode, handleBindEmail, phone, setPhone, phoneCode, setPhoneCode, sendingPhoneCode, phoneCountdown, handleSendPhoneCode, handleBindPhone, oldPassword, setOldPassword, newPassword, setNewPassword, confirmPassword, setConfirmPassword, loading, setMessage }) {
+function AccountTab({ profile, email, setEmail, emailCode, setEmailCode, sendingEmailCode, emailCountdown, handleSendEmailCode, handleBindEmail, oldPassword, setOldPassword, newPassword, setNewPassword, confirmPassword, setConfirmPassword, loading, setMessage }) {
   return (
     <div className="space-y-6">
       <div className="bg-slate-900/50 border border-white/10 rounded-xl p-6">
@@ -763,7 +701,7 @@ function AccountTab({ profile, email, setEmail, emailCode, setEmailCode, sending
           <div>
             <label className="block text-sm text-slate-400 mb-1">邮箱</label>
             <div className="space-y-2">
-              <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="请输入邮箱" disabled={profile?.email} className="w-full px-4 py-2 bg-slate-800 border border-white/10 rounded-lg focus:border-blue-500 focus:outline-none disabled:opacity-50" />
+              <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="请输入邮箱" disabled={!!profile?.email} className="w-full px-4 py-2 bg-slate-800 border border-white/10 rounded-lg focus:border-blue-500 focus:outline-none disabled:opacity-50" />
               {profile?.email ? (
                 <p className="text-sm text-green-400 flex items-center gap-1"><CheckCircle className="w-4 h-4" /> 已绑定邮箱</p>
               ) : (
@@ -774,24 +712,6 @@ function AccountTab({ profile, email, setEmail, emailCode, setEmailCode, sending
                     {emailCountdown > 0 ? `${emailCountdown}s` : "发送验证码"}
                   </button>
                   <button onClick={handleBindEmail} disabled={loading || !emailCode} className="px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:bg-slate-700 rounded-lg">绑定</button>
-                </div>
-              )}
-            </div>
-          </div>
-          <div>
-            <label className="block text-sm text-slate-400 mb-1">手机号</label>
-            <div className="space-y-2">
-              <input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="请输入手机号" disabled={profile?.phone} className="w-full px-4 py-2 bg-slate-800 border border-white/10 rounded-lg focus:border-blue-500 focus:outline-none disabled:opacity-50" />
-              {profile?.phone ? (
-                <p className="text-sm text-green-400 flex items-center gap-1"><CheckCircle className="w-4 h-4" /> 已绑定手机号</p>
-              ) : (
-                <div className="flex gap-2">
-                  <input type="text" value={phoneCode} onChange={(e) => setPhoneCode(e.target.value)} placeholder="输入验证码" className="flex-1 px-4 py-2 bg-slate-800 border border-white/10 rounded-lg focus:border-blue-500 focus:outline-none" />
-                  <button onClick={handleSendPhoneCode} disabled={sendingPhoneCode || phoneCountdown > 0} className="px-4 py-2 bg-slate-700 hover:bg-slate-600 disabled:bg-slate-800 disabled:text-slate-500 rounded-lg font-medium flex items-center gap-2">
-                    {sendingPhoneCode ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-                    {phoneCountdown > 0 ? `${phoneCountdown}s` : "发送验证码"}
-                  </button>
-                  <button onClick={handleBindPhone} disabled={loading || !phoneCode} className="px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:bg-slate-700 rounded-lg">绑定</button>
                 </div>
               )}
             </div>
@@ -817,7 +737,7 @@ function AccountTab({ profile, email, setEmail, emailCode, setEmailCode, sending
       <div className="bg-slate-900/50 border border-white/10 rounded-xl p-6">
         <h3 className="text-lg font-bold mb-4">账户状态</h3>
         <div className="grid grid-cols-2 gap-4">
-          <div className="p-4 bg-slate-800 rounded-lg"><div className="text-sm text-slate-400 mb-1">账号绑定</div><div className="font-medium">{profile?.contact_bound ? <span className="text-green-400">已绑定</span> : <span className="text-yellow-400">未绑定</span>}</div></div>
+          <div className="p-4 bg-slate-800 rounded-lg"><div className="text-sm text-slate-400 mb-1">邮箱绑定</div><div className="font-medium">{profile?.email ? <span className="text-green-400">已绑定</span> : <span className="text-yellow-400">未绑定</span>}</div></div>
           <div className="p-4 bg-slate-800 rounded-lg"><div className="text-sm text-slate-400 mb-1">累计使用</div><div className="font-medium">{profile?.usage_count || 0} 次</div></div>
         </div>
       </div>

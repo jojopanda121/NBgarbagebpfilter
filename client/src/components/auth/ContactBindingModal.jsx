@@ -1,12 +1,11 @@
 import React, { useState, useEffect } from "react";
-import { Mail, Phone, X, Send, Loader2 } from "lucide-react";
+import { Mail, X, Send, Loader2 } from "lucide-react";
 import api from "../../services/api";
 import useAuthStore from "../../store/useAuthStore";
 
 export default function ContactBindingModal() {
   const [email, setEmail] = useState("");
   const [emailCode, setEmailCode] = useState("");
-  const [phone, setPhone] = useState("");
   const [loading, setLoading] = useState(false);
   const [sendingCode, setSendingCode] = useState(false);
   const [countdown, setCountdown] = useState(0);
@@ -54,12 +53,12 @@ export default function ContactBindingModal() {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    if (!email && !phone) {
-      setError("请填写邮箱或手机号");
+    if (!email) {
+      setError("请填写邮箱");
       return;
     }
 
-    if (email && !emailCode) {
+    if (!emailCode) {
       setError("请输入邮箱验证码");
       return;
     }
@@ -69,15 +68,10 @@ export default function ContactBindingModal() {
 
     try {
       // 先验证验证码
-      if (email && emailCode) {
-        await api.post("/api/verify/check", { email, code: emailCode });
-      }
-      // 再绑定联系方式
-      await api.post("/api/auth/bind-contact", {
-        email: email || undefined,
-        phone: phone || undefined,
-      });
-      setUser({ ...user, contact_bound: true, email, phone });
+      await api.post("/api/verify/check", { email, code: emailCode });
+      // 再绑定邮箱
+      await api.post("/api/auth/bind-contact", { email });
+      setUser({ ...user, contact_bound: true, email });
       setRequireContactBinding(false);
     } catch (err) {
       setError(err.message);
@@ -96,9 +90,9 @@ export default function ContactBindingModal() {
           <X className="w-5 h-5" />
         </button>
 
-        <h2 className="text-lg font-bold mb-2">绑定联系方式</h2>
+        <h2 className="text-lg font-bold mb-2">绑定邮箱</h2>
         <p className="text-sm text-slate-400 mb-5">
-          您已使用 3 次免费分析。为了继续使用，请绑定邮箱或手机号。
+          使用分析功能前，请先绑定您的邮箱地址。
         </p>
 
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -140,18 +134,6 @@ export default function ContactBindingModal() {
               </button>
             </div>
           )}
-
-          {/* 手机号输入 */}
-          <div className="flex items-center gap-2">
-            <Phone className="w-4 h-4 text-slate-500 shrink-0" />
-            <input
-              type="tel"
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              className="flex-1 px-3 py-2 bg-slate-800 border border-white/10 rounded-lg focus:outline-none focus:border-blue-500 text-white text-sm"
-              placeholder="手机号"
-            />
-          </div>
 
           {error && (
             <p className="text-sm text-red-400">{error}</p>

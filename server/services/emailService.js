@@ -13,6 +13,7 @@ const SES_CONFIG = {
   secretKey: config.tencentSesSecretKey,
   fromEmail: config.tencentSesFromEmail,
   region: config.tencentSesRegion,
+  templateId: config.tencentSesTemplateId,
 };
 
 const CODE_EXPIRE_TIME = 5 * 60 * 1000; // 5 分钟
@@ -25,28 +26,18 @@ async function sendEmailCode(toEmail) {
     throw new Error("邮箱服务未配置，请联系管理员设置腾讯云 SES");
   }
 
+  if (!SES_CONFIG.templateId) {
+    throw new Error("邮箱模板未配置，请设置 TENCENT_SES_TEMPLATE_ID");
+  }
+
   const code = Math.floor(100000 + Math.random() * 900000).toString();
 
   // 存储验证码到 SQLite
   saveCode(toEmail, code, CODE_EXPIRE_TIME);
 
-  // 构建邮件 HTML
-  const htmlContent = `
-    <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-      <h2 style="color: #333;">验证码</h2>
-      <p>您的验证码是：</p>
-      <div style="font-size: 32px; font-weight: bold; color: #2563eb; letter-spacing: 6px; padding: 16px 0;">${code}</div>
-      <p style="color: #666; font-size: 14px;">有效期 5 分钟，请尽快完成验证。</p>
-      <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;" />
-      <p style="color: #999; font-size: 12px;">如果这不是您的操作，请忽略此邮件。</p>
-    </div>
-  `;
-
-  const textContent = `您的验证码是：${code}，有效期 5 分钟。如果这不是您的操作，请忽略此邮件。`;
-
-  // 调用腾讯云 SES API 发送
+  // 调用腾讯云 SES API 发送（使用模板）
   try {
-    await sendViaTencentSES(toEmail, "验证码 - 垃圾BP过滤机", htmlContent, textContent);
+    await sendViaTencentSES(toEmail, code);
     return { success: true, expiresIn: CODE_EXPIRE_TIME / 1000 };
   } catch (err) {
     console.error("[EmailService] 发送失败:", err.message);
@@ -55,23 +46,23 @@ async function sendEmailCode(toEmail) {
 }
 
 /**
- * 腾讯云 SES SendEmail 实现
+ * 腾讯云 SES SendEmail 实现（模板发送）
  */
-async function sendViaTencentSES(toEmail, subject, html, text) {
+async function sendViaTencentSES(toEmail, code) {
   const endpoint = "ses.tencentcloudapi.com";
   const service = "ses";
   const action = "SendEmail";
   const version = "2020-10-02";
 
-  // 请求体
+  // 请求体 — 使用 Template 模式
   const payload = {
     FromEmailAddress: SES_CONFIG.fromEmail,
     Destination: [toEmail],
-    Subject: subject,
-    Simple: {
-      Html: Buffer.from(html, "utf-8").toString("base64"),
-      Text: Buffer.from(text, "utf-8").toString("base64"),
+    Template: {
+      TemplateID: SES_CONFIG.templateId,
+      TemplateData: JSON.stringify({ code }),
     },
+    Subject: "验证码",
     TriggerType: 1, // 触发类邮件（验证码）
   };
 

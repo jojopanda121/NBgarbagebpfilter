@@ -15,6 +15,7 @@ const sendCodeLimiter = rateLimit({
   message: { error: "发送过于频繁，请 1 分钟后再试" },
   standardHeaders: true,
   legacyHeaders: false,
+  validate: false,
 });
 
 // 验证码校验限流：防止暴力枚举
@@ -24,6 +25,7 @@ const checkCodeLimiter = rateLimit({
   message: { error: "验证尝试次数过多，请 15 分钟后再试" },
   standardHeaders: true,
   legacyHeaders: false,
+  validate: false,
 });
 
 router.post("/send", sendCodeLimiter, sendCode);

@@ -8,7 +8,7 @@ const { signToken } = require("../middleware/auth");
 const { isValidUsername, isValidPassword, isValidEmail } = require("../utils/validation");
 const { createUser, getUserByUsername, bindUserContact, getUserById } = require("../services/userService");
 const { initializeQuota, getUserQuota } = require("../services/quotaService");
-const { getUserByInviteCode, processReferral } = require("../services/referralService");
+const { getUserByInviteCode, processReferral, rewardReferral } = require("../services/referralService");
 const { getDb } = require("../db");
 
 const SALT_ROUNDS = 12;
@@ -171,6 +171,9 @@ function bindContact(req, res) {
   }
 
   bindUserContact(req.user.id, { email });
+
+  // 绑定邮箱后，才给邀请人发放奖励（防止批量注册刷额度）
+  rewardReferral(req.user.id);
 
   res.json({ success: true, message: "邮箱绑定成功" });
 }

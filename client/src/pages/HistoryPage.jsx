@@ -254,6 +254,11 @@ export default function HistoryPage() {
                       {task.title || "BP 尽调分析"}
                     </div>
                     <div className="flex items-center gap-2 flex-wrap text-sm text-slate-500">
+                      {task.archive_number && (
+                        <span className="px-2 py-0.5 rounded text-xs bg-slate-700 text-slate-300 font-mono">
+                          {task.archive_number}
+                        </span>
+                      )}
                       <span className="flex items-center gap-1">
                         <Clock className="w-3 h-3" />
                         {formatTime(task.created_at)}

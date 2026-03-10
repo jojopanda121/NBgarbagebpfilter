@@ -12,12 +12,41 @@ const { getDb } = require("../db");
 // 内存存储（兼容原有逻辑，单实例模式下性能最优）
 const memoryTasks = new Map();
 
+function generateArchiveNumber() {
+  try {
+    const db = getDb();
+    const today = new Date();
+    const dateStr = today.toISOString().slice(0, 10).replace(/-/g, "");
+    const prefix = `DA-${dateStr}-`;
+
+    // 查找今天已有的最大序号
+    const row = db.prepare(
+      `SELECT archive_number FROM tasks
+       WHERE archive_number LIKE ? || '%'
+       ORDER BY archive_number DESC LIMIT 1`
+    ).get(prefix);
+
+    let seq = 1;
+    if (row && row.archive_number) {
+      const lastSeq = parseInt(row.archive_number.split("-").pop(), 10);
+      if (!isNaN(lastSeq)) seq = lastSeq + 1;
+    }
+
+    return `${prefix}${String(seq).padStart(4, "0")}`;
+  } catch (err) {
+    // 降级：使用时间戳
+    return `DA-${Date.now()}`;
+  }
+}
+
 function createTask(userId = null) {
   const id = crypto.randomBytes(16).toString("hex");
   const now = new Date().toISOString();
+  const archiveNumber = generateArchiveNumber();
   const task = {
     id,
     user_id: userId,
+    archive_number: archiveNumber,
     status: "running",
     percentage: 0,
     stage: "queued",
@@ -35,9 +64,9 @@ function createTask(userId = null) {
   try {
     const db = getDb();
     db.prepare(
-      `INSERT INTO tasks (id, user_id, status, percentage, stage, message, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-    ).run(id, userId, task.status, task.percentage, task.stage, task.message, now, now);
+      `INSERT INTO tasks (id, user_id, archive_number, status, percentage, stage, message, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(id, userId, archiveNumber, task.status, task.percentage, task.stage, task.message, now, now);
   } catch (err) {
     console.warn("[TaskService] DB write failed, using memory only:", err.message);
   }
@@ -106,10 +135,12 @@ function getTasksByUser(userId) {
     const colNames = tableInfo.map((col) => col.name);
     const hasTitle = colNames.includes("title");
     const hasIndustryCategory = colNames.includes("industry_category");
+    const hasArchiveNumber = colNames.includes("archive_number");
 
     const extraCols = [
       hasTitle ? "title" : null,
       hasIndustryCategory ? "industry_category" : null,
+      hasArchiveNumber ? "archive_number" : null,
       "result",
     ].filter(Boolean).map(c => `, ${c}`).join("");
 

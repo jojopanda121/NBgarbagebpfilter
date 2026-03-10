@@ -452,7 +452,7 @@ export default function SettingsPage({ adminMode = false }) {
 
       {/* Tab 切换 */}
       <div className="flex gap-2 mb-6 border-b border-white/10 pb-4 overflow-x-auto">
-        {(adminMode ? ADMIN_ONLY_TABS : isAdmin ? ADMIN_TABS : TABS).map((tab) => (
+        {(adminMode ? ADMIN_ONLY_TABS : TABS).map((tab) => (
           <button
             key={tab.key}
             onClick={() => setActiveTab(tab.key)}
@@ -787,8 +787,8 @@ function BillingTab({ profile, orders, usage }) {
         {usage.length === 0 ? <p className="text-slate-500 text-center py-8">暂无消费记录</p> : (
           <div className="overflow-x-auto">
             <table className="w-full">
-              <thead><tr className="text-left text-sm text-slate-400 border-b border-white/10"><th className="pb-3">时间</th><th className="pb-3">类型</th><th className="pb-3">消耗</th><th className="pb-3">状态</th></tr></thead>
-              <tbody>{usage.map((u) => (<tr key={u.id} className="border-b border-white/10/50 text-sm"><td className="py-3 text-slate-400">{new Date(u.created_at).toLocaleDateString("zh-CN")}</td><td className="py-3">{u.type}</td><td className="py-3">- {u.amount} 次</td><td className="py-3"><span className={`px-2 py-0.5 rounded text-xs ${u.status === "complete" ? "bg-green-500/20 text-green-400" : "bg-red-500/20 text-red-400"}`}>{u.status === "complete" ? "成功" : "失败"}</span></td></tr>))}</tbody>
+              <thead><tr className="text-left text-sm text-slate-400 border-b border-white/10"><th className="pb-3">档案号</th><th className="pb-3">任务名称</th><th className="pb-3">时间</th><th className="pb-3">消耗</th><th className="pb-3">状态</th></tr></thead>
+              <tbody>{usage.map((u) => (<tr key={u.id} className="border-b border-white/10/50 text-sm"><td className="py-3 font-mono text-xs text-slate-400">{u.archive_number || "-"}</td><td className="py-3 max-w-[200px] truncate" title={u.title}>{u.title || "BP 尽调分析"}</td><td className="py-3 text-slate-400">{new Date(u.created_at).toLocaleString("zh-CN")}</td><td className="py-3">- {u.amount} 次</td><td className="py-3"><span className={`px-2 py-0.5 rounded text-xs ${u.status === "complete" ? "bg-green-500/20 text-green-400" : "bg-red-500/20 text-red-400"}`}>{u.status === "complete" ? "成功" : "失败"}</span></td></tr>))}</tbody>
             </table>
           </div>
         )}
@@ -1079,7 +1079,7 @@ function TasksTab({ tasks, total, page, setPage, status, setStatus, search, setS
         <div className="flex gap-4 mb-4">
           <div className="flex-1 relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-            <input type="text" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="搜索用户名/任务ID" className="w-full pl-10 pr-4 py-2 bg-slate-800 border border-white/10 rounded-lg" />
+            <input type="text" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="搜索用户名/档案号" className="w-full pl-10 pr-4 py-2 bg-slate-800 border border-white/10 rounded-lg" />
           </div>
           <select value={status} onChange={(e) => setStatus(e.target.value)} className="px-4 py-2 bg-slate-800 border border-white/10 rounded-lg">
             <option value="">全部状态</option>
@@ -1090,8 +1090,8 @@ function TasksTab({ tasks, total, page, setPage, status, setStatus, search, setS
         </div>
         <div className="overflow-x-auto">
           <table className="w-full">
-            <thead><tr className="text-left text-sm text-slate-400 border-b border-white/10"><th className="pb-3">任务ID</th><th className="pb-3">用户</th><th className="pb-3">状态</th><th className="pb-3">进度</th><th className="pb-3">阶段</th><th className="pb-3">创建时间</th><th className="pb-3">操作</th></tr></thead>
-            <tbody>{tasks.map((t) => (<tr key={t.id} className="border-b border-white/10/50 text-sm"><td className="py-3 font-mono text-slate-400">{t.id?.slice(0, 12)}...</td><td className="py-3">{t.username || "匿名"}</td><td className="py-3"><span className={`px-2 py-0.5 rounded text-xs ${t.status === "complete" ? "bg-green-500/20 text-green-400" : t.status === "running" ? "bg-blue-500/20 text-blue-400" : "bg-red-500/20 text-red-400"}`}>{t.status === "complete" ? "已完成" : t.status === "running" ? "分析中" : "失败"}</span></td><td className="py-3">{t.percentage}%</td><td className="py-3 text-slate-400">{t.stage}</td><td className="py-3 text-slate-400">{new Date(t.created_at).toLocaleString("zh-CN")}</td><td className="py-3"><button onClick={() => setSelectedTask(t)} className="p-1 hover:bg-slate-700 rounded"><Eye className="w-4 h-4" /></button></td></tr>))}</tbody>
+            <thead><tr className="text-left text-sm text-slate-400 border-b border-white/10"><th className="pb-3">档案号</th><th className="pb-3">用户</th><th className="pb-3">状态</th><th className="pb-3">进度</th><th className="pb-3">阶段</th><th className="pb-3">创建时间</th><th className="pb-3">操作</th></tr></thead>
+            <tbody>{tasks.map((t) => (<tr key={t.id} className="border-b border-white/10/50 text-sm"><td className="py-3 font-mono text-xs text-slate-400">{t.archive_number || t.id?.slice(0, 12) + "..."}</td><td className="py-3">{t.username || "匿名"}</td><td className="py-3"><span className={`px-2 py-0.5 rounded text-xs ${t.status === "complete" ? "bg-green-500/20 text-green-400" : t.status === "running" ? "bg-blue-500/20 text-blue-400" : "bg-red-500/20 text-red-400"}`}>{t.status === "complete" ? "已完成" : t.status === "running" ? "分析中" : "失败"}</span></td><td className="py-3">{t.percentage}%</td><td className="py-3 text-slate-400">{t.stage}</td><td className="py-3 text-slate-400">{new Date(t.created_at).toLocaleString("zh-CN")}</td><td className="py-3"><button onClick={() => setSelectedTask(t)} className="p-1 hover:bg-slate-700 rounded"><Eye className="w-4 h-4" /></button></td></tr>))}</tbody>
           </table>
         </div>
         {total > 20 && <div className="flex justify-center gap-2 mt-4">
@@ -1118,7 +1118,7 @@ function TaskDetailModal({ task, onClose }) {
         {detail ? (
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
-              <div><div className="text-sm text-slate-400">任务ID</div><div className="font-mono text-sm">{detail.id}</div></div>
+              <div><div className="text-sm text-slate-400">档案号</div><div className="font-mono text-sm">{detail.archive_number || "-"}</div></div>
               <div><div className="text-sm text-slate-400">用户</div><div className="font-medium">{detail.username || "匿名"}</div></div>
               <div><div className="text-sm text-slate-400">状态</div><div className={`px-2 py-0.5 rounded text-xs inline-block ${detail.status === "complete" ? "bg-green-500/20 text-green-400" : detail.status === "running" ? "bg-blue-500/20 text-blue-400" : "bg-red-500/20 text-red-400"}`}>{detail.status === "complete" ? "已完成" : detail.status === "running" ? "分析中" : "失败"}</div></div>
               <div><div className="text-sm text-slate-400">进度</div><div className="font-medium">{detail.percentage}%</div></div>

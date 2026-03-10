@@ -15,101 +15,111 @@ const SALT_ROUNDS = 12;
 
 /** POST /api/auth/register — 极简注册（仅需 username + password，可选 invite_code） */
 async function register(req, res) {
-  const { username, password, invite_code } = req.body;
+  try {
+    const { username, password, invite_code } = req.body;
 
-  // 入参校验
-  if (!isValidUsername(username)) {
-    return res.status(400).json({ error: "用户名需要 2-32 个字符，只能包含字母、数字、下划线或中文" });
-  }
-  if (!isValidPassword(password)) {
-    return res.status(400).json({ error: "密码需要 6-128 个字符" });
-  }
-
-  // 检查用户名是否已存在
-  const existing = getUserByUsername(username);
-  if (existing) {
-    return res.status(409).json({ error: "用户名已被占用" });
-  }
-
-  // bcrypt 加盐哈希（严禁明文存储）
-  const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
-
-  // 从数据库读取默认免费额度配置
-  const db = getDb();
-  const quotaSetting = db.prepare("SELECT value FROM settings WHERE key = 'default_free_quota'").get();
-  const defaultFreeQuota = quotaSetting ? parseInt(quotaSetting.value, 10) : 3;
-
-  // 事务：创建用户 + 初始化额度
-  const result = db.transaction(() => {
-    const userId = createUser(username, passwordHash);
-    initializeQuota(userId, defaultFreeQuota);
-    return { id: userId, username };
-  })();
-
-  // 处理邀请关系（事务外，失败不影响注册）
-  if (invite_code) {
-    const inviter = getUserByInviteCode(invite_code);
-    if (inviter) {
-      processReferral(inviter.id, result.id, "invite_link");
+    // 入参校验
+    if (!isValidUsername(username)) {
+      return res.status(400).json({ error: "用户名需要 2-32 个字符，只能包含字母、数字、下划线或中文" });
     }
+    if (!isValidPassword(password)) {
+      return res.status(400).json({ error: "密码需要 6-128 个字符" });
+    }
+
+    // 检查用户名是否已存在
+    const existing = getUserByUsername(username);
+    if (existing) {
+      return res.status(409).json({ error: "用户名已被占用" });
+    }
+
+    // bcrypt 加盐哈希（严禁明文存储）
+    const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
+
+    // 从数据库读取默认免费额度配置
+    const db = getDb();
+    const quotaSetting = db.prepare("SELECT value FROM settings WHERE key = 'default_free_quota'").get();
+    const defaultFreeQuota = quotaSetting ? parseInt(quotaSetting.value, 10) : 3;
+
+    // 事务：创建用户 + 初始化额度
+    const result = db.transaction(() => {
+      const userId = createUser(username, passwordHash);
+      initializeQuota(userId, defaultFreeQuota);
+      return { id: userId, username };
+    })();
+
+    // 处理邀请关系（事务外，失败不影响注册）
+    if (invite_code) {
+      const inviter = getUserByInviteCode(invite_code);
+      if (inviter) {
+        processReferral(inviter.id, result.id, "invite_link");
+      }
+    }
+
+    // 颁发 JWT
+    const token = signToken(result);
+
+    res.status(201).json({
+      token,
+      user: {
+        id: result.id,
+        username: result.username,
+        contact_bound: false,
+        role: "user",
+        usage_count: 0,
+      },
+      quota: {
+        free: defaultFreeQuota,
+        paid: 0,
+      },
+    });
+  } catch (err) {
+    console.error("[Register Error]", err);
+    res.status(500).json({ error: "注册失败，请稍后再试" });
   }
-
-  // 颁发 JWT
-  const token = signToken(result);
-
-  res.status(201).json({
-    token,
-    user: {
-      id: result.id,
-      username: result.username,
-      contact_bound: false,
-      role: "user",
-      usage_count: 0,
-    },
-    quota: {
-      free: defaultFreeQuota,
-      paid: 0,
-    },
-  });
 }
 
 /** POST /api/auth/login — 登录 */
 async function login(req, res) {
-  const { username, password } = req.body;
+  try {
+    const { username, password } = req.body;
 
-  if (!username || !password) {
-    return res.status(400).json({ error: "请输入用户名和密码" });
+    if (!username || !password) {
+      return res.status(400).json({ error: "请输入用户名和密码" });
+    }
+
+    const user = getUserByUsername(username);
+
+    if (!user) {
+      return res.status(401).json({ error: "用户名或密码错误" });
+    }
+
+    const match = await bcrypt.compare(password, user.password_hash);
+    if (!match) {
+      return res.status(401).json({ error: "用户名或密码错误" });
+    }
+
+    const token = signToken({ id: user.id, username: user.username });
+    const quota = getUserQuota(user.id);
+
+    res.json({
+      token,
+      user: {
+        id: user.id,
+        username: user.username,
+        email: user.email,
+        contact_bound: !!user.contact_bound,
+        usage_count: user.usage_count || 0,
+        role: user.role || "user",
+      },
+      quota: {
+        free: quota.free,
+        paid: quota.paid,
+      },
+    });
+  } catch (err) {
+    console.error("[Login Error]", err);
+    res.status(500).json({ error: "登录失败，请稍后再试" });
   }
-
-  const user = getUserByUsername(username);
-
-  if (!user) {
-    return res.status(401).json({ error: "用户名或密码错误" });
-  }
-
-  const match = await bcrypt.compare(password, user.password_hash);
-  if (!match) {
-    return res.status(401).json({ error: "用户名或密码错误" });
-  }
-
-  const token = signToken({ id: user.id, username: user.username });
-  const quota = getUserQuota(user.id);
-
-  res.json({
-    token,
-    user: {
-      id: user.id,
-      username: user.username,
-      email: user.email,
-      contact_bound: !!user.contact_bound,
-      usage_count: user.usage_count || 0,
-      role: user.role || "user",
-    },
-    quota: {
-      free: quota.free,
-      paid: quota.paid,
-    },
-  });
 }
 
 /** GET /api/auth/me — 获取当前用户信息 */

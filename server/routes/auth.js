@@ -13,6 +13,10 @@ const loginLimiter = rateLimit({
   message: { error: "登录尝试次数过多，请 15 分钟后再试" },
   standardHeaders: true,
   legacyHeaders: false,
+  // express-rate-limit v7+ 要求显式指定 keyGenerator，否则 req.ip 为 undefined 时会抛 500
+  keyGenerator: (req) => {
+    return req.ip || req.headers['x-forwarded-for'] || req.socket?.remoteAddress || 'unknown';
+  },
 });
 
 // 注册速率限制：防止恶意批量注册（基于IP限制）
@@ -26,7 +30,7 @@ const registerLimiter = rateLimit({
   // 明确使用 IP 作为 key，确保是按 IP 限制而不是全局限制
   keyGenerator: (req) => {
     // 优先使用 X-Forwarded-For（反向代理环境），否则使用 IP
-    return req.ip || req.headers['x-forwarded-for'] || req.connection.remoteAddress || 'unknown';
+    return req.ip || req.headers['x-forwarded-for'] || req.socket?.remoteAddress || 'unknown';
   },
   // 跳过成功请求的计数，只计数失败的（可选优化）
   skipSuccessfulRequests: false,

@@ -42,6 +42,7 @@ const config = {
   tencentSesSecretKey: process.env.TENCENT_SES_SECRET_KEY || "",
   tencentSesFromEmail: process.env.TENCENT_SES_FROM_EMAIL || "",
   tencentSesRegion: process.env.TENCENT_SES_REGION || "ap-hongkong",
+  tencentSesTemplateId: parseInt(process.env.TENCENT_SES_TEMPLATE_ID, 10) || 0,
 
   // CORS 允许的域名（逗号分隔，生产环境必须配置）
   allowedOrigins: process.env.ALLOWED_ORIGINS || "",

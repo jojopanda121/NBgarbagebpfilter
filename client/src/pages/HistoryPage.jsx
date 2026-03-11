@@ -14,6 +14,11 @@ import api from "../services/api";
 const INDUSTRY_FILTERS = [
   "全部",
   "人工智能",
+  "具身智能",
+  "芯片半导体",
+  "低空经济",
+  "商业航天",
+  "合成生物",
   "新能源",
   "生物医药",
   "先进制造",
@@ -70,12 +75,15 @@ export default function HistoryPage() {
   const filteredTasks = useMemo(() => {
     let list = [...tasks];
 
-    // 行业筛选
+    // 行业筛选（支持多标签 JSON 数组格式）
     if (filterIndustry !== "全部") {
       list = list.filter((t) => {
         const cat = t.industry_category || "";
         const ind = t.industry || "";
-        return cat.includes(filterIndustry) || ind.includes(filterIndustry);
+        // 支持 JSON 数组格式: ["人工智能", "芯片半导体"]
+        let categories = [];
+        try { categories = JSON.parse(cat); } catch { categories = [cat]; }
+        return categories.some(c => c.includes(filterIndustry)) || ind.includes(filterIndustry);
       });
     }
 
@@ -263,12 +271,16 @@ export default function HistoryPage() {
                         <Clock className="w-3 h-3" />
                         {formatTime(task.created_at)}
                       </span>
-                      {/* 赛道标签 */}
-                      {task.industry_category && (
-                        <span className="px-2 py-0.5 rounded text-xs bg-purple-500/15 text-purple-400">
-                          {task.industry_category}
-                        </span>
-                      )}
+                      {/* 赛道标签（支持多标签） */}
+                      {task.industry_category && (() => {
+                        let cats = [];
+                        try { cats = JSON.parse(task.industry_category); } catch { cats = [task.industry_category]; }
+                        return cats.map((c, idx) => (
+                          <span key={idx} className="px-2 py-0.5 rounded text-xs bg-purple-500/15 text-purple-400">
+                            {c}
+                          </span>
+                        ));
+                      })()}
                       {/* 细分行业标签 */}
                       {task.industry && task.industry !== task.industry_category && (
                         <span className="px-2 py-0.5 rounded text-xs bg-cyan-500/15 text-cyan-400">

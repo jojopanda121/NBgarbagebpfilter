@@ -23,6 +23,10 @@ import {
   Eye,
   X,
   FileText,
+  Megaphone,
+  MapPin,
+  TrendingUp,
+  Calendar,
 } from "lucide-react";
 import { useSearchParams } from "react-router-dom";
 import api from "../services/api";
@@ -43,6 +47,7 @@ const ADMIN_ONLY_TABS = [
   { key: "tasks", label: "分析记录", icon: FileText },
   { key: "stats", label: "数据统计", icon: BarChart3 },
   { key: "admin_feedback", label: "反馈管理", icon: MessageSquare },
+  { key: "announcements", label: "公告管理", icon: Megaphone },
   { key: "packages", label: "套餐配置", icon: Package },
   { key: "site_content", label: "内容管理", icon: Edit },
   { key: "settings", label: "系统设置", icon: SettingsIcon },
@@ -480,7 +485,7 @@ export default function SettingsPage({ adminMode = false }) {
           oldPassword={oldPassword} setOldPassword={setOldPassword}
           newPassword={newPassword} setNewPassword={setNewPassword}
           confirmPassword={confirmPassword} setConfirmPassword={setConfirmPassword}
-          loading={loading} setMessage={setMessage}
+          loading={loading} setMessage={setMessage} setProfile={setProfile}
         />
       )}
 
@@ -556,6 +561,11 @@ export default function SettingsPage({ adminMode = false }) {
         <SystemSettingsTab settings={systemSettings} setSettings={setSystemSettings} setMessage={setMessage} />
       )}
 
+      {/* 公告管理 Tab (管理员) */}
+      {activeTab === "announcements" && isAdmin && (
+        <AnnouncementsTab setMessage={setMessage} />
+      )}
+
       {/* 管理员面板 Tab */}
       {activeTab === "admin" && isAdmin && (
         <AdminPanel
@@ -572,8 +582,17 @@ export default function SettingsPage({ adminMode = false }) {
   );
 }
 
-// 我的数据看板组件
+// 我的数据看板组件（增强版：月度数据 + 项目地图）
 function MyStatsTab({ stats }) {
+  const [monthlyData, setMonthlyData] = useState(null);
+  const [mapData, setMapData] = useState(null);
+  const [selectedProvince, setSelectedProvince] = useState(null);
+
+  useEffect(() => {
+    api.get("/api/user/monthly-stats").then(setMonthlyData).catch(() => {});
+    api.get("/api/user/map-data").then(setMapData).catch(() => {});
+  }, []);
+
   if (!stats) {
     return (
       <div className="flex items-center justify-center py-20">
@@ -602,7 +621,7 @@ function MyStatsTab({ stats }) {
   return (
     <div className="space-y-6">
       {/* 汇总指标卡 */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         <div className="bg-slate-900/50 border border-white/10 rounded-xl p-5 text-center">
           <div className="text-3xl font-bold text-blue-400">{stats.total_count}</div>
           <div className="text-sm text-slate-400 mt-1">累计分析 BP</div>
@@ -613,13 +632,103 @@ function MyStatsTab({ stats }) {
           </div>
           <div className="text-sm text-slate-400 mt-1">平均评分</div>
         </div>
-        <div className="bg-slate-900/50 border border-white/10 rounded-xl p-5 text-center col-span-2 sm:col-span-1">
+        <div className="bg-slate-900/50 border border-white/10 rounded-xl p-5 text-center">
           <div className="text-3xl font-bold text-purple-400">
             {stats.industry_dist.length > 0 ? stats.industry_dist[0].industry : "—"}
           </div>
           <div className="text-sm text-slate-400 mt-1">最多分析赛道</div>
         </div>
+        {/* 本月 vs 上月 */}
+        <div className="bg-slate-900/50 border border-white/10 rounded-xl p-5 text-center">
+          <div className="text-3xl font-bold text-cyan-400">
+            {monthlyData?.this_month?.count ?? "—"}
+          </div>
+          <div className="text-sm text-slate-400 mt-1">
+            本月分析
+            {monthlyData?.month_change != null && (
+              <span className={`ml-1 ${monthlyData.month_change >= 0 ? "text-green-400" : "text-red-400"}`}>
+                {monthlyData.month_change >= 0 ? "+" : ""}{monthlyData.month_change}%
+              </span>
+            )}
+          </div>
+        </div>
       </div>
+
+      {/* 月度趋势 */}
+      {monthlyData?.months && (
+        <div className="bg-slate-900/50 border border-white/10 rounded-xl p-6">
+          <h3 className="text-base font-semibold mb-4 flex items-center gap-2">
+            <Calendar className="w-4 h-4 text-blue-400" />最近 6 个月趋势
+          </h3>
+          <div className="flex items-end gap-2 h-32">
+            {monthlyData.months.map((m) => {
+              const maxCount = Math.max(...monthlyData.months.map(x => x.count), 1);
+              const pct = m.count > 0 ? (m.count / maxCount) * 100 : 0;
+              return (
+                <div key={m.month} className="flex-1 flex flex-col items-center gap-1">
+                  <span className="text-xs text-slate-400 tabular-nums">{m.count || ""}</span>
+                  <div className="w-full flex items-end" style={{ height: "80px" }}>
+                    <div
+                      className={`w-full rounded-t transition-all ${m.count > 0 ? "bg-blue-500" : "bg-slate-800"}`}
+                      style={{ height: `${Math.max(pct, m.count > 0 ? 8 : 0)}%` }}
+                    />
+                  </div>
+                  <span className="text-xs text-slate-500">{m.month.slice(5)}</span>
+                  {m.avg_score && <span className="text-xs text-emerald-400">{m.avg_score}分</span>}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* 项目地理分布（省份列表模式） */}
+      {mapData?.provinces?.length > 0 && (
+        <div className="bg-slate-900/50 border border-white/10 rounded-xl p-6">
+          <h3 className="text-base font-semibold mb-4 flex items-center gap-2">
+            <MapPin className="w-4 h-4 text-red-400" />项目地理分布
+          </h3>
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 mb-4">
+            {mapData.provinces.map((p) => (
+              <button
+                key={p.province}
+                onClick={() => setSelectedProvince(selectedProvince === p.province ? null : p.province)}
+                className={`px-3 py-2 rounded-lg text-sm text-left transition-colors ${
+                  selectedProvince === p.province
+                    ? "bg-blue-500/20 border border-blue-500/40 text-blue-300"
+                    : "bg-slate-800 border border-white/10 text-slate-300 hover:bg-slate-700"
+                }`}
+              >
+                <div className="font-medium">{p.province}</div>
+                <div className="text-xs text-slate-500">{p.count} 个项目</div>
+              </button>
+            ))}
+          </div>
+          {/* 选中省份的项目列表 */}
+          {selectedProvince && mapData.details?.[selectedProvince] && (
+            <div className="bg-slate-800 rounded-lg p-4">
+              <h4 className="text-sm font-semibold mb-3 text-blue-300">{selectedProvince} 项目列表</h4>
+              <div className="space-y-2 max-h-60 overflow-y-auto">
+                {mapData.details[selectedProvince].map((proj) => (
+                  <div key={proj.id} className="flex items-center justify-between py-1.5 border-b border-white/5 last:border-0">
+                    <div className="min-w-0">
+                      <p className="text-sm truncate">{proj.title || "BP分析"}</p>
+                    </div>
+                    <div className="flex items-center gap-3 shrink-0 ml-3">
+                      {proj.total_score != null && (
+                        <span className={`text-sm font-bold ${
+                          proj.total_score >= 75 ? "text-emerald-400" : proj.total_score >= 50 ? "text-yellow-400" : "text-red-400"
+                        }`}>{Math.round(proj.total_score)}分</span>
+                      )}
+                      <span className="text-xs text-slate-500">{new Date(proj.created_at).toLocaleDateString("zh-CN")}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* 赛道分布 */}
       {stats.industry_dist.length > 0 && (
@@ -702,12 +811,60 @@ function MyStatsTab({ stats }) {
 }
 
 // 账户安全组件
-function AccountTab({ profile, email, setEmail, emailCode, setEmailCode, sendingEmailCode, emailCountdown, handleSendEmailCode, handleBindEmail, oldPassword, setOldPassword, newPassword, setNewPassword, confirmPassword, setConfirmPassword, loading, setMessage }) {
+function AccountTab({ profile, email, setEmail, emailCode, setEmailCode, sendingEmailCode, emailCountdown, handleSendEmailCode, handleBindEmail, oldPassword, setOldPassword, newPassword, setNewPassword, confirmPassword, setConfirmPassword, loading, setMessage, setProfile }) {
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = React.useRef(null);
+
+  const handleAvatarUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 2 * 1024 * 1024) {
+      setMessage({ type: "error", text: "头像文件不能超过 2MB" });
+      return;
+    }
+    setUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append("avatar", file);
+      const result = await api.upload("/api/user/avatar", formData);
+      setMessage({ type: "success", text: "头像更新成功" });
+      if (setProfile && profile) setProfile({ ...profile, avatar_url: result.avatar_url });
+    } catch (err) {
+      setMessage({ type: "error", text: err.message || "头像上传失败" });
+    } finally {
+      setUploading(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="bg-slate-900/50 border border-white/10 rounded-xl p-6">
         <h3 className="text-lg font-bold mb-4">基本信息</h3>
         <div className="space-y-4">
+          {/* 头像上传 */}
+          <div className="flex items-center gap-4">
+            <div
+              className="relative w-16 h-16 rounded-full overflow-hidden cursor-pointer group"
+              onClick={() => fileInputRef.current?.click()}
+            >
+              {profile?.avatar_url ? (
+                <img src={profile.avatar_url} alt="头像" className="w-full h-full object-cover" />
+              ) : (
+                <div className="w-full h-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white text-2xl font-bold">
+                  {profile?.username?.charAt(0).toUpperCase() || "U"}
+                </div>
+              )}
+              <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                <span className="text-xs text-white">更换</span>
+              </div>
+              {uploading && <div className="absolute inset-0 bg-black/60 flex items-center justify-center"><Loader2 className="w-5 h-5 animate-spin text-white" /></div>}
+            </div>
+            <div>
+              <p className="text-sm text-slate-300">点击头像更换</p>
+              <p className="text-xs text-slate-500">支持 JPG/PNG，最大 2MB</p>
+            </div>
+            <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarUpload} />
+          </div>
           <div>
             <label className="block text-sm text-slate-400 mb-1">用户名</label>
             <input type="text" value={profile?.username || ""} disabled className="w-full px-4 py-2 bg-slate-800 border border-white/10 rounded-lg text-slate-500" />
@@ -1822,6 +1979,99 @@ function AdminPanel({ tokenQuota, setTokenQuota, tokenCount, setTokenCount, gene
             })}</tbody>
           </table>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════
+// 公告管理组件 (管理员)
+// ══════════════════════════════════════════════════════════
+function AnnouncementsTab({ setMessage }) {
+  const [announcements, setAnnouncements] = useState([]);
+  const [newContent, setNewContent] = useState("");
+  const [newType, setNewType] = useState("info");
+  const [publishing, setPublishing] = useState(false);
+
+  useEffect(() => {
+    api.get("/api/announcement/list")
+      .then((d) => setAnnouncements(d.announcements || []))
+      .catch(() => {});
+  }, []);
+
+  const handlePublish = async () => {
+    if (!newContent.trim()) { setMessage({ type: "error", text: "公告内容不能为空" }); return; }
+    setPublishing(true);
+    try {
+      await api.post("/api/announcement", { content: newContent.trim(), type: newType });
+      setMessage({ type: "success", text: "公告发布成功" });
+      setNewContent("");
+      const d = await api.get("/api/announcement/list");
+      setAnnouncements(d.announcements || []);
+    } catch (err) {
+      setMessage({ type: "error", text: err.message || "发布失败" });
+    } finally {
+      setPublishing(false);
+    }
+  };
+
+  const handleToggle = async (id, currentActive) => {
+    try {
+      await api.put(`/api/announcement/${id}`, { is_active: currentActive ? 0 : 1 });
+      const d = await api.get("/api/announcement/list");
+      setAnnouncements(d.announcements || []);
+    } catch {}
+  };
+
+  const handleDelete = async (id) => {
+    try {
+      await api.delete(`/api/announcement/${id}`);
+      setAnnouncements((prev) => prev.filter((a) => a.id !== id));
+      setMessage({ type: "success", text: "已删除" });
+    } catch {}
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="bg-slate-900/50 border border-white/10 rounded-xl p-6">
+        <h3 className="text-lg font-bold mb-4 flex items-center gap-2"><Megaphone className="w-5 h-5" />发布新公告</h3>
+        <div className="space-y-3">
+          <textarea value={newContent} onChange={(e) => setNewContent(e.target.value)} placeholder="输入公告内容..." rows={3} className="w-full px-4 py-2 bg-slate-800 border border-white/10 rounded-lg focus:border-blue-500 focus:outline-none" />
+          <div className="flex items-center gap-3">
+            <select value={newType} onChange={(e) => setNewType(e.target.value)} className="px-3 py-2 bg-slate-800 border border-white/10 rounded-lg text-sm">
+              <option value="info">信息 (蓝色)</option>
+              <option value="warning">警告 (黄色)</option>
+              <option value="success">成功 (绿色)</option>
+            </select>
+            <button onClick={handlePublish} disabled={publishing} className="px-6 py-2 bg-blue-600 hover:bg-blue-500 disabled:bg-slate-700 rounded-lg font-medium flex items-center gap-2">
+              {publishing && <Loader2 className="w-4 h-4 animate-spin" />}发布公告
+            </button>
+          </div>
+        </div>
+      </div>
+      <div className="bg-slate-900/50 border border-white/10 rounded-xl p-6">
+        <h3 className="text-lg font-bold mb-4">公告列表</h3>
+        {announcements.length === 0 ? <p className="text-slate-500 text-center py-6">暂无公告</p> : (
+          <div className="space-y-3">
+            {announcements.map((a) => (
+              <div key={a.id} className="flex items-center justify-between gap-3 p-3 bg-slate-800 rounded-lg">
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm truncate">{a.content}</p>
+                  <p className="text-xs text-slate-500 mt-1">
+                    {a.type} · {new Date(a.created_at).toLocaleString("zh-CN")}
+                    {a.is_active ? <span className="text-green-400 ml-2">生效中</span> : <span className="text-slate-500 ml-2">已关闭</span>}
+                  </p>
+                </div>
+                <div className="flex gap-2 shrink-0">
+                  <button onClick={() => handleToggle(a.id, a.is_active)} className={`px-3 py-1 rounded text-xs ${a.is_active ? "bg-yellow-500/20 text-yellow-400" : "bg-green-500/20 text-green-400"}`}>
+                    {a.is_active ? "关闭" : "启用"}
+                  </button>
+                  <button onClick={() => handleDelete(a.id)} className="p-1 hover:bg-red-500/20 text-red-400 rounded"><Trash2 className="w-4 h-4" /></button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

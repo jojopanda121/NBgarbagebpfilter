@@ -17,26 +17,41 @@ const {
 
 const MAX_CONCURRENT_BATCHES = 3; // 将声明分为最多3个并发批次
 
-/** 行业大类映射 — 通过关键词匹配将细分行业归类到统计大类 */
+/** 行业大类映射 — 通过关键词匹配将细分行业归类到统计大类（支持多标签） */
 const INDUSTRY_CATEGORIES = [
   { category: "人工智能", keywords: ["AI", "人工智能", "机器学习", "深度学习", "NLP", "自然语言", "计算机视觉", "大模型", "LLM", "GPT", "智能"] },
-  { category: "新能源", keywords: ["新能源", "光伏", "储能", "锂电", "氢能", "风电", "电池", "充电", "碳中和", "清洁能源", "eVTOL", "电动"] },
-  { category: "生物医药", keywords: ["生物", "医药", "医疗", "基因", "制药", "临床", "诊断", "创新药", "医疗器械", "健康"] },
-  { category: "先进制造", keywords: ["制造", "半导体", "芯片", "机器人", "自动化", "工业", "材料", "3D打印", "精密", "航空航天"] },
+  { category: "具身智能", keywords: ["具身智能", "人形机器人", "灵巧手", "运动控制", "embodied", "具身"] },
+  { category: "芯片半导体", keywords: ["芯片", "半导体", "IC设计", "晶圆", "EDA", "封装测试", "光刻", "FPGA", "GPU", "处理器", "SoC", "存储芯片"] },
+  { category: "低空经济", keywords: ["低空", "eVTOL", "无人机", "UAV", "飞行汽车", "空中交通", "通航", "飞行器"] },
+  { category: "商业航天", keywords: ["航天", "火箭", "卫星", "太空", "空间站", "遥感", "商业发射", "轨道"] },
+  { category: "合成生物", keywords: ["合成生物", "基因编辑", "CRISPR", "生物制造", "发酵工程", "细胞工厂", "合成生物学"] },
+  { category: "新能源", keywords: ["新能源", "光伏", "储能", "锂电", "氢能", "风电", "电池", "充电", "碳中和", "清洁能源", "电动"] },
+  { category: "生物医药", keywords: ["医药", "医疗", "制药", "临床", "诊断", "创新药", "医疗器械", "健康", "药物"] },
+  { category: "先进制造", keywords: ["制造", "机器人", "自动化", "工业", "材料", "3D打印", "精密"] },
   { category: "企业服务/SaaS", keywords: ["SaaS", "企业服务", "B2B", "云计算", "ERP", "CRM", "协同", "办公", "数据服务", "PaaS"] },
   { category: "消费/零售", keywords: ["消费", "零售", "电商", "品牌", "餐饮", "食品", "快消", "DTC", "新零售"] },
   { category: "金融科技", keywords: ["金融", "支付", "保险", "银行", "区块链", "数字货币", "信贷", "风控", "FinTech"] },
 ];
 
-function classifyIndustry(industryStr) {
-  if (!industryStr) return "其他";
+/** 多标签行业分类 — 返回匹配的所有类别数组 */
+function classifyIndustryMulti(industryStr) {
+  if (!industryStr) return ["其他"];
   const upper = industryStr.toUpperCase();
+  const matched = [];
   for (const { category, keywords } of INDUSTRY_CATEGORIES) {
     for (const kw of keywords) {
-      if (upper.includes(kw.toUpperCase())) return category;
+      if (upper.includes(kw.toUpperCase())) {
+        matched.push(category);
+        break;
+      }
     }
   }
-  return "其他";
+  return matched.length > 0 ? matched : ["其他"];
+}
+
+/** 兼容旧接口：返回第一个匹配类别（字符串） */
+function classifyIndustry(industryStr) {
+  return classifyIndustryMulti(industryStr)[0];
 }
 
 /** 压缩声明核查结果 */
@@ -408,8 +423,12 @@ async function runPipeline(bpText, onProgress) {
     ? (productName ? `${companyName} - ${productName}` : `${companyName} - ${industry}`)
     : null;
 
-  // 行业分类
-  const industryCategory = classifyIndustry(industry);
+  // 行业分类（多标签）
+  const industryCategories = classifyIndustryMulti(industry);
+  const industryCategory = industryCategories[0]; // 主分类（兼容旧字段）
+
+  // 项目所在地推断（从 BP 提取数据中获取）
+  const projectLocation = extractedData.project_location || null;
 
   return {
     success: true,
@@ -422,6 +441,8 @@ async function runPipeline(bpText, onProgress) {
     verdict,
     title,
     industry_category: industryCategory,
+    industry_categories: industryCategories,
+    project_location: projectLocation,
     search_summary: {
       enabled: true, mock: false, total_results: 0,
       queries_count: (extractedData.key_claims || []).length, provider: "minimax_builtin_knowledge",
@@ -429,4 +450,4 @@ async function runPipeline(bpText, onProgress) {
   };
 }
 
-module.exports = { runPipeline, classifyIndustry };
+module.exports = { runPipeline, classifyIndustry, classifyIndustryMulti };

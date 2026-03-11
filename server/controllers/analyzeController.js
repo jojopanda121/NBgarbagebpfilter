@@ -31,6 +31,18 @@ function findExistingResult(userId, fileHash) {
   return null;
 }
 
+/** 查找同一用户正在运行中的相同文件分析任务 */
+function findRunningTask(userId, fileHash) {
+  try {
+    const db = getDb();
+    const row = db.prepare(
+      "SELECT id FROM tasks WHERE user_id = ? AND file_hash = ? AND status = 'running' ORDER BY created_at DESC LIMIT 1"
+    ).get(userId, fileHash);
+    return row || null;
+  } catch {}
+  return null;
+}
+
 /** POST /api/analyze — 上传文件并启动分析 */
 function analyze(req, res) {
   // 输入验证
@@ -64,6 +76,14 @@ function analyze(req, res) {
     try {
       fileHash = computeFileHash(req.file.path);
       if (userId && fileHash) {
+        // 检查是否有正在运行中的相同文件任务
+        const running = findRunningTask(userId, fileHash);
+        if (running) {
+          // 相同文件正在分析中，直接返回已有的 taskId（不扣额度）
+          fs.unlink(req.file.path, () => {});
+          return res.json({ taskId: running.id, cached: false, resuming: true });
+        }
+
         const existing = findExistingResult(userId, fileHash);
         if (existing) {
           // 相同文件已分析过，直接返回之前的结果（不扣额度）
@@ -98,6 +118,10 @@ function analyze(req, res) {
 
   // 创建任务并立即返回
   const task = createTask(userId);
+  // 提前写入 file_hash，这样重复文件检测能发现正在分析中的任务
+  if (fileHash) {
+    try { updateTask(task.id, { file_hash: fileHash }); } catch {}
+  }
   res.json({ taskId: task.id });
 
   // 后台异步执行
@@ -150,8 +174,21 @@ function analyze(req, res) {
       // 安全写入新字段（列可能尚未通过迁移创建）
       try {
         if (result.title) extraFields.title = result.title;
-        if (result.industry_category) extraFields.industry_category = result.industry_category;
+        // 多标签分类：以 JSON 数组存储
+        if (result.industry_categories) {
+          extraFields.industry_category = JSON.stringify(result.industry_categories);
+        } else if (result.industry_category) {
+          extraFields.industry_category = result.industry_category;
+        }
         if (fileHash) extraFields.file_hash = fileHash;
+        // total_score 独立字段（便于排行榜查询）
+        if (result.verdict?.total_score != null) {
+          extraFields.total_score = result.verdict.total_score;
+        }
+        // 项目所在地
+        if (result.project_location) {
+          extraFields.project_location = result.project_location;
+        }
         // 获取客户端 IP
         const clientIp = req.headers["x-forwarded-for"]?.split(",")[0]?.trim() || req.ip || req.socket?.remoteAddress;
         if (clientIp) extraFields.client_ip = clientIp;

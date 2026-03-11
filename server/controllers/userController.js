@@ -259,7 +259,30 @@ function getMonthlyStats(req, res) {
     ? Math.round(((thisMonth.count - lastMonth.count) / lastMonth.count) * 100)
     : null;
 
-  res.json({ months, this_month: thisMonth, month_change: monthChange });
+  // 本月各等级分布
+  const gradeDistribution = {};
+  try {
+    const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+    const thisMonthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1).toISOString();
+    const gradeRows = db.prepare(`
+      SELECT result FROM tasks
+      WHERE user_id = ? AND status = 'complete' AND created_at >= ? AND created_at < ?
+    `).all(userId, thisMonthStart, thisMonthEnd);
+    for (const row of gradeRows) {
+      if (row.result) {
+        try {
+          const parsed = JSON.parse(row.result);
+          const grade = parsed?.verdict?.grade;
+          if (grade) gradeDistribution[grade] = (gradeDistribution[grade] || 0) + 1;
+        } catch {}
+      }
+    }
+  } catch {}
+
+  const grade_dist = Object.entries(gradeDistribution)
+    .map(([grade, count]) => ({ grade, count }));
+
+  res.json({ months, this_month: thisMonth, month_change: monthChange, grade_dist });
 }
 
 /** GET /api/user/map-data — 用户项目地理分布数据 */

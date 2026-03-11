@@ -582,15 +582,23 @@ export default function SettingsPage({ adminMode = false }) {
   );
 }
 
-// 我的数据看板组件（增强版：月度数据 + 项目地图）
+// 我的数据看板组件（增强版：月度趋势折线图 + 评级饼图 + 中国地图）
 function MyStatsTab({ stats }) {
   const [monthlyData, setMonthlyData] = useState(null);
   const [mapData, setMapData] = useState(null);
   const [selectedProvince, setSelectedProvince] = useState(null);
 
+  // 动态导入（避免影响首屏加载）
+  const [Recharts, setRecharts] = useState(null);
+  const [ChinaMapComp, setChinaMapComp] = useState(null);
+
   useEffect(() => {
     api.get("/api/user/monthly-stats").then(setMonthlyData).catch(() => {});
     api.get("/api/user/map-data").then(setMapData).catch(() => {});
+    // 动态加载 Recharts
+    import("recharts").then((mod) => setRecharts(mod)).catch(() => {});
+    // 动态加载 ChinaMap
+    import("../components/dashboard/ChinaMap").then((mod) => setChinaMapComp(() => mod.default)).catch(() => {});
   }, []);
 
   if (!stats) {
@@ -601,9 +609,7 @@ function MyStatsTab({ stats }) {
     );
   }
 
-  const GRADE_COLORS = {
-    "A": "bg-green-500", "B": "bg-blue-500", "C": "bg-yellow-500", "D": "bg-red-500",
-  };
+  const GRADE_CHART_COLORS = { A: "#22c55e", B: "#3b82f6", C: "#eab308", D: "#ef4444" };
 
   const INDUSTRY_COLORS = [
     "bg-blue-500", "bg-purple-500", "bg-green-500", "bg-orange-500",
@@ -614,9 +620,13 @@ function MyStatsTab({ stats }) {
     ? Math.max(...stats.industry_dist.map(d => d.count))
     : 1;
 
-  const maxGradeCount = stats.grade_dist.length > 0
-    ? Math.max(...stats.grade_dist.map(d => d.count))
-    : 1;
+  // 本月评级饼图数据（优先用 monthly API 的 grade_dist，降级用 stats 的）
+  const gradePieData = (monthlyData?.grade_dist?.length > 0 ? monthlyData.grade_dist : stats.grade_dist)
+    .map((d) => ({
+      name: d.grade,
+      value: d.count,
+      fill: GRADE_CHART_COLORS[d.grade] || "#64748b",
+    }));
 
   return (
     <div className="space-y-6">
@@ -654,41 +664,143 @@ function MyStatsTab({ stats }) {
         </div>
       </div>
 
-      {/* 月度趋势 */}
-      {monthlyData?.months && (
-        <div className="bg-slate-900/50 border border-white/10 rounded-xl p-6">
-          <h3 className="text-base font-semibold mb-4 flex items-center gap-2">
-            <Calendar className="w-4 h-4 text-blue-400" />最近 6 个月趋势
-          </h3>
-          <div className="flex items-end gap-2 h-32">
-            {monthlyData.months.map((m) => {
-              const maxCount = Math.max(...monthlyData.months.map(x => x.count), 1);
-              const pct = m.count > 0 ? (m.count / maxCount) * 100 : 0;
-              return (
-                <div key={m.month} className="flex-1 flex flex-col items-center gap-1">
-                  <span className="text-xs text-slate-400 tabular-nums">{m.count || ""}</span>
-                  <div className="w-full flex items-end" style={{ height: "80px" }}>
-                    <div
-                      className={`w-full rounded-t transition-all ${m.count > 0 ? "bg-blue-500" : "bg-slate-800"}`}
-                      style={{ height: `${Math.max(pct, m.count > 0 ? 8 : 0)}%` }}
-                    />
-                  </div>
-                  <span className="text-xs text-slate-500">{m.month.slice(5)}</span>
-                  {m.avg_score && <span className="text-xs text-emerald-400">{m.avg_score}分</span>}
-                </div>
-              );
-            })}
+      {/* 6 个月趋势折线图 + 评级饼图 — 双栏 */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* 折线图（占 2 列） */}
+        {monthlyData?.months && (
+          <div className="lg:col-span-2 bg-slate-900/50 border border-white/10 rounded-xl p-6">
+            <h3 className="text-base font-semibold mb-4 flex items-center gap-2">
+              <TrendingUp className="w-4 h-4 text-blue-400" />最近 6 个月分析趋势
+            </h3>
+            {Recharts ? (
+              <Recharts.ResponsiveContainer width="100%" height={220}>
+                <Recharts.ComposedChart data={monthlyData.months} margin={{ top: 5, right: 10, left: -10, bottom: 0 }}>
+                  <Recharts.CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
+                  <Recharts.XAxis dataKey="month" tickFormatter={(v) => v.slice(5)} tick={{ fill: "#94a3b8", fontSize: 12 }} axisLine={{ stroke: "rgba(255,255,255,0.1)" }} />
+                  <Recharts.YAxis yAxisId="left" tick={{ fill: "#94a3b8", fontSize: 12 }} axisLine={false} tickLine={false} allowDecimals={false} />
+                  <Recharts.YAxis yAxisId="right" orientation="right" tick={{ fill: "#94a3b8", fontSize: 12 }} axisLine={false} tickLine={false} domain={[0, 100]} />
+                  <Recharts.Tooltip
+                    contentStyle={{ backgroundColor: "rgba(15,23,42,0.95)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, color: "#e2e8f0" }}
+                    formatter={(value, name) => [value, name === "count" ? "分析数量" : "平均分数"]}
+                    labelFormatter={(label) => `${label} 月`}
+                  />
+                  <Recharts.Bar yAxisId="left" dataKey="count" fill="#3b82f6" radius={[4, 4, 0, 0]} barSize={28} name="count" />
+                  <Recharts.Line yAxisId="right" type="monotone" dataKey="avg_score" stroke="#22c55e" strokeWidth={2} dot={{ fill: "#22c55e", r: 4 }} connectNulls name="avg_score" />
+                </Recharts.ComposedChart>
+              </Recharts.ResponsiveContainer>
+            ) : (
+              /* 降级：简单柱状图 */
+              <div className="flex items-end gap-2 h-40">
+                {monthlyData.months.map((m) => {
+                  const maxCount = Math.max(...monthlyData.months.map(x => x.count), 1);
+                  const pct = m.count > 0 ? (m.count / maxCount) * 100 : 0;
+                  return (
+                    <div key={m.month} className="flex-1 flex flex-col items-center gap-1">
+                      <span className="text-xs text-slate-400 tabular-nums">{m.count || ""}</span>
+                      <div className="w-full flex items-end" style={{ height: "100px" }}>
+                        <div className={`w-full rounded-t transition-all ${m.count > 0 ? "bg-blue-500" : "bg-slate-800"}`} style={{ height: `${Math.max(pct, m.count > 0 ? 8 : 0)}%` }} />
+                      </div>
+                      <span className="text-xs text-slate-500">{m.month.slice(5)}</span>
+                      {m.avg_score && <span className="text-xs text-emerald-400">{m.avg_score}分</span>}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
-        </div>
-      )}
+        )}
 
-      {/* 项目地理分布（省份列表模式） */}
-      {mapData?.provinces?.length > 0 && (
+        {/* 评级分布饼图（占 1 列） */}
         <div className="bg-slate-900/50 border border-white/10 rounded-xl p-6">
           <h3 className="text-base font-semibold mb-4 flex items-center gap-2">
-            <MapPin className="w-4 h-4 text-red-400" />项目地理分布
+            <BarChart3 className="w-4 h-4 text-green-400" />评级分布（A/B/C/D）
           </h3>
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 mb-4">
+          {Recharts && gradePieData.length > 0 ? (
+            <div className="flex flex-col items-center">
+              <Recharts.ResponsiveContainer width="100%" height={180}>
+                <Recharts.PieChart>
+                  <Recharts.Pie
+                    data={gradePieData}
+                    cx="50%" cy="50%"
+                    innerRadius={40} outerRadius={70}
+                    paddingAngle={3}
+                    dataKey="value"
+                    label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                    labelLine={{ stroke: "#64748b" }}
+                  >
+                    {gradePieData.map((entry) => (
+                      <Recharts.Cell key={entry.name} fill={entry.fill} />
+                    ))}
+                  </Recharts.Pie>
+                  <Recharts.Tooltip
+                    contentStyle={{ backgroundColor: "rgba(15,23,42,0.95)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, color: "#e2e8f0" }}
+                    formatter={(value, name) => [`${value} 个`, `${name} 级`]}
+                  />
+                </Recharts.PieChart>
+              </Recharts.ResponsiveContainer>
+              <div className="flex gap-4 mt-2">
+                {["A", "B", "C", "D"].map((g) => (
+                  <div key={g} className="flex items-center gap-1.5 text-xs text-slate-400">
+                    <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: GRADE_CHART_COLORS[g] }} />
+                    {g}级
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : gradePieData.length > 0 ? (
+            /* 降级：文字列表 */
+            <div className="space-y-2">
+              {["A", "B", "C", "D"].map((grade) => {
+                const item = gradePieData.find(d => d.name === grade);
+                return (
+                  <div key={grade} className="flex items-center gap-2 text-sm">
+                    <span className="w-3 h-3 rounded-full" style={{ backgroundColor: GRADE_CHART_COLORS[grade] }} />
+                    <span className="text-slate-300">{grade}级</span>
+                    <span className="text-slate-500 ml-auto">{item?.value || 0} 个</span>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <p className="text-sm text-slate-500 text-center py-8">暂无评级数据</p>
+          )}
+        </div>
+      </div>
+
+      {/* 中国地图 — 项目地理分布 */}
+      <div className="bg-slate-900/50 border border-white/10 rounded-xl p-6">
+        <h3 className="text-base font-semibold mb-4 flex items-center gap-2">
+          <MapPin className="w-4 h-4 text-red-400" />项目地理分布（中国地图）
+        </h3>
+        {ChinaMapComp && mapData ? (
+          <>
+            <ChinaMapComp
+              provinces={mapData.provinces || []}
+              details={mapData.details || {}}
+              onProvinceClick={(province) => setSelectedProvince(selectedProvince === province ? null : province)}
+            />
+            {/* 省份标签列表 */}
+            {mapData.provinces?.length > 0 && (
+              <div className="flex flex-wrap gap-2 mt-4">
+                {mapData.provinces.map((p) => (
+                  <button
+                    key={p.province}
+                    onClick={() => setSelectedProvince(selectedProvince === p.province ? null : p.province)}
+                    className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
+                      selectedProvince === p.province
+                        ? "bg-blue-500/20 border border-blue-500/40 text-blue-300"
+                        : "bg-slate-800 border border-white/10 text-slate-400 hover:text-slate-200 hover:bg-slate-700"
+                    }`}
+                  >
+                    {p.province} ({p.count})
+                  </button>
+                ))}
+              </div>
+            )}
+          </>
+        ) : mapData?.provinces?.length > 0 ? (
+          /* 降级：省份网格 */
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
             {mapData.provinces.map((p) => (
               <button
                 key={p.province}
@@ -704,31 +816,37 @@ function MyStatsTab({ stats }) {
               </button>
             ))}
           </div>
-          {/* 选中省份的项目列表 */}
-          {selectedProvince && mapData.details?.[selectedProvince] && (
-            <div className="bg-slate-800 rounded-lg p-4">
-              <h4 className="text-sm font-semibold mb-3 text-blue-300">{selectedProvince} 项目列表</h4>
-              <div className="space-y-2 max-h-60 overflow-y-auto">
-                {mapData.details[selectedProvince].map((proj) => (
-                  <div key={proj.id} className="flex items-center justify-between py-1.5 border-b border-white/5 last:border-0">
-                    <div className="min-w-0">
-                      <p className="text-sm truncate">{proj.title || "BP分析"}</p>
-                    </div>
-                    <div className="flex items-center gap-3 shrink-0 ml-3">
-                      {proj.total_score != null && (
-                        <span className={`text-sm font-bold ${
-                          proj.total_score >= 75 ? "text-emerald-400" : proj.total_score >= 50 ? "text-yellow-400" : "text-red-400"
-                        }`}>{Math.round(proj.total_score)}分</span>
-                      )}
-                      <span className="text-xs text-slate-500">{new Date(proj.created_at).toLocaleDateString("zh-CN")}</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
+        ) : (
+          <p className="text-sm text-slate-500 text-center py-8">暂无项目地理数据，分析更多 BP 后将自动识别项目所在省份</p>
+        )}
+
+        {/* 选中省份的项目列表（drill-down） */}
+        {selectedProvince && mapData?.details?.[selectedProvince] && (
+          <div className="bg-slate-800 rounded-lg p-4 mt-4">
+            <div className="flex items-center justify-between mb-3">
+              <h4 className="text-sm font-semibold text-blue-300">{selectedProvince} — 项目列表</h4>
+              <button onClick={() => setSelectedProvince(null)} className="text-xs text-slate-500 hover:text-slate-300">关闭</button>
             </div>
-          )}
-        </div>
-      )}
+            <div className="space-y-2 max-h-60 overflow-y-auto">
+              {mapData.details[selectedProvince].map((proj) => (
+                <div key={proj.id} className="flex items-center justify-between py-1.5 border-b border-white/5 last:border-0">
+                  <div className="min-w-0">
+                    <p className="text-sm truncate">{proj.title || "BP分析"}</p>
+                  </div>
+                  <div className="flex items-center gap-3 shrink-0 ml-3">
+                    {proj.total_score != null && (
+                      <span className={`text-sm font-bold ${
+                        proj.total_score >= 75 ? "text-emerald-400" : proj.total_score >= 50 ? "text-yellow-400" : "text-red-400"
+                      }`}>{Math.round(proj.total_score)}分</span>
+                    )}
+                    <span className="text-xs text-slate-500">{new Date(proj.created_at).toLocaleDateString("zh-CN")}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* 赛道分布 */}
       {stats.industry_dist.length > 0 && (
@@ -749,32 +867,6 @@ function MyStatsTab({ stats }) {
                 </div>
               </div>
             ))}
-          </div>
-        </div>
-      )}
-
-      {/* 评级分布 */}
-      {stats.grade_dist.length > 0 && (
-        <div className="bg-slate-900/50 border border-white/10 rounded-xl p-6">
-          <h3 className="text-base font-semibold mb-4">评级分布</h3>
-          <div className="flex items-end gap-3 h-32">
-            {["A", "B", "C", "D"].map((grade) => {
-              const item = stats.grade_dist.find(d => d.grade === grade);
-              const count = item?.count || 0;
-              const pct = count > 0 ? (count / maxGradeCount) * 100 : 0;
-              return (
-                <div key={grade} className="flex-1 flex flex-col items-center gap-1">
-                  <span className="text-xs text-slate-400 tabular-nums">{count || ""}</span>
-                  <div className="w-full flex items-end" style={{ height: "80px" }}>
-                    <div
-                      className={`w-full rounded-t transition-all ${count > 0 ? (GRADE_COLORS[grade] || "bg-slate-500") : "bg-slate-800"}`}
-                      style={{ height: `${Math.max(pct, count > 0 ? 10 : 0)}%` }}
-                    />
-                  </div>
-                  <span className="text-xs text-slate-500">{grade}</span>
-                </div>
-              );
-            })}
           </div>
         </div>
       )}

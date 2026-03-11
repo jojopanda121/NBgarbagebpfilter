@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from "react";
-import { Brain, Download, LogOut, User, Zap, FileText, ChevronDown, Shield } from "lucide-react";
+import { Brain, Download, LogOut, User, Zap, FileText, ChevronDown, Shield, Trophy } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import useAuthStore from "../../store/useAuthStore";
 import useAnalysisStore from "../../store/useAnalysisStore";
@@ -98,9 +98,13 @@ export default function Header() {
                 aria-expanded={showDropdown}
                 aria-haspopup="true"
               >
-                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-medium text-sm">
-                  {user?.username?.charAt(0).toUpperCase() || "U"}
-                </div>
+                {user?.avatar_url ? (
+                  <img src={user.avatar_url} alt="" className="w-8 h-8 rounded-full object-cover" />
+                ) : (
+                  <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-medium text-sm">
+                    {user?.username?.charAt(0).toUpperCase() || "U"}
+                  </div>
+                )}
                 <span className="hidden sm:inline text-sm text-slate-300">
                   {user?.username}
                 </span>
@@ -125,6 +129,14 @@ export default function Header() {
                     >
                       <FileText className="w-4 h-4" />
                       历史报告
+                    </button>
+                    <button
+                      onClick={() => { setShowDropdown(false); navigate("/app/leaderboard"); }}
+                      className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-300 hover:bg-slate-800 transition-colors"
+                      role="menuitem"
+                    >
+                      <Trophy className="w-4 h-4 text-yellow-400" />
+                      排行榜
                     </button>
                     <button
                       onClick={() => { setShowDropdown(false); navigate("/settings?tab=token"); }}

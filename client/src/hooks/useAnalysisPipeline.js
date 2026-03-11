@@ -21,7 +21,7 @@ const STAGE_TO_STEP = {
 };
 
 const POLL_INTERVAL_MS = 2500;
-const MAX_POLL_COUNT = 120;           // 最多轮询 120 次（约 5 分钟）
+const MAX_POLL_COUNT = 240;           // 最多轮询 240 次（约 10 分钟）
 const MAX_CONSECUTIVE_ERRORS = 8;
 const PENDING_TASK_KEY = "bp_pending_task";
 
@@ -62,6 +62,7 @@ export function useAnalysisPipeline() {
     setProgressMessage,
     setResult,
     setError,
+    setBackgroundProcessing,
   } = useAnalysisStore();
 
   const startTimeRef = useRef(null);
@@ -102,8 +103,10 @@ export function useAnalysisPipeline() {
     while (analyzingRef.current) {
       pollCount++;
       if (pollCount > MAX_POLL_COUNT) {
-        localStorage.removeItem(PENDING_TASK_KEY);
-        throw new Error("分析超时，请稍后在历史记录中查看结果");
+        // 不抛出错误，改为提示后台处理中（不清除 pendingTask，下次可恢复）
+        setBackgroundProcessing(true);
+        setProgressMessage("后台处理中，请点击头像，下拉菜单历史报告查看");
+        return;
       }
       await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
       if (!analyzingRef.current) break;
@@ -148,7 +151,7 @@ export function useAnalysisPipeline() {
         throw new Error(taskData.error || "分析失败，请重试");
       }
     }
-  }, [setCurrentStep, setProgress, setProgressMessage, setResult]);
+  }, [setCurrentStep, setProgress, setProgressMessage, setResult, setBackgroundProcessing]);
 
   /** 从头开始分析（上传文件） */
   const startAnalysis = useCallback(async () => {
@@ -197,9 +200,12 @@ export function useAnalysisPipeline() {
       }
     } finally {
       analyzingRef.current = false;
-      setAnalyzing(false);
+      // 如果是后台处理中，保持 analyzing 状态让 UI 显示提示
+      if (!useAnalysisStore.getState().backgroundProcessing) {
+        setAnalyzing(false);
+      }
     }
-  }, [file, setAnalyzing, setCurrentStep, setProgress, setEta, setProgressMessage, setResult, setError, pollUntilDone]);
+  }, [file, setAnalyzing, setCurrentStep, setProgress, setEta, setProgressMessage, setResult, setError, setBackgroundProcessing, pollUntilDone]);
 
   /** 恢复对已提交任务的轮询（用户返回页面时调用） */
   const resumeAnalysis = useCallback(async (taskId) => {
@@ -225,7 +231,7 @@ export function useAnalysisPipeline() {
       analyzingRef.current = false;
       setAnalyzing(false);
     }
-  }, [setAnalyzing, setCurrentStep, setProgress, setEta, setProgressMessage, setResult, setError, pollUntilDone]);
+  }, [setAnalyzing, setCurrentStep, setProgress, setEta, setProgressMessage, setResult, setError, setBackgroundProcessing, pollUntilDone]);
 
   return { startAnalysis, resumeAnalysis, getPendingTask };
 }

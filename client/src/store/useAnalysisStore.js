@@ -25,6 +25,9 @@ const useAnalysisStore = create((set) => ({
   // ── 错误 ──
   error: "",
 
+  // ── 后台处理状态 ──
+  backgroundProcessing: false,
+
   // ── UI 状态 ──
   showResearch: false,
 
@@ -43,6 +46,7 @@ const useAnalysisStore = create((set) => ({
   setResult: (result) => set({ result }),
   setError: (error) => set({ error }),
 
+  setBackgroundProcessing: (backgroundProcessing) => set({ backgroundProcessing }),
   setShowResearch: (showResearch) => set({ showResearch }),
 
   /** 完整重置，准备下一次分析 */
@@ -57,6 +61,7 @@ const useAnalysisStore = create((set) => ({
       progressMessage: "",
       result: null,
       error: "",
+      backgroundProcessing: false,
       showResearch: false,
     }),
 }));

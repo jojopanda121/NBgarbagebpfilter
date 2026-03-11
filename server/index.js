@@ -35,6 +35,8 @@ const tokenRoutes = require("./routes/token");
 const adminRoutes = require("./routes/admin");
 const feedbackRoutes = require("./routes/feedback");
 const packagesRoutes = require("./routes/packages");
+const announcementRoutes = require("./routes/announcement");
+const leaderboardRoutes = require("./routes/leaderboard");
 
 // 中间件
 const { errorHandler } = require("./middleware/errorHandler");
@@ -85,6 +87,8 @@ app.use("/api/token", tokenRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/feedback", feedbackRoutes);
 app.use("/api/packages", packagesRoutes);
+app.use("/api/announcement", announcementRoutes);
+app.use("/api/leaderboard", leaderboardRoutes);
 
 // ── 健康检查 ──
 app.get("/api/health", (_req, res) => {

@@ -23,6 +23,7 @@ function getProfile(req, res) {
     id: user.id,
     username: user.username,
     email: user.email,
+    avatar_url: user.avatar_url || null,
     contact_bound: !!user.contact_bound,
     usage_count: user.usage_count || 0,
     created_at: user.created_at,
@@ -227,6 +228,104 @@ function getReferralStatsHandler(req, res) {
   res.json(stats);
 }
 
+/** GET /api/user/monthly-stats — 用户月度数据看板 */
+function getMonthlyStats(req, res) {
+  const db = getDb();
+  const userId = req.user.id;
+
+  const months = [];
+  const now = new Date();
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const start = d.toISOString();
+    const end = new Date(d.getFullYear(), d.getMonth() + 1, 1).toISOString();
+    const label = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+
+    try {
+      const row = db.prepare(`
+        SELECT COUNT(*) as count, AVG(total_score) as avg_score
+        FROM tasks
+        WHERE user_id = ? AND status = 'complete' AND created_at >= ? AND created_at < ?
+      `).get(userId, start, end);
+      months.push({ month: label, count: row?.count || 0, avg_score: row?.avg_score ? Math.round(row.avg_score) : null });
+    } catch {
+      months.push({ month: label, count: 0, avg_score: null });
+    }
+  }
+
+  const thisMonth = months[months.length - 1];
+  const lastMonth = months[months.length - 2];
+  const monthChange = lastMonth?.count > 0
+    ? Math.round(((thisMonth.count - lastMonth.count) / lastMonth.count) * 100)
+    : null;
+
+  res.json({ months, this_month: thisMonth, month_change: monthChange });
+}
+
+/** GET /api/user/map-data — 用户项目地理分布数据 */
+function getMapData(req, res) {
+  const db = getDb();
+  const userId = req.user.id;
+
+  try {
+    const provinces = db.prepare(`
+      SELECT project_location as province, COUNT(*) as count
+      FROM tasks
+      WHERE user_id = ? AND status = 'complete' AND project_location IS NOT NULL AND project_location != '未知'
+      GROUP BY project_location
+      ORDER BY count DESC
+    `).all(userId);
+
+    const provinceDetails = {};
+    for (const p of provinces) {
+      const projects = db.prepare(`
+        SELECT id, title, total_score, created_at
+        FROM tasks
+        WHERE user_id = ? AND status = 'complete' AND project_location = ?
+        ORDER BY created_at DESC LIMIT 20
+      `).all(userId, p.province);
+      provinceDetails[p.province] = projects;
+    }
+    res.json({ provinces, details: provinceDetails });
+  } catch {
+    res.json({ provinces: [], details: {} });
+  }
+}
+
+/** POST /api/user/avatar — 上传头像 */
+function uploadAvatar(req, res) {
+  const fs = require("fs");
+  const path = require("path");
+  const crypto = require("crypto");
+
+  if (!req.file) return res.status(400).json({ error: "请上传头像图片" });
+
+  try {
+    const ext = path.extname(req.file.originalname || ".png").toLowerCase();
+    const hash = crypto.randomBytes(8).toString("hex");
+    const filename = `avatar_${req.user.id}_${hash}${ext}`;
+    const uploadsDir = path.join(__dirname, "..", "..", "client", "public", "uploads", "avatars");
+    if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
+
+    const destPath = path.join(uploadsDir, filename);
+    fs.copyFileSync(req.file.path, destPath);
+    fs.unlinkSync(req.file.path);
+    const avatarUrl = `/uploads/avatars/${filename}`;
+
+    const db = getDb();
+    const oldUser = db.prepare("SELECT avatar_url FROM users WHERE id = ?").get(req.user.id);
+    if (oldUser?.avatar_url) {
+      const oldPath = path.join(__dirname, "..", "..", "client", "public", oldUser.avatar_url);
+      try { fs.unlinkSync(oldPath); } catch {}
+    }
+    db.prepare("UPDATE users SET avatar_url = ? WHERE id = ?").run(avatarUrl, req.user.id);
+    res.json({ avatar_url: avatarUrl, message: "头像更新成功" });
+  } catch {
+    try { fs.unlinkSync(req.file.path); } catch {}
+    res.status(500).json({ error: "头像上传失败" });
+  }
+}
+
 module.exports = {
   getProfile,
   updateProfile,
@@ -234,6 +333,9 @@ module.exports = {
   getOrders,
   getUsage,
   getStats,
+  getMonthlyStats,
+  getMapData,
   getInviteCode,
   getReferralStats: getReferralStatsHandler,
+  uploadAvatar,
 };

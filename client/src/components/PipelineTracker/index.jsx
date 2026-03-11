@@ -1,5 +1,6 @@
 import React, { memo } from "react";
-import { CheckCircle2, Loader2, Clock, Info } from "lucide-react";
+import { CheckCircle2, Loader2, Clock, Info, AlertTriangle } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import useAnalysisStore from "../../store/useAnalysisStore";
 import { STEPS } from "../../constants";
 
@@ -25,6 +26,7 @@ function formatEta(seconds) {
  *   - 可视化进度条 + 百分比
  *   - 当前阶段描述文字
  *   - 预估剩余时间（ETA）
+ *   - 后台处理超时提示
  *
  * 性能策略：
  *   - 仅订阅进度域状态，结果域变更不会触发此组件重绘。
@@ -36,8 +38,14 @@ const PipelineTracker = memo(function PipelineTracker() {
   const progress = useAnalysisStore((s) => s.progress);
   const eta = useAnalysisStore((s) => s.eta);
   const progressMessage = useAnalysisStore((s) => s.progressMessage);
+  const backgroundProcessing = useAnalysisStore((s) => s.backgroundProcessing);
 
-  if (!analyzing) return null;
+  if (!analyzing && !backgroundProcessing) return null;
+
+  // 后台处理中 — 轮询超时但后端仍在分析
+  if (backgroundProcessing) {
+    return <BackgroundProcessingBanner />;
+  }
 
   const etaText = formatEta(eta);
   // 展示给用户的进度百分比：取整，最多显示 99% 直到 complete 事件到达
@@ -138,5 +146,46 @@ const PipelineTracker = memo(function PipelineTracker() {
     </div>
   );
 });
+
+/** 后台处理中 Banner — 轮询超时但后端仍在跑 */
+function BackgroundProcessingBanner() {
+  const reset = useAnalysisStore((s) => s.reset);
+  let navigate;
+  try { navigate = useNavigate(); } catch { navigate = null; }
+
+  return (
+    <div className="mt-8">
+      <div className="p-5 bg-amber-500/10 border border-amber-500/30 rounded-xl space-y-3">
+        <div className="flex items-center gap-3">
+          <AlertTriangle className="w-6 h-6 text-amber-400 shrink-0" />
+          <div>
+            <p className="text-base font-semibold text-amber-300">
+              后台处理中
+            </p>
+            <p className="text-sm text-amber-300/80 mt-1">
+              请点击头像，下拉菜单历史报告查看
+            </p>
+          </div>
+        </div>
+        <div className="flex gap-3">
+          {navigate && (
+            <button
+              onClick={() => { reset(); navigate("/app/history"); }}
+              className="px-4 py-2 bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 rounded-lg text-sm text-amber-300 font-medium transition-colors"
+            >
+              前往历史报告
+            </button>
+          )}
+          <button
+            onClick={reset}
+            className="px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-white/10 rounded-lg text-sm text-slate-300 transition-colors"
+          >
+            继续其他分析
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default PipelineTracker;

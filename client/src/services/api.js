@@ -85,6 +85,11 @@ class ApiService {
     return this.request(url, options);
   }
 
+  /** 通用文件上传（FormData） */
+  upload(url, formData) {
+    return this.request(url, { method: "POST", body: formData });
+  }
+
   /** 上传文件（带进度） */
   async uploadFile(file) {
     const formData = new FormData();

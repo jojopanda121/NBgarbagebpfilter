@@ -236,6 +236,60 @@ async function runAgentBWithBatchingAndResearch(extractedData, bpText, onProgres
   };
 }
 
+/**
+ * 基于声明核查结果生成诚信度维度的分析摘要（纯 JS，不依赖 LLM）
+ * @param {Array} claimVerdicts
+ * @returns {{ finding, comprehensive_analysis, score_rationale, risk_factors, positive_signals }}
+ */
+function buildIntegrityDimAnalysis(claimVerdicts) {
+  if (!Array.isArray(claimVerdicts) || claimVerdicts.length === 0) {
+    return {
+      finding: "暂无声明核查数据",
+      comprehensive_analysis: "暂无声明核查数据，诚信度取默认及格分。",
+      score_rationale: "无核查数据，取中性默认分 60",
+      risk_factors: [],
+      positive_signals: [],
+    };
+  }
+
+  const counts = {};
+  for (const v of claimVerdicts) {
+    const verdict = v.verdict || "存疑";
+    counts[verdict] = (counts[verdict] || 0) + 1;
+  }
+  const total = claimVerdicts.length;
+
+  const parts = Object.entries(counts)
+    .sort((a, b) => b[1] - a[1])
+    .map(([verdict, count]) => `${verdict} ${count} 条`)
+    .join("、");
+
+  const honestCount = (counts["诚实"] || 0) + (counts["保守低估"] || 0);
+  const exaggeratedCount = (counts["夸大"] || 0) + (counts["严重夸大"] || 0);
+  const falseCount = counts["证伪"] || 0;
+  const dishonestCount = exaggeratedCount + falseCount + (counts["信息不对称"] || 0);
+
+  const finding = `共核查 ${total} 条声明：${parts}。`;
+  const honestPct = Math.round((honestCount / total) * 100);
+  const dishonestPct = Math.round((dishonestCount / total) * 100);
+
+  const riskFactors = [];
+  const positiveSignals = [];
+  if (exaggeratedCount > 0) riskFactors.push(`${exaggeratedCount} 条声明存在夸大`);
+  if (falseCount > 0) riskFactors.push(`${falseCount} 条声明被证伪`);
+  if (counts["信息不对称"] > 0) riskFactors.push(`${counts["信息不对称"]} 条声明涉嫌信息不对称`);
+  if (honestCount > 0) positiveSignals.push(`${honestCount} 条声明（${honestPct}%）经核查属实或保守`);
+  if (dishonestPct === 0) positiveSignals.push("未发现明显夸大或造假迹象");
+
+  return {
+    finding,
+    comprehensive_analysis: `${finding} 诚实/保守声明占比 ${honestPct}%，存在问题声明占比 ${dishonestPct}%。存疑声明为 LLM 知识库覆盖不足所致，不代表项目问题。`,
+    score_rationale: `按 verdict 加权均值计算：诚实/保守=10分，存疑=6分，夸大=3分，信息不对称=2分，严重夸大=1分，证伪=0分`,
+    risk_factors: riskFactors,
+    positive_signals: positiveSignals,
+  };
+}
+
 /** 构建单个维度结果 */
 function buildDimension(key, scoringResult, dimensionAnalysis) {
   const dimResult = scoringResult.dimensions[key];
@@ -257,18 +311,22 @@ function buildDimension(key, scoringResult, dimensionAnalysis) {
     risk_factors: expertDim.risk_factors || [],
     positive_signals: expertDim.positive_signals || [],
   };
-  if (key === "external_risk") {
-    base.multiplier = dimResult.multiplier;
-  }
   return base;
 }
 
 /** 构建完整的 verdict 响应对象 */
 function buildVerdictResponse(scoringResult, structuralResult, validatedData, dimensionAnalysis, valuationComparison) {
   const dimensionKeys = ["timing_ceiling", "product_moat", "business_validation", "team", "external_risk"];
+
+  // 第五维度（BP诚信度）由 JS 生成分析摘要，不依赖 LLM 的 dimension_analysis
+  const enrichedDimAnalysis = {
+    ...dimensionAnalysis,
+    external_risk: buildIntegrityDimAnalysis(validatedData.claim_verdicts || []),
+  };
+
   const dimensions = {};
   for (const key of dimensionKeys) {
-    dimensions[key] = buildDimension(key, scoringResult, dimensionAnalysis);
+    dimensions[key] = buildDimension(key, scoringResult, enrichedDimAnalysis);
   }
 
   return {
@@ -330,8 +388,10 @@ async function extractBPData(bpText, onProgress) {
 
 /**
  * Step 2: 计算评分
+ * @param {object} validatedData - LLM 结构化输出（含 validated_data）
+ * @param {Array}  claimVerdicts - Agent B 声明核查结果数组（用于 S5 诚信度计算）
  */
-function calculateScoring(validatedData, onProgress) {
+function calculateScoring(validatedData, claimVerdicts, onProgress) {
   onProgress({ type: "progress", stage: "ai_done", percentage: 82, message: "AI研究完成，计算五维评分..." });
 
   const rawScoringData = validatedData.validated_data || {};
@@ -348,8 +408,8 @@ function calculateScoring(validatedData, onProgress) {
     Team_Completeness_Score: rawScoringData.Team_Completeness_Score,
     Team_Track_Record_Score: rawScoringData.Team_Track_Record_Score,
     Team_Education_Score: rawScoringData.Team_Education_Score,
-    Policy_Risk: rawScoringData.Policy_Risk ?? 1,
-    Valuation_Gap: rawScoringData.Valuation_Gap ?? 1.0,
+    // S5 诚信度：直接传入声明核查结果，JS 端纯计算，不依赖 LLM 输出 Policy_Risk / Valuation_Gap
+    claim_verdicts: claimVerdicts || [],
   };
   const scoringResult = scoreProject(scoringInput);
 
@@ -405,7 +465,7 @@ async function runPipeline(bpText, onProgress) {
   const validatedData = { ...structuralResult, claim_verdicts: claimVerdicts };
 
   // Step 3: 评分计算（CPU，瞬间完成）
-  const { scoringInput, scoringResult } = calculateScoring(validatedData, onProgress);
+  const { scoringInput, scoringResult } = calculateScoring(validatedData, claimVerdicts, onProgress);
 
   // Step 4: 构建维度数据和估值对比
   const dimensionAnalysis = validatedData.dimension_analysis || {};

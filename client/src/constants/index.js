@@ -25,7 +25,7 @@ export const dimLabelsMap = {
   product_moat: "产品与壁垒",
   business_validation: "资本效率与规模效应",
   team: "团队基因",
-  external_risk: "外部风险",
+  external_risk: "BP诚信度",
 };
 
 // ── 维度副标题映射 (v4.0 新增) ──
@@ -34,5 +34,5 @@ export const dimSubtitleMap = {
   product_moat: "TRL + 竞品排名",
   business_validation: "行业资本效率 + 行业规模效应",
   team: "创始人赛道经验年数",
-  external_risk: "政策风险 + 估值溢价折扣",
+  external_risk: "声明核查结果",
 };

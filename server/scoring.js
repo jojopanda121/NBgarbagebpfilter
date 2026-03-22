@@ -178,62 +178,65 @@ function calculateDimension4_Team(teamData) {
 }
 
 /**
- * 计算模块5: 外部风险 (V5, 乘数, 不占加权权重)
+ * 计算模块5: BP诚信度 (S5, 0-100, 权重 20%)
  *
- * 重要变更: 废除之前 0.5 的一刀切死刑逻辑，改为软着陆折扣。
+ * 基于 Agent B 对 BP 所有关键声明的逐条核查结果，量化计算这份 BP 的
+ * 信息质量与可信程度。
  *
- * 估值溢价乘数规则:
- *   - Valuation_Gap ≤ 1.0 或无数据:  乘数 = 1.0（无罪推定）
- *   - 1.0 < Valuation_Gap ≤ 3.0:     乘数 = 0.9（轻度折扣）
- *   - Valuation_Gap > 3.0 或政策风险极高: 乘数 = 0.8（软着陆折扣）
+ * 设计原则：
+ *   "存疑" 是 LLM 知识库覆盖不足的结果，不是项目的问题，给及格分（6分）。
+ *   只有可被证伪或有明确夸大证据的声明才拉低分数。
  *
- * @param {number} Policy_Risk - 政策违规风险 (0 = 极高风险, 1 = 无风险)
- * @param {number} Valuation_Gap - BP 叫价与行业可比公司中位数的溢价倍数
- * @returns {number} 0-1 的乘数
+ * verdict 映射规则（满分10）:
+ *   诚实 / 保守低估  → 10  （正面信号）
+ *   存疑             →  6  （无罪推定，刚好及格）
+ *   夸大             →  3  （有证据的负面信号）
+ *   信息不对称       →  2  （故意隐瞒）
+ *   严重夸大         →  1  （严重负面）
+ *   证伪             →  0  （声明明显错误）
+ *
+ * 公式: S5 = round(所有声明得分的平均值 × 10)
+ * 无数据兜底: 60（刚好及格，不误杀）
+ *
+ * @param {Array} claimVerdicts - Agent B 输出的声明核查结果数组
+ * @returns {number} 0-100 的整数得分
  */
-function calculateDimension5_ExternalRisk(Policy_Risk, Valuation_Gap) {
-  const rawRisk = Number(Policy_Risk);
-  // 政策风险：缺失时无罪推定，默认 1.0（无风险）
-  const policyMultiplier = isNaN(rawRisk) ? 1 : Math.max(0, Math.min(1, rawRisk));
+const VERDICT_SCORE_MAP = {
+  "诚实": 10,
+  "保守低估": 10,
+  "存疑": 6,
+  "夸大": 3,
+  "信息不对称": 2,
+  "严重夸大": 1,
+  "证伪": 0,
+};
 
-  const rawGap = Number(Valuation_Gap);
-
-  // 估值折扣：软着陆逻辑
-  let valuationDiscount;
-  if (Valuation_Gap === null || Valuation_Gap === undefined || isNaN(rawGap) || rawGap <= 0) {
-    // 无估值数据 → 无罪推定，不予惩罚
-    valuationDiscount = 1.0;
-  } else if (rawGap <= 1.0) {
-    // 估值合理或低估
-    valuationDiscount = 1.0;
-  } else if (rawGap <= 3.0) {
-    // 中度溢价：轻度折扣
-    valuationDiscount = 0.9;
-  } else {
-    // 严重溢价或政策风险极高：软着陆折扣（不再是 0.5 死刑）
-    valuationDiscount = 0.8;
+function calculateDimension5_Integrity(claimVerdicts) {
+  if (!Array.isArray(claimVerdicts) || claimVerdicts.length === 0) {
+    return 60; // 无数据 → 刚好及格，不惩罚
   }
 
-  // 政策风险极高（< 0.5）直接触发最低乘数
-  if (policyMultiplier < 0.5) {
-    valuationDiscount = Math.min(valuationDiscount, 0.8);
-  }
+  const total = claimVerdicts.reduce((sum, v) => {
+    // 未知 verdict 按"存疑"处理
+    const score = VERDICT_SCORE_MAP[v.verdict] ?? VERDICT_SCORE_MAP["存疑"];
+    return sum + score;
+  }, 0);
 
-  return policyMultiplier * valuationDiscount;
+  return Math.min(100, Math.max(0, Math.round((total / claimVerdicts.length) * 10)));
 }
 
 /**
  * 五维简单平均总分
  *
  * Total_Score = (S1 + S2 + S3 + S4 + S5) / 5
- * 其中 S5 = V5 × 100（将 0-1 乘数转为 0-100 分）
+ * S5 = calculateDimension5_Integrity(claimVerdicts)，0-100 直接参与加权
  */
-function calculateTotalScore(S1, S2, S3, S4, V5) {
+function calculateTotalScore(S1, S2, S3, S4, S5) {
   const s1 = Number(S1) || 0;
   const s2 = Number(S2) || 0;
   const s3 = Number(S3) || 0;
   const s4 = Number(S4) || 0;
-  const s5 = Math.round((Number(V5) || 1) * 100);
+  const s5 = Number(S5) || 60; // 无数据默认刚好及格
   return Math.min(100, Math.max(0, Math.round((s1 + s2 + s3 + s4 + s5) / 5)));
 }
 
@@ -286,15 +289,14 @@ function getGrade(totalScore) {
  * 输出: 5 个维度的得分 + 总分 + 评级
  *
  * 字段映射 (新 Schema):
- *   TAM_Million_RMB      → S1 (百万人民币)
- *   CAGR                 → S1
- *   TRL                  → S2
- *   Competitor_Rank_Score → S2
+ *   TAM_Million_RMB        → S1 (百万人民币)
+ *   CAGR                   → S1
+ *   TRL                    → S2
+ *   Competitor_Rank_Score  → S2
  *   Industry_Capital_Score → S3
  *   Industry_Scale_Score   → S3
- *   Founder_Exp_Years     → S4
- *   Policy_Risk           → V5
- *   Valuation_Gap         → V5
+ *   Founder_Exp_Years      → S4
+ *   claim_verdicts         → S5 (BP诚信度，基于声明核查结果)
  */
 function scoreProject(data) {
   // 第一维度: 时机与天花板
@@ -319,14 +321,11 @@ function scoreProject(data) {
     Team_Education_Score: data.Team_Education_Score,
   });
 
-  // 第五维度: 外部风险（乘数，软着陆折扣）
-  const policyRisk = (data.Policy_Risk !== undefined && data.Policy_Risk !== null)
-    ? data.Policy_Risk
-    : 1;
-  const V5 = calculateDimension5_ExternalRisk(policyRisk, data.Valuation_Gap);
+  // 第五维度: BP诚信度（纯 JS 计算，基于声明核查结果，无需 LLM 再次判断）
+  const S5 = calculateDimension5_Integrity(data.claim_verdicts);
 
   // 计算总分（五维简单平均）
-  const totalScore = calculateTotalScore(S1, S2, S3, S4, V5);
+  const totalScore = calculateTotalScore(S1, S2, S3, S4, S5);
 
   // 获取纯分数评级
   const grading = getGrade(totalScore);
@@ -362,12 +361,11 @@ function scoreProject(data) {
         inputs: { Founder_Exp_Years: data.Founder_Exp_Years },
       },
       external_risk: {
-        score: Math.round(V5 * 100),
-        label: "外部风险",
-        subtitle: "政策风险 + 估值溢价折扣",
+        score: S5,
+        label: "BP诚信度",
+        subtitle: "声明核查结果",
         weight: 20,
-        multiplier: V5,
-        inputs: { Policy_Risk: data.Policy_Risk, Valuation_Gap: data.Valuation_Gap },
+        inputs: { claim_count: Array.isArray(data.claim_verdicts) ? data.claim_verdicts.length : 0 },
       },
     },
     total_score: totalScore,
@@ -384,7 +382,7 @@ module.exports = {
   calculateDimension2_ProductAndMoat,
   calculateDimension3_CapitalEfficiencyAndScale,
   calculateDimension4_Team,
-  calculateDimension5_ExternalRisk,
+  calculateDimension5_Integrity,
   calculateTotalScore,
   getGrade,
 };

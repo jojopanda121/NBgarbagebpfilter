@@ -141,6 +141,7 @@ function getTasksByUser(userId) {
     const hasAdjustedScore = colNames.includes("adjusted_score");
     const hasNextFollowup = colNames.includes("next_followup_date");
     const hasTotalScore = colNames.includes("total_score");
+    const hasProjectLocation = colNames.includes("project_location");
 
     const extraCols = [
       hasTitle ? "title" : null,
@@ -150,6 +151,7 @@ function getTasksByUser(userId) {
       hasAdjustedScore ? "adjusted_score" : null,
       hasNextFollowup ? "next_followup_date" : null,
       hasTotalScore ? "total_score" : null,
+      hasProjectLocation ? "project_location" : null,
       "result",
     ].filter(Boolean).map(c => `, ${c}`).join("");
 

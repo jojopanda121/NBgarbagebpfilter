@@ -132,6 +132,24 @@ function updateTags(req, res) {
   res.json({ success: true, tags });
 }
 
+/** PUT /api/projects/:taskId/location — 更新项目所在省份 */
+function updateLocation(req, res) {
+  const { taskId } = req.params;
+  const { location } = req.body;
+  const userId = req.user.id;
+  const db = getDb();
+
+  const task = getTask(taskId);
+  const err = checkOwner(task, userId, db);
+  if (err) return res.status(err === "任务不存在" ? 404 : 403).json({ error: err });
+
+  const value = (location && location !== "未知") ? location : null;
+  db.prepare("UPDATE tasks SET project_location = ?, updated_at = datetime('now') WHERE id = ?")
+    .run(value, taskId);
+
+  res.json({ success: true, project_location: value });
+}
+
 /** PUT /api/projects/:taskId/followup — 设置下次跟进日期 */
 function updateFollowup(req, res) {
   const { taskId } = req.params;
@@ -284,6 +302,7 @@ function regenerateIMemoHandler(req, res) {
 module.exports = {
   getProject,
   updateStage,
+  updateLocation,
   updateNotes,
   updateTags,
   updateFollowup,

@@ -6,13 +6,16 @@
 // 模块7: 个人工作台数据（2.3）
 // ============================================================
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, lazy, Suspense } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   BarChart2, TrendingUp, Globe, Users, Zap,
-  Loader2, RefreshCw, ChevronRight, Bell,
+  Loader2, RefreshCw, ChevronRight, Bell, MapPin,
 } from "lucide-react";
 import api from "../services/api";
 import useAuthStore from "../store/useAuthStore";
+
+const ChinaMap = lazy(() => import("../components/dashboard/ChinaMap"));
 
 const GRADE_COLORS = {
   A: { bar: "bg-emerald-500", text: "text-emerald-400", label: "A级" },
@@ -56,6 +59,7 @@ function AnimatedNumber({ value, duration = 1200 }) {
 
 export default function PlatformStatsPage() {
   const user = useAuthStore(s => s.user);
+  const navigate = useNavigate();
   const [platform, setPlatform] = useState(null);
   const [personal, setPersonal] = useState(null);
   const [sectorData, setSectorData] = useState(null);
@@ -63,6 +67,8 @@ export default function PlatformStatsPage() {
   const [loadingPlatform, setLoadingPlatform] = useState(true);
   const [loadingSector, setLoadingSector] = useState(false);
   const [loadingPersonal, setLoadingPersonal] = useState(false);
+  const [mapData, setMapData] = useState(null);
+  const [selectedProvince, setSelectedProvince] = useState(null);
 
   const fetchPlatform = async () => {
     setLoadingPlatform(true);
@@ -102,9 +108,20 @@ export default function PlatformStatsPage() {
     }
   };
 
+  const fetchMapData = async () => {
+    if (!user) return;
+    try {
+      const data = await api.get("/api/user/map-data");
+      setMapData(data);
+    } catch (e) {
+      console.error("地图数据加载失败:", e.message);
+    }
+  };
+
   useEffect(() => {
     fetchPlatform();
     fetchPersonal();
+    fetchMapData();
   }, []);
 
   useEffect(() => {
@@ -132,7 +149,7 @@ export default function PlatformStatsPage() {
           数据看板
         </h1>
         <button
-          onClick={() => { fetchPlatform(); fetchPersonal(); fetchSector(selectedSector); }}
+          onClick={() => { fetchPlatform(); fetchPersonal(); fetchSector(selectedSector); fetchMapData(); }}
           className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-slate-800 hover:bg-slate-700 rounded-lg"
         >
           <RefreshCw className="w-4 h-4" />
@@ -194,6 +211,82 @@ export default function PlatformStatsPage() {
                     </div>
                   ))}
                 </div>
+              )}
+            </div>
+          )}
+
+          {/* 项目地理分布地图 */}
+          {mapData && (
+            <div className="bg-slate-900 border border-white/10 rounded-xl p-4 mt-4">
+              <p className="text-sm font-medium text-slate-400 mb-3 flex items-center gap-1.5">
+                <MapPin className="w-4 h-4 text-red-400" />
+                项目地理分布
+              </p>
+              <Suspense fallback={
+                <div className="flex items-center justify-center py-16">
+                  <Loader2 className="w-5 h-5 animate-spin text-blue-500" />
+                </div>
+              }>
+                <ChinaMap
+                  provinces={mapData.provinces || []}
+                  details={mapData.details || {}}
+                  onProvinceClick={(province) => setSelectedProvince(selectedProvince === province ? null : province)}
+                />
+              </Suspense>
+
+              {/* 省份标签 */}
+              {mapData.provinces?.length > 0 && (
+                <div className="flex flex-wrap gap-2 mt-3">
+                  {mapData.provinces.map((p) => (
+                    <button
+                      key={p.province}
+                      onClick={() => setSelectedProvince(selectedProvince === p.province ? null : p.province)}
+                      className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
+                        selectedProvince === p.province
+                          ? "bg-blue-500/20 border border-blue-500/40 text-blue-300"
+                          : "bg-slate-800 border border-white/10 text-slate-400 hover:text-slate-200 hover:bg-slate-700"
+                      }`}
+                    >
+                      {p.province} ({p.count})
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {/* 选中省份的项目列表 */}
+              {selectedProvince && mapData?.details?.[selectedProvince] && (
+                <div className="bg-slate-800 rounded-lg p-4 mt-3">
+                  <div className="flex items-center justify-between mb-3">
+                    <h4 className="text-sm font-semibold text-blue-300">{selectedProvince} — 项目列表</h4>
+                    <button onClick={() => setSelectedProvince(null)} className="text-xs text-slate-500 hover:text-slate-300">关闭</button>
+                  </div>
+                  <div className="space-y-2 max-h-60 overflow-y-auto">
+                    {mapData.details[selectedProvince].map((proj) => (
+                      <div
+                        key={proj.id}
+                        onClick={() => navigate(`/project/${proj.id}`)}
+                        className="flex items-center justify-between py-1.5 border-b border-white/5 last:border-0 cursor-pointer hover:bg-slate-700/50 rounded px-2 -mx-2 transition-colors"
+                      >
+                        <div className="min-w-0">
+                          <p className="text-sm truncate">{proj.title || "BP分析"}</p>
+                        </div>
+                        <div className="flex items-center gap-3 shrink-0 ml-3">
+                          {proj.total_score != null && (
+                            <span className={`text-sm font-bold ${
+                              proj.total_score >= 75 ? "text-emerald-400" : proj.total_score >= 50 ? "text-yellow-400" : "text-red-400"
+                            }`}>{Math.round(proj.total_score)}分</span>
+                          )}
+                          <span className="text-xs text-slate-500">{new Date(proj.created_at).toLocaleDateString("zh-CN")}</span>
+                          <ChevronRight className="w-4 h-4 text-slate-600" />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {!mapData.provinces?.length && (
+                <p className="text-sm text-slate-500 text-center py-6">暂无项目地理数据，在历史报告中为项目选择省份后将显示分布</p>
               )}
             </div>
           )}

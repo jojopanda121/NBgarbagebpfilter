@@ -4,6 +4,7 @@ const { requireAuth } = require("../middleware/auth");
 const {
   getProject,
   updateStage,
+  updateLocation,
   updateNotes,
   updateTags,
   updateFollowup,
@@ -19,6 +20,7 @@ const router = Router();
 // 项目基础信息
 router.get("/:taskId",               requireAuth, getProject);
 router.put("/:taskId/stage",         requireAuth, updateStage);
+router.put("/:taskId/location",      requireAuth, updateLocation);
 router.put("/:taskId/notes",         requireAuth, updateNotes);
 router.put("/:taskId/tags",          requireAuth, updateTags);
 router.put("/:taskId/followup",      requireAuth, updateFollowup);

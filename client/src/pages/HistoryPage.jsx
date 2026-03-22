@@ -10,6 +10,7 @@ import {
   Filter,
   ClipboardList,
   Calendar,
+  MapPin,
 } from "lucide-react";
 
 const STAGE_CONFIG = {
@@ -22,6 +23,16 @@ const STAGE_CONFIG = {
   passed:         { label: "已投资",   color: "bg-green-500/20 text-green-400 border-green-500/30" },
 };
 import api from "../services/api";
+
+const PROVINCE_OPTIONS = [
+  "", "北京", "天津", "上海", "重庆",
+  "河北", "山西", "辽宁", "吉林", "黑龙江",
+  "江苏", "浙江", "安徽", "福建", "江西",
+  "山东", "河南", "湖北", "湖南", "广东",
+  "海南", "四川", "贵州", "云南", "陕西",
+  "甘肃", "青海", "台湾", "内蒙古", "广西",
+  "西藏", "宁夏", "新疆", "香港", "澳门",
+];
 
 const INDUSTRY_FILTERS = [
   "全部",
@@ -58,6 +69,43 @@ function ScoreCircle({ score }) {
   );
 }
 
+// 省份选择下拉组件
+function ProvinceSelector({ taskId, currentLocation, onUpdate }) {
+  const [saving, setSaving] = useState(false);
+
+  const handleChange = async (e) => {
+    e.stopPropagation();
+    const location = e.target.value;
+    setSaving(true);
+    try {
+      await api.put(`/api/projects/${taskId}/location`, { location: location || null });
+      onUpdate(taskId, location || null);
+    } catch (err) {
+      console.error("更新省份失败:", err);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+      <MapPin className="w-3 h-3 text-slate-500 shrink-0" />
+      <select
+        value={currentLocation || ""}
+        onChange={handleChange}
+        disabled={saving}
+        className="bg-slate-800 border border-white/10 text-slate-300 text-xs rounded px-1.5 py-0.5 focus:outline-none focus:border-blue-500 cursor-pointer hover:border-white/20 transition-colors"
+      >
+        <option value="">选择省份</option>
+        {PROVINCE_OPTIONS.filter(Boolean).map((p) => (
+          <option key={p} value={p}>{p}</option>
+        ))}
+      </select>
+      {saving && <Loader2 className="w-3 h-3 animate-spin text-blue-400" />}
+    </div>
+  );
+}
+
 export default function HistoryPage() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
@@ -82,6 +130,13 @@ export default function HistoryPage() {
   useEffect(() => {
     fetchTasks();
   }, []);
+
+  // 更新单个任务的省份（本地状态同步）
+  const handleProvinceUpdate = (taskId, location) => {
+    setTasks((prev) =>
+      prev.map((t) => (t.id === taskId ? { ...t, project_location: location } : t))
+    );
+  };
 
   // 筛选 + 排序
   const filteredTasks = useMemo(() => {
@@ -299,6 +354,13 @@ export default function HistoryPage() {
                         <span className="px-2 py-0.5 rounded text-xs bg-cyan-500/15 text-cyan-400">
                           {task.industry}
                         </span>
+                      )}
+                      {task.status === "complete" && (
+                        <ProvinceSelector
+                          taskId={task.id}
+                          currentLocation={task.project_location}
+                          onUpdate={handleProvinceUpdate}
+                        />
                       )}
                       {task.stage && task.status === "running" && (
                         <span>{task.message}</span>

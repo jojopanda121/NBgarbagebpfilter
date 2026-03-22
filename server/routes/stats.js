@@ -2,7 +2,7 @@
 // server/routes/stats.js — 平台数据统计 API
 //
 // 模块5: 平台公共数据看板（2.1）
-// 模块6: 赛道情报（2.2）— 新增数量×5显示
+// 模块6: 赛道情报（2.2）
 // 模块7: 个人工作台数据（2.3）
 // ============================================================
 
@@ -12,8 +12,8 @@ const { requireAuth } = require("../middleware/auth");
 
 const router = Router();
 
-// 赛道新增数量的显示倍数（让数据在平台早期看起来更有活跃度）
-const WEEKLY_COUNT_MULTIPLIER = 5;
+// 赛道新增数量的显示倍数
+const WEEKLY_COUNT_MULTIPLIER = 1;
 
 // 平台统计缓存（避免每次都全表扫描）
 let platformStatsCache = null;
@@ -119,7 +119,7 @@ router.get("/platform", (req, res) => {
 
     const result = {
       total_count: totalCount,
-      // 本周新增展示值 = 实际值 × 5（让早期平台数据看起来更有活跃度）
+      // 本周新增展示值
       weekly_new_display: actualWeeklyCount * WEEKLY_COUNT_MULTIPLIER,
       weekly_new_actual: actualWeeklyCount, // 仅内部使用
       avg_score: scoreRow?.avg_score ? Math.round(scoreRow.avg_score * 10) / 10 : null,
@@ -204,7 +204,7 @@ router.get("/sector", (req, res) => {
     res.json({
       sector,
       total_count: allRows.length,
-      // 本周新增×5展示
+      // 本周新增展示值
       weekly_new_display: actualWeekly * WEEKLY_COUNT_MULTIPLIER,
       avg_score: scoreRow?.avg_score ? Math.round(scoreRow.avg_score * 10) / 10 : null,
       top_score: scoreRow?.top_score ? Math.round(scoreRow.top_score) : null,

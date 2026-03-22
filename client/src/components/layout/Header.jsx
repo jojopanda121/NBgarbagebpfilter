@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from "react";
-import { Brain, Download, LogOut, User, Zap, FileText, ChevronDown, Shield, Trophy } from "lucide-react";
+import { Brain, Download, LogOut, User, Zap, FileText, ChevronDown, Shield, Trophy, BarChart2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import useAuthStore from "../../store/useAuthStore";
 import useAnalysisStore from "../../store/useAnalysisStore";
@@ -137,6 +137,14 @@ export default function Header() {
                     >
                       <Trophy className="w-4 h-4 text-yellow-400" />
                       排行榜
+                    </button>
+                    <button
+                      onClick={() => { setShowDropdown(false); navigate("/app/stats"); }}
+                      className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-300 hover:bg-slate-800 transition-colors"
+                      role="menuitem"
+                    >
+                      <BarChart2 className="w-4 h-4 text-blue-400" />
+                      数据看板
                     </button>
                     <button
                       onClick={() => { setShowDropdown(false); navigate("/settings?tab=token"); }}

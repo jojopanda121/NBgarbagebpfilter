@@ -385,4 +385,5 @@ module.exports = {
   calculateDimension5_Integrity,
   calculateTotalScore,
   getGrade,
+  VERDICT_SCORE_MAP,
 };

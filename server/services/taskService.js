@@ -137,10 +137,19 @@ function getTasksByUser(userId) {
     const hasIndustryCategory = colNames.includes("industry_category");
     const hasArchiveNumber = colNames.includes("archive_number");
 
+    const hasProjectStage = colNames.includes("project_stage");
+    const hasAdjustedScore = colNames.includes("adjusted_score");
+    const hasNextFollowup = colNames.includes("next_followup_date");
+    const hasTotalScore = colNames.includes("total_score");
+
     const extraCols = [
       hasTitle ? "title" : null,
       hasIndustryCategory ? "industry_category" : null,
       hasArchiveNumber ? "archive_number" : null,
+      hasProjectStage ? "project_stage" : null,
+      hasAdjustedScore ? "adjusted_score" : null,
+      hasNextFollowup ? "next_followup_date" : null,
+      hasTotalScore ? "total_score" : null,
       "result",
     ].filter(Boolean).map(c => `, ${c}`).join("");
 
@@ -150,12 +159,12 @@ function getTasksByUser(userId) {
 
     // 从 result JSON 中提取 total_score 和 industry，然后移除 result 原始字段（太大）
     return rows.map((row) => {
-      let total_score = null;
+      let total_score = row.total_score ?? null;
       let industry = null;
       if (row.result) {
         try {
           const r = typeof row.result === "string" ? JSON.parse(row.result) : row.result;
-          total_score = r?.verdict?.total_score ?? null;
+          if (total_score == null) total_score = r?.verdict?.total_score ?? null;
           industry = r?.extracted_data?.industry ?? r?.industry ?? null;
         } catch {}
       }

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
-import { Gavel, ArrowLeft, Loader2, Share2, Copy, CheckCircle } from "lucide-react";
+import { Gavel, ArrowLeft, Loader2, Share2, Copy, CheckCircle, FolderOpen } from "lucide-react";
 import api from "../services/api";
 import useAuthStore from "../store/useAuthStore";
 import VerdictCard from "../components/VerdictCard";
@@ -145,6 +145,16 @@ export default function ReportPage() {
           </div>
 
           <div className="flex items-center gap-2">
+            {/* 进入项目视图按钮（已登录且非分享模式） */}
+            {canShare && (
+              <button
+                onClick={() => navigate(`/project/${taskId}`)}
+                className="px-4 py-2 text-sm bg-emerald-700 hover:bg-emerald-600 rounded-lg transition-colors flex items-center gap-1.5"
+              >
+                <FolderOpen className="w-4 h-4" />
+                进入项目视图
+              </button>
+            )}
             {canShare && (
               <button
                 onClick={handleShare}

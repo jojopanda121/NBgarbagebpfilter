@@ -8,7 +8,19 @@ import {
   RefreshCw,
   ArrowUpDown,
   Filter,
+  ClipboardList,
+  Calendar,
 } from "lucide-react";
+
+const STAGE_CONFIG = {
+  new:            { label: "新建",     color: "bg-slate-500/20 text-slate-400 border-slate-500/30" },
+  reviewed:       { label: "已评估",   color: "bg-blue-500/20 text-blue-400 border-blue-500/30" },
+  dd_pending:     { label: "待尽调",   color: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30" },
+  dd_in_progress: { label: "尽调中",   color: "bg-orange-500/20 text-orange-400 border-orange-500/30" },
+  dd_done:        { label: "尽调完成", color: "bg-purple-500/20 text-purple-400 border-purple-500/30" },
+  decided:        { label: "已决策",   color: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30" },
+  passed:         { label: "已投资",   color: "bg-green-500/20 text-green-400 border-green-500/30" },
+};
 import api from "../services/api";
 
 const INDUSTRY_FILTERS = [
@@ -142,7 +154,8 @@ export default function HistoryPage() {
   // 查看报告详情 / 恢复分析进度
   const handleViewReport = (task) => {
     if (task.status === "complete") {
-      navigate(`/report/${task.id}`);
+      // 已完成的项目进入 ProjectPage（三 Tab 项目视图）
+      navigate(`/project/${task.id}`);
     } else if (task.status === "running") {
       const currentUser = JSON.parse(localStorage.getItem("bp_user") || "null");
       const pendingData = { taskId: task.id, userId: currentUser?.id || null };
@@ -294,7 +307,27 @@ export default function HistoryPage() {
                   </div>
                 </div>
 
-                <div className="flex items-center gap-3 shrink-0">
+                <div className="flex items-center gap-2 shrink-0">
+                  {/* 投资流程阶段 badge（已完成任务） */}
+                  {task.status === "complete" && task.project_stage && task.project_stage !== "new" && (
+                    <span className={`px-2 py-0.5 rounded border text-xs font-medium ${
+                      STAGE_CONFIG[task.project_stage]?.color || "bg-slate-500/20 text-slate-400 border-slate-500/30"
+                    }`}>
+                      {STAGE_CONFIG[task.project_stage]?.label || task.project_stage}
+                    </span>
+                  )}
+                  {/* 尽调中有问卷图标 */}
+                  {["dd_pending","dd_in_progress","dd_done"].includes(task.project_stage) && (
+                    <ClipboardList className="w-3.5 h-3.5 text-orange-400" />
+                  )}
+                  {/* 跟进日期提醒 */}
+                  {task.next_followup_date && new Date(task.next_followup_date) <= new Date(Date.now() + 7*24*60*60*1000) && (
+                    <Calendar className="w-3.5 h-3.5 text-yellow-400" title={`跟进日期：${task.next_followup_date}`} />
+                  )}
+                  {/* 调整后分数提示 */}
+                  {task.adjusted_score != null && task.adjusted_score !== task.total_score && (
+                    <span className="text-xs text-purple-400">→{Math.round(task.adjusted_score)}</span>
+                  )}
                   {getStatusBadge(task.status)}
                   {(task.status === "complete" || task.status === "running") && (
                     <ChevronRight className="w-5 h-5 text-slate-500" />

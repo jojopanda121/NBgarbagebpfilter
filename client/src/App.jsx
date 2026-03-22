@@ -16,6 +16,8 @@ const SettingsPage = lazy(() => import("./pages/SettingsPage"));
 const HistoryPage = lazy(() => import("./pages/HistoryPage"));
 const AdminPage = lazy(() => import("./pages/AdminPage"));
 const LeaderboardPage = lazy(() => import("./pages/LeaderboardPage"));
+const ProjectPage = lazy(() => import("./pages/ProjectPage"));
+const PlatformStatsPage = lazy(() => import("./pages/PlatformStatsPage"));
 
 // 加载中组件
 function LoadingFallback() {
@@ -70,6 +72,9 @@ export default function App() {
               {/* 分享报告页（公开，通过 shareToken 访问） */}
               <Route path="/report/s/:shareToken" element={<ReportPage />} />
 
+              {/* 项目详情页（三 Tab：报告 + 尽调 + 备注） */}
+              <Route path="/project/:taskId" element={<ProjectPage />} />
+
               {/* ── 核心区 (Protected Zone) - 需要登录 ── */}
               <Route
                 element={
@@ -90,6 +95,9 @@ export default function App() {
 
                 {/* 排行榜 */}
                 <Route path="/app/leaderboard" element={<LeaderboardPage />} />
+
+                {/* 平台数据看板 */}
+                <Route path="/app/stats" element={<PlatformStatsPage />} />
 
                 {/* 管理员中心 */}
                 <Route path="/admin" element={<AdminPage />} />

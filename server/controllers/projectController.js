@@ -14,7 +14,7 @@ const { generateDDQuestionnaire, saveDDAnswers, rescoreAfterDD } = require("../s
 const { getOrGenerateIMemo, regenerateIMemo } = require("../services/iMemoService");
 
 // 合法的项目阶段枚举
-const VALID_STAGES = ["new", "reviewed", "dd_pending", "dd_in_progress", "dd_done", "decided", "passed"];
+const VALID_STAGES = ["new", "reviewed", "dd_pending", "dd_in_progress", "dd_done", "decided", "passed", "rejected"];
 
 /**
  * 权限检查：只有项目 owner 或 admin 可以操作

@@ -10,7 +10,7 @@ import React, { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
   Gavel, ArrowLeft, Loader2, ClipboardList, FileText,
-  BookOpen, Play, CheckCircle2, AlertCircle
+  BookOpen, Play, CheckCircle2, AlertCircle, Share2, Copy
 } from "lucide-react";
 import api from "../services/api";
 import useAuthStore from "../store/useAuthStore";
@@ -29,6 +29,7 @@ const STAGE_CONFIG = {
   dd_done:        { label: "尽调完成", color: "bg-purple-500/20 text-purple-400 border-purple-500/30" },
   decided:        { label: "已决策",   color: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30" },
   passed:         { label: "已投资",   color: "bg-green-500/20 text-green-400 border-green-500/30" },
+  rejected:       { label: "已否决",   color: "bg-red-500/20 text-red-400 border-red-500/30" },
 };
 
 const DD_ACTIVE_STAGES = ["dd_pending", "dd_in_progress", "dd_done"];
@@ -44,6 +45,9 @@ export default function ProjectPage() {
   const [activeTab, setActiveTab] = useState("report");
   const [startingDD, setStartingDD] = useState(false);
   const [rescoreResult, setRescoreResult] = useState(null);
+  const [sharing, setSharing] = useState(false);
+  const [shareLink, setShareLink] = useState("");
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     fetchProject();
@@ -84,9 +88,50 @@ export default function ProjectPage() {
     }
   };
 
-  const handleRescore = (result) => {
+  const handleRescore = (result, latestAnswers) => {
     setRescoreResult(result);
-    setProject(p => ({ ...p, adjusted_score: result.newTotal, project_stage: "dd_done" }));
+    setProject(p => ({
+      ...p,
+      adjusted_score: result.newTotal,
+      project_stage: "dd_done",
+      ...(latestAnswers ? { dd_answers: latestAnswers } : {}),
+    }));
+  };
+
+  const handleShare = async () => {
+    setSharing(true);
+    try {
+      const data = await api.post(`/api/task/${taskId}/share`);
+      let inviteCode = "";
+      try {
+        const inv = await api.get("/api/user/invite-code");
+        inviteCode = inv.invite_code || "";
+      } catch {}
+      const link = `${window.location.origin}/report/s/${data.share_token}${inviteCode ? `?ref=${inviteCode}` : ""}`;
+      setShareLink(link);
+    } catch (err) {
+      alert(err.message || "生成分享链接失败");
+    } finally {
+      setSharing(false);
+    }
+  };
+
+  const handleCopyLink = async () => {
+    if (!shareLink) return;
+    try {
+      await navigator.clipboard.writeText(shareLink);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      const ta = document.createElement("textarea");
+      ta.value = shareLink;
+      ta.style.position = "fixed";
+      ta.style.left = "-9999px";
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand("copy"); setCopied(true); setTimeout(() => setCopied(false), 2000); } catch {}
+      document.body.removeChild(ta);
+    }
   };
 
   if (loading) {
@@ -135,6 +180,14 @@ export default function ProjectPage() {
             <span className="text-lg font-bold">垃圾BP过滤机</span>
           </div>
           <div className="flex items-center gap-2">
+            <button
+              onClick={handleShare}
+              disabled={sharing}
+              className="px-3 py-1.5 text-sm bg-blue-600 hover:bg-blue-500 disabled:bg-slate-700 rounded-lg transition-colors flex items-center gap-1.5"
+            >
+              {sharing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Share2 className="w-4 h-4" />}
+              分享
+            </button>
             <span className={`px-2.5 py-1 rounded-lg border text-xs font-medium ${stageCfg.color}`}>
               {stageCfg.label}
             </span>
@@ -149,6 +202,24 @@ export default function ProjectPage() {
           </div>
         </div>
       </header>
+
+      {/* 分享链接弹出 */}
+      {shareLink && (
+        <div className="max-w-6xl mx-auto px-4 py-3">
+          <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-4 flex items-center gap-3">
+            <div className="flex-1 min-w-0">
+              <p className="text-sm text-blue-400 mb-1">分享链接已生成（3天有效）</p>
+              <p className="text-xs text-slate-400 truncate">{shareLink}</p>
+            </div>
+            <button
+              onClick={handleCopyLink}
+              className="shrink-0 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 rounded-lg text-sm flex items-center gap-1.5"
+            >
+              {copied ? <><CheckCircle2 className="w-4 h-4" />已复制</> : <><Copy className="w-4 h-4" />复制</>}
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* 返回 + 项目标题 */}
       <div className="max-w-6xl mx-auto px-4 py-4">
@@ -255,6 +326,7 @@ export default function ProjectPage() {
             questionnaire={project?.dd_questionnaire || []}
             initialAnswers={project?.dd_answers || {}}
             onRescore={handleRescore}
+            onAnswersChange={(updated) => setProject(p => ({ ...p, dd_answers: updated }))}
           />
         )}
 

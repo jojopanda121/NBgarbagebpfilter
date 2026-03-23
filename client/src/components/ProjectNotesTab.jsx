@@ -10,9 +10,10 @@ const STAGE_CONFIG = {
   dd_done:       { label: "尽调完成", color: "bg-purple-500/20 text-purple-400 border-purple-500/30" },
   decided:       { label: "已决策",   color: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30" },
   passed:        { label: "已投资",   color: "bg-green-500/20 text-green-400 border-green-500/30" },
+  rejected:      { label: "已否决",   color: "bg-red-500/20 text-red-400 border-red-500/30" },
 };
 
-const STAGE_ORDER = ["new", "reviewed", "dd_pending", "dd_in_progress", "dd_done", "decided", "passed"];
+const STAGE_ORDER = ["new", "reviewed", "dd_pending", "dd_in_progress", "dd_done", "decided", "passed", "rejected"];
 
 const PRESET_TAGS = ["重点关注", "跟进中", "待讨论", "高潜力", "团队强", "市场大", "估值合理", "风险较高"];
 

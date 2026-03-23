@@ -103,4 +103,28 @@ function getUserTasks(req, res) {
   res.json({ tasks });
 }
 
-module.exports = { getTaskStatus, getSharedTask, shareTask, getUserTasks };
+/** DELETE /api/task/:taskId — 软删除报告（数据库保留，用户不可见） */
+function softDeleteTask(req, res) {
+  const { taskId } = req.params;
+  const userId = req.user.id;
+
+  const task = getTask(taskId);
+  if (!task) {
+    return res.status(404).json({ error: "任务不存在" });
+  }
+
+  const db = getDb();
+  const userRow = db.prepare("SELECT role FROM users WHERE id = ?").get(userId);
+  const isAdmin = userRow?.role === "admin";
+
+  if (task.user_id !== userId && !isAdmin) {
+    return res.status(403).json({ error: "无权操作此报告" });
+  }
+
+  db.prepare("UPDATE tasks SET deleted_at = datetime('now'), updated_at = datetime('now') WHERE id = ?")
+    .run(taskId);
+
+  res.json({ success: true });
+}
+
+module.exports = { getTaskStatus, getSharedTask, shareTask, getUserTasks, softDeleteTask };

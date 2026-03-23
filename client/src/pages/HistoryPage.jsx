@@ -11,6 +11,7 @@ import {
   ClipboardList,
   Calendar,
   MapPin,
+  Trash2,
 } from "lucide-react";
 
 const STAGE_CONFIG = {
@@ -21,6 +22,7 @@ const STAGE_CONFIG = {
   dd_done:        { label: "尽调完成", color: "bg-purple-500/20 text-purple-400 border-purple-500/30" },
   decided:        { label: "已决策",   color: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30" },
   passed:         { label: "已投资",   color: "bg-green-500/20 text-green-400 border-green-500/30" },
+  rejected:       { label: "已否决",   color: "bg-red-500/20 text-red-400 border-red-500/30" },
 };
 import api from "../services/api";
 
@@ -113,6 +115,7 @@ export default function HistoryPage() {
   const [tasks, setTasks] = useState([]);
   const [sortBy, setSortBy] = useState("time"); // "time" | "score"
   const [filterIndustry, setFilterIndustry] = useState("全部");
+  const [deleteConfirm, setDeleteConfirm] = useState(null); // taskId to confirm delete
 
   const fetchTasks = async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true);
@@ -136,6 +139,17 @@ export default function HistoryPage() {
     setTasks((prev) =>
       prev.map((t) => (t.id === taskId ? { ...t, project_location: location } : t))
     );
+  };
+
+  const handleDeleteTask = async (taskId) => {
+    try {
+      await api.delete(`/api/task/${taskId}`);
+      setTasks(prev => prev.filter(t => t.id !== taskId));
+    } catch (err) {
+      alert("删除失败：" + (err.message || "未知错误"));
+    } finally {
+      setDeleteConfirm(null);
+    }
   };
 
   // 筛选 + 排序
@@ -391,6 +405,15 @@ export default function HistoryPage() {
                     <span className="text-xs text-purple-400">→{Math.round(task.adjusted_score)}</span>
                   )}
                   {getStatusBadge(task.status)}
+                  {task.status === "complete" && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setDeleteConfirm(task.id); }}
+                      className="p-1 text-slate-600 hover:text-red-400 transition-colors"
+                      title="删除报告"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  )}
                   {(task.status === "complete" || task.status === "running") && (
                     <ChevronRight className="w-5 h-5 text-slate-500" />
                   )}
@@ -414,6 +437,37 @@ export default function HistoryPage() {
               )}
             </div>
           ))}
+        </div>
+      )}
+
+      {/* 删除确认弹窗 */}
+      {deleteConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="bg-slate-900 border border-white/10 rounded-xl p-6 max-w-sm mx-4 shadow-2xl">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-full bg-red-500/20 flex items-center justify-center">
+                <Trash2 className="w-5 h-5 text-red-400" />
+              </div>
+              <h3 className="text-lg font-bold">确认删除</h3>
+            </div>
+            <p className="text-slate-400 text-sm mb-6">
+              删除后该报告将从您的列表中移除，<strong className="text-red-400">此操作不可恢复</strong>。确定要继续吗？
+            </p>
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={() => setDeleteConfirm(null)}
+                className="px-4 py-2 text-sm bg-slate-800 hover:bg-slate-700 rounded-lg transition-colors"
+              >
+                取消
+              </button>
+              <button
+                onClick={() => handleDeleteTask(deleteConfirm)}
+                className="px-4 py-2 text-sm bg-red-600 hover:bg-red-500 rounded-lg transition-colors font-medium"
+              >
+                确认删除
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

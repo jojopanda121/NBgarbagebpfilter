@@ -24,7 +24,7 @@ const OPTION_SELECTED_COLORS = {
   C: "border-red-400 bg-red-500/20 ring-1 ring-red-400/50",
 };
 
-export default function DDQuestionnaire({ taskId, questionnaire, initialAnswers = {}, onRescore }) {
+export default function DDQuestionnaire({ taskId, questionnaire, initialAnswers = {}, onRescore, onAnswersChange }) {
   const [answers, setAnswers] = useState(initialAnswers);
   const [saving, setSaving] = useState(false);
   const [rescoring, setRescoring] = useState(false);
@@ -46,7 +46,12 @@ export default function DDQuestionnaire({ taskId, questionnaire, initialAnswers 
   const progress = Math.round((answeredCount / questionnaire.length) * 100);
 
   const handleChoose = (claimIndex, choice) => {
-    setAnswers(prev => ({ ...prev, [String(claimIndex)]: choice }));
+    const updated = { ...answers, [String(claimIndex)]: choice };
+    setAnswers(updated);
+    // 通知父组件更新，防止切换 tab 后丢失
+    if (onAnswersChange) onAnswersChange(updated);
+    // 自动保存到后端
+    api.put(`/api/projects/${taskId}/dd/answers`, { answers: updated }).catch(() => {});
   };
 
   const toggleExpand = (idx) => {
@@ -77,7 +82,7 @@ export default function DDQuestionnaire({ taskId, questionnaire, initialAnswers 
       // 再触发重新评分
       const result = await api.post(`/api/projects/${taskId}/dd/rescore`, {});
       setRescoreResult(result);
-      if (onRescore) onRescore(result);
+      if (onRescore) onRescore(result, answers);
     } catch (e) {
       alert("重新评分失败：" + e.message);
     } finally {

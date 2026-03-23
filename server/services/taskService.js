@@ -156,7 +156,7 @@ function getTasksByUser(userId) {
     ].filter(Boolean).map(c => `, ${c}`).join("");
 
     const rows = db.prepare(
-      `SELECT id, status, percentage, stage, message, created_at, updated_at${extraCols} FROM tasks WHERE user_id = ? ORDER BY created_at DESC LIMIT 50`
+      `SELECT id, status, percentage, stage, message, created_at, updated_at${extraCols} FROM tasks WHERE user_id = ? AND deleted_at IS NULL ORDER BY created_at DESC LIMIT 50`
     ).all(userId);
 
     // 从 result JSON 中提取 total_score 和 industry，然后移除 result 原始字段（太大）

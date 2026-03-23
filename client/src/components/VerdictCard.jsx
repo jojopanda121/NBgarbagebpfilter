@@ -5,6 +5,7 @@ import {
   getScoreBg,
   getVerdict,
 } from "../utils/scoreHelpers";
+import ensureStringArray from "../utils/ensureStringArray";
 
 const VerdictCard = memo(function VerdictCard({ result }) {
   if (!result?.verdict) return null;
@@ -56,7 +57,7 @@ const VerdictCard = memo(function VerdictCard({ result }) {
 
           {verdict.strengths?.length > 0 && (
             <div className="flex flex-wrap gap-2 mt-4">
-              {verdict.strengths.map((s, i) => (
+              {ensureStringArray(verdict.strengths).map((s, i) => (
                 <span key={i} className="px-3 py-1 text-xs bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-full">
                   {s}
                 </span>
@@ -66,7 +67,7 @@ const VerdictCard = memo(function VerdictCard({ result }) {
 
           {verdict.risk_flags?.length > 0 && (
             <div className="flex flex-wrap gap-2 mt-3">
-              {verdict.risk_flags.map((r, i) => (
+              {ensureStringArray(verdict.risk_flags).map((r, i) => (
                 <span key={i} className="px-3 py-1 text-xs bg-red-500/10 text-red-400 border border-red-500/20 rounded-full">
                   {r}
                 </span>

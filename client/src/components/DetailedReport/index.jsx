@@ -16,6 +16,7 @@ import { dimIcons } from "../../constants";
 import { getScoreColor } from "../../utils/scoreHelpers";
 import { renderMarkdown } from "../../utils/renderMarkdown";
 import useAnalysisStore from "../../store/useAnalysisStore";
+import ensureStringArray from "../../utils/ensureStringArray";
 
 // ── 声明核查结论标签 ──
 function VerdictBadge({ verdict }) {
@@ -311,7 +312,7 @@ function DimensionDetailCard({ dimKey, dim, Icon }) {
             <div>
               <div className="text-xs font-bold text-blue-400 uppercase tracking-wider mb-2">📄 BP 核心声明</div>
               <ul className="space-y-1">
-                {dim.bp_key_points.map((point, i) => (
+                {ensureStringArray(dim.bp_key_points).map((point, i) => (
                   <li key={i} className="text-sm text-slate-400 leading-relaxed bg-slate-900/50 rounded-lg px-3 py-2 border-l-2 border-blue-500/40">
                     {point}
                   </li>
@@ -325,7 +326,7 @@ function DimensionDetailCard({ dimKey, dim, Icon }) {
             <div>
               <div className="text-xs font-bold text-purple-400 uppercase tracking-wider mb-2">🔬 AI 研究发现</div>
               <ul className="space-y-1">
-                {dim.ai_research_findings.map((finding, i) => (
+                {ensureStringArray(dim.ai_research_findings).map((finding, i) => (
                   <li key={i} className="text-sm text-slate-400 leading-relaxed bg-slate-900/50 rounded-lg px-3 py-2 border-l-2 border-purple-500/40">
                     {finding}
                   </li>
@@ -357,12 +358,12 @@ function DimensionDetailCard({ dimKey, dim, Icon }) {
           {/* 风险与亮点标签 */}
           {(dim.risk_factors?.length > 0 || dim.positive_signals?.length > 0) && (
             <div className="flex flex-wrap gap-2">
-              {dim.risk_factors?.map((risk, i) => (
+              {ensureStringArray(dim.risk_factors).map((risk, i) => (
                 <span key={`risk-${i}`} className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs bg-red-500/10 text-red-400 border border-red-500/20">
                   <AlertTriangle className="w-3 h-3" />{risk}
                 </span>
               ))}
-              {dim.positive_signals?.map((signal, i) => (
+              {ensureStringArray(dim.positive_signals).map((signal, i) => (
                 <span key={`pos-${i}`} className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
                   <CheckCircle className="w-3 h-3" />{signal}
                 </span>

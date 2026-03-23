@@ -4,7 +4,7 @@
 // ============================================================
 
 const { callLLM, callLLMWithThinking } = require("./llmService");
-const { extractJson, extractJsonArray } = require("../utils/jsonParser");
+const { extractJson, extractJsonArray, ensureStringArray } = require("../utils/jsonParser");
 const { scoreProject } = require("../scoring");
 const logger = require("../utils/logger");
 const {
@@ -303,13 +303,13 @@ function buildDimension(key, scoringResult, dimensionAnalysis) {
     bp_claim: expertDim.bp_claim || "",
     ai_finding: expertDim.ai_finding || "",
     inputs: dimResult.inputs,
-    // Enriched dimension data
-    bp_key_points: expertDim.bp_key_points || [],
-    ai_research_findings: expertDim.ai_research_findings || [],
+    // Enriched dimension data (ensureStringArray guards against LLM returning objects)
+    bp_key_points: ensureStringArray(expertDim.bp_key_points),
+    ai_research_findings: ensureStringArray(expertDim.ai_research_findings),
     comprehensive_analysis: expertDim.comprehensive_analysis || "",
     score_rationale: expertDim.score_rationale || "",
-    risk_factors: expertDim.risk_factors || [],
-    positive_signals: expertDim.positive_signals || [],
+    risk_factors: ensureStringArray(expertDim.risk_factors),
+    positive_signals: ensureStringArray(expertDim.positive_signals),
   };
   return base;
 }
@@ -337,8 +337,8 @@ function buildVerdictResponse(scoringResult, structuralResult, validatedData, di
     grade_color: scoringResult.grade_color,
     verdict_summary: structuralResult?.one_line_summary || scoringResult.grade_label,
     dimensions,
-    risk_flags: validatedData.risk_flags || [],
-    strengths: validatedData.strengths || [],
+    risk_flags: ensureStringArray(validatedData.risk_flags),
+    strengths: ensureStringArray(validatedData.strengths),
     conflicts: validatedData.conflicts || [],
     claim_verdicts: validatedData.claim_verdicts || [],
     valuation_comparison: valuationComparison,

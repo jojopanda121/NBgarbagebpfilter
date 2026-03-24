@@ -25,8 +25,6 @@
 #   3. docker-compose up -d --build
 # ============================================================
 
-version: "3.8"
-
 services:
   # ── 主应用（Node.js 后端 + React 前端）──
   app:
@@ -91,7 +89,11 @@ services:
 
   # ── 数据库定时备份（每天凌晨3点） ──
   backup:
-    image: alpine:3.19
+    build:
+      context: .
+      dockerfile_inline: |
+        FROM alpine:3.19
+        RUN apk add --no-cache sqlite
     container_name: bp-filter-backup
     restart: always
     volumes:
@@ -100,7 +102,6 @@ services:
     command:
       - -c
       - |
-        apk add --no-cache sqlite && \
         echo "0 3 * * * sqlite3 /data/app.db '.backup /data/backups/app_$$(date +\%Y\%m\%d_\%H\%M\%S).db' && find /data/backups -name '*.db' -mtime +30 -delete" | crontab - && \
         mkdir -p /data/backups && \
         crond -f -l 2

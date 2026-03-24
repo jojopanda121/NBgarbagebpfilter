@@ -70,7 +70,18 @@ const corsOptions = (() => {
   return { origin: true, credentials: true };
 })();
 app.use(helmet({
-  contentSecurityPolicy: false, // CSP 由前端框架管理
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", "data:", "blob:"],
+      connectSrc: ["'self'"],
+      fontSrc: ["'self'", "data:"],
+      objectSrc: ["'none'"],
+      frameAncestors: ["'none'"],
+    },
+  },
   crossOriginEmbedderPolicy: false, // 允许嵌入外部资源
 }));
 app.use(cors(corsOptions));
@@ -135,12 +146,21 @@ server.timeout = HTTP_TIMEOUT;
 server.requestTimeout = HTTP_TIMEOUT;
 server.keepAliveTimeout = HTTP_TIMEOUT + 1000;
 
-// 优雅关闭
+// 优雅关闭：停止接受新连接，等待现有请求完成（最多 30s）
 process.on("SIGTERM", () => {
   console.log("SIGTERM received, shutting down gracefully...");
+  // 停止接受新连接
   server.close(() => {
+    console.log("All connections closed, exiting...");
     const { closeDb } = require("./db");
     closeDb();
     process.exit(0);
   });
+  // 强制退出超时（防止长时间分析任务阻塞关闭）
+  setTimeout(() => {
+    console.error("Graceful shutdown timed out (30s), forcing exit...");
+    const { closeDb } = require("./db");
+    closeDb();
+    process.exit(1);
+  }, 30_000).unref();
 });

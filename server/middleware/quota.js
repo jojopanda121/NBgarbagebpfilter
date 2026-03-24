@@ -97,13 +97,19 @@ function deductQuota(userId) {
 
 /**
  * 退还额度（分析失败时调用）
- * 优先退还免费额度
+ * 根据扣减类型退还到对应的额度池
+ * @param {number} userId
+ * @param {string} deductType - "free" 或 "paid"，与 deductQuota 返回的 type 对应
  */
-function refundQuota(userId) {
+function refundQuota(userId, deductType = "free") {
   const db = getDb();
   try {
+    const column = deductType === "paid" ? "paid_quota" : "free_quota";
     db.prepare(
-      "UPDATE quotas SET free_quota = free_quota + 1, updated_at = datetime('now') WHERE user_id = ?"
+      `UPDATE quotas SET ${column} = ${column} + 1, updated_at = datetime('now') WHERE user_id = ?`
+    ).run(userId);
+    db.prepare(
+      "UPDATE users SET usage_count = MAX(0, usage_count - 1), updated_at = datetime('now') WHERE id = ?"
     ).run(userId);
     return { success: true };
   } catch (err) {

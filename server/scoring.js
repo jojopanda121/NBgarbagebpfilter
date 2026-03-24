@@ -226,10 +226,9 @@ function calculateDimension5_Integrity(claimVerdicts) {
 }
 
 /**
- * 五维简单平均总分
+ * 五维简单平均总分（等权，每个维度 20%）
  *
  * Total_Score = (S1 + S2 + S3 + S4 + S5) / 5
- * S5 = calculateDimension5_Integrity(claimVerdicts)，0-100 直接参与加权
  */
 function calculateTotalScore(S1, S2, S3, S4, S5) {
   const s1 = Number(S1) || 0;

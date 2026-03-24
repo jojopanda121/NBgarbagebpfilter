@@ -24,10 +24,14 @@ function findExistingResult(userId, fileHash) {
       "SELECT id, result FROM tasks WHERE user_id = ? AND file_hash = ? AND status = 'complete' ORDER BY created_at DESC LIMIT 1"
     ).get(userId, fileHash);
     if (row && row.result) {
-      try { row.result = JSON.parse(row.result); } catch {}
+      try { row.result = JSON.parse(row.result); } catch (e) {
+        console.warn("[Analyze] Failed to parse cached result JSON:", e.message);
+      }
       return row;
     }
-  } catch {}
+  } catch (err) {
+    console.warn("[Analyze] findExistingResult error:", err.message);
+  }
   return null;
 }
 
@@ -39,7 +43,9 @@ function findRunningTask(userId, fileHash) {
       "SELECT id FROM tasks WHERE user_id = ? AND file_hash = ? AND status = 'running' ORDER BY created_at DESC LIMIT 1"
     ).get(userId, fileHash);
     return row || null;
-  } catch {}
+  } catch (err) {
+    console.warn("[Analyze] findRunningTask error:", err.message);
+  }
   return null;
 }
 
@@ -101,9 +107,12 @@ function analyze(req, res) {
           return res.json({ taskId: task.id, cached: true });
         }
       }
-    } catch {}
+    } catch (err) {
+      console.warn("[Analyze] File dedup check error:", err.message);
+    }
   }
 
+  let quotaDeductType = null;
   if (!isAdmin && userId) {
     const deductResult = deductQuota(userId);
     if (!deductResult.success) {
@@ -114,7 +123,16 @@ function analyze(req, res) {
         require_payment: true,
       });
     }
+    quotaDeductType = deductResult.type; // "free" 或 "paid"
   }
+
+  // 在响应前提取所有需要的 req 数据（响应后 req 对象可能被 GC）
+  const filePath = req.file ? req.file.path : null;
+  const fileMode = req.file
+    ? ((req.file.originalname || "").toLowerCase().endsWith(".pptx") ? "pptx" : "pdf")
+    : null;
+  const directText = req.body?.text || null;
+  const clientIp = req.headers?.["x-forwarded-for"]?.split(",")[0]?.trim() || req.ip || req.socket?.remoteAddress || null;
 
   // 创建任务并立即返回
   const task = createTask(userId);
@@ -123,13 +141,6 @@ function analyze(req, res) {
     try { updateTask(task.id, { file_hash: fileHash }); } catch {}
   }
   res.json({ taskId: task.id });
-
-  // 后台异步执行
-  const filePath = req.file ? req.file.path : null;
-  const fileMode = req.file
-    ? ((req.file.originalname || "").toLowerCase().endsWith(".pptx") ? "pptx" : "pdf")
-    : null;
-  const directText = req.body?.text || null;
 
   (async () => {
     let bpText = "";
@@ -189,8 +200,7 @@ function analyze(req, res) {
         if (result.project_location) {
           extraFields.project_location = result.project_location;
         }
-        // 获取客户端 IP
-        const clientIp = req.headers["x-forwarded-for"]?.split(",")[0]?.trim() || req.ip || req.socket?.remoteAddress;
+        // 客户端 IP（已在响应前提取）
         if (clientIp) extraFields.client_ip = clientIp;
       } catch (_) { /* ignore - new columns may not exist yet */ }
 
@@ -199,8 +209,8 @@ function analyze(req, res) {
       console.error(`[任务 ${task.id.slice(0, 8)}] 错误:`, err.message);
       updateTask(task.id, { status: "error", error: err.message || "服务器内部错误" });
       // 分析失败时退还额度（管理员无需退还）
-      if (userId && !isAdmin) {
-        refundQuota(userId);
+      if (userId && !isAdmin && quotaDeductType) {
+        refundQuota(userId, quotaDeductType);
       }
     }
   })();

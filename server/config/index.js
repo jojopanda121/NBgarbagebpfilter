@@ -5,12 +5,21 @@
 
 require("dotenv").config({ path: require("path").join(__dirname, "..", "..", ".env") });
 
+// 开发模式下自动生成随机 JWT Secret，避免硬编码可预测值
+const devJwtSecret = (() => {
+  if (process.env.JWT_SECRET) return process.env.JWT_SECRET;
+  const crypto = require("crypto");
+  const secret = crypto.randomBytes(32).toString("hex");
+  console.warn("[Config] 未设置 JWT_SECRET，已自动生成随机开发密钥（每次重启会变化）");
+  return secret;
+})();
+
 const config = {
   env: process.env.NODE_ENV || "development",
   port: parseInt(process.env.PORT, 10) || 3001,
 
   // JWT
-  jwtSecret: process.env.JWT_SECRET || "dev-secret-change-in-production",
+  jwtSecret: devJwtSecret,
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || "7d",
 
   // Database
@@ -54,10 +63,7 @@ const config = {
 
 // ── 生产环境安全检查 ──
 if (config.env === "production") {
-  if (
-    !process.env.JWT_SECRET ||
-    config.jwtSecret === "dev-secret-change-in-production"
-  ) {
+  if (!process.env.JWT_SECRET) {
     console.error(
       "\n[FATAL] 生产环境必须设置 JWT_SECRET 环境变量！\n" +
       "  请在 .env 中设置一个至少 32 位的随机字符串。\n" +

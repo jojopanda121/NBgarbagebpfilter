@@ -21,6 +21,17 @@ from fastapi.responses import JSONResponse
 
 app = FastAPI(title="GarbageBPFilter Doc Service", version="1.0.0")
 
+# 在应用启动时初始化 OCR 引擎（避免每次请求重新加载模型）
+_ocr_engine = None
+
+
+def _get_ocr():
+    global _ocr_engine
+    if _ocr_engine is None:
+        from rapidocr_onnxruntime import RapidOCR
+        _ocr_engine = RapidOCR()
+    return _ocr_engine
+
 
 def extract_pdf_text(file_path: str) -> str:
     """从 PDF 提取文本，先尝试直接提取，文本过少时降级为 OCR"""
@@ -47,9 +58,8 @@ def extract_pdf_text(file_path: str) -> str:
 def extract_pdf_ocr(file_path: str) -> str:
     """OCR 提取 PDF 文本"""
     import fitz
-    from rapidocr_onnxruntime import RapidOCR
 
-    ocr = RapidOCR()
+    ocr = _get_ocr()
     doc = fitz.open(file_path)
     pages_text = []
 

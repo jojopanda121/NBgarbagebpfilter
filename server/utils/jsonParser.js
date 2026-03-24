@@ -3,10 +3,37 @@
 // 从原 server/index.js 中提取，支持 7 级容错解析
 // ============================================================
 
+/** 移除字符串外部的注释（保留字符串内的 // 和 URL） */
+function removeComments(str) {
+  let result = "";
+  let inStr = false;
+  let esc = false;
+  for (let i = 0; i < str.length; i++) {
+    const ch = str[i];
+    if (esc) { result += ch; esc = false; continue; }
+    if (ch === "\\" && inStr) { result += ch; esc = true; continue; }
+    if (ch === '"') { inStr = !inStr; result += ch; continue; }
+    if (inStr) { result += ch; continue; }
+    // 跳过单行注释
+    if (ch === "/" && str[i + 1] === "/") {
+      const nl = str.indexOf("\n", i);
+      i = nl === -1 ? str.length : nl - 1;
+      continue;
+    }
+    // 跳过多行注释
+    if (ch === "/" && str[i + 1] === "*") {
+      const end = str.indexOf("*/", i + 2);
+      i = end === -1 ? str.length : end + 1;
+      continue;
+    }
+    result += ch;
+  }
+  return result;
+}
+
 /** 清理 LLM 输出中的非标准 JSON */
 function sanitizeJsonString(str) {
-  str = str.replace(/\/\/[^\n]*/g, "");
-  str = str.replace(/\/\*[\s\S]*?\*\//g, "");
+  str = removeComments(str);
   str = str.replace(/,\s*([\]}])/g, "$1");
   return str.trim();
 }
@@ -17,8 +44,7 @@ function attemptJsonFix(str) {
   let fixed = str;
   fixed = fixed.replace(/^\uFEFF/, "").replace(/[\u200B-\u200D\uFEFF]/g, "");
   fixed = fixed.replace(/,(\s*[}\]])/g, "$1");
-  fixed = fixed.replace(/\/\/.*$/gm, "");
-  fixed = fixed.replace(/\/\*[\s\S]*?\*\//g, "");
+  fixed = removeComments(fixed);
   return fixed.trim();
 }
 

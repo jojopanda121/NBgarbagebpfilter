@@ -1,6 +1,6 @@
 // ============================================================
 // server/services/taskService.js — 任务管理服务
-// 存储策略：内存 Map（实时读写） + SQLite（持久化）双写
+// 存储策略：SQLite 为权威数据源 + 内存 Map 作为读缓存
 //
 // 故障恢复：进程启动时自动将数据库中滞留的 running 任务标记为
 // failed，避免它们永久卡死在"进行中"状态。
@@ -9,7 +9,7 @@
 const crypto = require("crypto");
 const { getDb } = require("../db");
 
-// 内存存储（兼容原有逻辑，单实例模式下性能最优）
+// 内存缓存（读加速，DB 为权威数据源）
 const memoryTasks = new Map();
 
 function generateArchiveNumber() {
@@ -57,22 +57,26 @@ function createTask(userId = null) {
     updated_at: now,
   };
 
-  // 写入内存
-  memoryTasks.set(id, task);
+  // 先写入数据库（权威数据源），再写缓存
+  const db = getDb();
+  db.prepare(
+    `INSERT INTO tasks (id, user_id, archive_number, status, percentage, stage, message, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(id, userId, archiveNumber, task.status, task.percentage, task.stage, task.message, now, now);
 
-  // 同时写入数据库（持久化）
-  try {
-    const db = getDb();
-    db.prepare(
-      `INSERT INTO tasks (id, user_id, archive_number, status, percentage, stage, message, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    ).run(id, userId, archiveNumber, task.status, task.percentage, task.stage, task.message, now, now);
-  } catch (err) {
-    console.warn("[TaskService] DB write failed, using memory only:", err.message);
-  }
+  // 写入内存缓存
+  memoryTasks.set(id, task);
 
   return task;
 }
+
+// 允许通过 updateTask 更新的列白名单（防止 SQL 注入）
+const ALLOWED_TASK_COLUMNS = new Set([
+  "status", "percentage", "stage", "message", "result", "error",
+  "title", "industry_category", "file_hash", "total_score",
+  "project_location", "client_ip", "project_stage", "adjusted_score",
+  "next_followup_date", "archive_number",
+]);
 
 function updateTask(taskId, fields) {
   const now = new Date().toISOString();
@@ -90,6 +94,10 @@ function updateTask(taskId, fields) {
     const values = [];
 
     for (const [key, value] of Object.entries(fields)) {
+      if (!ALLOWED_TASK_COLUMNS.has(key)) {
+        console.warn(`[TaskService] Rejected unknown column: ${key}`);
+        continue;
+      }
       if (key === "result") {
         updates.push("result = ?");
         values.push(typeof value === "string" ? value : JSON.stringify(value));
@@ -99,13 +107,15 @@ function updateTask(taskId, fields) {
       }
     }
 
+    if (updates.length === 0) return;
+
     updates.push("updated_at = ?");
     values.push(now);
     values.push(taskId);
 
     db.prepare(`UPDATE tasks SET ${updates.join(", ")} WHERE id = ?`).run(...values);
   } catch (err) {
-    // DB update is best-effort; memory is authoritative for real-time
+    console.warn(`[TaskService] DB update failed for task ${taskId}: ${err.message}`);
   }
 }
 
@@ -185,15 +195,42 @@ function recoverStaleTasks() {
   try {
     const db = getDb();
     const now = new Date().toISOString();
-    const result = db
-      .prepare(
+
+    // 查找需要恢复的任务（包含 user_id 以便退还额度）
+    const staleTasks = db
+      .prepare("SELECT id, user_id FROM tasks WHERE status = 'running'")
+      .all();
+
+    if (staleTasks.length === 0) return;
+
+    db.transaction(() => {
+      // 标记所有 running 任务为 failed
+      db.prepare(
         `UPDATE tasks SET status = 'failed', error = '进程重启，任务中断', updated_at = ?
          WHERE status = 'running'`
-      )
-      .run(now);
-    if (result.changes > 0) {
-      console.log(`[TaskService] 故障恢复：${result.changes} 个滞留任务已标记为 failed`);
-    }
+      ).run(now);
+
+      // 为每个有 user_id 的任务退还免费额度
+      const refundStmt = db.prepare(
+        "UPDATE quotas SET free_quota = free_quota + 1, updated_at = datetime('now') WHERE user_id = ?"
+      );
+      let refunded = 0;
+      for (const task of staleTasks) {
+        if (task.user_id) {
+          // 检查用户是否为管理员（管理员不需要退还）
+          const user = db.prepare("SELECT role FROM users WHERE id = ?").get(task.user_id);
+          if (user && user.role !== "admin") {
+            refundStmt.run(task.user_id);
+            refunded++;
+          }
+        }
+      }
+      if (refunded > 0) {
+        console.log(`[TaskService] 故障恢复：已退还 ${refunded} 个用户的额度`);
+      }
+    })();
+
+    console.log(`[TaskService] 故障恢复：${staleTasks.length} 个滞留任务已标记为 failed`);
   } catch (err) {
     console.warn("[TaskService] 故障恢复失败（DB 可能尚未初始化）:", err.message);
   }

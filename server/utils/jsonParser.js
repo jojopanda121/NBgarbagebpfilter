@@ -119,15 +119,18 @@ function extractJsonArray(raw) {
 
   raw = preprocessMinimaxOutput(raw);
 
+  const candidates = [];
+
   const fencedPatterns = [/```json\s*([\s\S]*?)```/, /```\s*([\s\S]*?)```/];
   for (const pattern of fencedPatterns) {
     const match = raw.match(pattern);
-    if (match && match[1]) {
-      const candidate = match[1].trim();
-      try { return JSON.parse(candidate); } catch {}
-      try { return JSON.parse(sanitizeJsonString(candidate)); } catch {}
-      try { return JSON.parse(attemptJsonFix(candidate)); } catch {}
-    }
+    if (match && match[1]) candidates.push(match[1].trim());
+  }
+
+  // 处理未闭合的 fenced code block（LLM 输出被截断时常见）
+  if (candidates.length === 0) {
+    const openFence = raw.match(/```json\s*([\s\S]*)$/);
+    if (openFence && openFence[1]) candidates.push(openFence[1].trim());
   }
 
   const firstBracket = raw.indexOf("[");
@@ -139,14 +142,20 @@ function extractJsonArray(raw) {
       else if (raw[i] === "]") bracketCount--;
       if (bracketCount === 0) { endIdx = i; break; }
     }
-    const fullCandidate = endIdx !== -1
+    candidates.push(endIdx !== -1
       ? raw.slice(firstBracket, endIdx + 1)
-      : raw.slice(firstBracket);
-    try { return JSON.parse(fullCandidate); } catch {}
-    try { return JSON.parse(sanitizeJsonString(fullCandidate)); } catch {}
-    try { return JSON.parse(attemptJsonFix(fullCandidate)); } catch {}
-    try { return JSON.parse(repairTruncatedJson(fullCandidate)); } catch {}
-    try { return JSON.parse(repairTruncatedJson(sanitizeJsonString(fullCandidate))); } catch {}
+      : raw.slice(firstBracket));
+  }
+
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    try { return JSON.parse(candidate); } catch {}
+    try { return JSON.parse(sanitizeJsonString(candidate)); } catch {}
+    try { return JSON.parse(attemptJsonFix(candidate)); } catch {}
+    try { return JSON.parse(attemptJsonFix(sanitizeJsonString(candidate))); } catch {}
+    try { return JSON.parse(repairTruncatedJson(candidate)); } catch {}
+    try { return JSON.parse(repairTruncatedJson(sanitizeJsonString(candidate))); } catch {}
+    try { return JSON.parse(repairTruncatedJson(attemptJsonFix(candidate))); } catch {}
   }
 
   console.error("[extractJsonArray] 解析失败，原始输出前500字:", raw.slice(0, 500));

@@ -15,9 +15,16 @@ const anthropic = new Anthropic({
 const MODEL = config.minimaxModel;
 
 // 超时和重试配置
-const LLM_TIMEOUT_MS = 180 * 1000;    // 单次请求超时 180s（3分钟）
+const LLM_TIMEOUT_MS = 300 * 1000;    // 单次请求超时 300s（5分钟），大 prompt 需要更多时间
 const MAX_RETRIES = 3;                  // 最多重试 3 次（共 4 次尝试）
 const BASE_DELAY_MS = 2000;             // 重试基础延迟 2s
+
+/** 根据 maxTokens 动态计算超时时间 */
+function calcTimeout(maxTokens) {
+  // 基础 300s，每增加 4096 tokens 多给 60s，上限 600s
+  const extra = Math.floor(maxTokens / 4096) * 60 * 1000;
+  return Math.min(LLM_TIMEOUT_MS + extra, 600 * 1000);
+}
 
 /** 延迟工具函数 */
 function sleep(ms) {
@@ -62,6 +69,7 @@ async function callLLM(systemPrompt, userContent, maxTokens = 8192) {
         await sleep(delay);
       }
 
+      const timeout = calcTimeout(maxTokens);
       const resp = await withTimeout(
         anthropic.messages.create({
           model: MODEL,
@@ -69,7 +77,7 @@ async function callLLM(systemPrompt, userContent, maxTokens = 8192) {
           system: systemPrompt,
           messages: [{ role: "user", content: userContent }],
         }),
-        LLM_TIMEOUT_MS,
+        timeout,
         `callLLM(maxTokens=${maxTokens})`
       );
 
@@ -103,6 +111,7 @@ async function callLLMWithThinking(systemPrompt, userContent, maxTokens = 16000,
           await sleep(delay);
         }
 
+        const timeout = calcTimeout(maxTokens) * 2; // thinking 模式给双倍超时
         const resp = await withTimeout(
           anthropic.messages.create({
             model: MODEL,
@@ -111,7 +120,7 @@ async function callLLMWithThinking(systemPrompt, userContent, maxTokens = 16000,
             system: systemPrompt,
             messages: [{ role: "user", content: userContent }],
           }),
-          LLM_TIMEOUT_MS * 2, // thinking 模式给双倍超时
+          timeout,
           `callLLMWithThinking(maxTokens=${maxTokens})`
         );
 

@@ -3,6 +3,7 @@
 // 从 index.js 提取的核心 AI 分析逻辑
 // ============================================================
 
+const pLimit = require("p-limit");
 const { callLLM, callLLMWithThinking } = require("./llmService");
 const { extractJson, extractJsonArray, ensureStringArray } = require("../utils/jsonParser");
 const { scoreProject } = require("../scoring");
@@ -15,7 +16,8 @@ const {
   DEEP_RESEARCH_PROMPT,
 } = require("../utils/prompts");
 
-const MAX_CONCURRENT_BATCHES = 3; // 将声明分为最多3个并发批次
+const MAX_CLAIMS_PER_BATCH = 6; // 每批最多6条声明，防止输出截断导致JSON解析失败
+const MAX_CONCURRENT_BATCHES = 5; // 最多5个并发批次
 
 /** 行业大类映射 — 通过关键词匹配将细分行业归类到统计大类（支持多标签） */
 const INDUSTRY_CATEGORIES = [
@@ -93,11 +95,10 @@ async function verifySingleClaim(claim, bpContext, batchLabel) {
 async function runAgentBWithBatchingAndResearch(extractedData, bpText, onProgress) {
   const claims = extractedData.key_claims || [];
 
-  // Phase 1: 微观声明核查 — 平均分成最多 3 个并发批次
+  // Phase 1: 微观声明核查 — 每批最多 MAX_CLAIMS_PER_BATCH 条，防止输出过长被截断
   const batches = [];
-  const batchSize = Math.ceil(claims.length / MAX_CONCURRENT_BATCHES);
-  for (let i = 0; i < claims.length; i += batchSize) {
-    batches.push(claims.slice(i, i + batchSize));
+  for (let i = 0; i < claims.length; i += MAX_CLAIMS_PER_BATCH) {
+    batches.push(claims.slice(i, i + MAX_CLAIMS_PER_BATCH));
   }
 
   const batchCount = batches.length;
@@ -106,21 +107,24 @@ async function runAgentBWithBatchingAndResearch(extractedData, bpText, onProgres
 
   const bpContext = `请对处于 ${extractedData.industry || "未知"} 赛道的 ${extractedData.company_name || "未知公司"} 进行核查。产品：${extractedData.product_name || "未知"}。`;
 
+  const limit = pLimit(MAX_CONCURRENT_BATCHES);
   const batchResults = await Promise.all(
     batches.map((batch, batchIdx) =>
-      callLLM(
-        CLAIM_VERDICT_BATCH_PROMPT + "\n\n【重要】请严格只输出 JSON 数组。",
-        `${bpContext}\n\n待核查声明批次 ${batchIdx + 1}/${batchCount}：\n${JSON.stringify(batch, null, 2)}`,
-        8192
-      ).then((raw) => {
-        const parsed = extractJsonArray(raw);
-        if (!parsed) {
+      limit(() =>
+        callLLM(
+          CLAIM_VERDICT_BATCH_PROMPT + "\n\n【重要】请严格只输出 JSON 数组，不要使用 markdown 代码块。",
+          `${bpContext}\n\n待核查声明批次 ${batchIdx + 1}/${batchCount}：\n${JSON.stringify(batch, null, 2)}`,
+          6144
+        ).then((raw) => {
+          const parsed = extractJsonArray(raw);
+          if (!parsed) {
+            return { failed: true, batch, batchIdx };
+          }
+          return { failed: false, results: parsed };
+        }).catch(() => {
           return { failed: true, batch, batchIdx };
-        }
-        return { failed: false, results: parsed };
-      }).catch(() => {
-        return { failed: true, batch, batchIdx };
-      })
+        })
+      )
     )
   );
 
@@ -194,14 +198,14 @@ async function runAgentBWithBatchingAndResearch(extractedData, bpText, onProgres
     // Task A: 结构化评分
     (async () => {
       // 层1: DeepThink
-      const judgeResult = await callLLMWithThinking(dynamicPrompt, structuralInput, 20000, 3000);
+      const judgeResult = await callLLMWithThinking(dynamicPrompt, structuralInput, 12000, 3000);
       let result = extractJson(judgeResult.text);
 
       // 层2: 普通模式
       if (!result || !result.validated_data) {
         logger.warn("[B.2] 首次解析失败，重试层2...");
         onProgress({ type: "progress", stage: "scoring_retry", percentage: 74, message: "评分结果解析失败，重试中..." });
-        const retry1Raw = await callLLM(dynamicPrompt + "\n\n【紧急提醒】只输出 JSON 对象。", structuralInput, 20000);
+        const retry1Raw = await callLLM(dynamicPrompt + "\n\n【紧急提醒】只输出 JSON 对象，不要 markdown 代码块。", structuralInput, 12000);
         result = extractJson(retry1Raw);
       }
 

@@ -9,6 +9,7 @@
 const { getDb } = require("../db");
 const { callLLM } = require("./llmService");
 const { getGrade, VERDICT_SCORE_MAP } = require("../scoring");
+const { extractJsonArray } = require("../utils/jsonParser");
 
 // 需要尽调核实的 verdict 类型
 const DD_VERDICTS = new Set(["存疑", "夸大", "严重夸大", "信息不对称", "证伪"]);
@@ -73,10 +74,9 @@ async function generateDDMethods(claims) {
 
   try {
     const raw = await callLLM(systemPrompt, userContent, 4096);
-    // 提取 JSON 数组
-    const match = raw.match(/\[[\s\S]*\]/);
-    if (!match) throw new Error("LLM 返回格式错误");
-    return JSON.parse(match[0]);
+    const parsed = extractJsonArray(raw);
+    if (!parsed) throw new Error("LLM 返回格式错误");
+    return parsed;
   } catch (err) {
     console.error("[ddService] generateDDMethods 失败:", err.message);
     // 降级：返回默认核实方法

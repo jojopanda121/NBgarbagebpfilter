@@ -1,6 +1,6 @@
 // ============================================================
 // server/services/verificationStore.js — 验证码持久化存储（SQLite）
-// 统一供 smsService 和 emailService 使用
+// 供 emailService 使用
 // ============================================================
 
 const { getDb } = require("../db");

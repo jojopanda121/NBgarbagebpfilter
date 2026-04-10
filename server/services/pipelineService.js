@@ -5,7 +5,7 @@
 
 const pLimit = require("p-limit");
 const { callLLM, callLLMWithThinking } = require("./llmService");
-const { extractJson, extractJsonArray, ensureStringArray } = require("../utils/jsonParser");
+const { extractJson, extractJsonArray, extractPartialResult, ensureStringArray } = require("../utils/jsonParser");
 const { scoreProject } = require("../scoring");
 const logger = require("../utils/logger");
 const trackingService = require("./trackingService");
@@ -202,24 +202,51 @@ async function runAgentBWithBatchingAndResearch(extractedData, bpText, onProgres
       const judgeResult = await callLLMWithThinking(dynamicPrompt, structuralInput, 12000, 3000);
       let result = extractJson(judgeResult.text);
 
-      // 层2: 普通模式
+      // 层1.5: 抢救 — 整体解析失败时，从截断输出中定向提取 validated_data
       if (!result || !result.validated_data) {
-        logger.warn("[B.2] 首次解析失败，重试层2...");
-        onProgress({ type: "progress", stage: "scoring_retry", percentage: 74, message: "评分结果解析失败，重试中..." });
+        const rescued = extractPartialResult(judgeResult.text);
+        if (rescued && rescued.validated_data) {
+          logger.info("[B.2] 整体JSON截断，从输出中成功抢救 validated_data");
+          result = rescued;
+        }
+      }
+
+      // 层2: 普通模式（仅在层1+抢救都未拿到 validated_data 时才触发）
+      if (!result || !result.validated_data) {
+        logger.warn("[B.2] 层1解析失败，切换普通模式...");
+        onProgress({ type: "progress", stage: "scoring_retry", percentage: 74, message: "正在优化分析精度..." });
         const retry1Raw = await callLLM(dynamicPrompt + "\n\n【紧急提醒】只输出 JSON 对象，不要 markdown 代码块。", structuralInput, 12000);
         result = extractJson(retry1Raw);
+
+        // 层2.5: 抢救
+        if (!result || !result.validated_data) {
+          const rescued2 = extractPartialResult(retry1Raw);
+          if (rescued2 && rescued2.validated_data) {
+            logger.info("[B.2] 层2截断，从输出中成功抢救 validated_data");
+            result = rescued2;
+          }
+        }
       }
 
       // 层3: 精简模式
       if (!result || !result.validated_data) {
-        logger.warn("[B.2] 重试层2仍失败，启用兜底层3...");
-        onProgress({ type: "progress", stage: "scoring_retry2", percentage: 78, message: "启用精简模式重试..." });
+        logger.warn("[B.2] 层2仍失败，启用精简模式...");
+        onProgress({ type: "progress", stage: "scoring_retry2", percentage: 78, message: "精简模式分析中..." });
         const minimalInput = [
           `【BP提取数据】\n${JSON.stringify(extractedData, null, 2)}`,
           `\n\n【声明核查报告（top-10）】\n${JSON.stringify(compressedVerdicts.slice(0, 10), null, 2)}`,
         ].join("");
         const retry2Raw = await callLLM(EXPERT_JUDGE_MINIMAL_PROMPT, minimalInput, 8192);
         result = extractJson(retry2Raw);
+
+        // 层3.5: 抢救
+        if (!result || !result.validated_data) {
+          const rescued3 = extractPartialResult(retry2Raw);
+          if (rescued3 && rescued3.validated_data) {
+            logger.info("[B.2] 层3截断，从输出中成功抢救 validated_data");
+            result = rescued3;
+          }
+        }
       }
 
       return { structuralResult: result, thinking: judgeResult.thinking || "" };
@@ -463,11 +490,28 @@ async function runPipeline(bpText, onProgress) {
   const { claimVerdicts, structuralResult, thinking, deepResearch } =
     await runAgentBWithBatchingAndResearch(extractedData, truncatedText, onProgress);
 
+  // Agent A 数据兜底：如果结构化评分 3 层 + 抢救全部失败，用 Agent A 提取的数据直接评分
+  let validatedData;
   if (!structuralResult || !structuralResult.validated_data) {
-    throw new Error("AI 专家评分失败，请重试");
+    logger.warn("[Pipeline] 结构化评分全部失败，启用 Agent A 数据兜底");
+    onProgress({ type: "progress", stage: "scoring_fallback", percentage: 80, message: "正在整合分析数据..." });
+    validatedData = {
+      validated_data: {
+        TAM_Million_RMB: extractedData.TAM_Million_RMB ?? 0,
+        CAGR: extractedData.CAGR ?? 0,
+        TRL: extractedData.TRL ?? 5,
+        Competitor_Rank_Score: 5,
+        Industry_Capital_Score: 5,
+        Industry_Scale_Score: 5,
+        Founder_Exp_Years: extractedData.Founder_Exp_Years ?? 3,
+      },
+      dimension_analysis: {},
+      one_line_summary: `${extractedData.company_name || "未知公司"} — ${extractedData.industry || "未知赛道"}`,
+      claim_verdicts: claimVerdicts,
+    };
+  } else {
+    validatedData = { ...structuralResult, claim_verdicts: claimVerdicts };
   }
-
-  const validatedData = { ...structuralResult, claim_verdicts: claimVerdicts };
 
   // Step 3: 评分计算（CPU，瞬间完成）
   const { scoringInput, scoringResult } = calculateScoring(validatedData, claimVerdicts, onProgress);

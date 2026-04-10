@@ -11,6 +11,18 @@
 //   3. 数据缺失雪崩 → 中性默认值兜底
 // ============================================================
 
+/** 将分数钳制到 0-100 整数 */
+function clampScore(score) {
+  return Math.min(100, Math.max(0, Math.round(score)));
+}
+
+/** 将原始值归一化到 [min, max] 整数范围，缺失/越界用 fallback */
+function normalizeInput(val, fallback, min, max) {
+  const n = Number(val);
+  if (isNaN(n) || n < min) return fallback;
+  return Math.max(min, Math.min(max, Math.round(n)));
+}
+
 /**
  * 计算模块1: 时机与天花板 (S1, 权重 20%, 满分 100)
  *
@@ -43,8 +55,7 @@ function calculateDimension1_TimingAndCeiling(TAM_Million_RMB, CAGR) {
   const tamScore = Math.min(60, Math.round(17.5 * Math.log10(tamVal)));
   const cagrScore = Math.min(40, cagrVal);
 
-  const score = tamScore + cagrScore;
-  return Math.min(100, Math.max(0, Math.round(score)));
+  return clampScore(tamScore + cagrScore);
 }
 
 /**
@@ -63,18 +74,14 @@ function calculateDimension1_TimingAndCeiling(TAM_Million_RMB, CAGR) {
  * @returns {number} 0-100 的整数得分
  */
 function calculateDimension2_ProductAndMoat(TRL, Competitor_Rank_Score) {
-  const rawTRL = (TRL === null || TRL === undefined) ? NaN : Number(TRL);
-  const rawRank = (Competitor_Rank_Score === null || Competitor_Rank_Score === undefined) ? NaN : Number(Competitor_Rank_Score);
-
   // TRL 缺失默认 3（早期概念阶段），Rank 缺失默认 5（行业中游）
-  const trlVal = (isNaN(rawTRL) || rawTRL < 1) ? 3 : Math.max(1, Math.min(9, Math.round(rawTRL)));
-  const rankVal = (isNaN(rawRank) || rawRank < 1) ? 5 : Math.max(1, Math.min(10, Math.round(rawRank)));
+  const trlVal = normalizeInput(TRL, 3, 1, 9);
+  const rankVal = normalizeInput(Competitor_Rank_Score, 5, 1, 10);
 
   const trlComponent = (trlVal / 9) * 100;   // 归一化到 0-100
   const rankComponent = rankVal * 10;          // 映射到 0-100
 
-  const score = 0.4 * trlComponent + 0.6 * rankComponent;
-  return Math.min(100, Math.max(0, Math.round(score)));
+  return clampScore(0.4 * trlComponent + 0.6 * rankComponent);
 }
 
 /**
@@ -94,15 +101,11 @@ function calculateDimension2_ProductAndMoat(TRL, Competitor_Rank_Score) {
  * @returns {number} 0-100 的整数得分
  */
 function calculateDimension3_CapitalEfficiencyAndScale(Industry_Capital_Score, Industry_Scale_Score) {
-  const rawCE = Number(Industry_Capital_Score);
-  const rawSE = Number(Industry_Scale_Score);
-
   // 数据缺失时默认 5 分中性分，防止总分雪崩
-  const ceVal = (!isNaN(rawCE) && rawCE >= 1 && rawCE <= 10) ? Math.round(rawCE) : 5;
-  const seVal = (!isNaN(rawSE) && rawSE >= 1 && rawSE <= 10) ? Math.round(rawSE) : 5;
+  const ceVal = normalizeInput(Industry_Capital_Score, 5, 1, 10);
+  const seVal = normalizeInput(Industry_Scale_Score, 5, 1, 10);
 
-  const score = ceVal * 5 + seVal * 5;
-  return Math.min(100, Math.max(0, Math.round(score)));
+  return clampScore(ceVal * 5 + seVal * 5);
 }
 
 /**
@@ -135,23 +138,15 @@ function calculateDimension4_Team(teamData) {
   if (typeof teamData === "number" || teamData === null || teamData === undefined) {
     const rawExp = (teamData === null || teamData === undefined) ? NaN : Number(teamData);
     const expVal = isNaN(rawExp) ? 3 : Math.max(0, rawExp);
-    // 使用对数递减曲线计算经验分
     const expScore = Math.min(10, 2.5 * Math.log(expVal + 1));
-    // 没有其他子因子时，经验分占100%权重，归一化到0-100
-    return Math.min(100, Math.max(0, Math.round(expScore * 10)));
+    return clampScore(expScore * 10);
   }
 
   const data = teamData || {};
 
-  // 子因子提取（LLM 输出 1-10）
-  const clamp = (val, fallback) => {
-    const n = Number(val);
-    return (!isNaN(n) && n >= 1 && n <= 10) ? n : fallback;
-  };
-
   // Experience: 如果 LLM 直接给了 Team_Experience_Score 就用，否则从 Founder_Exp_Years 计算
-  let experienceScore;
   const rawTeamExp = Number(data.Team_Experience_Score);
+  let experienceScore;
   if (!isNaN(rawTeamExp) && rawTeamExp >= 1 && rawTeamExp <= 10) {
     experienceScore = rawTeamExp;
   } else {
@@ -160,10 +155,11 @@ function calculateDimension4_Team(teamData) {
     experienceScore = Math.min(10, 2.5 * Math.log(expVal + 1));
   }
 
-  const domainMatch = clamp(data.Team_Domain_Match_Score, 5);
-  const completeness = clamp(data.Team_Completeness_Score, 5);
-  const trackRecord = clamp(data.Team_Track_Record_Score, 5);
-  const education = clamp(data.Team_Education_Score, 5);
+  // 子因子提取（LLM 输出 1-10，缺失默认 5）
+  const domainMatch = normalizeInput(data.Team_Domain_Match_Score, 5, 1, 10);
+  const completeness = normalizeInput(data.Team_Completeness_Score, 5, 1, 10);
+  const trackRecord = normalizeInput(data.Team_Track_Record_Score, 5, 1, 10);
+  const education = normalizeInput(data.Team_Education_Score, 5, 1, 10);
 
   // 加权计算（每个因子 1-10，加权后 1-10，再 ×10 映射到 0-100）
   const weighted =
@@ -173,8 +169,7 @@ function calculateDimension4_Team(teamData) {
     0.15 * trackRecord +
     0.10 * education;
 
-  const score = Math.round(weighted * 10);
-  return Math.min(100, Math.max(0, score));
+  return clampScore(weighted * 10);
 }
 
 /**
@@ -222,7 +217,7 @@ function calculateDimension5_Integrity(claimVerdicts) {
     return sum + score;
   }, 0);
 
-  return Math.min(100, Math.max(0, Math.round((total / claimVerdicts.length) * 10)));
+  return clampScore((total / claimVerdicts.length) * 10);
 }
 
 /**
@@ -236,7 +231,7 @@ function calculateTotalScore(S1, S2, S3, S4, S5) {
   const s3 = Number(S3) || 0;
   const s4 = Number(S4) || 0;
   const s5 = Number(S5) || 60; // 无数据默认刚好及格
-  return Math.min(100, Math.max(0, Math.round((s1 + s2 + s3 + s4 + s5) / 5)));
+  return clampScore((s1 + s2 + s3 + s4 + s5) / 5);
 }
 
 /**
@@ -384,5 +379,7 @@ module.exports = {
   calculateDimension5_Integrity,
   calculateTotalScore,
   getGrade,
+  clampScore,
+  normalizeInput,
   VERDICT_SCORE_MAP,
 };

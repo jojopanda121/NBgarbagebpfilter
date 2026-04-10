@@ -8,6 +8,7 @@ const multer = require("multer");
 const router = express.Router();
 const { requireAuth } = require("../middleware/auth");
 const adminController = require("../controllers/adminController");
+const trackingController = require("../controllers/trackingController");
 
 const imageUpload = multer({
   dest: os.tmpdir(),
@@ -61,5 +62,15 @@ router.delete("/tokens/:token", adminController.requireAdmin, adminController.de
 
 // 审计日志
 router.get("/audit-logs", adminController.requireAdmin, adminController.getAuditLogs);
+
+// ── 追踪数据看板（管理员）──
+router.get("/tracking/dashboard", adminController.requireAdmin, trackingController.getDashboard);
+router.get("/tracking/companies", adminController.requireAdmin, trackingController.getCompanies);
+router.get("/tracking/companies/:id", adminController.requireAdmin, trackingController.getCompanyDetail);
+router.post("/tracking/companies/:id/toggle", adminController.requireAdmin, trackingController.toggleTracking);
+router.post("/tracking/run-quarterly", adminController.requireAdmin, trackingController.runQuarterlyTracking);
+router.get("/tracking/export", adminController.requireAdmin, trackingController.exportTrainingData);
+router.get("/tracking/validations", adminController.requireAdmin, trackingController.getValidations);
+router.get("/tracking/qcc-status", adminController.requireAdmin, trackingController.getQCCStatus);
 
 module.exports = router;

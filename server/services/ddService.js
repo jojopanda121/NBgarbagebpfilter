@@ -100,11 +100,26 @@ async function generateDDQuestionnaire(taskId) {
 
   // 已有问卷，直接返回
   if (row.dd_questionnaire) {
-    return JSON.parse(row.dd_questionnaire);
+    try {
+      return JSON.parse(row.dd_questionnaire);
+    } catch (err) {
+      console.error("[ddService] 缓存的问卷 JSON 解析失败，清除缓存并重新生成:", err.message);
+      // 清除损坏的缓存
+      db.prepare("UPDATE tasks SET dd_questionnaire = NULL WHERE id = ?").run(taskId);
+      // 继续往下重新生成
+    }
   }
 
-  const result = typeof row.result === "string" ? JSON.parse(row.result) : row.result;
+  let result;
+  try {
+    result = typeof row.result === "string" ? JSON.parse(row.result) : row.result;
+  } catch (err) {
+    console.error("[ddService] 报告结果 JSON 解析失败:", err.message);
+    throw new Error("报告数据解析失败，请重新分析");
+  }
+
   if (!result?.verdict?.claim_verdicts) {
+    console.info("[ddService] 没有声明核查数据，返回空问卷");
     return [];
   }
 

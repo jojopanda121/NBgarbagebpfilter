@@ -8,6 +8,7 @@ const { callLLM, callLLMWithThinking } = require("./llmService");
 const { extractJson, extractJsonArray, ensureStringArray } = require("../utils/jsonParser");
 const { scoreProject } = require("../scoring");
 const logger = require("../utils/logger");
+const trackingService = require("./trackingService");
 const {
   AGENT_A_PROMPT,
   CLAIM_VERDICT_BATCH_PROMPT,
@@ -493,6 +494,34 @@ async function runPipeline(bpText, onProgress) {
 
   // 项目所在地推断（从 BP 提取数据中获取）
   const projectLocation = extractedData.project_location || null;
+
+  // ── 训练数据采集（后台静默执行，不影响主流程）──
+  try {
+    const companyName = extractedData.company_name;
+    if (companyName && companyName.trim()) {
+      // 异步执行，不 await，不阻塞返回
+      (async () => {
+        try {
+          const entity = await trackingService.findOrCreateCompanyEntity(extractedData, null);
+          // 链接 BP 到企业（分数在此阶段已计算完成）
+          const totalScore = verdict?.final_score || scoringResult?.total || null;
+          const dimScores = {
+            s1: scoringResult?.s1 || null,
+            s2: scoringResult?.s2 || null,
+            s3: scoringResult?.s3 || null,
+            s4: scoringResult?.s4 || null,
+            v5: scoringResult?.v5 || null,
+          };
+          trackingService.linkBPToCompany(null, entity.id, totalScore, dimScores, null, null);
+          logger.info("训练数据采集完成", { companyId: entity.id, companyName });
+        } catch (innerErr) {
+          logger.warn("训练数据采集失败（不影响主流程）", { error: innerErr.message });
+        }
+      })();
+    }
+  } catch (outerErr) {
+    logger.warn("训练数据采集初始化异常", { error: outerErr.message });
+  }
 
   return {
     success: true,

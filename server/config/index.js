@@ -32,6 +32,10 @@ const config = {
   // Serper (web search)
   serperApiKey: process.env.SERPER_API_KEY || "",
 
+  // 企查查 Agent（企业追踪数据源）
+  qccApiKey: process.env.QCC_API_KEY || "",
+  qccEnabled: !!process.env.QCC_API_KEY,
+
   // Document extraction service
   docServiceUrl: process.env.DOC_SERVICE_URL || "",
 

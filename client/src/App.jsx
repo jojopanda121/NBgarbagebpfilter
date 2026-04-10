@@ -18,6 +18,7 @@ const AdminPage = lazy(() => import("./pages/AdminPage"));
 const LeaderboardPage = lazy(() => import("./pages/LeaderboardPage"));
 const ProjectPage = lazy(() => import("./pages/ProjectPage"));
 const PlatformStatsPage = lazy(() => import("./pages/PlatformStatsPage"));
+const TrackingDashboardPage = lazy(() => import("./pages/TrackingDashboardPage"));
 
 // 加载中组件
 function LoadingFallback() {
@@ -101,6 +102,7 @@ export default function App() {
 
                 {/* 管理员中心 */}
                 <Route path="/admin" element={<AdminPage />} />
+                <Route path="/admin/tracking" element={<TrackingDashboardPage />} />
               </Route>
 
               {/* 404 重定向到首页 */}

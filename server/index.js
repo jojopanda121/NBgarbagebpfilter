@@ -27,8 +27,6 @@ const authRoutes = require("./routes/auth");
 const analyzeRoutes = require("./routes/analyze");
 const taskRoutes = require("./routes/task");
 const quotaRoutes = require("./routes/quota");
-// [已移除] 微信/支付宝在线支付 — 改为线下兑换码购买
-// const paymentRoutes = require("./routes/payment");
 const userRoutes = require("./routes/user");
 const verifyRoutes = require("./routes/verify");
 const tokenRoutes = require("./routes/token");
@@ -93,7 +91,6 @@ app.use("/api/auth", authRoutes);
 app.use("/api/analyze", analyzeRoutes);
 app.use("/api/task", taskRoutes);
 app.use("/api/quota", quotaRoutes);
-// [已移除] app.use("/api/payment", paymentRoutes);
 app.use("/api/user", userRoutes);
 app.use("/api/verify", verifyRoutes);
 app.use("/api/token", tokenRoutes);

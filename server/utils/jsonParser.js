@@ -207,6 +207,118 @@ function ensureStringArray(arr) {
   });
 }
 
+/**
+ * 从截断的 LLM JSON 输出中定向提取指定 key 的子对象。
+ * 典型场景：LLM 输出了完整的 validated_data 但 dimension_analysis 被截断，
+ * 导致整体 JSON 不合法。此函数可以从残缺 JSON 中抢救已完成的子对象。
+ *
+ * @param {string} raw - LLM 原始输出
+ * @param {string} key - 要提取的 JSON key（如 "validated_data"）
+ * @returns {object|null} 提取到的子对象，或 null
+ */
+function extractNestedJson(raw, key) {
+  if (!raw || typeof raw !== "string" || !key) return null;
+
+  raw = preprocessMinimaxOutput(raw);
+
+  // 在原始文本中定位 "key": { 或 "key":{ 的位置
+  const pattern = new RegExp(`"${key}"\\s*:\\s*\\{`);
+  const match = raw.match(pattern);
+  if (!match) return null;
+
+  const startIdx = raw.indexOf("{", match.index + match[0].length - 1);
+  if (startIdx === -1) return null;
+
+  // 从起始 { 开始，追踪括号平衡找到闭合 }
+  let braceCount = 0;
+  let inStr = false;
+  let esc = false;
+  let endIdx = -1;
+
+  for (let i = startIdx; i < raw.length; i++) {
+    const ch = raw[i];
+    if (esc) { esc = false; continue; }
+    if (ch === "\\" && inStr) { esc = true; continue; }
+    if (ch === '"') { inStr = !inStr; continue; }
+    if (inStr) continue;
+    if (ch === "{") braceCount++;
+    else if (ch === "}") braceCount--;
+    if (braceCount === 0) { endIdx = i; break; }
+  }
+
+  if (endIdx === -1) {
+    // 括号未闭合 — 尝试修复截断
+    const fragment = raw.slice(startIdx);
+    const repaired = repairTruncatedJson(sanitizeJsonString(fragment));
+    try { return JSON.parse(repaired); } catch {}
+    return null;
+  }
+
+  const candidate = raw.slice(startIdx, endIdx + 1);
+  try { return JSON.parse(candidate); } catch {}
+  try { return JSON.parse(sanitizeJsonString(candidate)); } catch {}
+  try { return JSON.parse(attemptJsonFix(candidate)); } catch {}
+  return null;
+}
+
+/**
+ * 从截断/残缺的 LLM 结构化评分输出中抢救尽可能多的数据。
+ * 当 extractJson 整体解析失败时使用，逐段提取各个子对象。
+ *
+ * @param {string} raw - LLM 原始输出
+ * @returns {object|null} 重组的结果对象（至少含 validated_data 才算成功）
+ */
+function extractPartialResult(raw) {
+  if (!raw || typeof raw !== "string") return null;
+
+  // 核心：提取 validated_data（评分必需）
+  const validatedData = extractNestedJson(raw, "validated_data");
+  if (!validatedData) return null; // validated_data 都没有就无法抢救
+
+  // 尽力提取其他字段
+  const dimensionAnalysis = extractNestedJson(raw, "dimension_analysis");
+  const valuationComparison = extractNestedJson(raw, "valuation_comparison");
+
+  // 提取简单字符串字段
+  let oneLine = null;
+  const summaryMatch = raw.match(/"one_line_summary"\s*:\s*"([^"]*?)"/);
+  if (summaryMatch) oneLine = summaryMatch[1];
+
+  // 提取数组字段
+  const extractArray = (key) => {
+    const arrMatch = raw.match(new RegExp(`"${key}"\\s*:\\s*\\[`));
+    if (!arrMatch) return [];
+    const arrStart = raw.indexOf("[", arrMatch.index);
+    if (arrStart === -1) return [];
+    let bracketCount = 0;
+    for (let i = arrStart; i < raw.length; i++) {
+      if (raw[i] === "[") bracketCount++;
+      else if (raw[i] === "]") bracketCount--;
+      if (bracketCount === 0) {
+        try { return JSON.parse(raw.slice(arrStart, i + 1)); } catch {}
+        break;
+      }
+    }
+    return [];
+  };
+
+  const result = {
+    one_line_summary: oneLine || "",
+    validated_data: validatedData,
+    dimension_analysis: dimensionAnalysis || {},
+    risk_flags: extractArray("risk_flags"),
+    strengths: extractArray("strengths"),
+    conflicts: extractArray("conflicts"),
+  };
+  if (valuationComparison) result.valuation_comparison = valuationComparison;
+
+  console.warn("[extractPartialResult] 从截断输出中抢救成功，已提取 validated_data" +
+    (dimensionAnalysis ? " + dimension_analysis" : "") +
+    (valuationComparison ? " + valuation_comparison" : ""));
+
+  return result;
+}
+
 module.exports = {
   sanitizeJsonString,
   attemptJsonFix,
@@ -214,5 +326,7 @@ module.exports = {
   preprocessMinimaxOutput,
   extractJson,
   extractJsonArray,
+  extractNestedJson,
+  extractPartialResult,
   ensureStringArray,
 };

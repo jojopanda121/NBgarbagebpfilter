@@ -8,6 +8,7 @@ import ErrorBoundary from "./components/ErrorBoundary";
 
 // 懒加载页面组件（代码分割）
 const LoginPage = lazy(() => import("./pages/LoginPage"));
+const ForgotPasswordPage = lazy(() => import("./pages/ForgotPasswordPage"));
 const LandingPage = lazy(() => import("./pages/LandingPage"));
 const DashboardPage = lazy(() => import("./pages/DashboardPage"));
 const DemoReportPage = lazy(() => import("./pages/DemoReportPage"));
@@ -63,6 +64,9 @@ export default function App() {
 
               {/* 登录页（无 Header） */}
               <Route path="/login" element={<LoginPage />} />
+
+              {/* 找回密码页 */}
+              <Route path="/forgot-password" element={<ForgotPasswordPage />} />
 
               {/* 示例报告（无需登录） */}
               <Route path="/demo" element={<DemoReportPage />} />

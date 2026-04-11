@@ -55,6 +55,7 @@ function deriveAction(method, path) {
   if (path.includes("/packages")) return method === "POST" ? "create_package" : method === "PUT" ? "update_package" : "delete_package";
   if (path.includes("/settings")) return "update_settings";
   if (path.includes("/tokens")) return "delete_token";
+  if (path.includes("/users") && method === "DELETE") return "delete_user";
   if (path.includes("/users")) return "manage_user";
   return `${method.toLowerCase()}_operation`;
 }
@@ -93,6 +94,42 @@ const banUser = async (req, res, next) => {
     const { banned } = req.body;
     adminService.banUser(userId, banned);
     res.json({ success: true, banned });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// 删除用户
+const deleteUser = async (req, res, next) => {
+  try {
+    const userId = parseInt(req.params.id);
+    if (userId === req.user.id) {
+      return res.status(400).json({ error: "不能删除自己的账号" });
+    }
+    const success = adminService.deleteUser(userId);
+    if (!success) {
+      return res.status(404).json({ error: "用户不存在" });
+    }
+    res.json({ success: true });
+  } catch (err) {
+    if (err.message === "不能删除管理员账号") {
+      return res.status(400).json({ error: err.message });
+    }
+    next(err);
+  }
+};
+
+// 批量删除用户
+const deleteUsers = async (req, res, next) => {
+  try {
+    const { userIds } = req.body;
+    if (!Array.isArray(userIds) || userIds.length === 0) {
+      return res.status(400).json({ error: "请提供要删除的用户ID列表" });
+    }
+    // 过滤掉自己的ID
+    const filteredIds = userIds.filter((id) => id !== req.user.id);
+    const result = adminService.deleteUsers(filteredIds);
+    res.json({ success: true, ...result });
   } catch (err) {
     next(err);
   }
@@ -425,6 +462,8 @@ module.exports = {
   getUsers,
   getUserById,
   banUser,
+  deleteUser,
+  deleteUsers,
   getStats,
   getFeedbackList,
   replyFeedback,

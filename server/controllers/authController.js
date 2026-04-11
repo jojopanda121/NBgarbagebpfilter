@@ -6,9 +6,10 @@
 const bcrypt = require("bcryptjs");
 const { signToken } = require("../middleware/auth");
 const { isValidUsername, isValidPassword, isValidEmail } = require("../utils/validation");
-const { createUser, getUserByUsername, bindUserContact, getUserById } = require("../services/userService");
+const { createUser, getUserByUsername, bindUserContact, getUserById, getUserByEmail, updateLastLogin, updateUserPassword } = require("../services/userService");
 const { initializeQuota, getUserQuota } = require("../services/quotaService");
 const { getUserByInviteCode, processReferral, rewardReferral } = require("../services/referralService");
+const { sendEmailCode, verifyEmailCode, canSendEmailCode } = require("../services/emailService");
 const { getDb } = require("../db");
 
 const SALT_ROUNDS = 12;
@@ -98,6 +99,9 @@ async function login(req, res) {
       return res.status(401).json({ error: "用户名或密码错误" });
     }
 
+    // 记录最后登录时间
+    updateLastLogin(user.id);
+
     const token = signToken({ id: user.id, username: user.username });
     const quota = getUserQuota(user.id);
 
@@ -178,4 +182,76 @@ function bindContact(req, res) {
   res.json({ success: true, message: "邮箱绑定成功" });
 }
 
-module.exports = { register, login, getMe, bindContact };
+/** POST /api/auth/forgot-password — 发送密码重置验证码 */
+async function forgotPassword(req, res) {
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      return res.status(400).json({ error: "请输入邮箱地址" });
+    }
+
+    if (!isValidEmail(email)) {
+      return res.status(400).json({ error: "邮箱格式不正确" });
+    }
+
+    // 检查邮箱是否已绑定用户
+    const user = getUserByEmail(email);
+    if (!user) {
+      // 为防止邮箱枚举攻击，统一返回成功提示
+      return res.json({ success: true, message: "如果该邮箱已绑定账号，验证码将发送至该邮箱" });
+    }
+
+    if (!canSendEmailCode(email)) {
+      return res.status(429).json({ error: "发送过于频繁，请 1 分钟后再试" });
+    }
+
+    await sendEmailCode(email);
+    res.json({ success: true, message: "验证码已发送至您的邮箱" });
+  } catch (err) {
+    console.error("[ForgotPassword Error]", err);
+    res.status(500).json({ error: "发送失败，请稍后再试" });
+  }
+}
+
+/** POST /api/auth/reset-password — 验证码验证 + 重置密码 */
+async function resetPassword(req, res) {
+  try {
+    const { email, code, newPassword } = req.body;
+
+    if (!email || !code || !newPassword) {
+      return res.status(400).json({ error: "请填写完整信息" });
+    }
+
+    if (!isValidEmail(email)) {
+      return res.status(400).json({ error: "邮箱格式不正确" });
+    }
+
+    if (!isValidPassword(newPassword)) {
+      return res.status(400).json({ error: "新密码需要 6-128 个字符" });
+    }
+
+    // 验证验证码
+    const valid = verifyEmailCode(email, code);
+    if (!valid) {
+      return res.status(400).json({ error: "验证码错误或已过期" });
+    }
+
+    // 查找用户
+    const user = getUserByEmail(email);
+    if (!user) {
+      return res.status(400).json({ error: "该邮箱未绑定任何账号" });
+    }
+
+    // 更新密码
+    const passwordHash = await bcrypt.hash(newPassword, SALT_ROUNDS);
+    updateUserPassword(user.id, passwordHash);
+
+    res.json({ success: true, message: "密码重置成功，请使用新密码登录" });
+  } catch (err) {
+    console.error("[ResetPassword Error]", err);
+    res.status(500).json({ error: "密码重置失败，请稍后再试" });
+  }
+}
+
+module.exports = { register, login, getMe, bindContact, forgotPassword, resetPassword };

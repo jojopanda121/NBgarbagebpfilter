@@ -32,11 +32,15 @@ const getUsers = (options = {}) => {
   const countQuery = `SELECT COUNT(*) as total FROM users u WHERE ${whereClause}`;
   const { total } = db.prepare(countQuery).get(...params);
 
+  // 动态检测 last_login_at 列
+  const hasLastLogin = tableInfo.some((col) => col.name === "last_login_at");
+  const lastLoginSelect = hasLastLogin ? "u.last_login_at," : "NULL as last_login_at,";
+
   // 获取列表 - 使用条件列名和参数化查询
   const isBannedSelect = hasBanned ? "u.is_banned," : "0 as is_banned,";
   const listQuery = `
     SELECT
-      u.id, u.username, u.email, u.phone, u.usage_count, ${isBannedSelect} u.created_at, u.updated_at,
+      u.id, u.username, u.email, u.phone, u.usage_count, ${isBannedSelect} ${lastLoginSelect} u.contact_bound, u.created_at, u.updated_at,
       COALESCE(q.free_quota, 0) + COALESCE(q.paid_quota, 0) as total_quota,
       COALESCE(q.paid_quota, 0) as paid_quota
     FROM users u
@@ -53,14 +57,16 @@ const getUsers = (options = {}) => {
 const getUserById = (id) => {
   const db = getDb();
 
-  // 动态检测 is_banned 列
+  // 动态检测列
   const tableInfo = db.prepare("PRAGMA table_info(users)").all();
   const hasBanned = tableInfo.some((col) => col.name === "is_banned");
+  const hasLastLogin = tableInfo.some((col) => col.name === "last_login_at");
   const isBannedSelect = hasBanned ? "u.is_banned," : "0 as is_banned,";
+  const lastLoginSelect = hasLastLogin ? "u.last_login_at," : "NULL as last_login_at,";
 
   const user = db.prepare(`
     SELECT
-      u.id, u.username, u.email, u.phone, u.usage_count, ${isBannedSelect} u.created_at, u.updated_at,
+      u.id, u.username, u.email, u.phone, u.usage_count, ${isBannedSelect} ${lastLoginSelect} u.contact_bound, u.created_at, u.updated_at,
       COALESCE(q.free_quota, 0) as free_quota,
       COALESCE(q.paid_quota, 0) as paid_quota
     FROM users u
@@ -438,10 +444,63 @@ const updateSettings = (updates) => {
   return results;
 };
 
+/**
+ * 删除用户（及其关联数据）
+ * @param {number} userId
+ * @returns {boolean}
+ */
+const deleteUser = (userId) => {
+  const db = getDb();
+
+  // 不允许删除管理员
+  const user = db.prepare("SELECT role FROM users WHERE id = ?").get(userId);
+  if (!user) return false;
+  if (user.role === "admin") {
+    throw new Error("不能删除管理员账号");
+  }
+
+  db.transaction(() => {
+    db.prepare("DELETE FROM quotas WHERE user_id = ?").run(userId);
+    db.prepare("DELETE FROM referrals WHERE inviter_id = ? OR invitee_id = ?").run(userId, userId);
+    db.prepare("DELETE FROM verification_codes WHERE contact IN (SELECT email FROM users WHERE id = ?)").run(userId);
+    // tasks 和 orders 保留历史记录，只解除关联
+    db.prepare("UPDATE tasks SET user_id = NULL WHERE user_id = ?").run(userId);
+    db.prepare("UPDATE orders SET user_id = NULL WHERE user_id = ?").run(userId);
+    db.prepare("DELETE FROM users WHERE id = ?").run(userId);
+  })();
+
+  return true;
+};
+
+/**
+ * 批量删除用户
+ * @param {number[]} userIds
+ * @returns {{ deleted: number, skipped: number }}
+ */
+const deleteUsers = (userIds) => {
+  const db = getDb();
+  let deleted = 0;
+  let skipped = 0;
+
+  for (const userId of userIds) {
+    try {
+      const success = deleteUser(userId);
+      if (success) deleted++;
+      else skipped++;
+    } catch {
+      skipped++;
+    }
+  }
+
+  return { deleted, skipped };
+};
+
 module.exports = {
   getUsers,
   getUserById,
   banUser,
+  deleteUser,
+  deleteUsers,
   getStats,
   getFeedbackList,
   replyFeedback,

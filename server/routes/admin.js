@@ -34,6 +34,8 @@ router.delete("/site-content/:slug/image", adminController.requireAdmin, adminCo
 router.get("/users", adminController.requireAdmin, adminController.getUsers);
 router.get("/users/:id", adminController.requireAdmin, adminController.getUserById);
 router.post("/users/:id/ban", adminController.requireAdmin, adminController.banUser);
+router.delete("/users/:id", adminController.requireAdmin, adminController.deleteUser);
+router.post("/users/batch-delete", adminController.requireAdmin, adminController.deleteUsers);
 
 // 统计数据
 router.get("/stats", adminController.requireAdmin, adminController.getStats);

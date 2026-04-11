@@ -2,7 +2,7 @@
 const { Router } = require("express");
 const rateLimit = require("express-rate-limit");
 const { requireAuth } = require("../middleware/auth");
-const { register, login, getMe, bindContact } = require("../controllers/authController");
+const { register, login, getMe, bindContact, forgotPassword, resetPassword } = require("../controllers/authController");
 
 const router = Router();
 
@@ -26,9 +26,21 @@ const registerLimiter = rateLimit({
   validate: false,
 });
 
+// 密码重置速率限制：防止滥用
+const resetLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 分钟
+  max: 5, // 最多 5 次
+  message: { error: "操作过于频繁，请 15 分钟后再试" },
+  standardHeaders: true,
+  legacyHeaders: false,
+  validate: false,
+});
+
 router.post("/register", registerLimiter, register);
 router.post("/login", loginLimiter, login);
 router.get("/me", requireAuth, getMe);
 router.post("/bind-contact", requireAuth, bindContact);
+router.post("/forgot-password", resetLimiter, forgotPassword);
+router.post("/reset-password", resetLimiter, resetPassword);
 
 module.exports = router;

@@ -1250,6 +1250,10 @@ function TokenTab({ redeemToken, setRedeemToken, redeeming, handleRedeem, genera
 
 // 用户管理组件
 function UsersTab({ users, total, page, setPage, search, setSearch, status, setStatus, loadUsers, setSelectedUser, selectedUser, loading, setLoading, setMessage }) {
+  const [selectedIds, setSelectedIds] = useState(new Set());
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(null);
+  const [batchDeleting, setBatchDeleting] = useState(false);
+
   const handleBan = async (userId, banned) => {
     try {
       await api.post(`/api/admin/users/${userId}/ban`, { banned });
@@ -1260,11 +1264,76 @@ function UsersTab({ users, total, page, setPage, search, setSearch, status, setS
     }
   };
 
+  const handleDelete = async (userId) => {
+    try {
+      await api.delete(`/api/admin/users/${userId}`);
+      setMessage({ type: "success", text: "用户已删除" });
+      setShowDeleteConfirm(null);
+      loadUsers();
+    } catch (err) {
+      setMessage({ type: "error", text: err.message });
+    }
+  };
+
+  const handleBatchDelete = async () => {
+    if (selectedIds.size === 0) return;
+    setBatchDeleting(true);
+    try {
+      const data = await api.post("/api/admin/users/batch-delete", { userIds: [...selectedIds] });
+      setMessage({ type: "success", text: `已删除 ${data.deleted} 个用户${data.skipped > 0 ? `，${data.skipped} 个跳过（管理员不可删除）` : ""}` });
+      setSelectedIds(new Set());
+      loadUsers();
+    } catch (err) {
+      setMessage({ type: "error", text: err.message });
+    } finally {
+      setBatchDeleting(false);
+    }
+  };
+
+  const toggleSelect = (id) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === users.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(users.map((u) => u.id)));
+    }
+  };
+
+  // 筛选出可清理的用户：未绑定邮箱 + 从未登录或超过30天未登录
+  const inactiveUnboundUsers = users.filter(
+    (u) => !u.email && !u.contact_bound && (!u.last_login_at || (Date.now() - new Date(u.last_login_at).getTime() > 30 * 24 * 60 * 60 * 1000))
+  );
+
+  const selectInactiveUnbound = () => {
+    setSelectedIds(new Set(inactiveUnboundUsers.map((u) => u.id)));
+  };
+
+  const formatLastLogin = (lastLogin) => {
+    if (!lastLogin) return "从未登录";
+    const d = new Date(lastLogin);
+    const now = new Date();
+    const diffMs = now - d;
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+    if (diffDays === 0) return "今天";
+    if (diffDays === 1) return "昨天";
+    if (diffDays < 30) return `${diffDays}天前`;
+    if (diffDays < 365) return `${Math.floor(diffDays / 30)}个月前`;
+    return `${Math.floor(diffDays / 365)}年前`;
+  };
+
   return (
     <div className="space-y-6">
       <div className="bg-slate-900/50 border border-white/10 rounded-xl p-6">
-        <div className="flex gap-4 mb-4">
-          <div className="flex-1 relative">
+        <div className="flex flex-wrap gap-4 mb-4">
+          <div className="flex-1 relative min-w-[200px]">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
             <input type="text" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="搜索用户名/邮箱" className="w-full pl-10 pr-4 py-2 bg-slate-800 border border-white/10 rounded-lg" />
           </div>
@@ -1272,10 +1341,51 @@ function UsersTab({ users, total, page, setPage, search, setSearch, status, setS
             <option value="">全部</option><option value="active">正常</option><option value="banned">已禁用</option>
           </select>
         </div>
+
+        {/* 批量操作栏 */}
+        <div className="flex flex-wrap items-center gap-3 mb-4">
+          <button onClick={selectInactiveUnbound} className="px-3 py-1.5 bg-amber-600/20 text-amber-400 hover:bg-amber-600/30 rounded-lg text-xs" title="选择未绑定邮箱且超过30天未登录的用户">
+            选择不活跃未绑邮箱用户 ({inactiveUnboundUsers.length})
+          </button>
+          {selectedIds.size > 0 && (
+            <button onClick={handleBatchDelete} disabled={batchDeleting} className="px-3 py-1.5 bg-red-600/20 text-red-400 hover:bg-red-600/30 rounded-lg text-xs flex items-center gap-1">
+              {batchDeleting ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
+              批量删除 ({selectedIds.size})
+            </button>
+          )}
+          {selectedIds.size > 0 && (
+            <button onClick={() => setSelectedIds(new Set())} className="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 rounded-lg text-xs">取消选择</button>
+          )}
+        </div>
+
         <div className="overflow-x-auto">
           <table className="w-full">
-            <thead><tr className="text-left text-sm text-slate-400 border-b border-white/10"><th className="pb-3">ID</th><th className="pb-3">用户名</th><th className="pb-3">邮箱</th><th className="pb-3">额度</th><th className="pb-3">使用次数</th><th className="pb-3">状态</th><th className="pb-3">注册时间</th><th className="pb-3">操作</th></tr></thead>
-            <tbody>{users.map((u) => (<tr key={u.id} className="border-b border-white/10/50 text-sm"><td className="py-3">{u.id}</td><td className="py-3 font-medium">{u.username}</td><td className="py-3 text-slate-400">{u.email || "-"}</td><td className="py-3">{u.total_quota || 0}</td><td className="py-3">{u.usage_count || 0}</td><td className="py-3"><span className={`px-2 py-0.5 rounded text-xs ${u.is_banned ? "bg-red-500/20 text-red-400" : "bg-green-500/20 text-green-400"}`}>{u.is_banned ? "已禁用" : "正常"}</span></td><td className="py-3 text-slate-400">{new Date(u.created_at).toLocaleDateString("zh-CN")}</td><td className="py-3"><div className="flex gap-2"><button onClick={() => setSelectedUser(u)} className="p-1 hover:bg-slate-700 rounded"><Eye className="w-4 h-4" /></button><button onClick={() => handleBan(u.id, !u.is_banned)} className={`p-1 rounded ${u.is_banned ? "hover:bg-green-500/20 text-green-400" : "hover:bg-red-500/20 text-red-400"}`}>{u.is_banned ? "启用" : "禁用"}</button></div></td></tr>))}</tbody>
+            <thead><tr className="text-left text-sm text-slate-400 border-b border-white/10">
+              <th className="pb-3 w-8"><input type="checkbox" checked={users.length > 0 && selectedIds.size === users.length} onChange={toggleSelectAll} className="rounded" /></th>
+              <th className="pb-3">ID</th><th className="pb-3">用户名</th><th className="pb-3">邮箱</th><th className="pb-3">额度</th><th className="pb-3">使用次数</th><th className="pb-3">状态</th><th className="pb-3">最后登录</th><th className="pb-3">注册时间</th><th className="pb-3">操作</th>
+            </tr></thead>
+            <tbody>{users.map((u) => (
+              <tr key={u.id} className={`border-b border-white/10/50 text-sm ${selectedIds.has(u.id) ? "bg-blue-500/5" : ""}`}>
+                <td className="py-3"><input type="checkbox" checked={selectedIds.has(u.id)} onChange={() => toggleSelect(u.id)} className="rounded" /></td>
+                <td className="py-3">{u.id}</td>
+                <td className="py-3 font-medium">{u.username}</td>
+                <td className="py-3 text-slate-400">{u.email || <span className="text-slate-600">未绑定</span>}</td>
+                <td className="py-3">{u.total_quota || 0}</td>
+                <td className="py-3">{u.usage_count || 0}</td>
+                <td className="py-3"><span className={`px-2 py-0.5 rounded text-xs ${u.is_banned ? "bg-red-500/20 text-red-400" : "bg-green-500/20 text-green-400"}`}>{u.is_banned ? "已禁用" : "正常"}</span></td>
+                <td className="py-3 text-slate-400 text-xs" title={u.last_login_at ? new Date(u.last_login_at).toLocaleString("zh-CN") : "从未登录"}>
+                  <span className={!u.last_login_at ? "text-slate-600" : ""}>{formatLastLogin(u.last_login_at)}</span>
+                </td>
+                <td className="py-3 text-slate-400">{new Date(u.created_at).toLocaleDateString("zh-CN")}</td>
+                <td className="py-3">
+                  <div className="flex gap-1">
+                    <button onClick={() => setSelectedUser(u)} className="p-1 hover:bg-slate-700 rounded" title="查看详情"><Eye className="w-4 h-4" /></button>
+                    <button onClick={() => handleBan(u.id, !u.is_banned)} className={`p-1 rounded text-xs ${u.is_banned ? "hover:bg-green-500/20 text-green-400" : "hover:bg-red-500/20 text-red-400"}`} title={u.is_banned ? "启用" : "禁用"}>{u.is_banned ? "启用" : "禁用"}</button>
+                    <button onClick={() => setShowDeleteConfirm(u)} className="p-1 hover:bg-red-500/20 text-red-400 rounded" title="删除"><Trash2 className="w-4 h-4" /></button>
+                  </div>
+                </td>
+              </tr>
+            ))}</tbody>
           </table>
         </div>
         {total > 20 && <div className="flex justify-center gap-2 mt-4">
@@ -1284,6 +1394,23 @@ function UsersTab({ users, total, page, setPage, search, setSearch, status, setS
           <button onClick={() => setPage(p => p + 1)} disabled={page * 20 >= total} className="px-3 py-1 bg-slate-800 rounded disabled:opacity-50">下一页</button>
         </div>}
       </div>
+
+      {/* 删除确认弹窗 */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-slate-900 border border-white/10 rounded-xl p-6 w-full max-w-sm">
+            <h3 className="text-lg font-bold mb-3">确认删除</h3>
+            <p className="text-slate-400 text-sm mb-4">
+              确定要删除用户 <span className="text-white font-medium">{showDeleteConfirm.username}</span> 吗？此操作不可撤销。
+            </p>
+            <div className="flex gap-3 justify-end">
+              <button onClick={() => setShowDeleteConfirm(null)} className="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-sm">取消</button>
+              <button onClick={() => handleDelete(showDeleteConfirm.id)} className="px-4 py-2 bg-red-600 hover:bg-red-500 rounded-lg text-sm">确认删除</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {selectedUser && <UserDetailModal user={selectedUser} onClose={() => setSelectedUser(null)} />}
     </div>
   );
@@ -1306,6 +1433,8 @@ function UserDetailModal({ user, onClose }) {
               <div><div className="text-sm text-slate-400">邮箱</div><div className="font-medium">{user.email || "-"}</div></div>
               <div><div className="text-sm text-slate-400">免费额度</div><div className="font-medium">{details.user.free_quota}</div></div>
               <div><div className="text-sm text-slate-400">付费额度</div><div className="font-medium">{details.user.paid_quota}</div></div>
+              <div><div className="text-sm text-slate-400">最后登录</div><div className="font-medium">{details.user.last_login_at ? new Date(details.user.last_login_at).toLocaleString("zh-CN") : "从未登录"}</div></div>
+              <div><div className="text-sm text-slate-400">注册时间</div><div className="font-medium">{new Date(details.user.created_at).toLocaleString("zh-CN")}</div></div>
             </div>
             <div><h4 className="font-medium mb-2">最近订单</h4>
               {details.orders.length === 0 ? <p className="text-slate-500">暂无</p> : <div className="space-y-2">{details.orders.map((o) => (<div key={o.id} className="p-2 bg-slate-800 rounded text-sm"><span className="font-mono">{o.order_no?.slice(0, 16)}</span> - ¥{o.amount_cents/100} - <span className={o.status === "PAID" ? "text-green-400" : "text-slate-400"}>{o.status}</span></div>))}</div>}

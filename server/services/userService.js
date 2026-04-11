@@ -134,13 +134,36 @@ function createUser(username, passwordHash) {
   return info.lastInsertRowid;
 }
 
+/**
+ * 根据邮箱获取用户（用于密码找回）
+ * @param {string} email
+ * @returns {object|null}
+ */
+function getUserByEmail(email) {
+  const db = getDb();
+  return db.prepare(
+    "SELECT id, username, email, contact_bound, role FROM users WHERE email = ?"
+  ).get(email);
+}
+
+/**
+ * 更新最后登录时间
+ * @param {number} userId
+ */
+function updateLastLogin(userId) {
+  const db = getDb();
+  db.prepare("UPDATE users SET last_login_at = datetime('now') WHERE id = ?").run(userId);
+}
+
 module.exports = {
   getUserById,
   getUserByUsername,
+  getUserByEmail,
   isEmailTaken,
   isPhoneTaken,
   updateUserProfile,
   updateUserPassword,
   bindUserContact,
   createUser,
+  updateLastLogin,
 };

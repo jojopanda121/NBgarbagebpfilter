@@ -477,7 +477,7 @@ function buildValuationComparison(validatedData, extractedData, scoringInput, sc
  * 完整分析流水线（后台执行）
  * 优化：声明核查3批并发 + 深度研究与结构化评分并行
  */
-async function runPipeline(bpText, onProgress) {
+async function runPipeline(bpText, onProgress, taskId = null) {
   const startTime = Date.now();
 
   onProgress({ type: "progress", stage: "pdf_done", percentage: 8, message: "文档解析完成，准备分析..." });
@@ -540,24 +540,27 @@ async function runPipeline(bpText, onProgress) {
   const projectLocation = extractedData.project_location || null;
 
   // ── 训练数据采集（后台静默执行，不影响主流程）──
+  // 仅在拥有有效 taskId 时记录 bp_company_links（task_id 为 NOT NULL）
   try {
-    const companyName = extractedData.company_name;
-    if (companyName && companyName.trim()) {
+    const trackCompanyName = extractedData.company_name;
+    if (trackCompanyName && trackCompanyName.trim()) {
       // 异步执行，不 await，不阻塞返回
       (async () => {
         try {
-          const entity = await trackingService.findOrCreateCompanyEntity(extractedData, null);
-          // 链接 BP 到企业（分数在此阶段已计算完成）
-          const totalScore = verdict?.final_score || scoringResult?.total || null;
-          const dimScores = {
-            s1: scoringResult?.s1 || null,
-            s2: scoringResult?.s2 || null,
-            s3: scoringResult?.s3 || null,
-            s4: scoringResult?.s4 || null,
-            v5: scoringResult?.v5 || null,
-          };
-          trackingService.linkBPToCompany(null, entity.id, totalScore, dimScores, null, null);
-          logger.info("训练数据采集完成", { companyId: entity.id, companyName });
+          const entity = await trackingService.findOrCreateCompanyEntity(extractedData, taskId);
+          if (taskId) {
+            const totalScore = verdict?.total_score ?? scoringResult?.total_score ?? null;
+            const dims = scoringResult?.dimensions || {};
+            const dimScores = {
+              s1: dims.timing_ceiling?.score ?? null,
+              s2: dims.product_moat?.score ?? null,
+              s3: dims.business_validation?.score ?? null,
+              s4: dims.team?.score ?? null,
+              s5: dims.external_risk?.score ?? null,
+            };
+            trackingService.linkBPToCompany(taskId, entity.id, totalScore, dimScores, null, null);
+          }
+          logger.info("训练数据采集完成", { companyId: entity.id, companyName: trackCompanyName });
         } catch (innerErr) {
           logger.warn("训练数据采集失败（不影响主流程）", { error: innerErr.message });
         }

@@ -15,6 +15,7 @@ const {
   buildStructuralPrompt,
   EXPERT_JUDGE_MINIMAL_PROMPT,
   DEEP_RESEARCH_PROMPT,
+  DIMENSION_ANALYSIS_PROMPT,
 } = require("../utils/prompts");
 
 const MAX_CLAIMS_PER_BATCH = 6; // 每批最多6条声明，防止输出截断导致JSON解析失败
@@ -198,6 +199,15 @@ async function runAgentBWithBatchingAndResearch(extractedData, bpText, onProgres
   const [structuralOutcome, deepResearch] = await Promise.all([
     // Task A: 结构化评分
     (async () => {
+      // 判断结果是否包含有效的 dimension_analysis（非空且至少有一个维度有内容）
+      const hasDimContent = (r) => {
+        if (!r || !r.dimension_analysis) return false;
+        const dims = r.dimension_analysis;
+        return Object.keys(dims).some(k => dims[k] && (dims[k].finding || dims[k].comprehensive_analysis));
+      };
+
+      let partialFallback = null; // 保存只有 validated_data 但缺 dimension_analysis 的抢救结果
+
       // 层1: DeepThink
       const judgeResult = await callLLMWithThinking(dynamicPrompt, structuralInput, 12000, 3000);
       let result = extractJson(judgeResult.text);
@@ -206,12 +216,17 @@ async function runAgentBWithBatchingAndResearch(extractedData, bpText, onProgres
       if (!result || !result.validated_data) {
         const rescued = extractPartialResult(judgeResult.text);
         if (rescued && rescued.validated_data) {
-          logger.info("[B.2] 整体JSON截断，从输出中成功抢救 validated_data");
-          result = rescued;
+          if (hasDimContent(rescued)) {
+            logger.info("[B.2] 整体JSON截断，成功抢救 validated_data + dimension_analysis");
+            result = rescued;
+          } else {
+            logger.info("[B.2] 整体JSON截断，抢救了 validated_data（无 dimension_analysis），继续重试...");
+            partialFallback = rescued;
+          }
         }
       }
 
-      // 层2: 普通模式（仅在层1+抢救都未拿到 validated_data 时才触发）
+      // 层2: 普通模式（在层1未拿到含 dimension_analysis 的完整结果时触发）
       if (!result || !result.validated_data) {
         logger.warn("[B.2] 层1解析失败，切换普通模式...");
         onProgress({ type: "progress", stage: "scoring_retry", percentage: 74, message: "正在优化分析精度..." });
@@ -222,8 +237,13 @@ async function runAgentBWithBatchingAndResearch(extractedData, bpText, onProgres
         if (!result || !result.validated_data) {
           const rescued2 = extractPartialResult(retry1Raw);
           if (rescued2 && rescued2.validated_data) {
-            logger.info("[B.2] 层2截断，从输出中成功抢救 validated_data");
-            result = rescued2;
+            if (hasDimContent(rescued2)) {
+              logger.info("[B.2] 层2截断，成功抢救 validated_data + dimension_analysis");
+              result = rescued2;
+            } else {
+              logger.info("[B.2] 层2截断，抢救了 validated_data（无 dimension_analysis），继续重试...");
+              if (!partialFallback) partialFallback = rescued2;
+            }
           }
         }
       }
@@ -243,10 +263,16 @@ async function runAgentBWithBatchingAndResearch(extractedData, bpText, onProgres
         if (!result || !result.validated_data) {
           const rescued3 = extractPartialResult(retry2Raw);
           if (rescued3 && rescued3.validated_data) {
-            logger.info("[B.2] 层3截断，从输出中成功抢救 validated_data");
+            logger.info("[B.2] 层3截断，从输出中抢救 validated_data");
             result = rescued3;
           }
         }
+      }
+
+      // 所有层都未拿到完整 result 时，使用 partialFallback
+      if (!result && partialFallback) {
+        logger.warn("[B.2] 使用 partialFallback（仅含 validated_data）");
+        result = partialFallback;
       }
 
       return { structuralResult: result, thinking: judgeResult.thinking || "" };
@@ -517,7 +543,38 @@ async function runPipeline(bpText, onProgress, taskId = null) {
   const { scoringInput, scoringResult } = calculateScoring(validatedData, claimVerdicts, onProgress);
 
   // Step 4: 构建维度数据和估值对比
-  const dimensionAnalysis = validatedData.dimension_analysis || {};
+  let dimensionAnalysis = validatedData.dimension_analysis || {};
+
+  // 检查 dimension_analysis 是否有实际内容（前4个维度，第5维由 JS 生成）
+  const dimKeys = ["timing_ceiling", "product_moat", "business_validation", "team"];
+  const hasDimContent = dimKeys.some(k => dimensionAnalysis[k] && (dimensionAnalysis[k].finding || dimensionAnalysis[k].comprehensive_analysis));
+
+  if (!hasDimContent) {
+    // dimension_analysis 缺失，执行补充 LLM 调用
+    logger.warn("[Pipeline] dimension_analysis 缺失，执行补充分析...");
+    onProgress({ type: "progress", stage: "dim_analysis", percentage: 86, message: "正在生成维度详细分析..." });
+    try {
+      const dimInput = [
+        `【项目信息】${extractedData.company_name || "未知公司"} — ${extractedData.industry || "未知赛道"}`,
+        `\n\n【评分数据】\n${JSON.stringify(validatedData.validated_data, null, 2)}`,
+        `\n\n【评分结果摘要】\n${JSON.stringify(Object.fromEntries(dimKeys.map(k => [k, { score: scoringResult.dimensions[k]?.score, label: scoringResult.dimensions[k]?.label }])), null, 2)}`,
+        `\n\n【声明核查报告（top-15）】\n${JSON.stringify((claimVerdicts || []).slice(0, 15).map(v => ({ claim: v.original_claim || v.bp_claim, verdict: v.verdict, diff: v.diff })), null, 2)}`,
+      ].join("");
+      const dimRaw = await callLLM(DIMENSION_ANALYSIS_PROMPT, dimInput, 6000);
+      const dimResult = extractJson(dimRaw);
+      if (dimResult) {
+        for (const key of dimKeys) {
+          if (dimResult[key] && (dimResult[key].finding || dimResult[key].comprehensive_analysis)) {
+            dimensionAnalysis[key] = dimResult[key];
+          }
+        }
+        logger.info("[Pipeline] dimension_analysis 补充成功");
+      }
+    } catch (err) {
+      logger.warn("[Pipeline] dimension_analysis 补充调用失败:", err.message);
+    }
+  }
+
   const valuationComparison = buildValuationComparison(validatedData, extractedData, scoringInput, scoringResult);
   const verdict = buildVerdictResponse(scoringResult, structuralResult, validatedData, dimensionAnalysis, valuationComparison);
 

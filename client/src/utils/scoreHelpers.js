@@ -2,9 +2,9 @@
 // 与 server/scoring.js 的二维评级系统保持一致
 
 export const getGrade = (s) =>
-  s >= 85 ? "A" :
-  s >= 70 ? "B" :
-  s >= 60 ? "C" :
+  s >= 80 ? "A" :
+  s >= 65 ? "B" :
+  s >= 50 ? "C" :
   "D";
 
 export const getGradeColor = (grade) => {
@@ -65,8 +65,8 @@ export const getScoreBg = (s) =>
   s >= 70 ? "#34d399" : s >= 50 ? "#fbbf24" : "#f87171";
 
 export const getVerdict = (s) =>
-  s >= 85 ? "难得不是垃圾，值得深入看看" :
-  s >= 70 ? "有点意思，建议约谈创始人" :
-  s >= 60 ? "一般般，建议观望" :
-  s >= 45 ? "风险较高，谨慎考虑" :
+  s >= 80 ? "难得不是垃圾，值得深入看看" :
+  s >= 65 ? "有点意思，建议约谈创始人" :
+  s >= 50 ? "一般般，建议观望" :
+  s >= 35 ? "风险较高，谨慎考虑" :
   "建议直接 Pass，下一个";

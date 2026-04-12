@@ -13,8 +13,10 @@ const {
   AGENT_A_PROMPT,
   CLAIM_VERDICT_BATCH_PROMPT,
   buildStructuralPrompt,
+  buildDimensionAnalysisPrompt,
   EXPERT_JUDGE_MINIMAL_PROMPT,
   DEEP_RESEARCH_PROMPT,
+  DIMENSION_ANALYSIS_PROMPT,
 } = require("../utils/prompts");
 
 const MAX_CLAIMS_PER_BATCH = 6; // 每批最多6条声明，防止输出截断导致JSON解析失败
@@ -176,17 +178,19 @@ async function runAgentBWithBatchingAndResearch(extractedData, bpText, onProgres
   logger.info("[B.1] 声明核查完成", { total: allClaimVerdicts.length });
   onProgress({ type: "progress", stage: "claims_verified", percentage: 55, message: `声明核查完成（${allClaimVerdicts.length} 条），并行启动评分+深度研究...` });
 
-  // Phase 2: 并行执行 结构化打分 + 深度研究报告
+  // Phase 2: 三路并行：评分数据（小输出） + 五维深度分析（专注大输出） + 深度研究报告
   const compressedVerdicts = compressVerdicts(allClaimVerdicts);
-  const dynamicPrompt = buildStructuralPrompt(extractedData);
+  const scoringPrompt = buildStructuralPrompt(extractedData);
+  const dimAnalysisPrompt = buildDimensionAnalysisPrompt(extractedData);
 
+  // 评分和维度分析共用同一组输入
   const structuralInput = [
     `【BP提取数据（原始）】\n${JSON.stringify(extractedData, null, 2)}`,
     `\n\n【微观声明核查报告】\n${JSON.stringify(compressedVerdicts, null, 2)}`,
     `\n\n【BP原文节选（前3000字）】\n${bpText.slice(0, 3000)}`,
   ].join("");
 
-  // 深度研究所需输入（基于已有数据，不依赖结构化评分结果）
+  // 深度研究使用更多原文
   const earlyDeepResearchInput = [
     `【商业计划书原文节选（前12000字）】\n${bpText.slice(0, 12000)}`,
     `\n\n【项目基本信息】\n公司：${extractedData.company_name || "未知"}，赛道：${extractedData.industry || "未知"}`,
@@ -194,35 +198,36 @@ async function runAgentBWithBatchingAndResearch(extractedData, bpText, onProgres
     `\n\n【BP提取数据】\n${JSON.stringify(extractedData, null, 2)}`,
   ].join("");
 
-  // 并行执行：结构化评分（DeepThink）+ 深度研究
-  const [structuralOutcome, deepResearch] = await Promise.all([
-    // Task A: 结构化评分
+  onProgress({ type: "progress", stage: "report_parallel", percentage: 58, message: "三路并行：评分数据 + 五维深度分析 + 深度研究报告..." });
+
+  const [structuralOutcome, dimensionAnalysisResult, deepResearch] = await Promise.all([
+
+    // Task A: 评分数据（只要 validated_data，输出小，高可靠性）
     (async () => {
-      // 层1: DeepThink
-      const judgeResult = await callLLMWithThinking(dynamicPrompt, structuralInput, 12000, 3000);
+      // 层1: DeepThink（评分数据输出小，12000 足够）
+      const judgeResult = await callLLMWithThinking(scoringPrompt, structuralInput, 12000, 5000);
       let result = extractJson(judgeResult.text);
 
-      // 层1.5: 抢救 — 整体解析失败时，从截断输出中定向提取 validated_data
+      // 层1.5: 抢救
       if (!result || !result.validated_data) {
         const rescued = extractPartialResult(judgeResult.text);
         if (rescued && rescued.validated_data) {
-          logger.info("[B.2] 整体JSON截断，从输出中成功抢救 validated_data");
+          logger.info("[B.scoring] 整体JSON截断，成功抢救 validated_data");
           result = rescued;
         }
       }
 
-      // 层2: 普通模式（仅在层1+抢救都未拿到 validated_data 时才触发）
+      // 层2: 普通模式
       if (!result || !result.validated_data) {
-        logger.warn("[B.2] 层1解析失败，切换普通模式...");
-        onProgress({ type: "progress", stage: "scoring_retry", percentage: 74, message: "正在优化分析精度..." });
-        const retry1Raw = await callLLM(dynamicPrompt + "\n\n【紧急提醒】只输出 JSON 对象，不要 markdown 代码块。", structuralInput, 12000);
+        logger.warn("[B.scoring] 层1解析失败，切换普通模式...");
+        onProgress({ type: "progress", stage: "scoring_retry", percentage: 72, message: "正在优化评分精度..." });
+        const retry1Raw = await callLLM(scoringPrompt + "\n\n【紧急提醒】只输出 JSON 对象，不要 markdown 代码块。", structuralInput, 8192);
         result = extractJson(retry1Raw);
 
-        // 层2.5: 抢救
         if (!result || !result.validated_data) {
           const rescued2 = extractPartialResult(retry1Raw);
           if (rescued2 && rescued2.validated_data) {
-            logger.info("[B.2] 层2截断，从输出中成功抢救 validated_data");
+            logger.info("[B.scoring] 层2截断，成功抢救 validated_data");
             result = rescued2;
           }
         }
@@ -230,20 +235,19 @@ async function runAgentBWithBatchingAndResearch(extractedData, bpText, onProgres
 
       // 层3: 精简模式
       if (!result || !result.validated_data) {
-        logger.warn("[B.2] 层2仍失败，启用精简模式...");
-        onProgress({ type: "progress", stage: "scoring_retry2", percentage: 78, message: "精简模式分析中..." });
+        logger.warn("[B.scoring] 层2仍失败，启用精简模式...");
+        onProgress({ type: "progress", stage: "scoring_retry2", percentage: 76, message: "精简模式评分中..." });
         const minimalInput = [
           `【BP提取数据】\n${JSON.stringify(extractedData, null, 2)}`,
           `\n\n【声明核查报告（top-10）】\n${JSON.stringify(compressedVerdicts.slice(0, 10), null, 2)}`,
         ].join("");
-        const retry2Raw = await callLLM(EXPERT_JUDGE_MINIMAL_PROMPT, minimalInput, 8192);
+        const retry2Raw = await callLLM(EXPERT_JUDGE_MINIMAL_PROMPT, minimalInput, 4096);
         result = extractJson(retry2Raw);
 
-        // 层3.5: 抢救
         if (!result || !result.validated_data) {
           const rescued3 = extractPartialResult(retry2Raw);
           if (rescued3 && rescued3.validated_data) {
-            logger.info("[B.2] 层3截断，从输出中成功抢救 validated_data");
+            logger.info("[B.scoring] 层3截断，抢救 validated_data");
             result = rescued3;
           }
         }
@@ -251,19 +255,53 @@ async function runAgentBWithBatchingAndResearch(extractedData, bpText, onProgres
 
       return { structuralResult: result, thinking: judgeResult.thinking || "" };
     })(),
-    // Task B: 深度研究（与评分并行）
+
+    // Task B: 五维深度分析（专用调用，给足 token 空间输出完整分析）
     (async () => {
-      onProgress({ type: "progress", stage: "report_parallel", percentage: 60, message: "深度研究报告生成中（与评分并行）..." });
-      return await callLLM(DEEP_RESEARCH_PROMPT, earlyDeepResearchInput, 8192);
+      try {
+        // 普通模式（不用 thinking，把 token 全给输出）
+        const dimRaw = await callLLM(dimAnalysisPrompt, structuralInput, 16000);
+        const dimResult = extractJson(dimRaw);
+        if (dimResult && dimResult.dimension_analysis) {
+          logger.info("[B.dim] 五维深度分析完成");
+          return dimResult.dimension_analysis;
+        }
+        // 抢救：尝试定向提取 dimension_analysis
+        const { extractNestedJson } = require("../utils/jsonParser");
+        const rescued = extractNestedJson(dimRaw, "dimension_analysis");
+        if (rescued) {
+          logger.info("[B.dim] 五维分析JSON截断，成功抢救 dimension_analysis");
+          return rescued;
+        }
+        // 重试
+        logger.warn("[B.dim] 首次解析失败，重试...");
+        const dimRaw2 = await callLLM(dimAnalysisPrompt + "\n\n【紧急提醒】只输出 JSON 对象，不要 markdown 代码块，只要 dimension_analysis 字段。", structuralInput, 16000);
+        const dimResult2 = extractJson(dimRaw2);
+        if (dimResult2 && dimResult2.dimension_analysis) return dimResult2.dimension_analysis;
+        const rescued2 = extractNestedJson(dimRaw2, "dimension_analysis");
+        if (rescued2) return rescued2;
+
+        logger.warn("[B.dim] 五维分析获取失败，将由补充调用处理");
+        return null;
+      } catch (err) {
+        logger.warn("[B.dim] 五维分析调用异常:", err.message);
+        return null;
+      }
+    })(),
+
+    // Task C: 深度研究报告（token 上限提升至 16000）
+    (async () => {
+      return await callLLM(DEEP_RESEARCH_PROMPT, earlyDeepResearchInput, 16000);
     })(),
   ]);
 
-  onProgress({ type: "progress", stage: "parallel_done", percentage: 82, message: "评分与深度研究均已完成..." });
+  onProgress({ type: "progress", stage: "parallel_done", percentage: 84, message: "评分、维度分析与深度研究均已完成..." });
 
   return {
     claimVerdicts: allClaimVerdicts,
     structuralResult: structuralOutcome.structuralResult,
     thinking: structuralOutcome.thinking,
+    dimensionAnalysisResult,
     deepResearch,
   };
 }
@@ -485,16 +523,16 @@ async function runPipeline(bpText, onProgress, taskId = null) {
   // Step 1: 数据提取
   const { extractedData, truncatedText } = await extractBPData(bpText, onProgress);
 
-  // Step 2: 声明核查（3批并发）
+  // Step 2: 声明核查（3批并发）+ 评分数据 + 五维深度分析 + 深度研究（三路并行）
   onProgress({ type: "progress", stage: "agent_b_start", percentage: 32, message: "Agent B 启动（3批并发核查）..." });
-  const { claimVerdicts, structuralResult, thinking, deepResearch } =
+  const { claimVerdicts, structuralResult, thinking, dimensionAnalysisResult, deepResearch } =
     await runAgentBWithBatchingAndResearch(extractedData, truncatedText, onProgress);
 
   // Agent A 数据兜底：如果结构化评分 3 层 + 抢救全部失败，用 Agent A 提取的数据直接评分
   let validatedData;
   if (!structuralResult || !structuralResult.validated_data) {
     logger.warn("[Pipeline] 结构化评分全部失败，启用 Agent A 数据兜底");
-    onProgress({ type: "progress", stage: "scoring_fallback", percentage: 80, message: "正在整合分析数据..." });
+    onProgress({ type: "progress", stage: "scoring_fallback", percentage: 86, message: "正在整合分析数据..." });
     validatedData = {
       validated_data: {
         TAM_Million_RMB: extractedData.TAM_Million_RMB ?? 0,
@@ -516,8 +554,45 @@ async function runPipeline(bpText, onProgress, taskId = null) {
   // Step 3: 评分计算（CPU，瞬间完成）
   const { scoringInput, scoringResult } = calculateScoring(validatedData, claimVerdicts, onProgress);
 
-  // Step 4: 构建维度数据和估值对比
-  const dimensionAnalysis = validatedData.dimension_analysis || {};
+  // Step 4: 整合维度分析数据
+  // 优先使用并行获取的专用维度分析结果，其次使用结构化评分中附带的，最后才用兜底
+  const dimKeys = ["timing_ceiling", "product_moat", "business_validation", "team"];
+  const hasDimContent = (dimObj) => dimObj && dimKeys.some(k => dimObj[k] && (dimObj[k].finding || dimObj[k].comprehensive_analysis));
+
+  let dimensionAnalysis = {};
+  if (hasDimContent(dimensionAnalysisResult)) {
+    // 首选：并行专用调用结果
+    dimensionAnalysis = dimensionAnalysisResult;
+    logger.info("[Pipeline] 使用并行维度分析结果");
+  } else if (hasDimContent(validatedData.dimension_analysis)) {
+    // 次选：评分调用中附带的
+    dimensionAnalysis = validatedData.dimension_analysis;
+    logger.info("[Pipeline] 使用评分调用中的 dimension_analysis");
+  } else {
+    // 兜底：补充调用（仅在两路都失败时触发）
+    logger.warn("[Pipeline] dimension_analysis 两路均未获取，执行补充分析...");
+    onProgress({ type: "progress", stage: "dim_analysis", percentage: 88, message: "正在生成维度详细分析..." });
+    try {
+      const dimInput = [
+        `【项目信息】${extractedData.company_name || "未知公司"} — ${extractedData.industry || "未知赛道"}`,
+        `\n\n【评分数据】\n${JSON.stringify(validatedData.validated_data, null, 2)}`,
+        `\n\n【声明核查报告（top-15）】\n${JSON.stringify((claimVerdicts || []).slice(0, 15).map(v => ({ claim: v.original_claim || v.bp_claim, verdict: v.verdict, diff: v.diff })), null, 2)}`,
+      ].join("");
+      const dimRaw = await callLLM(DIMENSION_ANALYSIS_PROMPT, dimInput, 8000);
+      const dimResult = extractJson(dimRaw);
+      if (dimResult) {
+        for (const key of dimKeys) {
+          if (dimResult[key] && (dimResult[key].finding || dimResult[key].comprehensive_analysis)) {
+            dimensionAnalysis[key] = dimResult[key];
+          }
+        }
+        logger.info("[Pipeline] dimension_analysis 补充成功");
+      }
+    } catch (err) {
+      logger.warn("[Pipeline] dimension_analysis 补充调用失败:", err.message);
+    }
+  }
+
   const valuationComparison = buildValuationComparison(validatedData, extractedData, scoringInput, scoringResult);
   const verdict = buildVerdictResponse(scoringResult, structuralResult, validatedData, dimensionAnalysis, valuationComparison);
 

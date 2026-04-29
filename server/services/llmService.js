@@ -151,8 +151,96 @@ async function callLLMWithThinking(systemPrompt, userContent, maxTokens = 16000,
   return { thinking: "", text };
 }
 
+/**
+ * 调用 LLM，支持自定义多轮 messages 和流式回调。
+ * @param {string} systemPrompt
+ * @param {Array<{role:'user'|'assistant', content:string}>} messages
+ * @param {object} opts
+ * @param {number} [opts.maxTokens=4096]
+ * @param {(delta:string)=>void} [opts.onDelta] 每次 token 增量回调（设置后启用流式）
+ * @param {AbortSignal} [opts.signal] 调用方取消信号（用于客户端断开）
+ * @returns {Promise<string>} 完整文本
+ */
+async function callLLMChat(systemPrompt, messages, opts = {}) {
+  const { maxTokens = 4096, onDelta, signal } = opts;
+  let lastError;
+
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      if (attempt > 0) {
+        const delay = BASE_DELAY_MS * Math.pow(2, attempt - 1);
+        console.warn(`[LLM/Chat] 第 ${attempt + 1} 次尝试（延迟 ${delay}ms）...`);
+        await sleep(delay);
+      }
+
+      if (signal?.aborted) throw new Error("客户端取消");
+
+      const timeout = calcTimeout(maxTokens);
+
+      if (onDelta) {
+        // 流式模式
+        const stream = await withTimeout(
+          Promise.resolve(anthropic.messages.stream({
+            model: MODEL,
+            max_tokens: maxTokens,
+            system: systemPrompt,
+            messages,
+          })),
+          timeout,
+          `callLLMChat(stream, maxTokens=${maxTokens})`
+        );
+
+        let full = "";
+        const onAbort = () => stream.controller?.abort?.();
+        if (signal) signal.addEventListener("abort", onAbort);
+
+        try {
+          for await (const event of stream) {
+            if (event.type === "content_block_delta" && event.delta?.type === "text_delta") {
+              const piece = event.delta.text || "";
+              if (piece) {
+                full += piece;
+                onDelta(piece);
+              }
+            }
+          }
+        } finally {
+          if (signal) signal.removeEventListener("abort", onAbort);
+        }
+        return full;
+      }
+
+      // 非流式
+      const resp = await withTimeout(
+        anthropic.messages.create({
+          model: MODEL,
+          max_tokens: maxTokens,
+          system: systemPrompt,
+          messages,
+        }),
+        timeout,
+        `callLLMChat(maxTokens=${maxTokens})`
+      );
+      return resp.content
+        .filter((b) => b.type === "text")
+        .map((b) => b.text)
+        .join("");
+    } catch (err) {
+      lastError = err;
+      // 客户端取消不重试
+      if (err?.message === "客户端取消" || signal?.aborted) break;
+      if (attempt < MAX_RETRIES && isRetryable(err)) {
+        console.warn(`[LLM/Chat] 请求失败 (attempt ${attempt + 1}): ${err.message}`);
+        continue;
+      }
+      break;
+    }
+  }
+  throw lastError;
+}
+
 function getModelName() {
   return MODEL;
 }
 
-module.exports = { callLLM, callLLMWithThinking, getModelName };
+module.exports = { callLLM, callLLMWithThinking, callLLMChat, getModelName };

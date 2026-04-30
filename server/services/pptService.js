@@ -115,7 +115,7 @@ function normalizeOnePager(raw, fallbackName) {
   const overview = json.company_overview || {};
   const company_overview = {
     summary: (overview.summary || PLACEHOLDER).toString(),
-    products: pad(overview.products, REQUIRED_PRODUCTS, (i) => ({
+    products: pad(overview.products, REQUIRED_PRODUCTS, () => ({
       name: PLACEHOLDER,
       desc: PLACEHOLDER,
     })).map(p => ({

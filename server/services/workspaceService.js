@@ -133,7 +133,7 @@ function buildProjectContext(taskId, conversationId) {
   const dimSummary = Object.entries(dims)
     .map(([k, val]) => {
       const score = val?.score ?? val?.total_score;
-      return `  - ${k}: ${score != null ? `${score}分` : "—"}`;
+      return `  - ${k}: ${score !== null && score !== undefined ? `${score}分` : "—"}`;
     })
     .join("\n");
 

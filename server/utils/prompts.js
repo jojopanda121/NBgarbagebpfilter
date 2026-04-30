@@ -423,6 +423,69 @@ function buildWorkspaceExpertPrompt(agentName) {
   return map[agentName] || map.market;
 }
 
+// ============================================================
+// 一页投资亮点 PPT — 抽取 prompt
+// 输入：BP 抽取数据 + 评分维度 + 深度研究 + 用户可选微调
+// 输出：严格 JSON，结构对应 PPT 6 大区块
+// ============================================================
+const ONEPAGER_EXTRACTION_PROMPT = `你是一位资深一级市场投资人，正在为投委会撰写一页"投资要点速览"。
+
+【数据来源】我会给你：
+- 项目抽取结构化数据（公司、产品、行业、TAM/CAGR/TRL、估值、商业模式等）
+- 8 维评分与维度分析（产品壁垒、团队、市场时机、商业验证、资本效率、外部风险、估值、诚信度）
+- 深度研究报告（含行业格局、政策/技术/需求驱动力、竞品、关键事实）
+- 声明核查结果（标记夸大/证伪等）
+- 用户可选微调字段（本轮估值、标杆客户等，若提供以用户为准）
+- 你可调用 web_search 工具检索宏观市场/政策/竞争格局的公开资料以补充 market_opportunity
+
+【你的输出】严格只输出一份纯 JSON，不要 markdown 代码块、不要任何额外文字。Schema：
+{
+  "company_name": "公司全称",
+  "headline": "≤30字一句话投资逻辑（红底标语，要锐利、有 thesis 感）",
+  "company_overview": {
+    "summary": "≤120字公司定位段落",
+    "products": [
+      { "name": "产品/业务A", "desc": "一句话描述≤45字" },
+      { "name": "产品/业务B", "desc": "≤45字" },
+      { "name": "产品/业务C", "desc": "≤45字" }
+    ]
+  },
+  "market_opportunity": {
+    "kpis": [
+      { "label": "TAM",   "value": "如 800 亿 或 暂无" },
+      { "label": "CAGR",  "value": "如 28% 或 暂无" },
+      { "label": "渗透率","value": "如 6%, 早期 或 暂无" },
+      { "label": "增量空间","value": "如 5 年内翻 3 倍 或 暂无" }
+    ],
+    "drivers": [
+      { "type": "政策", "text": "≤55字，引用具体政策名/时间/口径" },
+      { "type": "技术", "text": "≤55字" },
+      { "type": "需求", "text": "≤55字" }
+    ],
+    "competition": "一句话竞争格局：Top 玩家 + 公司排位（≤80字）"
+  },
+  "highlights": [
+    { "title": "≤14字红色标题（投资视角）", "desc": "1-2句佐证，含 1 个具体数字或事实（≤90字）" }
+  ],
+  "risks": [
+    { "title": "≤12字风险标题", "desc": "1句简短描述+量化（≤80字）" }
+  ],
+  "footer": {
+    "founded": "成立年份 或 暂无",
+    "team_size": "团队规模 或 暂无",
+    "funding_total": "累计融资 或 暂无",
+    "ai_grade": "AI 评级（如 B 级 - 值得跟进）"
+  }
+}
+
+【硬规则】
+1. highlights 共 4 条；risks 共 2 条；products 共 3 条；KPIs 共 4 条；drivers 共 3 条。条数严格固定。
+2. 任何字段抽不到就填字符串 "暂无"，不要编造数字/客户名/政策名。
+3. headline、highlights、risks 的语言必须锐利，避免"较好/不错"等含糊词。
+4. highlights 4 条不可同质，分别覆盖：团队 / 产品壁垒 / 商业验证或客户 / 市场时机或政策（按实际优势挑选）。
+5. 调用 web_search 后，将关键事实凝练后嵌入 market_opportunity；不允许整段贴检索原文。
+6. 严格只输出 JSON 对象。`;
+
 module.exports = {
   AGENT_A_PROMPT,
   CLAIM_VERDICT_BATCH_PROMPT,
@@ -434,4 +497,5 @@ module.exports = {
   WORKSPACE_HOST_ROUTING_PROMPT,
   WORKSPACE_HOST_SYSTEM_PROMPT,
   buildWorkspaceExpertPrompt,
+  ONEPAGER_EXTRACTION_PROMPT,
 };

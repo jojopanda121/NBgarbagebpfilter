@@ -4,7 +4,7 @@
 // ============================================================
 
 const pLimit = require("p-limit");
-const { callLLM, callLLMWithThinking } = require("./llmService");
+const { callLLM, callLLMWithThinking, callLLMWithSearch } = require("./llmService");
 const { extractJson, extractJsonArray, extractPartialResult, ensureStringArray } = require("../utils/jsonParser");
 const { scoreProject } = require("../scoring");
 const logger = require("../utils/logger");
@@ -289,9 +289,20 @@ async function runAgentBWithBatchingAndResearch(extractedData, bpText, onProgres
       }
     })(),
 
-    // Task C: 深度研究报告（token 上限提升至 16000）
+    // Task C: 深度研究报告（启用 MiniMax M2 web_search 工具，失败自动降级）
     (async () => {
-      return await callLLM(DEEP_RESEARCH_PROMPT, earlyDeepResearchInput, 16000);
+      try {
+        const { text, searchUsed } = await callLLMWithSearch(
+          DEEP_RESEARCH_PROMPT,
+          earlyDeepResearchInput,
+          { maxTokens: 16000 }
+        );
+        if (searchUsed) logger.info("[B.deep] 深度研究已使用 web_search 增强");
+        return text;
+      } catch (e) {
+        logger.warn("[B.deep] web_search 调用失败，降级普通模式:", e.message);
+        return await callLLM(DEEP_RESEARCH_PROMPT, earlyDeepResearchInput, 16000);
+      }
     })(),
   ]);
 

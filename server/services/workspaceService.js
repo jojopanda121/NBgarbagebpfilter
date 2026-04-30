@@ -10,7 +10,7 @@ const fs = require("fs");
 const path = require("path");
 const { getDb } = require("../db");
 const { getTask } = require("./taskService");
-const { callLLM, callLLMChat } = require("./llmService");
+const { callLLM, callLLMChat, callLLMWithSearch } = require("./llmService");
 const config = require("../config");
 const {
   WORKSPACE_HOST_ROUTING_PROMPT,
@@ -201,9 +201,20 @@ function formatHistory(history, max) {
 
 // ── 专家并行调用 ───────────────────────────────────────────
 
+// 市场/风险专家对宏观新数据敏感，启用 web_search；财务/技术走普通模式
+const SEARCH_ENABLED_AGENTS = new Set(["market", "risk"]);
+
 async function runExpert(agentName, projectCtx, history, userMsg) {
   const sys = buildWorkspaceExpertPrompt(agentName);
   const userPrompt = `# 项目上下文\n${projectCtx}\n\n# 最近对话\n${formatHistory(history, 6)}\n\n# 用户当前问题\n${userMsg}`;
+  if (SEARCH_ENABLED_AGENTS.has(agentName)) {
+    try {
+      const { text } = await callLLMWithSearch(sys, userPrompt, { maxTokens: 1500 });
+      return { agent: agentName, content: text.trim() };
+    } catch (err) {
+      console.warn(`[Workspace] ${agentName} web_search 失败，降级:`, err.message);
+    }
+  }
   const text = await callLLM(sys, userPrompt, 1500);
   return { agent: agentName, content: text.trim() };
 }

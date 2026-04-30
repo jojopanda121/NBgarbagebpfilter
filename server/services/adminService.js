@@ -478,7 +478,6 @@ const deleteUser = (userId) => {
  * @returns {{ deleted: number, skipped: number }}
  */
 const deleteUsers = (userIds) => {
-  const db = getDb();
   let deleted = 0;
   let skipped = 0;
 

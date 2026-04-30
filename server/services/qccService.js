@@ -36,7 +36,6 @@ async function execQCC(server, tool, args) {
     }, QCC_TIMEOUT_MS);
 
     let stdout = "";
-    let stderr = "";
 
     const childProcess = execFile("qcc", cmdArgs, { encoding: "utf-8" }, (error, out, err) => {
       clearTimeout(timeout);

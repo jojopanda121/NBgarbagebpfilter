@@ -564,7 +564,7 @@ async function runQuarterlyTracking() {
         }
 
         // 3. 创建快照记录
-        const snapshot = createSnapshot(company.id, snapshotData);
+        createSnapshot(company.id, snapshotData);
         stats.snapshots_created++;
 
         // 4. 生成预测验证（对于有原始 BP 链接的企业）

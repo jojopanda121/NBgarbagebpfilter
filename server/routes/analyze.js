@@ -17,7 +17,7 @@ if (config.env === "development") {
 }
 const authMiddleware = config.env === "development" ? optionalAuth : requireAuth;
 
-router.post("/", upload.single("file"), authMiddleware, (req, res, next) => {
+router.post("/", upload.single("file"), authMiddleware, (req, res, _next) => {
   // 如果用户已登录，检查额度
   if (req.user) {
     return checkQuota(req, res, () => analyze(req, res));

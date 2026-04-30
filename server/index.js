@@ -37,6 +37,7 @@ const announcementRoutes = require("./routes/announcement");
 const leaderboardRoutes = require("./routes/leaderboard");
 const projectRoutes = require("./routes/projects");
 const statsRoutes = require("./routes/stats");
+const workspaceRoutes = require("./routes/workspace");
 
 // 中间件
 const { errorHandler } = require("./middleware/errorHandler");
@@ -101,6 +102,7 @@ app.use("/api/announcement", announcementRoutes);
 app.use("/api/leaderboard", leaderboardRoutes);
 app.use("/api/projects", projectRoutes);
 app.use("/api/stats", statsRoutes);
+app.use("/api/workspace", workspaceRoutes);
 
 // ── 健康检查 ──
 app.get("/api/health", (_req, res) => {

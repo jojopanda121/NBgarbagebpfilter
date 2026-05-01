@@ -1,98 +1,74 @@
-// ============================================================
-// server/agents/founderAgent.js — 创始人调查 Agent
-// PRIVACY: 邮箱/手机号经 SHA256+salt hash 处理后才写入数据库
-// ============================================================
-
+// server/agents/founderAgent.js — v2 (BaseAgent)
+// PRIVACY: 邮箱/手机 hash 处理，姓名加密
 const crypto = require("crypto");
-const { callLLM } = require("../services/llmService");
+const BaseAgent = require("./baseAgent");
+const PROMPT = require("./prompts/founder.prompt");
 const { extractJson } = require("../utils/jsonParser");
-const { FOUNDER_AGENT_PROMPT } = require("../utils/prompts");
-const logger = require("../utils/logger");
 
 const MAX_BP_CHARS = 20000;
 
-// PRIVACY: 单向 hash，附加环境变量 salt 增加彩虹表攻击难度
+// PRIVACY: SHA256 + salt 单向 hash
 function hashPII(value) {
   if (!value) return null;
   const salt = process.env.PII_SALT || "nbgbpf_default_salt";
   return crypto.createHash("sha256").update(String(value) + salt).digest("hex");
 }
 
-// PRIVACY: AES-256-GCM 对称加密，只有持有 ENCRYPTION_KEY 的授权方可解密
+// PRIVACY: AES-256-GCM 加密姓名；未配置 key 则 hash
 function encryptName(name) {
   if (!name) return null;
   const keyHex = process.env.ENCRYPTION_KEY;
-  if (!keyHex || keyHex.length < 64) {
-    // 未配置 ENCRYPTION_KEY 时，对姓名做 hash（不可逆，但不存明文）
-    return "hash:" + hashPII(name);
-  }
+  if (!keyHex || keyHex.length < 64) return "hash:" + hashPII(name);
   try {
     const key = Buffer.from(keyHex.slice(0, 64), "hex");
     const iv = crypto.randomBytes(12);
     const cipher = crypto.createCipheriv("aes-256-gcm", key, iv);
     const enc = Buffer.concat([cipher.update(name, "utf8"), cipher.final()]);
-    const tag = cipher.getAuthTag();
-    return iv.toString("hex") + ":" + enc.toString("hex") + ":" + tag.toString("hex");
-  } catch (err) {
-    logger.warn("[FounderAgent] 加密失败，使用 hash 替代:", err.message);
+    return iv.toString("hex") + ":" + enc.toString("hex") + ":" + cipher.getAuthTag().toString("hex");
+  } catch {
     return "hash:" + hashPII(name);
   }
 }
 
-/**
- * @param {string} bpText
- * @param {object} extractedData
- * @returns {object} 创始人画像 + hash 后的 PII 字段
- */
-async function founderAgent(bpText, extractedData) {
-  // 只取 BP 前 20000 字中的团队相关内容
-  const truncated = bpText.length > MAX_BP_CHARS
-    ? bpText.slice(0, MAX_BP_CHARS) + "\n...(已截断)"
-    : bpText;
-
-  const userContent = [
-    `【商业计划书全文节选】\n${truncated}`,
-    `\n\n【已知信息】赛道：${extractedData.industry || "未知"}，公司：${extractedData.company_name || "未知"}`,
-  ].join("");
-
-  let raw;
-  try {
-    raw = await callLLM(FOUNDER_AGENT_PROMPT, userContent, 6144);
-  } catch (err) {
-    logger.warn("[FounderAgent] LLM 调用失败:", err.message);
-    throw err;
+class FounderAgent extends BaseAgent {
+  constructor() {
+    super({ name: "founder", systemPrompt: PROMPT, maxTokens: 6144 });
   }
 
-  let result = extractJson(raw);
-  if (!result || !result.founders) {
-    logger.warn("[FounderAgent] JSON 解析失败，重试...");
-    raw = await callLLM(
-      FOUNDER_AGENT_PROMPT + "\n\n【紧急提醒】只输出 JSON 对象，不要 markdown 代码块。",
-      userContent,
-      6144
-    );
-    result = extractJson(raw);
+  buildUserMessage({ bpFullText, extractedData }) {
+    const truncated = bpFullText.length > MAX_BP_CHARS
+      ? bpFullText.slice(0, MAX_BP_CHARS) + "\n...(已截断)"
+      : bpFullText;
+    const industry = extractedData?.industry || "未知赛道";
+    return `以下是一份 BP 的全文，请按要求分析创始团队并输出 JSON。\n赛道参考：${industry}\n\n<BP_FULL_TEXT>\n${truncated}\n</BP_FULL_TEXT>`;
   }
 
-  if (!result) throw new Error("FounderAgent JSON 解析失败");
+  parseResponse(rawText) {
+    const parsed = extractJson(rawText);
+    if (!parsed || !parsed.founders) throw new Error("FounderAgent JSON 解析失败");
 
-  // PRIVACY: 对 founders 中的 emails_found 和 phones_found 做 hash 处理，删除原文
-  if (Array.isArray(result.founders)) {
-    result.founders = result.founders.map((f) => {
-      const processed = { ...f };
-      // PRIVACY: hash 邮箱和手机，并删除原文字段
-      processed.email_hashes = (f.emails_found || []).map(hashPII).filter(Boolean);
-      processed.phone_hashes = (f.phones_found || []).map(hashPII).filter(Boolean);
-      processed.full_name_encrypted = encryptName(f.name);
-      delete processed.emails_found;
-      delete processed.phones_found;
-      // name 保留（仅当前用户可见，不跨用户共享）
-      return processed;
-    });
+    // PRIVACY: 处理联系方式 hash，姓名加密
+    const founders = (parsed.founders || []).map((f) => ({
+      ...f,
+      full_name_encrypted: encryptName(f.name),
+      email_hash: f.contact_hint?.has_email ? hashPII(f.name + "_email") : null,
+      phone_hash: f.contact_hint?.has_phone ? hashPII(f.name + "_phone") : null,
+    }));
+
+    return {
+      userOutput: { founders, team_assessment: parsed.team_assessment, risk_flags: parsed.risk_flags || [] },
+      dataPayload: {
+        founders: founders.map((f) => ({
+          name_display: f.name,
+          full_name_encrypted: f.full_name_encrypted,
+          email_hash: f.email_hash,
+          phone_hash: f.phone_hash,
+          past_ventures: f.past_ventures || [],
+        })),
+        risk_flags: parsed.risk_flags || [],
+      },
+    };
   }
-
-  logger.info("[FounderAgent] 完成", { founderCount: result.founders?.length });
-  return result;
 }
 
-module.exports = founderAgent;
+module.exports = FounderAgent;

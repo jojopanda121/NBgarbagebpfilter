@@ -1,61 +1,55 @@
-// ============================================================
-// server/agents/projectSummaryAgent.js — 项目摘要 Agent
-// 提取赛道/商业模式/融资等核心结构化字段
-// ============================================================
+// server/agents/projectSummaryAgent.js — v2 (BaseAgent)
+const BaseAgent = require("./baseAgent");
+const PROMPT = require("./prompts/projectSummary.prompt");
 
-const { callLLM } = require("../services/llmService");
-const { extractJson } = require("../utils/jsonParser");
-const { PROJECT_SUMMARY_AGENT_PROMPT } = require("../utils/prompts");
-const logger = require("../utils/logger");
+const MAX_BP_CHARS = 25000;
 
-const MAX_BP_CHARS = 20000;
-
-/**
- * @param {string} bpText — BP 全文
- * @param {object} extractedData — Agent A 提取的结构化数据（作为补充上下文）
- * @returns {object} 项目摘要结构化数据
- */
-async function projectSummaryAgent(bpText, extractedData) {
-  const truncated = bpText.length > MAX_BP_CHARS
-    ? bpText.slice(0, MAX_BP_CHARS) + "\n...(已截断)"
-    : bpText;
-
-  const userContent = [
-    `【商业计划书全文节选（${truncated.length} 字符）】\n${truncated}`,
-    `\n\n【Agent A 已提取数据（参考）】\n${JSON.stringify({
-      company_name: extractedData.company_name,
-      industry: extractedData.industry,
-      BP_Valuation: extractedData.BP_Valuation,
-      BP_Revenue: extractedData.BP_Revenue,
-      Business_Model: extractedData.Business_Model,
-      project_location: extractedData.project_location,
-    }, null, 2)}`,
-  ].join("");
-
-  let raw;
-  try {
-    raw = await callLLM(PROJECT_SUMMARY_AGENT_PROMPT, userContent, 4096);
-  } catch (err) {
-    logger.warn("[ProjectSummaryAgent] LLM 调用失败:", err.message);
-    throw err;
+class ProjectSummaryAgent extends BaseAgent {
+  constructor() {
+    super({ name: "project_summary", systemPrompt: PROMPT, maxTokens: 4096 });
   }
 
-  let result = extractJson(raw);
-  if (!result || !result.company_name) {
-    // 重试一次
-    logger.warn("[ProjectSummaryAgent] JSON 解析失败，重试...");
-    raw = await callLLM(
-      PROJECT_SUMMARY_AGENT_PROMPT + "\n\n【紧急提醒】只输出 JSON 对象，不要 markdown 代码块。",
-      userContent,
-      4096
-    );
-    result = extractJson(raw);
+  buildUserMessage({ bpFullText, extractedData }) {
+    const truncated = bpFullText.length > MAX_BP_CHARS
+      ? bpFullText.slice(0, MAX_BP_CHARS) + "\n...(已截断)"
+      : bpFullText;
+
+    const hint = extractedData
+      ? `\n\n【已知辅助信息（Agent A 提取）】\n公司名：${extractedData.company_name || "未知"}，赛道：${extractedData.industry || "未知"}，地区：${extractedData.project_location || "未知"}`
+      : "";
+
+    return `以下是一份创业公司商业计划书（BP）的全文，请按照要求输出 JSON。\n\n<BP_FULL_TEXT>\n${truncated}\n</BP_FULL_TEXT>${hint}`;
   }
 
-  if (!result) throw new Error("ProjectSummaryAgent JSON 解析失败");
-
-  logger.info("[ProjectSummaryAgent] 完成", { company: result.company_name });
-  return result;
+  parseResponse(rawText) {
+    const { extractJson } = require("../utils/jsonParser");
+    const parsed = extractJson(rawText);
+    if (!parsed) throw new Error("ProjectSummaryAgent JSON 解析失败");
+    return {
+      userOutput: {
+        one_liner: parsed.one_liner,
+        project_name: parsed.project_name,
+        industry: parsed.industry,
+        sub_industry: parsed.sub_industry,
+        business_model: parsed.business_model,
+        stage: parsed.stage,
+        region: parsed.region,
+        core_metrics: parsed.core_metrics || [],
+      },
+      dataPayload: {
+        industry: parsed.industry,
+        sub_industry: parsed.sub_industry,
+        business_model: parsed.business_model,
+        stage: parsed.stage,
+        region: parsed.region,
+        claimed_valuation: parsed.claimed_valuation,
+        claimed_revenue: parsed.claimed_revenue,
+        claimed_users: parsed.claimed_users,
+        funding_round: parsed.funding_round,
+        funding_amount: parsed.funding_amount,
+      },
+    };
+  }
 }
 
-module.exports = projectSummaryAgent;
+module.exports = ProjectSummaryAgent;

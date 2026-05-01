@@ -1,142 +1,116 @@
 // ============================================================
-// server/agents/orchestrator.js — Multiagent 总调度
-// 并行触发 6 个 AI Agent，追踪每个 agent 状态到 agent_runs 表
+// server/agents/orchestrator.js — 2-phase multiagent调度
+// Phase 1: 5 independent agents in parallel
+// Phase 2: RedFlagAgent (depends on phase-1 outputs)
 // ============================================================
 
-const { getDb } = require("../db");
+const { randomUUID } = require("crypto");
 const logger = require("../utils/logger");
-const projectSummaryAgent = require("./projectSummaryAgent");
-const founderAgent = require("./founderAgent");
-const financialAgent = require("./financialAgent");
-const competitorAgent = require("./competitorAgent");
-const redFlagAgent = require("./redFlagAgent");
-const valuationAgent = require("./valuationAgent");
+const agentRunService = require("../services/agentRunService");
+const { publishRunFinished } = require("../services/sseService");
 
-const AGENT_DEFS = [
-  { name: "project_summary", fn: projectSummaryAgent },
-  { name: "founder",         fn: founderAgent },
-  { name: "financial",       fn: financialAgent },
-  { name: "competitor",      fn: competitorAgent },
-  { name: "red_flag",        fn: redFlagAgent },
-  { name: "valuation",       fn: valuationAgent },
-];
+const ProjectSummaryAgent = require("./projectSummaryAgent");
+const FounderAgent        = require("./founderAgent");
+const FinancialAgent      = require("./financialAgent");
+const CompetitorAgent     = require("./competitorAgent");
+const ValuationAgent      = require("./valuationAgent");
+const RedFlagAgent        = require("./redFlagAgent");
 
-/** 初始化 agent_runs 记录（pending 状态） */
-function initAgentRuns(taskId) {
-  try {
-    const db = getDb();
-    const insert = db.prepare(
-      "INSERT OR IGNORE INTO agent_runs (task_id, agent_name, status) VALUES (?, ?, 'pending')"
-    );
-    for (const { name } of AGENT_DEFS) {
-      insert.run(taskId, name);
-    }
-  } catch (err) {
-    logger.warn("[Orchestrator] initAgentRuns 失败:", err.message);
-  }
-}
-
-/** 更新单个 agent 状态 */
-function updateAgentRun(taskId, agentName, updates) {
-  try {
-    const db = getDb();
-    const fields = [];
-    const values = [];
-    if (updates.status !== undefined) { fields.push("status = ?"); values.push(updates.status); }
-    if (updates.result !== undefined) { fields.push("result = ?"); values.push(typeof updates.result === "string" ? updates.result : JSON.stringify(updates.result)); }
-    if (updates.error !== undefined) { fields.push("error = ?"); values.push(updates.error); }
-    if (updates.started_at !== undefined) { fields.push("started_at = ?"); values.push(updates.started_at); }
-    if (updates.completed_at !== undefined) { fields.push("completed_at = ?"); values.push(updates.completed_at); }
-    if (fields.length === 0) return;
-    values.push(taskId, agentName);
-    db.prepare(`UPDATE agent_runs SET ${fields.join(", ")} WHERE task_id = ? AND agent_name = ?`).run(...values);
-  } catch (err) {
-    logger.warn(`[Orchestrator] updateAgentRun(${agentName}) 失败:`, err.message);
-  }
-}
-
-/** 执行单个 agent，带状态追踪 */
-async function runWithTracking(taskId, agentName, fn) {
-  updateAgentRun(taskId, agentName, { status: "running", started_at: new Date().toISOString() });
-  try {
-    const result = await fn();
-    updateAgentRun(taskId, agentName, {
-      status: "complete",
-      result,
-      completed_at: new Date().toISOString(),
-    });
-    return { success: true, result };
-  } catch (err) {
-    logger.warn(`[Orchestrator] agent(${agentName}) 失败:`, err.message);
-    updateAgentRun(taskId, agentName, {
-      status: "error",
-      error: err.message,
-      completed_at: new Date().toISOString(),
-    });
-    return { success: false, error: err.message, result: null };
-  }
+// Lazy factory — creates fresh instances per run so Jest mocks apply correctly
+function createAgents() {
+  return {
+    project_summary: new ProjectSummaryAgent(),
+    founder:         new FounderAgent(),
+    financial:       new FinancialAgent(),
+    competitor:      new CompetitorAgent(),
+    valuation:       new ValuationAgent(),
+    red_flag:        new RedFlagAgent(),
+  };
 }
 
 /**
- * 并行运行所有 6 个 Agent
- * @param {string} bpText — BP 全文
- * @param {object} extractedData — Agent A 已提取的结构化数据
- * @param {string} taskId — 关联的任务 ID
- * @returns {object} multiagent 报告对象
+ * Run a single agent, swallowing errors so allSettled works cleanly.
+ * Returns { userOutput, dataPayload } on success, throws on failure.
  */
-async function runAllAgents(bpText, extractedData, taskId) {
-  if (!taskId) {
-    logger.warn("[Orchestrator] 未传入 taskId，跳过状态追踪");
-  } else {
-    initAgentRuns(taskId);
-  }
+async function runAgent(agent, runId, context) {
+  return agent.run({ runId, context });
+}
 
-  logger.info("[Orchestrator] 并行启动 6 个 Agent", { taskId });
+/**
+ * Execute all 6 agents in 2 phases.
+ *
+ * @param {string} bpText       — full BP text
+ * @param {object} extractedData — Agent A structured output
+ * @param {string} taskId        — linked task ID
+ * @param {string} userId        — owner user ID (for PRIVACY checks)
+ * @returns {{ runId: string, multiagent: object }}
+ */
+async function runAllAgents(bpText, extractedData, taskId, userId) {
+  const runId = randomUUID();
 
-  const outcomes = await Promise.allSettled(
-    AGENT_DEFS.map(({ name, fn }) =>
-      runWithTracking(taskId, name, () => fn(bpText, extractedData))
-    )
+  agentRunService.createRun({ runId, taskId, userId });
+  logger.info("[Orchestrator] run started", { runId, taskId });
+
+  const context = { bpFullText: bpText, extractedData };
+
+  // Create fresh agent instances for this run
+  const agentInstances = createAgents();
+
+  // ── Phase 1: 5 independent agents ──────────────────────────
+  const phase1Names = ["project_summary", "founder", "financial", "competitor", "valuation"];
+
+  const phase1Outcomes = await Promise.allSettled(
+    phase1Names.map((name) => runAgent(agentInstances[name], runId, context))
   );
 
-  const result = {};
-  const keyMap = {
-    project_summary: "project_summary",
-    founder:         "founder_profile",
-    financial:       "financial_analysis",
-    competitor:      "competitor_analysis",
-    red_flag:        "red_flags",
-    valuation:       "valuation_analysis",
-  };
-
-  AGENT_DEFS.forEach(({ name }, i) => {
-    const outcome = outcomes[i];
-    const key = keyMap[name];
-    if (outcome.status === "fulfilled" && outcome.value.success) {
-      result[key] = outcome.value.result;
+  // Collect phase-1 results (keyed by agent name)
+  const phase1Results = {};
+  phase1Names.forEach((name, i) => {
+    const outcome = phase1Outcomes[i];
+    if (outcome.status === "fulfilled") {
+      phase1Results[name] = outcome.value;   // { userOutput, dataPayload }
     } else {
-      result[key] = { error: outcome.reason?.message || outcome.value?.error || "Agent 执行失败", partial: true };
+      phase1Results[name] = null;
+      logger.warn(`[Orchestrator] phase-1 agent ${name} failed: ${outcome.reason?.message}`);
     }
   });
 
-  logger.info("[Orchestrator] 所有 Agent 执行完毕", { taskId });
-  return result;
-}
+  // ── Phase 2: RedFlagAgent (needs phase-1 outputs) ──────────
+  const redFlagContext = {
+    ...context,
+    priorAgentOutputs: phase1Results,
+  };
 
-/**
- * 查询某个任务的所有 agent 状态（用于前端进度轮询）
- */
-function getAgentRunStatus(taskId) {
+  let phase2Result = null;
   try {
-    const db = getDb();
-    const rows = db.prepare(
-      "SELECT agent_name, status, error, started_at, completed_at FROM agent_runs WHERE task_id = ?"
-    ).all(taskId);
-    return rows;
+    phase2Result = await runAgent(agentInstances.red_flag, runId, redFlagContext);
   } catch (err) {
-    logger.warn("[Orchestrator] getAgentRunStatus 失败:", err.message);
-    return [];
+    logger.warn("[Orchestrator] RedFlagAgent failed:", err.message);
   }
+
+  // ── Finalize run record ─────────────────────────────────────
+  agentRunService.markRunFinished(runId);
+
+  const failedCount = [
+    ...phase1Names.map((n) => phase1Results[n] === null),
+    phase2Result === null,
+  ].filter(Boolean).length;
+
+  publishRunFinished(runId, { failedCount });
+  logger.info("[Orchestrator] run finished", { runId, failedCount });
+
+  // ── Build multiagent result object ──────────────────────────
+  const multiagent = {
+    run_id: runId,
+    project_summary:    phase1Results.project_summary?.userOutput    || { error: "执行失败", partial: true },
+    founder_profile:    phase1Results.founder?.userOutput            || { error: "执行失败", partial: true },
+    financial_analysis: phase1Results.financial?.userOutput          || { error: "执行失败", partial: true },
+    competitor_analysis: phase1Results.competitor?.userOutput        || { error: "执行失败", partial: true },
+    valuation_analysis: phase1Results.valuation?.userOutput          || { error: "执行失败", partial: true },
+    red_flags:          phase2Result?.userOutput                     || { error: "执行失败", partial: true },
+  };
+
+  return { runId, multiagent };
 }
 
-module.exports = { runAllAgents, getAgentRunStatus, initAgentRuns };
+module.exports = { runAllAgents };

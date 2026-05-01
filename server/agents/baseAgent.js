@@ -31,7 +31,7 @@ class BaseAgent {
    * @param {object} context — 由 orchestrator 传入，含 bpFullText / extractedData 等
    * @returns {string}
    */
-  buildUserMessage(context) {
+  buildUserMessage(_context) {
     throw new Error(`[${this.name}] buildUserMessage() must be implemented`);
   }
 

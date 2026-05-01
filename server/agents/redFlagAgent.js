@@ -10,7 +10,7 @@ class RedFlagAgent extends BaseAgent {
     super({ name: "red_flag", systemPrompt: PROMPT, maxTokens: 8192 });
   }
 
-  buildUserMessage({ bpFullText, extractedData, priorAgentOutputs = {} }) {
+  buildUserMessage({ bpFullText, extractedData: _extractedData, priorAgentOutputs = {} }) {
     const truncated = bpFullText.length > MAX_BP_CHARS
       ? bpFullText.slice(0, MAX_BP_CHARS) + "\n...(已截断)"
       : bpFullText;

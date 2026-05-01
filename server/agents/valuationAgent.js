@@ -3,7 +3,6 @@ const BaseAgent = require("./baseAgent");
 const PROMPT = require("./prompts/valuation.prompt");
 const { extractJson } = require("../utils/jsonParser");
 const { getDb } = require("../db");
-const logger = require("../utils/logger");
 
 function getIndustryBenchmarks(industry, stage) {
   try {

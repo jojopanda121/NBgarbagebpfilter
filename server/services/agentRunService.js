@@ -17,7 +17,7 @@ const AGENT_NAMES = [
 /**
  * 创建一次 Agent 工作流记录
  */
-function createRun({ runId, taskId, userId, bpFileId }) {
+function createRun({ runId, taskId, userId }) {
   const db = getDb();
   db.prepare(
     `INSERT OR IGNORE INTO agent_runs

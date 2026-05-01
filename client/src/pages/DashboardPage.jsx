@@ -100,7 +100,7 @@ export default function DashboardPage() {
         <>
           <UploadSection />
           <PipelineTracker />
-          <AgentProgress />
+          <AgentProgress runId={null} />
         </>
       )}
 
@@ -109,6 +109,7 @@ export default function DashboardPage() {
           <VerdictCard result={result} />
           <ScoreVisualizer verdict={result.verdict} />
           <DetailedReport result={result} />
+          <AgentProgress runId={result.multiagent?.run_id || null} />
           <MultiagentReport multiagent={result.multiagent} />
         </div>
       )}

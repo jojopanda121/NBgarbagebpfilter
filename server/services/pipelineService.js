@@ -529,7 +529,7 @@ function buildValuationComparison(validatedData, extractedData, scoringInput, sc
  * 完整分析流水线（后台执行）
  * 优化：声明核查3批并发 + 深度研究与结构化评分并行
  */
-async function runPipeline(bpText, onProgress, taskId = null) {
+async function runPipeline(bpText, onProgress, taskId = null, userId = null) {
   const startTime = Date.now();
 
   onProgress({ type: "progress", stage: "pdf_done", percentage: 8, message: "文档解析完成，准备分析..." });
@@ -548,9 +548,9 @@ async function runPipeline(bpText, onProgress, taskId = null) {
     (async () => {
       try {
         onProgress({ type: "progress", stage: "multiagent_start", percentage: 33, message: "6 个 AI Agent 深度分析启动中..." });
-        const result = await orchestrator.runAllAgents(bpText, extractedData, taskId);
+        const { runId, multiagent: ma } = await orchestrator.runAllAgents(bpText, extractedData, taskId, userId);
         onProgress({ type: "progress", stage: "multiagent_done", percentage: 85, message: "6 个 AI Agent 分析完成" });
-        return result;
+        return { runId, ...ma };
       } catch (err) {
         logger.warn("[Pipeline] multiagent 全局异常，不影响主报告:", err.message);
         return {};

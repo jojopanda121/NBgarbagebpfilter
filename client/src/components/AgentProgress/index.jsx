@@ -1,6 +1,7 @@
 import React, { memo } from "react";
 import { CheckCircle2, Loader2, Clock, AlertCircle } from "lucide-react";
 import useAnalysisStore from "../../store/useAnalysisStore";
+import { useAgentRunStream } from "../../hooks/useAgentRunStream";
 import { AGENT_DEFS } from "../../constants";
 
 const COLOR_MAP = {
@@ -11,6 +12,13 @@ const COLOR_MAP = {
   red:     { ring: "border-red-500/40",     bg: "bg-red-500/10",     icon: "text-red-400",     text: "text-red-300" },
   yellow:  { ring: "border-yellow-500/40",  bg: "bg-yellow-500/10",  icon: "text-yellow-400",  text: "text-yellow-300" },
 };
+
+// Map SSE status strings to display status strings used by the store
+function sseStatusToDisplay(s) {
+  if (s === "done") return "complete";
+  if (s === "failed") return "error";
+  return s; // "running" | "pending"
+}
 
 function StatusIcon({ status, color }) {
   if (status === "complete") return <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />;
@@ -30,22 +38,48 @@ function statusLabel(status) {
 
 /**
  * AgentProgress — 展示 6 个 AI Agent 实时进度卡片
- * 仅在 multiagent 状态有任何数据时（运行中或完成后）显示
+ *
+ * Props:
+ *   runId?: string — when provided, subscribes to SSE for live updates
+ *                    (used in post-result view); falls back to store polling
  */
-const AgentProgress = memo(function AgentProgress() {
+const AgentProgress = memo(function AgentProgress({ runId }) {
+  // SSE mode — active when runId is provided (e.g., after task completes)
+  const { agents: sseAgents, connected } = useAgentRunStream(runId || null);
+
+  // Store polling mode — active during in-progress analysis
   const agentStatuses  = useAnalysisStore((s) => s.agentStatuses);
   const agentSummaries = useAnalysisStore((s) => s.agentSummaries);
 
-  const hasAnyStatus = Object.keys(agentStatuses).length > 0;
+  // Decide which data source to use
+  const useSSE = !!runId && connected;
+
+  // Build unified status map
+  const statusMap = {};
+  const summaryMap = {};
+  for (const { key } of AGENT_DEFS) {
+    if (useSSE) {
+      const a = sseAgents[key];
+      statusMap[key] = a ? sseStatusToDisplay(a.status) : "pending";
+      summaryMap[key] = null; // SSE userOutput available in MultiagentReport
+    } else {
+      statusMap[key] = agentStatuses[key] || "pending";
+      summaryMap[key] = agentSummaries[key] || null;
+    }
+  }
+
+  const hasAnyStatus = useSSE
+    ? Object.values(sseAgents).some((a) => a.status !== "pending")
+    : Object.keys(agentStatuses).length > 0;
+
   if (!hasAnyStatus) return null;
 
-  const completedCount = Object.values(agentStatuses).filter((s) => s === "complete").length;
+  const completedCount = Object.values(statusMap).filter((s) => s === "complete").length;
   const totalCount = AGENT_DEFS.length;
   const allDone = completedCount === totalCount;
 
   return (
     <div className="mt-6 space-y-3">
-      {/* 区块标题 */}
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-semibold text-slate-300 tracking-wide uppercase">
           AI 深度尽调 · 6 个 Agent
@@ -55,11 +89,10 @@ const AgentProgress = memo(function AgentProgress() {
         </span>
       </div>
 
-      {/* 6 个 Agent 卡片 */}
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
         {AGENT_DEFS.map(({ key, label, icon: Icon, color }) => {
-          const status  = agentStatuses[key]  || "pending";
-          const summary = agentSummaries[key] || null;
+          const status  = statusMap[key];
+          const summary = summaryMap[key];
           const c       = COLOR_MAP[color] || COLOR_MAP.blue;
           const isDone  = status === "complete";
           const isRun   = status === "running";
@@ -74,7 +107,6 @@ const AgentProgress = memo(function AgentProgress() {
                 ${!isDone && !isRun ? "bg-slate-900/40 border-white/5 opacity-50" : ""}
               `}
             >
-              {/* 顶行：图标 + 名称 + 状态指示 */}
               <div className="flex items-center gap-2">
                 <div className={`w-6 h-6 rounded-md flex items-center justify-center shrink-0 ${isDone ? "bg-emerald-500/20" : isRun ? c.bg : "bg-slate-800"}`}>
                   <Icon className={`w-3.5 h-3.5 ${isDone ? "text-emerald-400" : c.icon}`} />
@@ -85,7 +117,6 @@ const AgentProgress = memo(function AgentProgress() {
                 <StatusIcon status={status} color={color} />
               </div>
 
-              {/* 状态文字 / 摘要 */}
               <p className="text-xs leading-snug text-slate-400 truncate pl-0.5" title={summary || statusLabel(status)}>
                 {summary || statusLabel(status)}
               </p>

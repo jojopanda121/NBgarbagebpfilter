@@ -171,7 +171,7 @@ function analyze(req, res) {
         if (type === "progress") updateTask(task.id, { stage, percentage, message });
       };
 
-      const result = await runPipeline(bpText, onProgress, task.id);
+      const result = await runPipeline(bpText, onProgress, task.id, userId);
 
       // 保存额外的任务元数据（title, industry_category, client_ip, file_hash）
       const extraFields = {

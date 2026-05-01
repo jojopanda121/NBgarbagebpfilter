@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef } from "react";
 import useAnalysisStore from "../store/useAnalysisStore";
 import useAuthStore from "../store/useAuthStore";
 import api, { ApiError } from "../services/api";
+import { AGENT_DEFS } from "../constants";
 
 /**
  * useAnalysisPipeline (v3.2)
@@ -17,6 +18,7 @@ const STAGE_TO_STEP = {
   scoring_retry: 1, scoring_retry2: 1,
   ai_research: 1, ai_research_retry: 1, ai_done: 1,
   scoring: 1, report: 1, finalizing: 1,
+  multiagent_start: 1, multiagent_done: 1,
   complete: 2,
 };
 
@@ -63,6 +65,8 @@ export function useAnalysisPipeline() {
     setResult,
     setError,
     setBackgroundProcessing,
+    setAgentStatuses,
+    setAgentSummaries,
   } = useAnalysisStore();
 
   const startTimeRef = useRef(null);
@@ -95,10 +99,31 @@ export function useAnalysisPipeline() {
     return () => clearInterval(interval);
   }, []);
 
+  // 是否已触发过 multiagent 轮询
+  const agentPollStartedRef = useRef(false);
+
+  /** 拉取 6 个 agent 的实时状态，更新 store */
+  const pollAgentStatuses = useCallback(async (taskId) => {
+    try {
+      const data = await api.get(`/api/agents/run/${taskId}/status`);
+      if (data?.agents) {
+        const statuses = {};
+        const summaries = {};
+        for (const a of data.agents) {
+          statuses[a.agent_name] = a.status;
+          if (a.summary) summaries[a.agent_name] = a.summary;
+        }
+        setAgentStatuses(statuses);
+        setAgentSummaries(summaries);
+      }
+    } catch (_) { /* 静默失败，不影响主轮询 */ }
+  }, [setAgentStatuses, setAgentSummaries]);
+
   /** 核心轮询逻辑，传入 taskId 开始轮询 */
   const pollUntilDone = useCallback(async (taskId) => {
     let consecutiveErrors = 0;
     let pollCount = 0;
+    agentPollStartedRef.current = false;
 
     while (analyzingRef.current) {
       pollCount++;
@@ -132,11 +157,21 @@ export function useAnalysisPipeline() {
       const step = STAGE_TO_STEP[taskData.stage];
       if (step !== undefined) setCurrentStep(step);
 
+      // 一旦进入 multiagent 阶段，开始并发拉取 agent 状态（每 3 轮一次）
+      if (taskData.stage === "multiagent_start" || taskData.stage === "multiagent_done") {
+        agentPollStartedRef.current = true;
+      }
+      if (agentPollStartedRef.current && pollCount % 3 === 0) {
+        pollAgentStatuses(taskId);
+      }
+
       if (taskData.status === "complete") {
         setProgress(100);
         setProgressMessage("分析完成！");
         setCurrentStep(2);
         setResult(taskData.result);
+        // 最终拉一次 agent 状态，确保显示全部完成
+        pollAgentStatuses(taskId);
         localStorage.removeItem(PENDING_TASK_KEY);  // 完成后清除
 
         // 刷新额度
@@ -151,7 +186,7 @@ export function useAnalysisPipeline() {
         throw new Error(taskData.error || "分析失败，请重试");
       }
     }
-  }, [setCurrentStep, setProgress, setProgressMessage, setResult, setBackgroundProcessing]);
+  }, [setCurrentStep, setProgress, setProgressMessage, setResult, setBackgroundProcessing, pollAgentStatuses]);
 
   /** 从头开始分析（上传文件） */
   const startAnalysis = useCallback(async () => {
@@ -205,7 +240,7 @@ export function useAnalysisPipeline() {
         setAnalyzing(false);
       }
     }
-  }, [file, setAnalyzing, setCurrentStep, setProgress, setEta, setProgressMessage, setResult, setError, setBackgroundProcessing, pollUntilDone]);
+  }, [file, setAnalyzing, setCurrentStep, setProgress, setEta, setProgressMessage, setResult, setError, setBackgroundProcessing, setAgentStatuses, setAgentSummaries, pollUntilDone]);
 
   /** 恢复对已提交任务的轮询（用户返回页面时调用） */
   const resumeAnalysis = useCallback(async (taskId) => {
@@ -231,7 +266,7 @@ export function useAnalysisPipeline() {
       analyzingRef.current = false;
       setAnalyzing(false);
     }
-  }, [setAnalyzing, setCurrentStep, setProgress, setEta, setProgressMessage, setResult, setError, setBackgroundProcessing, pollUntilDone]);
+  }, [setAnalyzing, setCurrentStep, setProgress, setEta, setProgressMessage, setResult, setError, setBackgroundProcessing, setAgentStatuses, setAgentSummaries, pollUntilDone]);
 
   return { startAnalysis, resumeAnalysis, getPendingTask };
 }

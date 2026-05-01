@@ -31,6 +31,11 @@ const useAnalysisStore = create((set) => ({
   // ── UI 状态 ──
   showResearch: false,
 
+  // ── Multiagent 状态（Sprint 1 新增） ──
+  // agentStatuses: { [agentName]: 'pending'|'running'|'complete'|'error' }
+  agentStatuses: {},
+  agentSummaries: {}, // { [agentName]: string | null } 每个 agent 的一句话摘要
+
   // ══════════════════════════
   // Actions
   // ══════════════════════════
@@ -49,6 +54,9 @@ const useAnalysisStore = create((set) => ({
   setBackgroundProcessing: (backgroundProcessing) => set({ backgroundProcessing }),
   setShowResearch: (showResearch) => set({ showResearch }),
 
+  setAgentStatuses: (agentStatuses) => set({ agentStatuses }),
+  setAgentSummaries: (agentSummaries) => set({ agentSummaries }),
+
   /** 完整重置，准备下一次分析 */
   reset: () =>
     set({
@@ -63,6 +71,8 @@ const useAnalysisStore = create((set) => ({
       error: "",
       backgroundProcessing: false,
       showResearch: false,
+      agentStatuses: {},
+      agentSummaries: {},
     }),
 }));
 

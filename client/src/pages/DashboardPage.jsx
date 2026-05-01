@@ -3,6 +3,8 @@ import useAnalysisStore from "../store/useAnalysisStore";
 import useAuthStore from "../store/useAuthStore";
 import UploadSection from "../components/UploadSection";
 import PipelineTracker from "../components/PipelineTracker";
+import AgentProgress from "../components/AgentProgress";
+import MultiagentReport from "../components/MultiagentReport";
 import ScoreVisualizer from "../components/ScoreVisualizer";
 import DetailedReport from "../components/DetailedReport";
 import VerdictCard from "../components/VerdictCard";
@@ -98,6 +100,7 @@ export default function DashboardPage() {
         <>
           <UploadSection />
           <PipelineTracker />
+          <AgentProgress />
         </>
       )}
 
@@ -106,6 +109,7 @@ export default function DashboardPage() {
           <VerdictCard result={result} />
           <ScoreVisualizer verdict={result.verdict} />
           <DetailedReport result={result} />
+          <MultiagentReport multiagent={result.multiagent} />
         </div>
       )}
     </main>

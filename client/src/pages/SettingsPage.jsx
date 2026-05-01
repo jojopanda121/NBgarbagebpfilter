@@ -1831,7 +1831,7 @@ function PackagesTab({ packages, setPackages, setMessage }) {
     } catch (err) { setMessage({ type: "error", text: err.message }); }
   };
   const handleDelete = async (id) => {
-    if (!confirm("确定删除此套餐？")) return;
+    if (!window.confirm("确定删除此套餐？")) return;
     try { await api.delete(`/api/admin/packages/${id}`); const data = await api.get("/api/admin/packages"); setPackages(data.packages || []); } catch (err) { setMessage({ type: "error", text: err.message }); }
   };
   return (
@@ -2087,7 +2087,7 @@ function AdminPanel({ tokenQuota, setTokenQuota, tokenCount, setTokenCount, gene
   };
 
   const handleDeleteToken = async (token) => {
-    if (!confirm(`确定删除兑换码 ${token} 吗？删除后该兑换码将无法使用。`)) return;
+    if (!window.confirm(`确定删除兑换码 ${token} 吗？删除后该兑换码将无法使用。`)) return;
     try {
       await api.delete(`/api/admin/tokens/${token}`);
       setMessage({ type: "success", text: "兑换码已删除" });

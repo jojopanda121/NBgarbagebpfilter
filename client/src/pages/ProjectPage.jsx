@@ -14,7 +14,6 @@ import {
   MessageSquare
 } from "lucide-react";
 import api from "../services/api";
-import useAuthStore from "../store/useAuthStore";
 import VerdictCard from "../components/VerdictCard";
 import ScoreVisualizer from "../components/ScoreVisualizer";
 import DetailedReport from "../components/DetailedReport";
@@ -39,7 +38,6 @@ const DD_ACTIVE_STAGES = ["dd_pending", "dd_in_progress", "dd_done"];
 export default function ProjectPage() {
   const { taskId } = useParams();
   const navigate = useNavigate();
-  const user = useAuthStore(s => s.user);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -53,6 +51,7 @@ export default function ProjectPage() {
 
   useEffect(() => {
     fetchProject();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [taskId]);
 
   const fetchProject = async () => {
@@ -161,7 +160,6 @@ export default function ProjectPage() {
   const stageCfg = STAGE_CONFIG[stage] || STAGE_CONFIG.new;
   const isDDActive = DD_ACTIVE_STAGES.includes(stage);
   const displayScore = project?.adjusted_score ?? project?.total_score;
-  const gradeLabel = result?.verdict?.grade_label || "";
 
   const tabs = [
     { key: "report",    label: "分析报告",   icon: BookOpen },

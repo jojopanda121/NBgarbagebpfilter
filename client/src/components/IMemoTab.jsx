@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { FileText, Download, RefreshCw, Loader2, Copy, CheckCircle, Presentation } from "lucide-react";
 import api from "../services/api";
 import OnePagerModal from "./OnePagerModal";
@@ -11,7 +11,7 @@ export default function IMemoTab({ taskId }) {
   const [copied, setCopied] = useState(false);
   const [showOnePager, setShowOnePager] = useState(false);
 
-  const fetchIMemo = async (regenerate = false) => {
+  const fetchIMemo = useCallback(async (regenerate = false) => {
     if (regenerate) setRegenerating(true);
     else setLoading(true);
     setError(null);
@@ -29,11 +29,11 @@ export default function IMemoTab({ taskId }) {
       setLoading(false);
       setRegenerating(false);
     }
-  };
+  }, [taskId]);
 
   useEffect(() => {
     fetchIMemo();
-  }, [taskId]);
+  }, [fetchIMemo]);
 
   const handleCopy = async () => {
     if (!imemo?.markdown) return;

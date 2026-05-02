@@ -105,6 +105,7 @@ app.use("/api/projects", projectRoutes);
 app.use("/api/stats", statsRoutes);
 app.use("/api/workspace", workspaceRoutes);
 app.use("/api/agents", agentsRoutes);
+app.use("/api/workspace-projects", require("./routes/workspaceProjects"));
 
 // ── 健康检查 ──
 app.get("/api/health", (_req, res) => {

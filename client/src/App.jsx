@@ -20,6 +20,8 @@ const LeaderboardPage = lazy(() => import("./pages/LeaderboardPage"));
 const ProjectPage = lazy(() => import("./pages/ProjectPage"));
 const PlatformStatsPage = lazy(() => import("./pages/PlatformStatsPage"));
 const TrackingDashboardPage = lazy(() => import("./pages/TrackingDashboardPage"));
+const WorkspaceProjectListPage = lazy(() => import("./pages/WorkspaceProjectListPage"));
+const WorkspaceProjectPage = lazy(() => import("./pages/WorkspaceProjectPage"));
 
 // 加载中组件
 function LoadingFallback() {
@@ -94,6 +96,10 @@ export default function App() {
 
                 {/* 历史报告 */}
                 <Route path="/app/history" element={<HistoryPage />} />
+
+                {/* Sprint 2: 项目工作台 */}
+                <Route path="/app/projects" element={<WorkspaceProjectListPage />} />
+                <Route path="/app/projects/:id" element={<WorkspaceProjectPage />} />
 
                 {/* 用户中心 */}
                 <Route path="/settings" element={<SettingsPage />} />

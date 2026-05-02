@@ -133,6 +133,36 @@ if (fs.existsSync(clientBuildDir)) {
 // ── 全局错误处理 ──
 app.use(errorHandler);
 
+// ── 启动前自检：未配置 DOC_SERVICE_URL 时本地 Python 依赖必须就绪 ──
+function checkPythonDeps() {
+  if (config.docServiceUrl) return; // 走远程文档微服务，无需本地 Python
+  const { spawn } = require("child_process");
+  const probe = spawn("python3", [
+    "-c",
+    "import fitz, pptx, rapidocr_onnxruntime, numpy, PIL",
+  ]);
+  let stderr = "";
+  probe.stderr.on("data", (d) => (stderr += d));
+  probe.on("close", (code) => {
+    if (code !== 0) {
+      console.warn(
+        "\n[启动自检] 本地 Python 文档提取依赖缺失，PDF/PPT/DOC 上传将失败。"
+      );
+      console.warn(
+        "  解决方案: 运行 `npm run install:python`，或在 .env 中设置 DOC_SERVICE_URL 走远程提取微服务。"
+      );
+      if (stderr) console.warn("  详情:", stderr.trim().split("\n").pop());
+      console.warn("");
+    }
+  });
+  probe.on("error", () => {
+    console.warn(
+      "\n[启动自检] 未找到 python3，PDF/PPT/DOC 提取不可用。请安装 Python 3.10+ 或配置 DOC_SERVICE_URL。\n"
+    );
+  });
+}
+checkPythonDeps();
+
 // ── 启动 ──
 const PORT = config.port;
 const server = app.listen(PORT, () => {

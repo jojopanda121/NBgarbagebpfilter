@@ -11,21 +11,23 @@ const router = Router();
 const upload = multer({ dest: os.tmpdir(), limits: { fileSize: 50 * 1024 * 1024 } });
 
 // 分析端点：强制认证 + 额度检查
-// 仅 development 模式允许未登录访问（开发/演示），并打印安全警告
-if (config.env === "development") {
-  console.warn("[Security] 开发模式：/api/analyze 允许未登录访问，请勿在公网环境使用！");
+// 双重保险：仅当 NODE_ENV !== production 且显式设置 ALLOW_ANON_ANALYZE=1 时才允许匿名访问，
+// 防止误把 NODE_ENV 配错而暴露免登录入口。
+const ALLOW_ANON =
+  config.env !== "production" && process.env.ALLOW_ANON_ANALYZE === "1";
+if (ALLOW_ANON) {
+  console.warn("[Security] /api/analyze 允许未登录访问（ALLOW_ANON_ANALYZE=1），切勿在公网启用！");
 }
-const authMiddleware = config.env === "development" ? optionalAuth : requireAuth;
+const authMiddleware = ALLOW_ANON ? optionalAuth : requireAuth;
 
 router.post("/", upload.single("file"), authMiddleware, (req, res, _next) => {
   // 如果用户已登录，检查额度
   if (req.user) {
     return checkQuota(req, res, () => analyze(req, res));
   }
-  if (config.env !== "development") {
+  if (!ALLOW_ANON) {
     return res.status(401).json({ error: "未登录，请先登录" });
   }
-  // 仅开发模式下可到达此处（未登录直接执行）
   analyze(req, res);
 });
 

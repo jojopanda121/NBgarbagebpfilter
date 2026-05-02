@@ -96,12 +96,42 @@ async function runAllAgents(bpText, extractedData, taskId, userId) {
     phase2Result === null,
   ].filter(Boolean).length;
 
-  publishRunFinished(runId, { failedCount });
-  logger.info("[Orchestrator] run finished", { runId, failedCount });
+  // ── Sprint 2: 自动创建/挂载到 workspace project ───────────
+  let workspaceAttach = null;
+  try {
+    if (userId) {
+      const workspaceProjectService = require("../services/workspaceProjectService");
+      const agentOutputs = {
+        project_summary: phase1Results.project_summary?.userOutput || {},
+        founder: phase1Results.founder?.userOutput || {},
+        financial: phase1Results.financial?.userOutput || {},
+        competitor: phase1Results.competitor?.userOutput || {},
+        valuation: phase1Results.valuation?.userOutput || {},
+        red_flag: phase2Result?.userOutput || {},
+      };
+      workspaceAttach = workspaceProjectService.createOrAttachProject({
+        userId,
+        taskId,
+        agentRunId: runId,
+        agentOutputs,
+      });
+    }
+  } catch (err) {
+    logger.warn("[Orchestrator] workspace attach failed:", err.message);
+  }
+
+  publishRunFinished(runId, { failedCount, workspaceAttach });
+  logger.info("[Orchestrator] run finished", {
+    runId,
+    failedCount,
+    projectId: workspaceAttach?.projectId,
+  });
 
   // ── Build multiagent result object ──────────────────────────
   const multiagent = {
     run_id: runId,
+    workspace_project_id: workspaceAttach?.projectId || null,
+    workspace_version_number: workspaceAttach?.versionNumber || null,
     project_summary:    phase1Results.project_summary?.userOutput    || { error: "执行失败", partial: true },
     founder_profile:    phase1Results.founder?.userOutput            || { error: "执行失败", partial: true },
     financial_analysis: phase1Results.financial?.userOutput          || { error: "执行失败", partial: true },

@@ -37,7 +37,7 @@ export function useWorkspaceProjectList(filter = {}) {
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      const data = await workspaceProjectApi.list(filter);
+      const data = await workspaceProjectApi.list(JSON.parse(filterKey));
       setProjects(data.projects || []);
       setError(null);
     } catch (e) {
@@ -45,7 +45,6 @@ export function useWorkspaceProjectList(filter = {}) {
     } finally {
       setLoading(false);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filterKey]);
 
   useEffect(() => {

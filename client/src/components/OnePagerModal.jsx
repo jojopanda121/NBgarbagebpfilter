@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { X, Download, RefreshCw, Loader2, FileText, Search } from "lucide-react";
 import api from "../services/api";
 
@@ -22,7 +22,7 @@ export default function OnePagerModal({ taskId, onClose }) {
     extra_milestones: "",
   });
 
-  const fetchOnePager = async () => {
+  const fetchOnePager = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
@@ -33,11 +33,11 @@ export default function OnePagerModal({ taskId, onClose }) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [taskId]);
 
   useEffect(() => {
     fetchOnePager();
-  }, [taskId]);
+  }, [fetchOnePager]);
 
   const handleRegenerate = async (withOverrides = false) => {
     setRegenerating(true);

@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef } from "react";
 import useAnalysisStore from "../store/useAnalysisStore";
 import useAuthStore from "../store/useAuthStore";
 import api, { ApiError } from "../services/api";
-import { AGENT_DEFS } from "../constants";
 
 /**
  * useAnalysisPipeline (v3.2)
@@ -240,7 +239,7 @@ export function useAnalysisPipeline() {
         setAnalyzing(false);
       }
     }
-  }, [file, setAnalyzing, setCurrentStep, setProgress, setEta, setProgressMessage, setResult, setError, setBackgroundProcessing, setAgentStatuses, setAgentSummaries, pollUntilDone]);
+  }, [file, setAnalyzing, setCurrentStep, setProgress, setEta, setProgressMessage, setResult, setError, pollUntilDone]);
 
   /** 恢复对已提交任务的轮询（用户返回页面时调用） */
   const resumeAnalysis = useCallback(async (taskId) => {
@@ -266,7 +265,7 @@ export function useAnalysisPipeline() {
       analyzingRef.current = false;
       setAnalyzing(false);
     }
-  }, [setAnalyzing, setCurrentStep, setProgress, setEta, setProgressMessage, setResult, setError, setBackgroundProcessing, setAgentStatuses, setAgentSummaries, pollUntilDone]);
+  }, [setAnalyzing, setCurrentStep, setProgress, setEta, setProgressMessage, setResult, setError, pollUntilDone]);
 
   return { startAnalysis, resumeAnalysis, getPendingTask };
 }

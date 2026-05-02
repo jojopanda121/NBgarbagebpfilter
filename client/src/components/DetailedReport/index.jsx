@@ -218,42 +218,6 @@ const ClaimVerdictsPanel = memo(function ClaimVerdictsPanel({ claimVerdicts }) {
   );
 });
 
-// ── 核心冲突汇总 ──
-const ConflictsPanel = memo(function ConflictsPanel({ conflicts }) {
-  if (!conflicts?.length) return null;
-
-  return (
-    <div className="bg-slate-900 border border-white/10 rounded-2xl p-4 sm:p-6">
-      <h4 className="text-lg font-semibold mb-4 flex items-center gap-2">
-        <AlertTriangle className="w-5 h-5 text-yellow-400" />
-        核心冲突汇总（BP 诉求 vs AI 研究结论）
-      </h4>
-      <div className="space-y-3">
-        {conflicts.map((c, i) => (
-          <div key={i} className="p-4 rounded-xl bg-slate-800/50 border border-white/10">
-            <div className="flex items-start gap-3">
-              <SeverityBadge severity={c.severity} />
-              <div className="flex-1 space-y-2 min-w-0">
-                {c.field && (
-                  <span className="text-xs text-slate-500 font-mono">[{c.field}]</span>
-                )}
-                <p className="text-sm">
-                  <span className="text-orange-400 font-medium">BP 声称：</span>
-                  <span className="text-slate-300">{c.claim}</span>
-                </p>
-                <p className="text-sm">
-                  <span className="text-blue-400 font-medium">AI 研究：</span>
-                  <span className="text-slate-400">{c.evidence}</span>
-                </p>
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-});
-
 // ── 五维评分详情（含 BP vs AI 对比 + 丰富化分析）──
 function DimensionDetailCard({ dimKey, dim, Icon }) {
   const [open, setOpen] = useState(false);

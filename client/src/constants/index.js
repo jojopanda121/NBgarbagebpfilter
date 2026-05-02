@@ -1,4 +1,4 @@
-import { FileText, Search, Gavel } from "lucide-react";
+import { FileText, Gavel } from "lucide-react";
 import { TrendingUp, Brain, BarChart3, Users, Shield, DollarSign, AlertTriangle } from "lucide-react";
 
 // ── API 地址（保持原有读取方式，兼容云端生产环境）──

@@ -21,4 +21,5 @@ test_bp.txt
 data/
 *.db
 .github/
+.claude/
 # doc-service/ - 不能排除，需要单独构建

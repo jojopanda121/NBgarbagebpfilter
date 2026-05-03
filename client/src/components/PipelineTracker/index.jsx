@@ -150,8 +150,7 @@ const PipelineTracker = memo(function PipelineTracker() {
 /** 后台处理中 Banner — 轮询超时但后端仍在跑 */
 function BackgroundProcessingBanner() {
   const reset = useAnalysisStore((s) => s.reset);
-  let navigate;
-  try { navigate = useNavigate(); } catch { navigate = null; }
+  const navigate = useNavigate();
 
   return (
     <div className="mt-8">
@@ -168,14 +167,12 @@ function BackgroundProcessingBanner() {
           </div>
         </div>
         <div className="flex gap-3">
-          {navigate && (
-            <button
-              onClick={() => { reset(); navigate("/app/history"); }}
-              className="px-4 py-2 bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 rounded-lg text-sm text-amber-300 font-medium transition-colors"
-            >
-              前往历史报告
-            </button>
-          )}
+          <button
+            onClick={() => { reset(); navigate("/app/history"); }}
+            className="px-4 py-2 bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 rounded-lg text-sm text-amber-300 font-medium transition-colors"
+          >
+            前往历史报告
+          </button>
           <button
             onClick={reset}
             className="px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-white/10 rounded-lg text-sm text-slate-300 transition-colors"

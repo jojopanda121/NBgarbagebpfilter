@@ -104,6 +104,41 @@ class ApiService {
   async pollTask(taskId) {
     return this.request(`/api/task/${taskId}`);
   }
+
+  /** 下载二进制文件并触发浏览器另存为 */
+  async downloadBlob(url, fallbackFilename = "download") {
+    const token = useAuthStore.getState().token;
+    const headers = {};
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+
+    const resp = await fetch(`${API_BASE}${url}`, { headers });
+    if (!resp.ok) {
+      let msg = `下载失败 (${resp.status})`;
+      try {
+        const body = await resp.json();
+        if (body?.error) msg = body.error;
+      } catch {}
+      throw new ApiError(msg, resp.status);
+    }
+
+    // 解析 Content-Disposition 中的 filename*=UTF-8''...
+    let filename = fallbackFilename;
+    const cd = resp.headers.get("Content-Disposition") || "";
+    const m = cd.match(/filename\*=UTF-8''([^;]+)/i);
+    if (m && m[1]) {
+      try { filename = decodeURIComponent(m[1]); } catch {}
+    }
+
+    const blob = await resp.blob();
+    const objUrl = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = objUrl;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(objUrl);
+  }
 }
 
 class ApiError extends Error {

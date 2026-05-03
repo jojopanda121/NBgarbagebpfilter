@@ -12,6 +12,7 @@ server/node_modules
 .DS_Store
 coverage
 .vscode
+.claude/worktrees/
 *.pyc
 __pycache__
 uploads/

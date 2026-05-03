@@ -4,7 +4,6 @@ import { motion, useInView } from "framer-motion";
 import Particles, { initParticlesEngine } from "@tsparticles/react";
 import { loadSlim } from "@tsparticles/slim";
 import {
-  FileText,
   Zap,
   Shield,
   BarChart3,
@@ -16,14 +15,11 @@ import {
   ChevronRight,
   Check,
   ArrowRight,
-  Cpu,
   Database,
   Sparkles,
   Eye,
   AlertTriangle,
   TrendingDown,
-  Globe,
-  Award,
 } from "lucide-react";
 
 // 10维评分体系数据 - 强调AI大模型能力

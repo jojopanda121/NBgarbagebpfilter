@@ -4,11 +4,14 @@
 // ============================================================
 
 const pLimit = require("p-limit");
-const { callLLM, callLLMWithThinking } = require("./llmService");
+const { callLLM, callLLMWithThinking, callLLMWithSearch } = require("./llmService");
 const { extractJson, extractJsonArray, extractPartialResult, ensureStringArray } = require("../utils/jsonParser");
 const { scoreProject } = require("../scoring");
 const logger = require("../utils/logger");
 const trackingService = require("./trackingService");
+const orchestrator = require("../agents/orchestrator");
+const dataLakeService = require("./dataLakeService");
+const crossMatchService = require("./crossMatchService");
 const {
   AGENT_A_PROMPT,
   CLAIM_VERDICT_BATCH_PROMPT,
@@ -297,9 +300,20 @@ async function runAgentBWithBatchingAndResearch(extractedData, bpText, onProgres
       }
     })(), "五维分析"),
 
-    // Task C: 深度研究报告（token 上限提升至 16000）
+    // Task C: 深度研究报告（启用 MiniMax M2 web_search 工具，失败自动降级；并加 8min 任务级超时）
     withTaskTimeout((async () => {
-      return await callLLM(DEEP_RESEARCH_PROMPT, earlyDeepResearchInput, 16000);
+      try {
+        const { text, searchUsed } = await callLLMWithSearch(
+          DEEP_RESEARCH_PROMPT,
+          earlyDeepResearchInput,
+          { maxTokens: 16000 }
+        );
+        if (searchUsed) logger.info("[B.deep] 深度研究已使用 web_search 增强");
+        return text;
+      } catch (e) {
+        logger.warn("[B.deep] web_search 调用失败，降级普通模式:", e.message);
+        return await callLLM(DEEP_RESEARCH_PROMPT, earlyDeepResearchInput, 16000);
+      }
     })(), "深度研究"),
   ]);
 
@@ -540,7 +554,7 @@ function buildValuationComparison(validatedData, extractedData, scoringInput, sc
  * 完整分析流水线（后台执行）
  * 优化：声明核查3批并发 + 深度研究与结构化评分并行
  */
-async function runPipeline(bpText, onProgress, taskId = null) {
+async function runPipeline(bpText, onProgress, taskId = null, userId = null) {
   const startTime = Date.now();
 
   onProgress({ type: "progress", stage: "pdf_done", percentage: 8, message: "文档解析完成，准备分析..." });
@@ -548,10 +562,28 @@ async function runPipeline(bpText, onProgress, taskId = null) {
   // Step 1: 数据提取
   const { extractedData, truncatedText } = await extractBPData(bpText, onProgress);
 
-  // Step 2: 声明核查（3批并发）+ 评分数据 + 五维深度分析 + 深度研究（三路并行）
-  onProgress({ type: "progress", stage: "agent_b_start", percentage: 32, message: "Agent B 启动（3批并发核查）..." });
-  const { claimVerdicts, structuralResult, thinking, dimensionAnalysisResult, deepResearch } =
-    await runAgentBWithBatchingAndResearch(extractedData, truncatedText, onProgress);
+  // Step 2: Agent B（声明核查+评分）与 6 个 Multiagent 并行启动，互不等待
+  onProgress({ type: "progress", stage: "agent_b_start", percentage: 32, message: "Agent B 启动（3批并发核查）+ 6个AI Agent 并行分析..." });
+
+  const [agentBResult, multiagent] = await Promise.all([
+    // 主流水线：声明核查 + 评分数据 + 五维深度分析 + 深度研究
+    runAgentBWithBatchingAndResearch(extractedData, truncatedText, onProgress),
+
+    // 新增：6 个 Multiagent 并行，捕获异常不影响主流程
+    (async () => {
+      try {
+        onProgress({ type: "progress", stage: "multiagent_start", percentage: 33, message: "6 个 AI Agent 深度分析启动中..." });
+        const { runId, multiagent: ma } = await orchestrator.runAllAgents(bpText, extractedData, taskId, userId);
+        onProgress({ type: "progress", stage: "multiagent_done", percentage: 85, message: "6 个 AI Agent 分析完成" });
+        return { runId, ...ma };
+      } catch (err) {
+        logger.warn("[Pipeline] multiagent 全局异常，不影响主报告:", err.message);
+        return {};
+      }
+    })(),
+  ]);
+
+  const { claimVerdicts, structuralResult, thinking, dimensionAnalysisResult, deepResearch } = agentBResult;
 
   // Agent A 数据兜底：如果结构化评分 3 层 + 抢救全部失败，用 Agent A 提取的数据直接评分
   let validatedData;
@@ -671,6 +703,31 @@ async function runPipeline(bpText, onProgress, taskId = null) {
     logger.warn("训练数据采集初始化异常", { error: outerErr.message });
   }
 
+  // 数据飞轮：异步写入数据沉淀表（不阻塞报告返回）
+  // isAnonymized 默认 1，未来可通过用户设置控制
+  (async () => {
+    try {
+      const userId = null; // 此处无法获取 userId，由 analyzeController 传递
+      dataLakeService.sinkAllAgentData({
+        taskId,
+        userId,
+        multiagent,
+        score: verdict?.total_score ?? null,
+        isAnonymized: 1,
+      });
+      const crossMatchInsights = crossMatchService.runCrossMatch({
+        taskId,
+        multiagent,
+        score: verdict?.total_score ?? null,
+      });
+      if (crossMatchInsights) {
+        logger.info("[Pipeline] 交叉识别完成", { taskId, insights: crossMatchInsights });
+      }
+    } catch (err) {
+      logger.warn("[Pipeline] 数据飞轮写入异常（不影响报告）:", err.message);
+    }
+  })();
+
   return {
     success: true,
     elapsed_seconds: parseFloat(elapsed),
@@ -680,6 +737,7 @@ async function runPipeline(bpText, onProgress, taskId = null) {
     thinking,
     deep_research: deepResearch,
     verdict,
+    multiagent,
     title,
     industry_category: industryCategory,
     industry_categories: industryCategories,

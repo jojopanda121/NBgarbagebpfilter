@@ -10,16 +10,17 @@ import React, { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
   Gavel, ArrowLeft, Loader2, ClipboardList, FileText,
-  BookOpen, Play, CheckCircle2, AlertCircle, Share2, Copy
+  BookOpen, Play, CheckCircle2, AlertCircle, Share2, Copy,
+  MessageSquare
 } from "lucide-react";
 import api from "../services/api";
-import useAuthStore from "../store/useAuthStore";
 import VerdictCard from "../components/VerdictCard";
 import ScoreVisualizer from "../components/ScoreVisualizer";
 import DetailedReport from "../components/DetailedReport";
 import DDQuestionnaire from "../components/DDQuestionnaire";
 import IMemoTab from "../components/IMemoTab";
 import ProjectNotesTab from "../components/ProjectNotesTab";
+import WorkspaceTab from "../components/Workspace/WorkspaceTab";
 
 const STAGE_CONFIG = {
   new:            { label: "新建",     color: "bg-slate-500/20 text-slate-400 border-slate-500/30" },
@@ -37,7 +38,6 @@ const DD_ACTIVE_STAGES = ["dd_pending", "dd_in_progress", "dd_done"];
 export default function ProjectPage() {
   const { taskId } = useParams();
   const navigate = useNavigate();
-  const user = useAuthStore(s => s.user);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -51,6 +51,7 @@ export default function ProjectPage() {
 
   useEffect(() => {
     fetchProject();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [taskId]);
 
   const fetchProject = async () => {
@@ -159,13 +160,13 @@ export default function ProjectPage() {
   const stageCfg = STAGE_CONFIG[stage] || STAGE_CONFIG.new;
   const isDDActive = DD_ACTIVE_STAGES.includes(stage);
   const displayScore = project?.adjusted_score ?? project?.total_score;
-  const gradeLabel = result?.verdict?.grade_label || "";
 
   const tabs = [
-    { key: "report", label: "分析报告", icon: BookOpen },
-    { key: "dd",     label: isDDActive ? "尽调问卷" : "开始尽调", icon: ClipboardList, highlight: !isDDActive },
-    { key: "imemo",  label: "投资备忘录", icon: FileText },
-    { key: "notes",  label: "项目备注", icon: CheckCircle2 },
+    { key: "report",    label: "分析报告",   icon: BookOpen },
+    { key: "workspace", label: "工作区",     icon: MessageSquare },
+    { key: "dd",        label: isDDActive ? "尽调问卷" : "开始尽调", icon: ClipboardList, highlight: !isDDActive },
+    { key: "imemo",     label: "投资备忘录", icon: FileText },
+    { key: "notes",     label: "项目备注",   icon: CheckCircle2 },
   ];
 
   return (
@@ -317,6 +318,11 @@ export default function ProjectPage() {
             <ScoreVisualizer verdict={result.verdict} />
             <DetailedReport result={result} />
           </div>
+        )}
+
+        {/* Tab: 工作区 — 多 Agent 对话 */}
+        {activeTab === "workspace" && (
+          <WorkspaceTab taskId={taskId} />
         )}
 
         {/* Tab 2: 尽调问卷 */}

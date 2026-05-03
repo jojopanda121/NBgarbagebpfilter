@@ -168,8 +168,199 @@ async function callLLMWithThinking(systemPrompt, userContent, maxTokens = 16000,
   return { thinking: "", text };
 }
 
+/**
+ * 调用 LLM，支持自定义多轮 messages 和流式回调。
+ * @param {string} systemPrompt
+ * @param {Array<{role:'user'|'assistant', content:string}>} messages
+ * @param {object} opts
+ * @param {number} [opts.maxTokens=4096]
+ * @param {(delta:string)=>void} [opts.onDelta] 每次 token 增量回调（设置后启用流式）
+ * @param {AbortSignal} [opts.signal] 调用方取消信号（用于客户端断开）
+ * @returns {Promise<string>} 完整文本
+ */
+async function callLLMChat(systemPrompt, messages, opts = {}) {
+  const { maxTokens = 4096, onDelta, signal } = opts;
+  let lastError;
+
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      if (attempt > 0) {
+        const delay = BASE_DELAY_MS * Math.pow(2, attempt - 1);
+        console.warn(`[LLM/Chat] 第 ${attempt + 1} 次尝试（延迟 ${delay}ms）...`);
+        await sleep(delay);
+      }
+
+      if (signal?.aborted) throw new Error("客户端取消");
+
+      const timeout = calcTimeout(maxTokens);
+
+      if (onDelta) {
+        // 流式模式
+        const stream = await withTimeout(
+          Promise.resolve(anthropic.messages.stream({
+            model: MODEL,
+            max_tokens: maxTokens,
+            system: systemPrompt,
+            messages,
+          })),
+          timeout,
+          `callLLMChat(stream, maxTokens=${maxTokens})`
+        );
+
+        let full = "";
+        const onAbort = () => stream.controller?.abort?.();
+        if (signal) signal.addEventListener("abort", onAbort);
+
+        try {
+          for await (const event of stream) {
+            if (event.type === "content_block_delta" && event.delta?.type === "text_delta") {
+              const piece = event.delta.text || "";
+              if (piece) {
+                full += piece;
+                onDelta(piece);
+              }
+            }
+          }
+        } finally {
+          if (signal) signal.removeEventListener("abort", onAbort);
+        }
+        return full;
+      }
+
+      // 非流式
+      const resp = await withTimeout(
+        anthropic.messages.create({
+          model: MODEL,
+          max_tokens: maxTokens,
+          system: systemPrompt,
+          messages,
+        }),
+        timeout,
+        `callLLMChat(maxTokens=${maxTokens})`
+      );
+      return resp.content
+        .filter((b) => b.type === "text")
+        .map((b) => b.text)
+        .join("");
+    } catch (err) {
+      lastError = err;
+      // 客户端取消不重试
+      if (err?.message === "客户端取消" || signal?.aborted) break;
+      if (attempt < MAX_RETRIES && isRetryable(err)) {
+        console.warn(`[LLM/Chat] 请求失败 (attempt ${attempt + 1}): ${err.message}`);
+        continue;
+      }
+      break;
+    }
+  }
+  throw lastError;
+}
+
+/**
+ * 调用 MiniMax LLM 并启用 web_search 工具（M2 系列内置）
+ * 让模型自主决定何时检索公开资料，服务端无需自行执行检索。
+ *
+ * 回退：若服务端不识别工具，自动降级为普通 callLLM。
+ *
+ * @param {string} systemPrompt
+ * @param {string} userContent
+ * @param {object} [opts]
+ * @param {number} [opts.maxTokens=8192]
+ * @param {number} [opts.maxToolRounds=6]
+ * @returns {Promise<{ text: string, searchUsed: boolean }>}
+ */
+async function callLLMWithSearch(systemPrompt, userContent, opts = {}) {
+  const { maxTokens = 8192, maxToolRounds = 6 } = opts;
+
+  // MiniMax M2 内置 web_search：通过 Anthropic 兼容端点声明 type:"web_search"
+  const tools = [{ type: "web_search", name: "web_search" }];
+
+  let searchUsed = false;
+  let lastError;
+
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      if (attempt > 0) {
+        const delay = BASE_DELAY_MS * Math.pow(2, attempt - 1);
+        console.warn(`[LLM/Search] 第 ${attempt + 1} 次尝试（延迟 ${delay}ms）...`);
+        await sleep(delay);
+      }
+
+      const convo = [{ role: "user", content: userContent }];
+      let finalText = "";
+
+      // 工具调用循环（兼容客户端 tool_use 格式）
+      for (let round = 0; round < maxToolRounds; round++) {
+        const timeout = calcTimeout(maxTokens);
+        const resp = await withTimeout(
+          anthropic.messages.create({
+            model: MODEL,
+            max_tokens: maxTokens,
+            system: systemPrompt,
+            tools,
+            messages: convo,
+          }),
+          timeout,
+          `callLLMWithSearch(round=${round})`
+        );
+
+        const text = resp.content
+          .filter((b) => b.type === "text")
+          .map((b) => b.text)
+          .join("");
+        if (text) finalText = text;
+
+        const toolUses = resp.content.filter((b) => b.type === "tool_use");
+        if (toolUses.length === 0 || resp.stop_reason === "end_turn") break;
+
+        // MiniMax 服务端模式：服务端会自动执行 web_search 并把结果嵌入下一条消息；
+        // 客户端模式：返回兜底 tool_result 让模型基于已有上下文继续输出，避免循环卡住。
+        searchUsed = true;
+        convo.push({ role: "assistant", content: resp.content });
+        convo.push({
+          role: "user",
+          content: toolUses.map((tu) => ({
+            type: "tool_result",
+            tool_use_id: tu.id,
+            content: "（已由服务端检索处理，请基于已有上下文继续输出最终 JSON）",
+          })),
+        });
+      }
+
+      return { text: finalText, searchUsed };
+    } catch (err) {
+      lastError = err;
+      const msg = err?.message || "";
+      // 服务端不识别 web_search 工具 → 降级
+      if (
+        err?.status === 400 ||
+        msg.includes("tool") ||
+        msg.includes("web_search") ||
+        msg.includes("unsupported")
+      ) {
+        console.warn("[LLM/Search] web_search 不可用，降级为普通模式:", msg);
+        const text = await callLLM(systemPrompt, userContent, maxTokens);
+        return { text, searchUsed: false };
+      }
+      if (attempt < MAX_RETRIES && isRetryable(err)) continue;
+      break;
+    }
+  }
+
+  // 重试用尽 → 最后再兜底降级
+  console.warn("[LLM/Search] 全部重试失败，降级为普通模式:", lastError?.message);
+  const text = await callLLM(systemPrompt, userContent, maxTokens);
+  return { text, searchUsed: false };
+}
+
 function getModelName() {
   return MODEL;
 }
 
-module.exports = { callLLM, callLLMWithThinking, getModelName };
+module.exports = {
+  callLLM,
+  callLLMWithThinking,
+  callLLMChat,
+  callLLMWithSearch,
+  getModelName,
+};

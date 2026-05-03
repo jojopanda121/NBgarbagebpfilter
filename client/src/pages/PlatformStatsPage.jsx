@@ -53,7 +53,7 @@ function AnimatedNumber({ value, duration = 1200 }) {
       else setDisplay(Math.floor(start));
     }, 16);
     return () => clearInterval(timer);
-  }, [value]);
+  }, [value, duration]);
   return <span>{display.toLocaleString()}</span>;
 }
 
@@ -122,6 +122,7 @@ export default function PlatformStatsPage() {
     fetchPlatform();
     fetchPersonal();
     fetchMapData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {

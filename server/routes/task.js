@@ -1,6 +1,6 @@
 // server/routes/task.js — 任务路由
 const { Router } = require("express");
-const { optionalAuth, requireAuth } = require("../middleware/auth");
+const { requireAuth } = require("../middleware/auth");
 const { getTaskStatus, getSharedTask, shareTask, getUserTasks, softDeleteTask, revokeShare } = require("../controllers/taskController");
 
 const router = Router();

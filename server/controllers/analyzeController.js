@@ -62,7 +62,7 @@ function analyze(req, res) {
     const isPdf = mime === "application/pdf" || name.endsWith(".pdf");
     const isPptx = mime === "application/vnd.openxmlformats-officedocument.presentationml.presentation" || name.endsWith(".pptx");
     if (!isPdf && !isPptx) {
-      fs.unlink(req.file.path, () => {});
+      fs.promises.unlink(req.file.path).catch(() => {});
       return res.status(400).json({ error: "请上传 PDF 或 PPTX 格式的文件" });
     }
   }
@@ -86,14 +86,14 @@ function analyze(req, res) {
         const running = findRunningTask(userId, fileHash);
         if (running) {
           // 相同文件正在分析中，直接返回已有的 taskId（不扣额度）
-          fs.unlink(req.file.path, () => {});
+          fs.promises.unlink(req.file.path).catch(() => {});
           return res.json({ taskId: running.id, cached: false, resuming: true });
         }
 
         const existing = findExistingResult(userId, fileHash);
         if (existing) {
           // 相同文件已分析过，直接返回之前的结果（不扣额度）
-          fs.unlink(req.file.path, () => {});
+          fs.promises.unlink(req.file.path).catch(() => {});
           // 创建一个新任务记录指向旧结果，方便历史记录追踪
           const task = createTask(userId);
           updateTask(task.id, {
@@ -116,7 +116,7 @@ function analyze(req, res) {
   if (!isAdmin && userId) {
     const deductResult = deductQuota(userId);
     if (!deductResult.success) {
-      if (req.file) fs.unlink(req.file.path, () => {});
+      if (req.file) fs.promises.unlink(req.file.path).catch(() => {});
       return res.status(403).json({
         error: "额度不足，请充值",
         code: 4032,
@@ -142,7 +142,7 @@ function analyze(req, res) {
   }
   res.json({ taskId: task.id });
 
-  (async () => {
+  const backgroundTask = (async () => {
     let bpText = "";
     try {
       if (filePath) {
@@ -157,7 +157,10 @@ function analyze(req, res) {
           } catch {}
           throw new Error("文档解析失败: " + userMessage);
         } finally {
-          try { fs.unlinkSync(filePath); } catch {}
+          // M5: 异步清理临时文件，避免阻塞事件循环
+          fs.promises.unlink(filePath).catch((err) => {
+            console.warn(`[Analyze] 临时文件清理失败: ${filePath}`, err.message);
+          });
         }
       } else {
         bpText = directText;
@@ -214,6 +217,15 @@ function analyze(req, res) {
       }
     }
   })();
+
+  // 兜底：保证 IIFE 内部任何漏网异常都不会触发 unhandledRejection
+  backgroundTask.catch((err) => {
+    console.error(`[任务 ${task.id.slice(0, 8)}] 未捕获异常:`, err && err.stack ? err.stack : err);
+    try {
+      updateTask(task.id, { status: "error", error: "服务器内部错误" });
+      if (userId && !isAdmin && quotaDeductType) refundQuota(userId, quotaDeductType);
+    } catch (_) { /* ignore */ }
+  });
 }
 
 module.exports = { analyze };

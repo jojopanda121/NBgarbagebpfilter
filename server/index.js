@@ -49,23 +49,25 @@ const app = express();
 app.set("trust proxy", 1);
 
 // ── 全局中间件 ──
+// CORS：生产严格白名单；并禁用 credentials 以彻底规避 CSRF（项目使用 Bearer Token）
 const corsOptions = (() => {
   if (config.env === "production" && config.allowedOrigins) {
-    const whitelist = config.allowedOrigins.split(",").map((s) => s.trim());
+    const whitelist = config.allowedOrigins.split(",").map((s) => s.trim()).filter(Boolean);
     return {
       origin(origin, callback) {
-        // 允许无 origin 的请求（如服务端回调、curl）
         if (!origin || whitelist.includes(origin)) {
           callback(null, true);
         } else {
           callback(new Error(`CORS 拒绝来源: ${origin}`));
         }
       },
-      credentials: true,
+      credentials: false,
+      methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+      allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
     };
   }
-  // 开发模式：允许所有来源
-  return { origin: true, credentials: true };
+  // 开发模式：允许任意来源，但同样禁用 credentials
+  return { origin: true, credentials: false };
 })();
 app.use(helmet({
   contentSecurityPolicy: {
@@ -102,9 +104,23 @@ app.use("/api/leaderboard", leaderboardRoutes);
 app.use("/api/projects", projectRoutes);
 app.use("/api/stats", statsRoutes);
 
-// ── 健康检查 ──
+// ── 健康检查（含 DB 探活）──
 app.get("/api/health", (_req, res) => {
-  res.json({ status: "ok", model: getModelName(), search: "minimax_builtin", version: "3.0.0" });
+  const checks = { database: { status: "ok" } };
+  try {
+    getDb().prepare("SELECT 1").get();
+  } catch (err) {
+    checks.database = { status: "down", error: err.message };
+  }
+  const ok = checks.database.status === "ok";
+  res.status(ok ? 200 : 503).json({
+    status: ok ? "ok" : "degraded",
+    model: getModelName(),
+    search: "minimax_builtin",
+    version: "3.0.0",
+    checks,
+    timestamp: new Date().toISOString(),
+  });
 });
 
 // ── 静态文件：上传的图片 ──
@@ -144,20 +160,32 @@ server.requestTimeout = HTTP_TIMEOUT;
 server.keepAliveTimeout = HTTP_TIMEOUT + 1000;
 
 // 优雅关闭：停止接受新连接，等待现有请求完成（最多 30s）
-process.on("SIGTERM", () => {
-  console.log("SIGTERM received, shutting down gracefully...");
-  // 停止接受新连接
+let shuttingDown = false;
+function gracefulShutdown(signal) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(`${signal} received, shutting down gracefully...`);
   server.close(() => {
     console.log("All connections closed, exiting...");
-    const { closeDb } = require("./db");
-    closeDb();
+    try { const { closeDb } = require("./db"); closeDb(); } catch {}
     process.exit(0);
   });
-  // 强制退出超时（防止长时间分析任务阻塞关闭）
   setTimeout(() => {
     console.error("Graceful shutdown timed out (30s), forcing exit...");
-    const { closeDb } = require("./db");
-    closeDb();
+    try { const { closeDb } = require("./db"); closeDb(); } catch {}
     process.exit(1);
   }, 30_000).unref();
+}
+process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
+process.on("SIGINT", () => gracefulShutdown("SIGINT"));
+
+// 全局兜底：避免后台异步任务的未捕获异常静默拖垮进程
+process.on("unhandledRejection", (reason) => {
+  const err = reason instanceof Error ? reason : new Error(String(reason));
+  console.error("[FATAL] Unhandled Rejection:", err.stack || err.message);
+});
+process.on("uncaughtException", (err) => {
+  console.error("[FATAL] Uncaught Exception:", err.stack || err.message);
+  // 触发优雅关闭，让 PM2/Docker 拉起新进程
+  gracefulShutdown("uncaughtException");
 });

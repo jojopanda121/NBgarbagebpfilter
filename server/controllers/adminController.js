@@ -78,7 +78,9 @@ const getUsers = async (req, res, next) => {
 
 const getUserById = async (req, res, next) => {
   try {
-    const result = adminService.getUserById(parseInt(req.params.id));
+    const id = parseInt(req.params.id, 10);
+    if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: "用户 ID 非法" });
+    const result = adminService.getUserById(id);
     if (!result) {
       return res.status(404).json({ error: "用户不存在" });
     }
@@ -90,7 +92,8 @@ const getUserById = async (req, res, next) => {
 
 const banUser = async (req, res, next) => {
   try {
-    const userId = parseInt(req.params.id);
+    const userId = parseInt(req.params.id, 10);
+    if (!Number.isInteger(userId) || userId <= 0) return res.status(400).json({ error: "用户 ID 非法" });
     const { banned } = req.body;
     adminService.banUser(userId, banned);
     res.json({ success: true, banned });
@@ -102,7 +105,8 @@ const banUser = async (req, res, next) => {
 // 删除用户
 const deleteUser = async (req, res, next) => {
   try {
-    const userId = parseInt(req.params.id);
+    const userId = parseInt(req.params.id, 10);
+    if (!Number.isInteger(userId) || userId <= 0) return res.status(400).json({ error: "用户 ID 非法" });
     if (userId === req.user.id) {
       return res.status(400).json({ error: "不能删除自己的账号" });
     }
@@ -223,7 +227,10 @@ const createPackage = async (req, res, next) => {
 
 const updatePackage = async (req, res, next) => {
   try {
-    const id = parseInt(req.params.id);
+    const id = parseInt(req.params.id, 10);
+    if (!Number.isInteger(id) || id <= 0) {
+      return res.status(400).json({ error: "套餐 ID 非法" });
+    }
     adminService.updatePackage(id, req.body);
     res.json({ success: true });
   } catch (err) {
@@ -233,7 +240,10 @@ const updatePackage = async (req, res, next) => {
 
 const deletePackage = async (req, res, next) => {
   try {
-    const id = parseInt(req.params.id);
+    const id = parseInt(req.params.id, 10);
+    if (!Number.isInteger(id) || id <= 0) {
+      return res.status(400).json({ error: "套餐 ID 非法" });
+    }
     adminService.deletePackage(id);
     res.json({ success: true });
   } catch (err) {
@@ -256,6 +266,9 @@ const updateSettings = async (req, res, next) => {
     const results = adminService.updateSettings(req.body);
     res.json({ success: true, results });
   } catch (err) {
+    if (err.message && (err.message.startsWith("不允许修改设置项") || err.message.includes("settings 必须") || err.message.includes("类型非法"))) {
+      return res.status(400).json({ error: err.message });
+    }
     next(err);
   }
 };
@@ -382,9 +395,14 @@ const updateSiteContent = async (req, res, next) => {
 };
 
 // 上传站点内容图片（管理员，最多5张）
+const SAFE_SLUG = /^[a-zA-Z0-9_-]{1,64}$/;
 const uploadSiteImage = async (req, res, next) => {
   try {
     const { slug } = req.params;
+    if (!SAFE_SLUG.test(slug || "")) {
+      if (req.file) { try { fs.unlinkSync(req.file.path); } catch {} }
+      return res.status(400).json({ error: "slug 非法" });
+    }
     if (!req.file) {
       return res.status(400).json({ error: "请上传图片文件" });
     }
@@ -399,8 +417,33 @@ const uploadSiteImage = async (req, res, next) => {
       return res.status(400).json({ error: "最多上传 5 张图片" });
     }
 
-    // 移动文件到 uploads 目录
-    const ext = path.extname(req.file.originalname) || ".png";
+    // 校验扩展名白名单 + magic bytes（H6）
+    const ALLOWED_IMG_EXT = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp"]);
+    const rawExt = (path.extname(req.file.originalname) || ".png").toLowerCase();
+    const ext = ALLOWED_IMG_EXT.has(rawExt) ? rawExt : null;
+    if (!ext) {
+      try { fs.unlinkSync(req.file.path); } catch {}
+      return res.status(400).json({ error: "仅支持 PNG/JPG/GIF/WEBP 图片" });
+    }
+    try {
+      const fd = fs.openSync(req.file.path, "r");
+      const head = Buffer.alloc(12);
+      fs.readSync(fd, head, 0, 12, 0);
+      fs.closeSync(fd);
+      const isPng = head[0] === 0x89 && head[1] === 0x50 && head[2] === 0x4e && head[3] === 0x47;
+      const isJpg = head[0] === 0xff && head[1] === 0xd8 && head[2] === 0xff;
+      const isGif = head.slice(0, 6).toString("ascii") === "GIF87a" || head.slice(0, 6).toString("ascii") === "GIF89a";
+      const isWebp = head.slice(0, 4).toString("ascii") === "RIFF" && head.slice(8, 12).toString("ascii") === "WEBP";
+      if (!isPng && !isJpg && !isGif && !isWebp) {
+        try { fs.unlinkSync(req.file.path); } catch {}
+        return res.status(400).json({ error: "图片内容校验失败" });
+      }
+    } catch (e) {
+      try { fs.unlinkSync(req.file.path); } catch {}
+      return res.status(400).json({ error: "图片读取失败" });
+    }
+
+    // 移动文件到 uploads 目录（文件名仅由服务端生成，不含原文件名）
     const filename = `site_${slug}_${Date.now()}${ext}`;
     const destPath = path.join(UPLOAD_DIR, filename);
     fs.renameSync(req.file.path, destPath);

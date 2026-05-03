@@ -48,13 +48,30 @@ function withTimeout(promise, ms, label) {
 /** 判断是否可重试的错误 */
 function isRetryable(err) {
   const msg = err?.message || "";
+  const status = err?.status;
+  // 永久错误：401/403/404/400 不重试，立刻冒泡
+  if (status === 401 || status === 403 || status === 404 || status === 400) return false;
   // 超时、网络错误、速率限制、5xx 可重试
   if (msg.includes("超时")) return true;
   if (msg.includes("timeout")) return true;
   if (msg.includes("ECONNRESET") || msg.includes("ENOTFOUND") || msg.includes("ETIMEDOUT")) return true;
-  if (err?.status >= 500) return true;
-  if (err?.status === 429) return true;
+  if (status >= 500) return true;
+  if (status === 429) return true;
   return false;
+}
+
+/** 将上游错误规范化为对调用方友好的中文异常 */
+function normalizeLLMError(err) {
+  const status = err?.status;
+  if (status === 401 || status === 403) {
+    const e = new Error("LLM 服务认证失败：请检查 MINIMAX_API_KEY 配置");
+    e.permanent = true;
+    return e;
+  }
+  if (status === 429) {
+    return new Error("LLM 服务限流，请稍后重试");
+  }
+  return err;
 }
 
 /** 调用 MiniMax LLM（普通模式），含超时和重试 */
@@ -95,7 +112,7 @@ async function callLLM(systemPrompt, userContent, maxTokens = 8192) {
     }
   }
 
-  throw lastError;
+  throw normalizeLLMError(lastError);
 }
 
 /** 调用 MiniMax LLM（深度思考模式，不支持时自动降级），含超时和重试 */

@@ -324,16 +324,20 @@ const createPackage = (data) => {
   return result.lastInsertRowid;
 };
 
+// 仅允许这些字段被白名单修改，防止任意列注入
+const PACKAGE_UPDATABLE_FIELDS = ["name", "quota_amount", "price_cents", "is_active", "sort_order"];
+
 const updatePackage = (id, data) => {
   const db = getDb();
   const fields = [];
   const params = [];
 
-  if (data.name !== undefined) { fields.push("name = ?"); params.push(data.name); }
-  if (data.quota_amount !== undefined) { fields.push("quota_amount = ?"); params.push(data.quota_amount); }
-  if (data.price_cents !== undefined) { fields.push("price_cents = ?"); params.push(data.price_cents); }
-  if (data.is_active !== undefined) { fields.push("is_active = ?"); params.push(data.is_active); }
-  if (data.sort_order !== undefined) { fields.push("sort_order = ?"); params.push(data.sort_order); }
+  for (const key of PACKAGE_UPDATABLE_FIELDS) {
+    if (data[key] !== undefined) {
+      fields.push(`${key} = ?`);
+      params.push(data[key]);
+    }
+  }
 
   if (fields.length === 0) {
     throw new Error("No fields to update");
@@ -428,7 +432,24 @@ const getSettings = () => {
   return settings;
 };
 
+// 系统设置白名单（H7）：仅允许这些键被前端修改，防止越权写入任意配置
+const ALLOWED_SETTING_KEYS = new Set([
+  "default_free_quota",
+  "verification_max_attempts",
+  "verification_code_expire_seconds",
+  "default_paid_quota",
+  "site_title",
+  "site_announcement",
+  "referral_reward_inviter",
+  "referral_reward_invitee",
+  "task_retain_days",
+  "share_link_ttl_hours",
+]);
+
 const updateSettings = (updates) => {
+  if (!updates || typeof updates !== "object" || Array.isArray(updates)) {
+    throw new Error("settings 必须是对象");
+  }
   const db = getDb();
   const stmt = db.prepare(`
     INSERT INTO settings (key, value, updated_at)
@@ -437,7 +458,14 @@ const updateSettings = (updates) => {
   `);
 
   const results = [];
-  for (const [key, value] of Object.entries(updates)) {
+  for (const [key, rawValue] of Object.entries(updates)) {
+    if (!ALLOWED_SETTING_KEYS.has(key)) {
+      throw new Error(`不允许修改设置项: ${key}`);
+    }
+    if (rawValue !== null && typeof rawValue !== "string" && typeof rawValue !== "number" && typeof rawValue !== "boolean") {
+      throw new Error(`设置 ${key} 的值类型非法`);
+    }
+    const value = rawValue == null ? "" : String(rawValue);
     const result = stmt.run(key, value, value);
     results.push({ key, value, changes: result.changes });
   }

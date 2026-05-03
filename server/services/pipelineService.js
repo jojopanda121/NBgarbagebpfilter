@@ -24,6 +24,16 @@ const {
 
 const MAX_CLAIMS_PER_BATCH = 6; // 每批最多6条声明，防止输出截断导致JSON解析失败
 const MAX_CONCURRENT_BATCHES = 5; // 最多5个并发批次
+const PARALLEL_TASK_TIMEOUT_MS = 8 * 60 * 1000; // 单路并行任务上限 8min，避免一路 hang 拖死整个分析
+
+function withTaskTimeout(promise, label) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error(`${label} 任务超时（${PARALLEL_TASK_TIMEOUT_MS / 1000}s）`)), PARALLEL_TASK_TIMEOUT_MS).unref()
+    ),
+  ]);
+}
 
 /** 行业大类映射 — 通过关键词匹配将细分行业归类到统计大类（支持多标签） */
 const INDUSTRY_CATEGORIES = [
@@ -203,10 +213,8 @@ async function runAgentBWithBatchingAndResearch(extractedData, bpText, onProgres
 
   onProgress({ type: "progress", stage: "report_parallel", percentage: 58, message: "三路并行：评分数据 + 五维深度分析 + 深度研究报告..." });
 
-  const [structuralOutcome, dimensionAnalysisResult, deepResearch] = await Promise.all([
-
-    // Task A: 评分数据（只要 validated_data，输出小，高可靠性）
-    (async () => {
+  const settled = await Promise.allSettled([
+    withTaskTimeout((async () => {
       // 层1: DeepThink（评分数据输出小，12000 足够）
       const judgeResult = await callLLMWithThinking(scoringPrompt, structuralInput, 12000, 5000);
       let result = extractJson(judgeResult.text);
@@ -257,10 +265,10 @@ async function runAgentBWithBatchingAndResearch(extractedData, bpText, onProgres
       }
 
       return { structuralResult: result, thinking: judgeResult.thinking || "" };
-    })(),
+    })(), "评分"),
 
     // Task B: 五维深度分析（专用调用，给足 token 空间输出完整分析）
-    (async () => {
+    withTaskTimeout((async () => {
       try {
         // 普通模式（不用 thinking，把 token 全给输出）
         const dimRaw = await callLLM(dimAnalysisPrompt, structuralInput, 16000);
@@ -290,10 +298,10 @@ async function runAgentBWithBatchingAndResearch(extractedData, bpText, onProgres
         logger.warn("[B.dim] 五维分析调用异常:", err.message);
         return null;
       }
-    })(),
+    })(), "五维分析"),
 
-    // Task C: 深度研究报告（启用 MiniMax M2 web_search 工具，失败自动降级）
-    (async () => {
+    // Task C: 深度研究报告（启用 MiniMax M2 web_search 工具，失败自动降级；并加 8min 任务级超时）
+    withTaskTimeout((async () => {
       try {
         const { text, searchUsed } = await callLLMWithSearch(
           DEEP_RESEARCH_PROMPT,
@@ -306,8 +314,25 @@ async function runAgentBWithBatchingAndResearch(extractedData, bpText, onProgres
         logger.warn("[B.deep] web_search 调用失败，降级普通模式:", e.message);
         return await callLLM(DEEP_RESEARCH_PROMPT, earlyDeepResearchInput, 16000);
       }
-    })(),
+    })(), "深度研究"),
   ]);
+
+  const [scoringSettled, dimSettled, researchSettled] = settled;
+  // 评分失败时不能继续（核心数据），抛出由上游处理；其他两路失败则降级为 null
+  if (scoringSettled.status === "rejected") {
+    logger.warn("[Pipeline] 评分任务失败/超时", { reason: scoringSettled.reason?.message });
+  }
+  const structuralOutcome = scoringSettled.status === "fulfilled"
+    ? scoringSettled.value
+    : { structuralResult: null, thinking: "" };
+  const dimensionAnalysisResult = dimSettled.status === "fulfilled" ? dimSettled.value : null;
+  if (dimSettled.status === "rejected") {
+    logger.warn("[Pipeline] 五维分析失败/超时", { reason: dimSettled.reason?.message });
+  }
+  const deepResearch = researchSettled.status === "fulfilled" ? researchSettled.value : "";
+  if (researchSettled.status === "rejected") {
+    logger.warn("[Pipeline] 深度研究失败/超时", { reason: researchSettled.reason?.message });
+  }
 
   onProgress({ type: "progress", stage: "parallel_done", percentage: 84, message: "评分、维度分析与深度研究均已完成..." });
 
@@ -652,7 +677,7 @@ async function runPipeline(bpText, onProgress, taskId = null, userId = null) {
     const trackCompanyName = extractedData.company_name;
     if (trackCompanyName && trackCompanyName.trim()) {
       // 异步执行，不 await，不阻塞返回
-      (async () => {
+      const trackingTask = (async () => {
         try {
           const entity = await trackingService.findOrCreateCompanyEntity(extractedData, taskId);
           if (taskId) {
@@ -672,6 +697,7 @@ async function runPipeline(bpText, onProgress, taskId = null, userId = null) {
           logger.warn("训练数据采集失败（不影响主流程）", { error: innerErr.message });
         }
       })();
+      trackingTask.catch((err) => logger.warn("训练数据采集异步异常", { error: err.message }));
     }
   } catch (outerErr) {
     logger.warn("训练数据采集初始化异常", { error: outerErr.message });

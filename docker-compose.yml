@@ -33,10 +33,19 @@ services:
       dockerfile: Dockerfile
     container_name: bp-filter-app
     restart: always
+    # H9: 默认仅绑定本地回环，避免越过 Nginx 直接暴露应用端口；
+    # 如需直连测试，可通过 .env 中 APP_BIND_HOST=0.0.0.0 显式覆盖。
     ports:
-      - "${PORT:-3001}:3001"
+      - "${APP_BIND_HOST:-127.0.0.1}:${PORT:-3001}:3001"
     env_file:
       - .env
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 2G
+        reservations:
+          memory: 512M
     environment:
       - NODE_ENV=production
       - PORT=3001

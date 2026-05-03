@@ -4,7 +4,7 @@
 // ============================================================
 
 const bcrypt = require("bcryptjs");
-const { signToken } = require("../middleware/auth");
+const { signToken, revokeToken } = require("../middleware/auth");
 const { isValidUsername, isValidPassword, isValidEmail } = require("../utils/validation");
 const { createUser, getUserByUsername, bindUserContact, getUserById, getUserByEmail, updateLastLogin, updateUserPassword } = require("../services/userService");
 const { initializeQuota, getUserQuota } = require("../services/quotaService");
@@ -254,4 +254,16 @@ async function resetPassword(req, res) {
   }
 }
 
-module.exports = { register, login, getMe, bindContact, forgotPassword, resetPassword };
+/** POST /api/auth/logout — 登出，吊销当前 token */
+function logout(req, res) {
+  try {
+    if (req.user?.jti) {
+      revokeToken(req.user.jti, req.user.id, req.user.exp);
+    }
+  } catch (err) {
+    console.warn("[Logout] revoke error:", err.message);
+  }
+  res.json({ success: true });
+}
+
+module.exports = { register, login, getMe, bindContact, forgotPassword, resetPassword, logout };

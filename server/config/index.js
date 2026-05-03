@@ -20,7 +20,7 @@ const config = {
 
   // JWT
   jwtSecret: devJwtSecret,
-  jwtExpiresIn: process.env.JWT_EXPIRES_IN || "7d",
+  jwtExpiresIn: process.env.JWT_EXPIRES_IN || "12h",
 
   // Database
   dbPath: process.env.DB_PATH || require("path").join(__dirname, "..", "..", "data", "app.db"),
@@ -67,11 +67,13 @@ const config = {
 
 // ── 生产环境安全检查 ──
 if (config.env === "production") {
-  if (!process.env.JWT_SECRET) {
+  const secret = process.env.JWT_SECRET;
+  const looksPlaceholder = secret && /请修改|change.?me|placeholder|example/i.test(secret);
+  if (!secret || secret.length < 32 || looksPlaceholder) {
     console.error(
       "\n[FATAL] 生产环境必须设置 JWT_SECRET 环境变量！\n" +
-      "  请在 .env 中设置一个至少 32 位的随机字符串。\n" +
-      "  示例: JWT_SECRET=$(openssl rand -hex 32)\n"
+      "  要求：长度 ≥ 32 且不得使用示例占位符。\n" +
+      "  生成: JWT_SECRET=$(openssl rand -hex 32)\n"
     );
     process.exit(1);
   }
@@ -81,6 +83,13 @@ if (config.env === "production") {
       "\n[FATAL] 生产环境必须设置 ALLOWED_ORIGINS 环境变量！\n" +
       "  否则 CORS 将拒绝所有跨域请求。\n" +
       "  示例: ALLOWED_ORIGINS=https://your-domain.com\n"
+    );
+    process.exit(1);
+  }
+
+  if (!config.minimaxApiKey) {
+    console.error(
+      "\n[FATAL] 生产环境必须设置 MINIMAX_API_KEY 环境变量！\n"
     );
     process.exit(1);
   }

@@ -72,13 +72,15 @@ router.get("/platform", (req, res) => {
     }
 
     // 赛道热度 Top 10（基于 industry_category，JSON 数组格式）
+    // M6: 限制扫描行数，避免全表扫描在百万级数据下吃光内存
     const allTasks = db.prepare(
-      "SELECT industry_category FROM tasks WHERE status = 'complete' AND industry_category IS NOT NULL"
+      "SELECT industry_category FROM tasks WHERE status = 'complete' AND industry_category IS NOT NULL ORDER BY created_at DESC LIMIT 50000"
     ).all();
     const sectorMap = {};
     for (const t of allTasks) {
       let cats = [];
       try { cats = JSON.parse(t.industry_category); } catch { cats = [t.industry_category]; }
+      if (!Array.isArray(cats)) cats = [cats];
       for (const c of cats) {
         if (c) sectorMap[c] = (sectorMap[c] || 0) + 1;
       }

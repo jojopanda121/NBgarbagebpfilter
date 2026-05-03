@@ -20,25 +20,60 @@ async function extractDocText(filePath, mode) {
   return extractViaSubprocess(filePath, mode);
 }
 
-/** 通过远程 FastAPI 微服务提取 */
+/** 通过远程 FastAPI 微服务提取（M7: 指数退避重试） */
 async function extractViaService(filePath, mode) {
   const fs = require("fs");
-  const formData = new FormData();
-  formData.append("file", new Blob([fs.readFileSync(filePath)]), `document.${mode}`);
-  formData.append("mode", mode);
+  const fileBuf = fs.readFileSync(filePath);
 
-  const resp = await fetch(`${config.docServiceUrl}/extract`, {
-    method: "POST",
-    body: formData,
-  });
+  const MAX_ATTEMPTS = 3;
+  const BASE_DELAY_MS = 1500;
+  let lastErr;
 
-  if (!resp.ok) {
-    const err = await resp.text();
-    throw new Error(`文档提取服务错误: ${err}`);
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    try {
+      // 每次重试都重建 FormData（fetch 消费过的 body 不能复用）
+      const formData = new FormData();
+      formData.append("file", new Blob([fileBuf]), `document.${mode}`);
+      formData.append("mode", mode);
+
+      // 单次调用 90s 上限，避免 hang 死
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 90_000);
+      timer.unref?.();
+      let resp;
+      try {
+        resp = await fetch(`${config.docServiceUrl}/extract`, {
+          method: "POST",
+          body: formData,
+          signal: ctrl.signal,
+        });
+      } finally {
+        clearTimeout(timer);
+      }
+
+      if (!resp.ok) {
+        const errText = await resp.text();
+        // 4xx 不重试（一定是文件本身问题）
+        if (resp.status >= 400 && resp.status < 500) {
+          throw new Error(`文档提取服务拒绝: ${errText}`);
+        }
+        throw new Error(`文档提取服务错误(${resp.status}): ${errText}`);
+      }
+
+      const result = await resp.json();
+      return result.text;
+    } catch (err) {
+      lastErr = err;
+      // 4xx 永久错误立即抛出
+      if (/拒绝/.test(err.message)) throw err;
+      if (attempt < MAX_ATTEMPTS) {
+        const delay = BASE_DELAY_MS * Math.pow(2, attempt - 1);
+        console.warn(`[Extraction] 第 ${attempt} 次失败：${err.message}，${delay}ms 后重试...`);
+        await new Promise((r) => setTimeout(r, delay));
+      }
+    }
   }
-
-  const result = await resp.json();
-  return result.text;
+  throw lastErr || new Error("文档提取服务不可用");
 }
 
 /** 通过本地 Python 子进程提取（兼容模式） */

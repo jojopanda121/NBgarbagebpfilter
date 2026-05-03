@@ -124,25 +124,32 @@ async function runAgentBWithBatchingAndResearch(extractedData, bpText, onProgres
   const bpContext = `请对处于 ${extractedData.industry || "未知"} 赛道的 ${extractedData.company_name || "未知公司"} 进行核查。产品：${extractedData.product_name || "未知"}。`;
 
   const limit = pLimit(MAX_CONCURRENT_BATCHES);
-  const batchResults = await Promise.all(
-    batches.map((batch, batchIdx) =>
-      limit(() =>
-        callLLM(
-          CLAIM_VERDICT_BATCH_PROMPT + "\n\n【重要】请严格只输出 JSON 数组，不要使用 markdown 代码块。",
-          `${bpContext}\n\n待核查声明批次 ${batchIdx + 1}/${batchCount}：\n${JSON.stringify(batch, null, 2)}`,
-          6144
-        ).then((raw) => {
-          const parsed = extractJsonArray(raw);
-          if (!parsed) {
+  // M8: 外层 try/catch 兜底 Promise.all 内部不可达异常（如 p-limit 自身错误）
+  let batchResults;
+  try {
+    batchResults = await Promise.all(
+      batches.map((batch, batchIdx) =>
+        limit(() =>
+          callLLM(
+            CLAIM_VERDICT_BATCH_PROMPT + "\n\n【重要】请严格只输出 JSON 数组，不要使用 markdown 代码块。",
+            `${bpContext}\n\n待核查声明批次 ${batchIdx + 1}/${batchCount}：\n${JSON.stringify(batch, null, 2)}`,
+            6144
+          ).then((raw) => {
+            const parsed = extractJsonArray(raw);
+            if (!parsed) {
+              return { failed: true, batch, batchIdx };
+            }
+            return { failed: false, results: parsed };
+          }).catch(() => {
             return { failed: true, batch, batchIdx };
-          }
-          return { failed: false, results: parsed };
-        }).catch(() => {
-          return { failed: true, batch, batchIdx };
-        })
+          })
+        )
       )
-    )
-  );
+    );
+  } catch (err) {
+    logger.error("[B.1] 批量并发调度本身异常，全部降级为失败批次:", err.message);
+    batchResults = batches.map((batch, batchIdx) => ({ failed: true, batch, batchIdx }));
+  }
 
   // Phase 1.5: 失败批次重试 — 先整体重试，再逐条降级
   const allClaimVerdicts = [];

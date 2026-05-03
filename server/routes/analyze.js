@@ -29,7 +29,20 @@ const upload = multer({
 // 兜底：multer 抛错时返回 4xx 而不是 500
 function handleUpload(req, res, next) {
   upload.single("file")(req, res, (err) => {
-    if (!err) return next();
+    if (!err) {
+      // M6: 客户端中断时 multer 可能仍把文件落到 tmp，注册兜底清理避免 tmp 累积
+      if (req.file) {
+        const fs = require("fs");
+        const tmpPath = req.file.path;
+        const cleanupOnAbort = () => {
+          fs.promises.unlink(tmpPath).catch(() => { /* file already removed by handler */ });
+        };
+        req.on("aborted", cleanupOnAbort);
+        // 响应结束时自动解绑（避免内存泄漏）
+        res.on("close", () => req.removeListener("aborted", cleanupOnAbort));
+      }
+      return next();
+    }
     if (err.code === "LIMIT_FILE_SIZE") {
       return res.status(413).json({ error: "文件过大，最多 50MB" });
     }

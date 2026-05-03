@@ -10,13 +10,14 @@
 
 FROM node:20-slim
 
-# 系统依赖：Python（fallback）+ 构建工具（better-sqlite3 native addon）
+# 系统依赖：Python（fallback）+ 构建工具（better-sqlite3 native addon）+ wget（健康检查）
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         python3 python3-pip python3-dev \
         build-essential \
         libgl1 \
-        libglib2.0-0 && \
+        libglib2.0-0 \
+        wget && \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -49,9 +50,9 @@ USER appuser
 # 暴露端口（默认 3001）
 EXPOSE 3001
 
-# 健康检查
+# 健康检查（M17: 使用 wget，避免依赖 Node 18+ 的全局 fetch；--spider 仅探活）
 HEALTHCHECK --interval=30s --timeout=10s --retries=3 --start-period=30s \
-  CMD node -e "fetch('http://localhost:3001/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+  CMD wget -q --spider http://localhost:3001/api/health || exit 1
 
 # 启动后端
 CMD ["node", "server/index.js"]

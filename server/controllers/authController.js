@@ -49,10 +49,15 @@ async function register(req, res) {
     })();
 
     // 处理邀请关系（事务外，失败不影响注册）
+    // M3: 用 try/catch 包裹，避免抛错冒泡到外层 catch 误报"注册失败"
     if (invite_code) {
-      const inviter = getUserByInviteCode(invite_code);
-      if (inviter) {
-        processReferral(inviter.id, result.id, "invite_link");
+      try {
+        const inviter = getUserByInviteCode(invite_code);
+        if (inviter) {
+          processReferral(inviter.id, result.id, "invite_link");
+        }
+      } catch (refErr) {
+        console.warn("[Register] 邀请关系处理失败（不影响注册）:", refErr && refErr.message);
       }
     }
 

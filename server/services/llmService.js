@@ -195,23 +195,36 @@ async function callLLMChat(systemPrompt, messages, opts = {}) {
       const timeout = calcTimeout(maxTokens);
 
       if (onDelta) {
-        // 流式模式
-        const stream = await withTimeout(
-          Promise.resolve(anthropic.messages.stream({
-            model: MODEL,
-            max_tokens: maxTokens,
-            system: systemPrompt,
-            messages,
-          })),
-          timeout,
-          `callLLMChat(stream, maxTokens=${maxTokens})`
-        );
-
-        let full = "";
-        const onAbort = () => stream.controller?.abort?.();
-        if (signal) signal.addEventListener("abort", onAbort);
-
+        // H8: 流式模式 — 即便 stream 创建本身失败，也保证 timeout/abort 监听器被清理
+        let stream;
+        let onAbort;
+        let timeoutTimer;
         try {
+          // 显式 timeout 包裹 stream 创建
+          stream = await new Promise((resolve, reject) => {
+            timeoutTimer = setTimeout(
+              () => reject(new Error(`LLM 请求超时 (${timeout}ms): callLLMChat(stream)`)),
+              timeout
+            );
+            try {
+              const s = anthropic.messages.stream({
+                model: MODEL,
+                max_tokens: maxTokens,
+                system: systemPrompt,
+                messages,
+              });
+              clearTimeout(timeoutTimer);
+              resolve(s);
+            } catch (e) {
+              clearTimeout(timeoutTimer);
+              reject(e);
+            }
+          });
+
+          let full = "";
+          onAbort = () => { try { stream.controller?.abort?.(); } catch (_) { /* ignore */ } };
+          if (signal) signal.addEventListener("abort", onAbort);
+
           for await (const event of stream) {
             if (event.type === "content_block_delta" && event.delta?.type === "text_delta") {
               const piece = event.delta.text || "";
@@ -221,10 +234,12 @@ async function callLLMChat(systemPrompt, messages, opts = {}) {
               }
             }
           }
+          return full;
         } finally {
-          if (signal) signal.removeEventListener("abort", onAbort);
+          if (timeoutTimer) clearTimeout(timeoutTimer);
+          if (signal && onAbort) signal.removeEventListener("abort", onAbort);
+          try { stream && stream.controller?.abort?.(); } catch (_) { /* ignore */ }
         }
-        return full;
       }
 
       // 非流式

@@ -61,6 +61,13 @@ module.exports = {
       out_file:   './logs/server-out.log',
       merge_logs: true,
       log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
+      // M14: PM2 内置日志大小上限；同时建议安装 pm2-logrotate：
+      //   pm2 install pm2-logrotate
+      //   pm2 set pm2-logrotate:max_size 50M
+      //   pm2 set pm2-logrotate:retain 14
+      //   pm2 set pm2-logrotate:compress true
+      max_size: '50M',
+      retain: 14,
 
       // ── 生产环境变量 ──
       // 端口对齐 Zeabur/Nginx 约定（8080）；

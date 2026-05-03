@@ -122,6 +122,11 @@ backup_db() {
 # 部署
 deploy() {
   info "开始构建和部署..."
+  # M18: 确保数据卷目录存在并归属容器内 appuser（uid/gid 与 Dockerfile 中创建的 appuser 对齐）
+  mkdir -p ./data ./logs ./data/backups ./nginx-certs
+  # 容器内 appuser 由 useradd -r 自动分配，通常 999/100 区间；
+  # 这里仅确保宿主机目录可写。如出现写入权限问题，可手动 chown -R 999:999 ./data ./logs。
+  chmod -R u+rwX ./data ./logs 2>/dev/null || true
   $COMPOSE up -d --build
   info "部署完成！等待服务启动..."
 

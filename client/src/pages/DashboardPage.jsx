@@ -37,12 +37,12 @@ export default function DashboardPage() {
     <main className="max-w-6xl mx-auto px-4 py-6 sm:px-6 sm:py-8">
       {/* 额度提示条 */}
       {token && quota && !result && (
-        <div className="flex items-center justify-between bg-slate-900/50 border border-white/10 rounded-xl px-4 py-3 mb-6">
+        <div className="flex items-center justify-between bg-white border border-[#D8DCE8] rounded-xl px-4 py-3 mb-6">
           <div className="flex items-center gap-2 text-sm">
             <Zap className="w-4 h-4 text-yellow-400" />
-            <span className="text-slate-300">
+            <span className="text-[#0F1C36]">
               剩余额度：
-              <span className="text-white font-medium">{quota.free || 0}</span> 次免费
+              <span className="text-[#0D2145] font-medium">{quota.free || 0}</span> 次免费
               {quota.paid > 0 && (
                 <> + <span className="text-blue-400 font-medium">{quota.paid}</span> 次付费</>
               )}
@@ -50,7 +50,7 @@ export default function DashboardPage() {
           </div>
           <button
             onClick={() => navigate("/settings?tab=token")}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-blue-600 hover:bg-blue-500 rounded-lg transition-colors"
+            className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-[#1B4FD8] hover:bg-[#163069] rounded-lg transition-colors"
           >
             <Zap className="w-3.5 h-3.5" />
             兑换额度
@@ -62,20 +62,20 @@ export default function DashboardPage() {
       {!result && token && personalStats && (
         <div
           onClick={() => navigate("/app/stats")}
-          className="flex items-center justify-between bg-slate-900/50 border border-white/10 hover:border-white/20 rounded-xl px-4 py-3 mb-5 cursor-pointer transition-colors group"
+          className="flex items-center justify-between bg-white border border-[#D8DCE8] hover:border-[#BFC5D6] rounded-xl px-4 py-3 mb-5 cursor-pointer transition-colors group"
         >
           <div className="flex items-center gap-4 text-sm">
             <BarChart2 className="w-4 h-4 text-blue-400 shrink-0" />
-            <span className="text-slate-400">
-              本月分析 <span className="text-white font-medium">{personalStats.month_count}</span> 份
+            <span className="text-[#4B5A72]">
+              本月分析 <span className="text-[#0D2145] font-medium">{personalStats.month_count}</span> 份
             </span>
             {personalStats.avg_score != null && (
-              <span className="text-slate-400">
+              <span className="text-[#4B5A72]">
                 平均 <span className="text-yellow-400 font-medium">{personalStats.avg_score}</span> 分
               </span>
             )}
             {personalStats.top_score != null && (
-              <span className="text-slate-400">
+              <span className="text-[#4B5A72]">
                 最高 <span className="text-emerald-400 font-medium">{personalStats.top_score}</span> 分
               </span>
             )}
@@ -87,7 +87,7 @@ export default function DashboardPage() {
               </span>
             )}
           </div>
-          <div className="flex items-center gap-1 text-xs text-slate-500 group-hover:text-slate-300 transition-colors">
+          <div className="flex items-center gap-1 text-xs text-[#8E9BB0] group-hover:text-[#0F1C36] transition-colors">
             查看数据看板
             <ChevronRight className="w-4 h-4" />
           </div>

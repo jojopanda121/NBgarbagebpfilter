@@ -13,9 +13,9 @@ export default function AppLayout() {
       <Header />
       <AnnouncementBanner />
       <Outlet />
-      <footer className="border-t border-gray-800 mt-16 py-6 text-center text-sm text-gray-600">
-        <p>垃圾BP过滤机 v4.0 · MiniMax 知识库深度研究引擎 · 五维定量评分</p>
-        <p className="mt-1">Powered by MiniMax M2.5 DeepThink</p>
+      <footer className="border-t border-[#D8DCE8] bg-white mt-16 py-6 text-center text-[12px] text-[#8E9BB0] font-mono-fin tracking-wide">
+        <p>BP过滤机 · AI Workspace for VC &amp; PE · 5 维量化评分 · 多模型按需切换</p>
+        <p className="mt-1">© 2026 garbagebpfilter.cn · All rights reserved</p>
       </footer>
     </>
   );

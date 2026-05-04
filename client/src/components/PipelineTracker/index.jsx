@@ -54,7 +54,7 @@ const PipelineTracker = memo(function PipelineTracker() {
   return (
     <div className="mt-8 space-y-4">
       {/* ── 总体进度条 ── */}
-      <div className="bg-slate-900/60 border border-white/10/50 rounded-xl p-4 space-y-3">
+      <div className="bg-white/90 border border-[#D8DCE8]/50 rounded-xl p-4 space-y-3">
         {/* 顶行：阶段描述 + 百分比 */}
         <div className="flex items-center justify-between gap-3">
           <p className="text-sm text-blue-300 truncate flex-1">
@@ -66,7 +66,7 @@ const PipelineTracker = memo(function PipelineTracker() {
         </div>
 
         {/* 进度条轨道 */}
-        <div className="w-full bg-slate-800 rounded-full h-2 overflow-hidden">
+        <div className="w-full bg-[#EEF1F7] rounded-full h-2 overflow-hidden">
           <div
             className="h-2 rounded-full bg-gradient-to-r from-blue-600 to-cyan-400 transition-all duration-700 ease-out"
             style={{ width: `${progress}%` }}
@@ -77,8 +77,8 @@ const PipelineTracker = memo(function PipelineTracker() {
         <div className="flex items-center justify-end gap-1.5 h-4">
           {etaText && (
             <>
-              <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-              <span className="text-xs text-slate-400 tabular-nums">
+              <Clock className="w-3.5 h-3.5 text-[#4B5A72] shrink-0" />
+              <span className="text-xs text-[#4B5A72] tabular-nums">
                 预计剩余&nbsp;{etaText}
               </span>
             </>
@@ -118,7 +118,7 @@ const PipelineTracker = memo(function PipelineTracker() {
                   ? "bg-emerald-500/20"
                   : active
                   ? "bg-blue-500/20"
-                  : "bg-slate-800"
+                  : "bg-[#EEF1F7]"
               }`}
             >
               {done ? (
@@ -126,7 +126,7 @@ const PipelineTracker = memo(function PipelineTracker() {
               ) : active ? (
                 <Loader2 className="w-5 h-5 text-blue-400 animate-spin" />
               ) : (
-                <Icon className="w-5 h-5 text-slate-500" />
+                <Icon className="w-5 h-5 text-[#8E9BB0]" />
               )}
             </div>
             <span
@@ -135,7 +135,7 @@ const PipelineTracker = memo(function PipelineTracker() {
                   ? "text-emerald-400"
                   : active
                   ? "text-blue-400"
-                  : "text-slate-500"
+                  : "text-[#8E9BB0]"
               }`}
             >
               {step.label}
@@ -178,7 +178,7 @@ function BackgroundProcessingBanner() {
           )}
           <button
             onClick={reset}
-            className="px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-white/10 rounded-lg text-sm text-slate-300 transition-colors"
+            className="px-4 py-2 bg-[#EEF1F7] hover:bg-[#E5E9F4] border border-[#D8DCE8] rounded-lg text-sm text-[#0F1C36] transition-colors"
           >
             继续其他分析
           </button>

@@ -106,7 +106,7 @@ export default function ReportPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
+      <div className="min-h-screen bg-[#F6F7FA] flex items-center justify-center">
         <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
       </div>
     );
@@ -114,11 +114,11 @@ export default function ReportPage() {
 
   if (error) {
     return (
-      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center">
+      <div className="min-h-screen bg-[#F6F7FA] flex flex-col items-center justify-center">
         <p className="text-red-400 mb-4">{error}</p>
         <button
           onClick={() => navigate("/")}
-          className="px-4 py-2 bg-slate-800 rounded-lg"
+          className="px-4 py-2 bg-[#EEF1F7] rounded-lg"
         >
           返回首页
         </button>
@@ -130,16 +130,16 @@ export default function ReportPage() {
   const canShare = !!token && !!taskId && !isSharedMode;
 
   return (
-    <div className="min-h-screen bg-slate-950">
+    <div className="min-h-screen bg-[#F6F7FA]">
       {/* Header */}
-      <header className="border-b border-white/10 bg-slate-950/80 backdrop-blur-sm sticky top-0 z-50">
+      <header className="border-b border-[#D8DCE8] bg-[#F6F7FA]/80 backdrop-blur-sm sticky top-0 z-50">
         <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
           <div
             className="flex items-center gap-2 cursor-pointer"
             onClick={() => navigate("/")}
           >
             <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-red-500 to-orange-500 flex items-center justify-center">
-              <Gavel className="w-5 h-5 text-white" />
+              <Gavel className="w-5 h-5 text-[#0D2145]" />
             </div>
             <span className="text-lg font-bold">垃圾BP过滤机</span>
           </div>
@@ -159,7 +159,7 @@ export default function ReportPage() {
               <button
                 onClick={handleShare}
                 disabled={sharing}
-                className="px-4 py-2 text-sm bg-blue-600 hover:bg-blue-500 disabled:bg-slate-700 rounded-lg transition-colors flex items-center gap-1.5"
+                className="px-4 py-2 text-sm bg-[#1B4FD8] hover:bg-[#163069] disabled:bg-[#E5E9F4] rounded-lg transition-colors flex items-center gap-1.5"
               >
                 {sharing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Share2 className="w-4 h-4" />}
                 分享报告
@@ -167,7 +167,7 @@ export default function ReportPage() {
             )}
             <button
               onClick={() => navigate(token ? "/app/dashboard" : "/")}
-              className="px-4 py-2 text-sm bg-slate-800 hover:bg-slate-700 rounded-lg transition-colors"
+              className="px-4 py-2 text-sm bg-[#EEF1F7] hover:bg-[#E5E9F4] rounded-lg transition-colors"
             >
               {token ? "分析新 BP" : "返回首页"}
             </button>
@@ -181,11 +181,11 @@ export default function ReportPage() {
           <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-4 flex items-center gap-3">
             <div className="flex-1 min-w-0">
               <p className="text-sm text-blue-400 mb-1">分享链接已生成（3天有效）</p>
-              <p className="text-xs text-slate-400 truncate">{shareLink}</p>
+              <p className="text-xs text-[#4B5A72] truncate">{shareLink}</p>
             </div>
             <button
               onClick={handleCopy}
-              className="shrink-0 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 rounded-lg text-sm flex items-center gap-1.5"
+              className="shrink-0 px-3 py-1.5 bg-[#1B4FD8] hover:bg-[#163069] rounded-lg text-sm flex items-center gap-1.5"
             >
               {copied ? <><CheckCircle className="w-4 h-4" />已复制</> : <><Copy className="w-4 h-4" />复制</>}
             </button>
@@ -198,7 +198,7 @@ export default function ReportPage() {
         <div className="max-w-6xl mx-auto px-4 py-4">
           <button
             onClick={() => navigate("/app/history")}
-            className="flex items-center gap-2 text-slate-400 hover:text-white transition-colors"
+            className="flex items-center gap-2 text-[#4B5A72] hover:text-[#0D2145] transition-colors"
           >
             <ArrowLeft className="w-4 h-4" />
             返回历史报告
@@ -213,7 +213,7 @@ export default function ReportPage() {
           <h1 className="text-2xl font-bold mb-2">
             {result.extracted_data?.company_name || "商业计划书分析"}
           </h1>
-          <p className="text-slate-400">
+          <p className="text-[#4B5A72]">
             {result.industry} · {result.extracted_data?.product_name}
           </p>
         </div>
@@ -234,11 +234,11 @@ export default function ReportPage() {
 
       {/* 未登录用户注册引导 banner */}
       {isSharedMode && !token && (
-        <div className="fixed bottom-0 left-0 right-0 bg-slate-900 border-t border-white/10 p-4 z-50">
+        <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-[#D8DCE8] p-4 z-50">
           <div className="max-w-6xl mx-auto flex items-center justify-between">
             <div>
               <p className="font-medium">想分析自己的 BP？</p>
-              <p className="text-sm text-slate-400">注册即可免费体验</p>
+              <p className="text-sm text-[#4B5A72]">注册即可免费体验</p>
             </div>
             <button
               onClick={() => {
@@ -247,7 +247,7 @@ export default function ReportPage() {
                 const safeRef = ref && /^[A-Za-z0-9]+$/.test(ref) ? ref : "";
                 navigate(safeRef ? `/login?ref=${safeRef}` : "/login");
               }}
-              className="px-6 py-2.5 bg-blue-600 hover:bg-blue-500 rounded-lg font-medium transition-colors"
+              className="px-6 py-2.5 bg-[#1B4FD8] hover:bg-[#163069] rounded-lg font-medium transition-colors"
             >
               免费注册
             </button>

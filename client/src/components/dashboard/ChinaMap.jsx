@@ -159,7 +159,7 @@ export default function ChinaMap({ provinces = [], details = {}, onProvinceClick
 
   if (loadError) {
     return (
-      <div className="text-center py-8 text-slate-500 text-sm">
+      <div className="text-center py-8 text-[#8E9BB0] text-sm">
         地图数据加载失败
       </div>
     );

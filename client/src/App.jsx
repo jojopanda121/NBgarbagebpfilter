@@ -24,10 +24,10 @@ const TrackingDashboardPage = lazy(() => import("./pages/TrackingDashboardPage")
 // 加载中组件
 function LoadingFallback() {
   return (
-    <div className="min-h-screen bg-slate-950 flex items-center justify-center">
+    <div className="min-h-screen bg-[#F6F7FA] flex items-center justify-center">
       <div className="text-center">
-        <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
-        <p className="mt-4 text-slate-400">加载中...</p>
+        <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-[#1B4FD8]"></div>
+        <p className="mt-4 text-[#4B5A72]">加载中...</p>
       </div>
     </div>
   );
@@ -52,7 +52,7 @@ export default function App() {
   return (
     <ErrorBoundary>
       <BrowserRouter>
-        <div className="min-h-screen bg-slate-950 text-slate-100">
+        <div className="min-h-screen bg-[#F6F7FA] text-[#0F1C36]">
           {/* 全局弹层：联系方式绑定 */}
           {requireContactBinding && <ContactBindingModal />}
 

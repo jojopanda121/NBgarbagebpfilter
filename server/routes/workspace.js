@@ -230,7 +230,12 @@ router.post("/:taskId/messages", requireAuth, async (req, res) => {
     sendEvent("done", { ok: true });
   } catch (err) {
     console.error("[Workspace] SSE 错误:", err);
-    sendEvent("error", { message: err.message || "服务器错误" });
+    // 给前端一个可读的中文错误，便于排查"无法对话"的根因
+    let msg = err.message || "服务器错误";
+    if (err?.status === 401 || err?.status === 403 || /认证失败|MINIMAX_API_KEY/.test(msg)) {
+      msg = `LLM 调用失败：${msg}（请检查服务端 .env 中的 MINIMAX_API_KEY 是否有效）`;
+    }
+    sendEvent("error", { message: msg });
   } finally {
     res.end();
   }

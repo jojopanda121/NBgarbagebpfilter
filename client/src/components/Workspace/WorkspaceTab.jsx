@@ -210,7 +210,7 @@ export default function WorkspaceTab({ taskId }) {
     <div className="grid grid-cols-12 gap-4 min-h-[600px]">
       {/* 左：Agent 面板 */}
       <aside className="col-span-12 lg:col-span-2 space-y-2">
-        <h3 className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-2">AI 团队</h3>
+        <h3 className="text-xs font-medium text-[#4B5A72] uppercase tracking-wider mb-2">AI 团队</h3>
         {ALL_AGENTS.map(name => {
           const meta = AGENT_META[name];
           const Icon = meta.icon;
@@ -223,22 +223,22 @@ export default function WorkspaceTab({ taskId }) {
               className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-all ${
                 isActive
                   ? `${meta.bg} ring-1 ${meta.ring} border-transparent`
-                  : "border-white/5 bg-slate-900/40"
+                  : "border-[#EEF1F7] bg-white"
               }`}
             >
               <Icon className={`w-4 h-4 ${meta.color}`} />
               <span className="text-sm">{meta.label}</span>
-              {isActive && <Loader2 className="w-3 h-3 animate-spin ml-auto text-slate-400" />}
+              {isActive && <Loader2 className="w-3 h-3 animate-spin ml-auto text-[#4B5A72]" />}
             </div>
           );
         })}
       </aside>
 
       {/* 中：聊天流 */}
-      <section className="col-span-12 lg:col-span-7 flex flex-col bg-slate-900/40 border border-white/5 rounded-xl overflow-hidden min-h-[600px]">
+      <section className="col-span-12 lg:col-span-7 flex flex-col bg-white border border-[#EEF1F7] rounded-xl overflow-hidden min-h-[600px]">
         <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-3">
           {messages.length === 0 && (
-            <div className="text-center text-slate-500 py-12">
+            <div className="text-center text-[#8E9BB0] py-12">
               <MessageSquare className="w-10 h-10 mx-auto mb-2 opacity-40" />
               <p className="text-sm">在这里向 AI 团队提问，例如：<br/>"这个项目最大的财务风险在哪？"<br/>"帮我生成一份 10 页投委会 PPT"</p>
             </div>
@@ -247,7 +247,7 @@ export default function WorkspaceTab({ taskId }) {
         </div>
 
         {/* 输入区 */}
-        <div className="border-t border-white/5 p-3">
+        <div className="border-t border-[#EEF1F7] p-3">
           <div className="flex gap-2 items-end">
             <input
               ref={fileInputRef}
@@ -259,7 +259,7 @@ export default function WorkspaceTab({ taskId }) {
             <button
               onClick={() => fileInputRef.current?.click()}
               disabled={uploading || streaming}
-              className="p-2 text-slate-400 hover:text-white disabled:opacity-50 transition-colors"
+              className="p-2 text-[#4B5A72] hover:text-[#0D2145] disabled:opacity-50 transition-colors"
               title="上传补充材料 (PDF/PPTX/TXT)"
             >
               {uploading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Paperclip className="w-5 h-5" />}
@@ -276,7 +276,7 @@ export default function WorkspaceTab({ taskId }) {
               placeholder={streaming ? "AI 正在思考..." : "输入消息（Enter 发送 / Shift+Enter 换行）"}
               disabled={streaming}
               rows={1}
-              className="flex-1 bg-slate-800/50 border border-white/10 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:border-blue-500 disabled:opacity-50"
+              className="flex-1 bg-[#EEF1F7] border border-[#D8DCE8] rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:border-blue-500 disabled:opacity-50"
               style={{ maxHeight: 120 }}
             />
             {streaming ? (
@@ -290,7 +290,7 @@ export default function WorkspaceTab({ taskId }) {
               <button
                 onClick={handleSend}
                 disabled={!input.trim()}
-                className="px-3 py-2 bg-blue-600 hover:bg-blue-500 disabled:bg-slate-700 disabled:text-slate-500 rounded-lg flex items-center gap-1.5"
+                className="px-3 py-2 bg-[#1B4FD8] hover:bg-[#163069] disabled:bg-[#E5E9F4] disabled:text-[#8E9BB0] rounded-lg flex items-center gap-1.5"
               >
                 <Send className="w-4 h-4" />
                 <span className="text-sm">发送</span>
@@ -298,7 +298,7 @@ export default function WorkspaceTab({ taskId }) {
             )}
           </div>
           {phase !== "idle" && (
-            <div className="mt-2 text-xs text-slate-500 flex items-center gap-2">
+            <div className="mt-2 text-xs text-[#8E9BB0] flex items-center gap-2">
               <Loader2 className="w-3 h-3 animate-spin" />
               {phase === "routing" && "主持人正在判断需要哪些专家..."}
               {phase === "experts" && `${activeAgents.length} 位专家并行分析中...`}
@@ -311,35 +311,35 @@ export default function WorkspaceTab({ taskId }) {
 
       {/* 右：Artifacts */}
       <aside className="col-span-12 lg:col-span-3">
-        <h3 className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+        <h3 className="text-xs font-medium text-[#4B5A72] uppercase tracking-wider mb-2 flex items-center gap-1.5">
           <FileBox className="w-3.5 h-3.5" />
           材料 & 产出 ({artifacts.length})
         </h3>
         <div className="space-y-2">
           {artifacts.length === 0 && (
-            <p className="text-xs text-slate-500 px-3 py-4 border border-dashed border-white/10 rounded-lg text-center">
+            <p className="text-xs text-[#8E9BB0] px-3 py-4 border border-dashed border-[#D8DCE8] rounded-lg text-center">
               用户上传的补充材料和 AI 生成的 PPT 会出现在这里
             </p>
           )}
           {artifacts.map(art => (
-            <div key={art.id} className="px-3 py-2 bg-slate-900/40 border border-white/5 rounded-lg">
+            <div key={art.id} className="px-3 py-2 bg-white border border-[#EEF1F7] rounded-lg">
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-medium truncate" title={art.filename}>{art.filename}</p>
-                  <p className="text-xs text-slate-500 mt-0.5">
+                  <p className="text-xs text-[#8E9BB0] mt-0.5">
                     {art.kind === "generated_pptx" ? "AI 生成" : "上传"} · {bytes(art.size_bytes)}
                   </p>
                 </div>
                 <button
                   onClick={() => downloadArtifact(art)}
-                  className="p-1.5 text-slate-400 hover:text-white"
+                  className="p-1.5 text-[#4B5A72] hover:text-[#0D2145]"
                   title="下载"
                 >
                   <Download className="w-4 h-4" />
                 </button>
               </div>
               {art.summary && (
-                <p className="text-xs text-slate-400 mt-1.5 line-clamp-3">{art.summary}</p>
+                <p className="text-xs text-[#4B5A72] mt-1.5 line-clamp-3">{art.summary}</p>
               )}
             </div>
           ))}
@@ -353,7 +353,7 @@ function MessageBubble({ m }) {
   if (m.role === "user") {
     return (
       <div className="flex justify-end">
-        <div className="max-w-[80%] bg-blue-600/30 border border-blue-500/30 rounded-2xl rounded-tr-sm px-4 py-2">
+        <div className="max-w-[80%] bg-[#1B4FD8]/30 border border-blue-500/30 rounded-2xl rounded-tr-sm px-4 py-2">
           <p className="text-sm whitespace-pre-wrap">{m.content}</p>
         </div>
       </div>
@@ -362,7 +362,7 @@ function MessageBubble({ m }) {
   if (m.role === "system") {
     return (
       <div className="flex justify-center">
-        <div className="max-w-[90%] text-xs text-slate-400 bg-slate-800/40 border border-white/5 rounded-lg px-3 py-2 whitespace-pre-wrap">
+        <div className="max-w-[90%] text-xs text-[#4B5A72] bg-[#EEF1F7] border border-[#EEF1F7] rounded-lg px-3 py-2 whitespace-pre-wrap">
           {m.content}
         </div>
       </div>
@@ -378,7 +378,7 @@ function MessageBubble({ m }) {
       </div>
       <div className="max-w-[80%]">
         <div className={`text-xs ${meta.color} mb-1`}>{meta.label}</div>
-        <div className="bg-slate-800/60 border border-white/5 rounded-2xl rounded-tl-sm px-4 py-2">
+        <div className="bg-[#EEF1F7] border border-[#EEF1F7] rounded-2xl rounded-tl-sm px-4 py-2">
           <p className="text-sm whitespace-pre-wrap">
             {m.content}
             {m._streaming && <span className="inline-block w-1.5 h-3.5 bg-slate-300 ml-0.5 animate-pulse align-middle" />}

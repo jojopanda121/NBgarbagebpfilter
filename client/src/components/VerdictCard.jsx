@@ -17,7 +17,7 @@ const VerdictCard = memo(function VerdictCard({ result }) {
   const displayAction = verdict.grade_action || gradeInfo.action;
 
   return (
-    <div className="bg-slate-900 border border-white/10 rounded-2xl p-5 sm:p-8">
+    <div className="bg-white border border-[#D8DCE8] rounded-2xl p-5 sm:p-8">
       <div className="flex flex-col md:flex-row items-center gap-6 sm:gap-8">
         <div className="text-center">
           <div className="relative w-36 h-36 mx-auto">
@@ -33,7 +33,7 @@ const VerdictCard = memo(function VerdictCard({ result }) {
             </svg>
             <div className="absolute inset-0 flex flex-col items-center justify-center">
               <span className={`text-4xl font-bold ${getScoreColor(totalScore)}`}>{totalScore}</span>
-              <span className="text-xs text-slate-500">/ 100</span>
+              <span className="text-xs text-[#8E9BB0]">/ 100</span>
             </div>
           </div>
           <div className={`text-3xl font-black mt-2 ${gradeInfo.color}`}>{grade}</div>
@@ -44,7 +44,7 @@ const VerdictCard = memo(function VerdictCard({ result }) {
           <div className={`text-2xl font-bold mb-2 ${gradeInfo.color}`}>
             {grade} - {displayLabel}
           </div>
-          <p className="text-base text-slate-300 mb-3">
+          <p className="text-base text-[#0F1C36] mb-3">
             {verdict.verdict_summary || getVerdict(totalScore)}
           </p>
           <div className={`p-4 rounded-xl text-sm leading-relaxed border ${gradeInfo.bg} ${gradeInfo.border} ${gradeInfo.color}`}>
@@ -52,7 +52,7 @@ const VerdictCard = memo(function VerdictCard({ result }) {
             {displayAction}
           </div>
           {result.elapsed_seconds && (
-            <p className="text-sm text-slate-500 mt-2">分析耗时 {result.elapsed_seconds}s</p>
+            <p className="text-sm text-[#8E9BB0] mt-2">分析耗时 {result.elapsed_seconds}s</p>
           )}
 
           {verdict.strengths?.length > 0 && (

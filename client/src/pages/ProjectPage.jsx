@@ -23,7 +23,7 @@ import ProjectNotesTab from "../components/ProjectNotesTab";
 import WorkspaceTab from "../components/Workspace/WorkspaceTab";
 
 const STAGE_CONFIG = {
-  new:            { label: "新建",     color: "bg-slate-500/20 text-slate-400 border-slate-500/30" },
+  new:            { label: "新建",     color: "bg-slate-500/20 text-[#4B5A72] border-slate-500/30" },
   reviewed:       { label: "已评估",   color: "bg-blue-500/20 text-blue-400 border-blue-500/30" },
   dd_pending:     { label: "待尽调",   color: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30" },
   dd_in_progress: { label: "尽调中",   color: "bg-orange-500/20 text-orange-400 border-orange-500/30" },
@@ -137,7 +137,7 @@ export default function ProjectPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
+      <div className="min-h-screen bg-[#F6F7FA] flex items-center justify-center">
         <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
       </div>
     );
@@ -145,10 +145,10 @@ export default function ProjectPage() {
 
   if (error) {
     return (
-      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center">
+      <div className="min-h-screen bg-[#F6F7FA] flex flex-col items-center justify-center">
         <AlertCircle className="w-12 h-12 text-red-400 mb-4" />
         <p className="text-red-400 mb-4">{error}</p>
-        <button onClick={() => navigate("/app/history")} className="px-4 py-2 bg-slate-800 rounded-lg">
+        <button onClick={() => navigate("/app/history")} className="px-4 py-2 bg-[#EEF1F7] rounded-lg">
           返回历史记录
         </button>
       </div>
@@ -170,13 +170,13 @@ export default function ProjectPage() {
   ];
 
   return (
-    <div className="min-h-screen bg-slate-950">
+    <div className="min-h-screen bg-[#F6F7FA]">
       {/* Header */}
-      <header className="border-b border-white/10 bg-slate-950/80 backdrop-blur-sm sticky top-0 z-50">
+      <header className="border-b border-[#D8DCE8] bg-[#F6F7FA]/80 backdrop-blur-sm sticky top-0 z-50">
         <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-2 cursor-pointer" onClick={() => navigate("/")}>
             <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-red-500 to-orange-500 flex items-center justify-center">
-              <Gavel className="w-5 h-5 text-white" />
+              <Gavel className="w-5 h-5 text-[#0D2145]" />
             </div>
             <span className="text-lg font-bold">垃圾BP过滤机</span>
           </div>
@@ -184,7 +184,7 @@ export default function ProjectPage() {
             <button
               onClick={handleShare}
               disabled={sharing}
-              className="px-3 py-1.5 text-sm bg-blue-600 hover:bg-blue-500 disabled:bg-slate-700 rounded-lg transition-colors flex items-center gap-1.5"
+              className="px-3 py-1.5 text-sm bg-[#1B4FD8] hover:bg-[#163069] disabled:bg-[#E5E9F4] rounded-lg transition-colors flex items-center gap-1.5"
             >
               {sharing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Share2 className="w-4 h-4" />}
               分享
@@ -193,10 +193,10 @@ export default function ProjectPage() {
               {stageCfg.label}
             </span>
             {displayScore != null && (
-              <span className="px-2.5 py-1 rounded-lg bg-slate-800 text-sm font-bold text-slate-200">
+              <span className="px-2.5 py-1 rounded-lg bg-[#EEF1F7] text-sm font-bold text-[#0F1C36]">
                 {displayScore} 分
                 {project?.adjusted_score != null && project?.total_score != null && project.adjusted_score !== project.total_score && (
-                  <span className="text-xs font-normal text-slate-500 ml-1">（已尽调）</span>
+                  <span className="text-xs font-normal text-[#8E9BB0] ml-1">（已尽调）</span>
                 )}
               </span>
             )}
@@ -210,11 +210,11 @@ export default function ProjectPage() {
           <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-4 flex items-center gap-3">
             <div className="flex-1 min-w-0">
               <p className="text-sm text-blue-400 mb-1">分享链接已生成（3天有效）</p>
-              <p className="text-xs text-slate-400 truncate">{shareLink}</p>
+              <p className="text-xs text-[#4B5A72] truncate">{shareLink}</p>
             </div>
             <button
               onClick={handleCopyLink}
-              className="shrink-0 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 rounded-lg text-sm flex items-center gap-1.5"
+              className="shrink-0 px-3 py-1.5 bg-[#1B4FD8] hover:bg-[#163069] rounded-lg text-sm flex items-center gap-1.5"
             >
               {copied ? <><CheckCircle2 className="w-4 h-4" />已复制</> : <><Copy className="w-4 h-4" />复制</>}
             </button>
@@ -226,7 +226,7 @@ export default function ProjectPage() {
       <div className="max-w-6xl mx-auto px-4 py-4">
         <button
           onClick={() => navigate("/app/history")}
-          className="flex items-center gap-2 text-slate-400 hover:text-white transition-colors mb-4"
+          className="flex items-center gap-2 text-[#4B5A72] hover:text-[#0D2145] transition-colors mb-4"
         >
           <ArrowLeft className="w-4 h-4" />
           返回项目列表
@@ -237,7 +237,7 @@ export default function ProjectPage() {
             <h1 className="text-2xl font-bold">
               {result?.extracted_data?.company_name || project?.title || "BP 项目"}
             </h1>
-            <p className="text-slate-400 text-sm mt-1">
+            <p className="text-[#4B5A72] text-sm mt-1">
               {project?.archive_number && (
                 <span className="font-mono mr-2">{project.archive_number}</span>
               )}
@@ -274,7 +274,7 @@ export default function ProjectPage() {
 
       {/* Tab 导航 */}
       <div className="max-w-6xl mx-auto px-4">
-        <div className="flex gap-1 border-b border-white/10">
+        <div className="flex gap-1 border-b border-[#D8DCE8]">
           {tabs.map(tab => {
             const Icon = tab.icon;
             // 尽调 tab 未开启时，不作为独立 tab，只当按钮
@@ -286,7 +286,7 @@ export default function ProjectPage() {
                 className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors -mb-px ${
                   activeTab === tab.key
                     ? "border-blue-500 text-blue-400"
-                    : "border-transparent text-slate-500 hover:text-slate-300"
+                    : "border-transparent text-[#8E9BB0] hover:text-[#0F1C36]"
                 }`}
               >
                 <Icon className="w-4 h-4" />
@@ -307,7 +307,7 @@ export default function ProjectPage() {
               <div className="p-4 bg-blue-500/10 border border-blue-500/20 rounded-xl">
                 <p className="text-sm text-blue-400">
                   尽调校正后评分：<strong>{rescoreResult.newTotal} 分（{rescoreResult.newGrade}级）</strong>
-                  <span className="ml-2 text-slate-400">
+                  <span className="ml-2 text-[#4B5A72]">
                     原始 {rescoreResult.originalTotal} 分
                     {rescoreResult.delta >= 0 ? ` → +${rescoreResult.delta}` : ` → ${rescoreResult.delta}`}
                   </span>

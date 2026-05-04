@@ -291,23 +291,23 @@ export default function DemoReportPage() {
   const navigate = useNavigate();
 
   return (
-    <div className="min-h-screen bg-slate-950">
+    <div className="min-h-screen bg-[#F6F7FA]">
       {/* Header */}
-      <header className="border-b border-white/10 bg-slate-950/80 backdrop-blur-sm sticky top-0 z-50">
+      <header className="border-b border-[#D8DCE8] bg-[#F6F7FA]/80 backdrop-blur-sm sticky top-0 z-50">
         <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
           <div
             className="flex items-center gap-2 cursor-pointer"
             onClick={() => navigate("/")}
           >
             <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-red-500 to-orange-500 flex items-center justify-center">
-              <Gavel className="w-5 h-5 text-white" />
+              <Gavel className="w-5 h-5 text-[#0D2145]" />
             </div>
             <span className="text-lg font-bold">垃圾BP过滤机</span>
           </div>
 
           <button
             onClick={() => navigate("/login")}
-            className="px-4 py-2 text-sm bg-blue-600 hover:bg-blue-500 rounded-lg transition-colors font-medium"
+            className="px-4 py-2 text-sm bg-[#1B4FD8] hover:bg-[#163069] rounded-lg transition-colors font-medium"
           >
             立即开始分析
           </button>
@@ -323,7 +323,7 @@ export default function DemoReportPage() {
       <div className="max-w-6xl mx-auto px-4 py-4">
         <button
           onClick={() => navigate("/")}
-          className="flex items-center gap-2 text-slate-400 hover:text-white transition-colors"
+          className="flex items-center gap-2 text-[#4B5A72] hover:text-[#0D2145] transition-colors"
         >
           <ArrowLeft className="w-4 h-4" />
           返回首页
@@ -337,7 +337,7 @@ export default function DemoReportPage() {
           <h1 className="text-2xl font-bold mb-2">
             {DEMO_RESULT.extracted_data.company_name}
           </h1>
-          <p className="text-slate-400">
+          <p className="text-[#4B5A72]">
             {DEMO_RESULT.extracted_data.industry} · {DEMO_RESULT.extracted_data.product_name}
           </p>
         </div>

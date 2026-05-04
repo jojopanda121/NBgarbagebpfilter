@@ -3,7 +3,7 @@ import { Save, Loader2, CheckCircle, Tag, Calendar, X } from "lucide-react";
 import api from "../services/api";
 
 const STAGE_CONFIG = {
-  new:           { label: "新建",     color: "bg-slate-500/20 text-slate-400 border-slate-500/30" },
+  new:           { label: "新建",     color: "bg-slate-500/20 text-[#4B5A72] border-slate-500/30" },
   reviewed:      { label: "已评估",   color: "bg-blue-500/20 text-blue-400 border-blue-500/30" },
   dd_pending:    { label: "待尽调",   color: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30" },
   dd_in_progress:{ label: "尽调中",   color: "bg-orange-500/20 text-orange-400 border-orange-500/30" },
@@ -60,8 +60,8 @@ export default function ProjectNotesTab({ taskId, initialNotes = "", initialTags
   return (
     <div className="space-y-5">
       {/* 投资阶段 */}
-      <div className="bg-slate-900 border border-white/10 rounded-xl p-4">
-        <p className="text-sm font-medium text-slate-300 mb-3">投资流程阶段</p>
+      <div className="bg-white border border-[#D8DCE8] rounded-xl p-4">
+        <p className="text-sm font-medium text-[#0F1C36] mb-3">投资流程阶段</p>
         <div className="flex flex-wrap gap-2">
           {STAGE_ORDER.map(s => {
             const cfg = STAGE_CONFIG[s];
@@ -72,7 +72,7 @@ export default function ProjectNotesTab({ taskId, initialNotes = "", initialTags
                 className={`px-3 py-1.5 rounded-lg border text-sm font-medium transition-all ${
                   stage === s
                     ? `${cfg.color} ring-1 ring-current/50`
-                    : "border-white/10 bg-slate-800 text-slate-500 hover:border-white/20"
+                    : "border-[#D8DCE8] bg-[#EEF1F7] text-[#8E9BB0] hover:border-[#BFC5D6]"
                 }`}
               >
                 {cfg.label}
@@ -83,8 +83,8 @@ export default function ProjectNotesTab({ taskId, initialNotes = "", initialTags
       </div>
 
       {/* 标签 */}
-      <div className="bg-slate-900 border border-white/10 rounded-xl p-4">
-        <p className="text-sm font-medium text-slate-300 mb-3 flex items-center gap-1.5">
+      <div className="bg-white border border-[#D8DCE8] rounded-xl p-4">
+        <p className="text-sm font-medium text-[#0F1C36] mb-3 flex items-center gap-1.5">
           <Tag className="w-4 h-4" />
           项目标签
         </p>
@@ -110,7 +110,7 @@ export default function ProjectNotesTab({ taskId, initialNotes = "", initialTags
             <button
               key={t}
               onClick={() => addTag(t)}
-              className="px-2.5 py-1 rounded-full text-xs bg-slate-800 text-slate-400 hover:bg-slate-700 border border-white/5 transition-colors"
+              className="px-2.5 py-1 rounded-full text-xs bg-[#EEF1F7] text-[#4B5A72] hover:bg-[#E5E9F4] border border-[#EEF1F7] transition-colors"
             >
               + {t}
             </button>
@@ -124,12 +124,12 @@ export default function ProjectNotesTab({ taskId, initialNotes = "", initialTags
             onChange={e => setTagInput(e.target.value)}
             onKeyDown={e => e.key === "Enter" && addTag(tagInput)}
             placeholder="输入自定义标签，回车添加"
-            className="flex-1 px-3 py-1.5 bg-slate-800 border border-white/10 rounded-lg text-sm text-slate-300 placeholder-slate-600 focus:outline-none focus:border-blue-500"
+            className="flex-1 px-3 py-1.5 bg-[#EEF1F7] border border-[#D8DCE8] rounded-lg text-sm text-[#0F1C36] placeholder:text-[#8E9BB0] focus:outline-none focus:border-blue-500"
           />
           <button
             onClick={() => addTag(tagInput)}
             disabled={!tagInput.trim()}
-            className="px-3 py-1.5 text-sm bg-slate-700 hover:bg-slate-600 disabled:opacity-40 rounded-lg transition-colors"
+            className="px-3 py-1.5 text-sm bg-[#E5E9F4] hover:bg-slate-600 disabled:opacity-40 rounded-lg transition-colors"
           >
             添加
           </button>
@@ -137,8 +137,8 @@ export default function ProjectNotesTab({ taskId, initialNotes = "", initialTags
       </div>
 
       {/* 下次跟进日期 */}
-      <div className="bg-slate-900 border border-white/10 rounded-xl p-4">
-        <p className="text-sm font-medium text-slate-300 mb-3 flex items-center gap-1.5">
+      <div className="bg-white border border-[#D8DCE8] rounded-xl p-4">
+        <p className="text-sm font-medium text-[#0F1C36] mb-3 flex items-center gap-1.5">
           <Calendar className="w-4 h-4" />
           下次跟进日期
         </p>
@@ -146,12 +146,12 @@ export default function ProjectNotesTab({ taskId, initialNotes = "", initialTags
           type="date"
           value={followupDate}
           onChange={e => setFollowupDate(e.target.value)}
-          className="px-3 py-2 bg-slate-800 border border-white/10 rounded-lg text-sm text-slate-300 focus:outline-none focus:border-blue-500"
+          className="px-3 py-2 bg-[#EEF1F7] border border-[#D8DCE8] rounded-lg text-sm text-[#0F1C36] focus:outline-none focus:border-blue-500"
         />
         {followupDate && (
           <button
             onClick={() => setFollowupDate("")}
-            className="ml-2 text-sm text-slate-500 hover:text-slate-300"
+            className="ml-2 text-sm text-[#8E9BB0] hover:text-[#0F1C36]"
           >
             清除
           </button>
@@ -159,14 +159,14 @@ export default function ProjectNotesTab({ taskId, initialNotes = "", initialTags
       </div>
 
       {/* 项目备注 */}
-      <div className="bg-slate-900 border border-white/10 rounded-xl p-4">
-        <p className="text-sm font-medium text-slate-300 mb-3">项目备注</p>
+      <div className="bg-white border border-[#D8DCE8] rounded-xl p-4">
+        <p className="text-sm font-medium text-[#0F1C36] mb-3">项目备注</p>
         <textarea
           value={notes}
           onChange={e => setNotes(e.target.value)}
           placeholder="记录你对这个项目的主观判断、关注点、下一步计划等...（支持 Markdown）"
           rows={8}
-          className="w-full px-3 py-2.5 bg-slate-800 border border-white/10 rounded-lg text-sm text-slate-300 placeholder-slate-600 focus:outline-none focus:border-blue-500 resize-y leading-relaxed"
+          className="w-full px-3 py-2.5 bg-[#EEF1F7] border border-[#D8DCE8] rounded-lg text-sm text-[#0F1C36] placeholder:text-[#8E9BB0] focus:outline-none focus:border-blue-500 resize-y leading-relaxed"
         />
       </div>
 
@@ -174,7 +174,7 @@ export default function ProjectNotesTab({ taskId, initialNotes = "", initialTags
       <button
         onClick={handleSave}
         disabled={saving}
-        className="w-full py-2.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 rounded-xl font-medium transition-colors flex items-center justify-center gap-2"
+        className="w-full py-2.5 bg-[#1B4FD8] hover:bg-[#163069] disabled:opacity-50 rounded-xl font-medium transition-colors flex items-center justify-center gap-2"
       >
         {saving
           ? <Loader2 className="w-4 h-4 animate-spin" />

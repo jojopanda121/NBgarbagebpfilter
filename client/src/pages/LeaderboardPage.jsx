@@ -5,16 +5,16 @@ import api from "../services/api";
 const RANK_ICONS = [Crown, Medal, Medal];
 const RANK_COLORS = [
   "text-yellow-400",
-  "text-slate-300",
+  "text-[#0F1C36]",
   "text-amber-600",
-  "text-slate-400",
-  "text-slate-500",
+  "text-[#4B5A72]",
+  "text-[#8E9BB0]",
 ];
 
 function RankBadge({ rank }) {
   const Icon = RANK_ICONS[rank - 1] || null;
   return (
-    <div className={`w-8 h-8 flex items-center justify-center font-bold text-lg ${RANK_COLORS[rank - 1] || "text-slate-500"}`}>
+    <div className={`w-8 h-8 flex items-center justify-center font-bold text-lg ${RANK_COLORS[rank - 1] || "text-[#8E9BB0]"}`}>
       {Icon ? <Icon className="w-5 h-5" /> : rank}
     </div>
   );
@@ -48,7 +48,7 @@ export default function LeaderboardPage() {
               className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors border ${
                 period === p
                   ? "bg-blue-500/20 text-blue-400 border-blue-500/40"
-                  : "bg-slate-800 text-slate-400 border-white/10 hover:border-slate-500"
+                  : "bg-[#EEF1F7] text-[#4B5A72] border-[#D8DCE8] hover:border-[#BFC5D6]"
               }`}
             >
               {p === "weekly" ? "周榜" : "月榜"}
@@ -64,7 +64,7 @@ export default function LeaderboardPage() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {/* 分析数量榜 */}
-          <div className="bg-slate-900/50 border border-white/10 rounded-xl p-6">
+          <div className="bg-white border border-[#D8DCE8] rounded-xl p-6">
             <div className="flex items-center gap-2 mb-5">
               <FileText className="w-5 h-5 text-blue-400" />
               <h2 className="text-lg font-semibold">分析 BP 最多</h2>
@@ -75,7 +75,7 @@ export default function LeaderboardPage() {
                   <div
                     key={item.rank}
                     className={`flex items-center gap-3 p-3 rounded-lg ${
-                      item.rank === 1 ? "bg-yellow-500/10 border border-yellow-500/20" : "bg-slate-800/50"
+                      item.rank === 1 ? "bg-yellow-500/10 border border-yellow-500/20" : "bg-[#EEF1F7]"
                     }`}
                   >
                     <RankBadge rank={item.rank} />
@@ -84,18 +84,18 @@ export default function LeaderboardPage() {
                     </div>
                     <div className="text-right shrink-0">
                       <span className="text-lg font-bold text-blue-400">{item.count}</span>
-                      <span className="text-xs text-slate-500 ml-1">个BP</span>
+                      <span className="text-xs text-[#8E9BB0] ml-1">个BP</span>
                     </div>
                   </div>
                 ))}
               </div>
             ) : (
-              <p className="text-center text-slate-500 py-8">暂无数据</p>
+              <p className="text-center text-[#8E9BB0] py-8">暂无数据</p>
             )}
           </div>
 
           {/* 最高分数榜 */}
-          <div className="bg-slate-900/50 border border-white/10 rounded-xl p-6">
+          <div className="bg-white border border-[#D8DCE8] rounded-xl p-6">
             <div className="flex items-center gap-2 mb-5">
               <TrendingUp className="w-5 h-5 text-emerald-400" />
               <h2 className="text-lg font-semibold">最高分数</h2>
@@ -106,7 +106,7 @@ export default function LeaderboardPage() {
                   <div
                     key={item.rank}
                     className={`flex items-center gap-3 p-3 rounded-lg ${
-                      item.rank === 1 ? "bg-emerald-500/10 border border-emerald-500/20" : "bg-slate-800/50"
+                      item.rank === 1 ? "bg-emerald-500/10 border border-emerald-500/20" : "bg-[#EEF1F7]"
                     }`}
                   >
                     <RankBadge rank={item.rank} />
@@ -115,19 +115,19 @@ export default function LeaderboardPage() {
                     </div>
                     <div className="text-right shrink-0">
                       <span className="text-lg font-bold text-emerald-400">{item.max_score}</span>
-                      <span className="text-xs text-slate-500 ml-1">分</span>
+                      <span className="text-xs text-[#8E9BB0] ml-1">分</span>
                     </div>
                   </div>
                 ))}
               </div>
             ) : (
-              <p className="text-center text-slate-500 py-8">暂无数据</p>
+              <p className="text-center text-[#8E9BB0] py-8">暂无数据</p>
             )}
           </div>
         </div>
       )}
 
-      <p className="text-center text-xs text-slate-600 mt-6">
+      <p className="text-center text-xs text-[#8E9BB0] mt-6">
         {period === "weekly" ? "周榜每周一更新" : "月榜每月1号更新"} · 仅显示前5名 · 不泄露项目信息
       </p>
     </div>

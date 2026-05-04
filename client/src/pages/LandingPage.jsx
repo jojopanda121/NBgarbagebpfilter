@@ -1,650 +1,672 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import { motion, useInView } from "framer-motion";
-import Particles, { initParticlesEngine } from "@tsparticles/react";
-import { loadSlim } from "@tsparticles/slim";
-import {
-  Zap,
-  Shield,
-  BarChart3,
-  Users,
-  TrendingUp,
-  Target,
-  Brain,
-  Lock,
-  ChevronRight,
-  Check,
-  ArrowRight,
-  Database,
-  Sparkles,
-  Eye,
-  AlertTriangle,
-  TrendingDown,
-} from "lucide-react";
 
-// 10维评分体系数据 - 强调AI大模型能力
-const scoringDimensions = [
-  { icon: Brain, title: "大模型智能分析", desc: "基于千亿参数大模型深度理解BP内容，提取关键信息" },
-  { icon: BarChart3, title: "市场规模评估", desc: "TAM/SAM/SOM 精准分析，AI 识别市场数据真实性" },
-  { icon: Users, title: "团队实力评估", desc: "大模型分析创始人背景、团队配置与股权结构" },
-  { icon: TrendingUp, title: "商业模式诊断", desc: "AI 深度理解盈利模型，评估商业逻辑完整性" },
-  { icon: Target, title: "竞争格局分析", desc: "全网数据检索，大模型对比竞争格局与护城河" },
-  { icon: Zap, title: "增长潜力预测", desc: "AI 基于行业数据预测项目增长空间与扩张策略" },
-  { icon: Shield, title: "合规风险扫描", desc: "大模型识别法律监管、知识产权与政策风险" },
-  { icon: Lock, title: "数据安全审查", desc: "AI 评估数据隐私保护与安全合规水平" },
-  { icon: Database, title: "财务健康诊断", desc: "智能分析财务数据，识别潜在财务风险" },
-  { icon: Eye, title: "反Type I错误", desc: "AI 多维度交叉验证，最大程度规避低质量项目" },
-];
+/**
+ * LandingPage — PitchBook 风格亮色金融主题
+ * 设计 by Claude Design (claude.ai/design)
+ *
+ * 核心元素：
+ *  - 暖白底 + 深海军蓝 + 宝蓝品牌色
+ *  - 衬线体（Noto Serif SC）标题 + 等宽（JetBrains Mono）数据
+ *  - Hero 右侧产品面板 mockup（macOS 窗口 chrome + 5维 + 声明核查 + Pipeline）
+ *  - 动态神经网络背景（canvas）
+ *  - Logo E（神经网络 + 过滤条 + 金色中心节点）
+ */
 
-// 核心优势数据
-const advantages = [
-  { icon: Sparkles, title: "千亿参数大模型", desc: "基于顶级大模型，理解能力接近人类投资专家" },
-  { icon: AlertTriangle, title: "反Type I错误", desc: "多维度交叉验证，最大程度规避低质量项目" },
-  { icon: Eye, title: "深度理解力", desc: "不只是关键词匹配，大模型真正理解BP的逻辑与潜力" },
-  { icon: TrendingDown, title: "风险精准识别", desc: "AI 精准识别BP中的夸大表述与潜在风险点" },
-];
+const LogoE = ({ size = 32, rounded = 6 }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 40 40"
+    fill="none"
+    xmlns="http://www.w3.org/2000/svg"
+  >
+    <rect width="40" height="40" rx={rounded} fill="#1B4FD8" />
+    <circle cx="10" cy="10" r="4.5" fill="white" opacity="0.2" />
+    <circle cx="30" cy="10" r="4.5" fill="white" opacity="0.2" />
+    <circle cx="10" cy="30" r="4.5" fill="white" opacity="0.2" />
+    <circle cx="30" cy="30" r="4.5" fill="white" opacity="0.2" />
+    <line x1="10" y1="10" x2="20" y2="20" stroke="white" strokeWidth="1.4" opacity="0.28" />
+    <line x1="30" y1="10" x2="20" y2="20" stroke="white" strokeWidth="1.4" opacity="0.28" />
+    <line x1="10" y1="30" x2="20" y2="20" stroke="white" strokeWidth="1.4" opacity="0.28" />
+    <line x1="30" y1="30" x2="20" y2="20" stroke="white" strokeWidth="1.4" opacity="0.28" />
+    <rect x="5" y="6.5" width="30" height="3.5" rx="1.75" fill="white" opacity="0.88" />
+    <rect x="8" y="18" width="24" height="3.5" rx="1.75" fill="white" opacity="0.88" />
+    <rect x="12" y="29.5" width="16" height="3.5" rx="1.75" fill="white" opacity="0.88" />
+    <circle cx="20" cy="20" r="3" fill="#C9A84C" />
+  </svg>
+);
 
-// 使用流程数据 - 强调注册
-const workflow = [
-  { step: 1, title: "注册/登录", desc: "创建账号，开启您的智能尽职调查之旅" },
-  { step: 2, title: "上传商业计划书", desc: "上传 PDF/DOCX 格式的BP，系统自动解析" },
-  { step: 3, title: "获取AI分析报告", desc: "10维深度评估 + 风险提示 + 投资建议" },
-];
-
-// 统计数据
-const stats = [
-  { value: "50,000+", label: "已分析BP" },
-  { value: "100,000+", label: "节省小时数" },
-  { value: "90%", label: "噪声过滤率" },
-];
-
-function FadeIn({ children, delay = 0, className = "" }) {
+// ── 动态神经网络背景 canvas ─────────────────────────
+function BgCanvas() {
   const ref = useRef(null);
-  const isInView = useInView(ref, { once: true, margin: "-100px" });
-
-  return (
-    <motion.div
-      ref={ref}
-      initial={{ opacity: 0, y: 30 }}
-      animate={isInView ? { opacity: 1, y: 0 } : { opacity: 0, y: 30 }}
-      transition={{ duration: 0.6, delay, ease: "easeOut" }}
-      className={className}
-    >
-      {children}
-    </motion.div>
-  );
-}
-
-// 导航栏组件
-function GlassHeader({ onNavigate }) {
-  const [scrolled, setScrolled] = useState(false);
-
   useEffect(() => {
-    const handleScroll = () => {
-      setScrolled(window.scrollY > 50);
+    const canvas = ref.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    let W, H, nodes, animId;
+    const NAVY = "13,33,69";
+    const BLUE = "27,79,216";
+
+    const resize = () => {
+      W = canvas.width = window.innerWidth;
+      H = canvas.height = window.innerHeight;
     };
-    window.addEventListener("scroll", handleScroll);
-    return () => window.removeEventListener("scroll", handleScroll);
+    const makeNodes = (n) =>
+      Array.from({ length: n }, () => ({
+        x: Math.random() * W,
+        y: Math.random() * H,
+        vx: (Math.random() - 0.5) * 0.35,
+        vy: (Math.random() - 0.5) * 0.35,
+        r: Math.random() * 1.8 + 0.6,
+        pulse: Math.random() * Math.PI * 2,
+      }));
+
+    const draw = (t) => {
+      ctx.clearRect(0, 0, W, H);
+
+      const grad = ctx.createRadialGradient(W * 0.72, H * 0.18, 0, W * 0.72, H * 0.18, W * 0.55);
+      grad.addColorStop(0, `rgba(${BLUE},0.055)`);
+      grad.addColorStop(1, `rgba(${BLUE},0)`);
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, W, H);
+
+      const grad2 = ctx.createRadialGradient(W * 0.1, H * 0.75, 0, W * 0.1, H * 0.75, W * 0.4);
+      grad2.addColorStop(0, `rgba(${NAVY},0.04)`);
+      grad2.addColorStop(1, `rgba(${NAVY},0)`);
+      ctx.fillStyle = grad2;
+      ctx.fillRect(0, 0, W, H);
+
+      nodes.forEach((nd) => {
+        nd.x += nd.vx;
+        nd.y += nd.vy;
+        nd.pulse += 0.012;
+        if (nd.x < 0 || nd.x > W) nd.vx *= -1;
+        if (nd.y < 0 || nd.y > H) nd.vy *= -1;
+      });
+
+      const LINK = Math.min(W, H) * 0.14;
+      for (let i = 0; i < nodes.length; i++) {
+        for (let j = i + 1; j < nodes.length; j++) {
+          const dx = nodes[i].x - nodes[j].x;
+          const dy = nodes[i].y - nodes[j].y;
+          const d = Math.sqrt(dx * dx + dy * dy);
+          if (d < LINK) {
+            const a = (1 - d / LINK) * 0.1;
+            ctx.beginPath();
+            ctx.moveTo(nodes[i].x, nodes[i].y);
+            ctx.lineTo(nodes[j].x, nodes[j].y);
+            ctx.strokeStyle = `rgba(${BLUE},${a})`;
+            ctx.lineWidth = 0.8;
+            ctx.stroke();
+          }
+        }
+      }
+      nodes.forEach((nd) => {
+        const p = Math.sin(nd.pulse) * 0.3 + 0.7;
+        ctx.beginPath();
+        ctx.arc(nd.x, nd.y, nd.r * p, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(${BLUE},${0.18 * p})`;
+        ctx.fill();
+      });
+
+      // 扫描线
+      const lineCount = 6;
+      for (let i = 0; i < lineCount; i++) {
+        const y = ((t * 0.018 + i / lineCount) % 1) * H;
+        const lg = ctx.createLinearGradient(0, y, W, y);
+        lg.addColorStop(0, `rgba(${BLUE},0)`);
+        lg.addColorStop(0.5, `rgba(${BLUE},0.028)`);
+        lg.addColorStop(1, `rgba(${BLUE},0)`);
+        ctx.fillStyle = lg;
+        ctx.fillRect(0, y, W, 1.5);
+      }
+
+      animId = requestAnimationFrame(draw);
+    };
+
+    resize();
+    nodes = makeNodes(55);
+    animId = requestAnimationFrame(draw);
+    const onResize = () => {
+      resize();
+      nodes = makeNodes(55);
+    };
+    window.addEventListener("resize", onResize);
+    return () => {
+      cancelAnimationFrame(animId);
+      window.removeEventListener("resize", onResize);
+    };
   }, []);
 
   return (
-    <header
-      className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${
-        scrolled
-          ? "bg-slate-950/80 backdrop-blur-md border-b border-white/10"
-          : "bg-transparent"
-      }`}
-    >
-      <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center">
-            <Brain className="w-6 h-6 text-white" />
-          </div>
-          <span className="text-xl font-bold text-white tracking-tight">BP过滤机</span>
+    <canvas
+      ref={ref}
+      className="fixed inset-0 z-0 pointer-events-none"
+      aria-hidden="true"
+    />
+  );
+}
+
+// ── 滚动揭示动画 hook ─────────────────────────
+function useReveal() {
+  useEffect(() => {
+    const els = document.querySelectorAll(".lp-reveal");
+    const io = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((e) => {
+          if (e.isIntersecting) {
+            e.target.classList.add("is-visible");
+            io.unobserve(e.target);
+          }
+        });
+      },
+      { threshold: 0.08 }
+    );
+    els.forEach((el) => io.observe(el));
+    return () => io.disconnect();
+  }, []);
+}
+
+// ── Section 内容数据 ─────────────────────────
+const FEATURES = [
+  { num: "01", title: "5维量化评分模型", desc: "告别「拍脑袋打分」。AI 输出严谨枚举值与绝对数值，JS 端执行纯数学计算，每维度有独立公式与业务逻辑，结果完全可追溯。", emHigh: ["严谨枚举值与绝对数值"] },
+  { num: "02", title: "声明逐条核查", desc: "针对 BP 中每条关键声明，AI 扮演行业专家 + 投资专家进行辩证研究，输出「诚实 / 存疑 / 夸大 / 证伪」结论，直接反映 BP 诚信度评分。", emHigh: ["行业专家 + 投资专家"] },
+  { num: "03", title: "尽调问卷（DD）", desc: "一键启动 AI 生成定制化尽调问卷，完成后自动重新评分，体现尽调信息对综合判断的校正。Pipeline 状态同步更新。", emHigh: ["AI 生成定制化尽调问卷"] },
+  { num: "04", title: "多 Agent 工作区", desc: "每个项目有独立工作区，支持与多个专业 Agent 对话——市场分析、财务模型、竞品研究、风险评估，随时调出深度分析。", emHigh: ["多个专业 Agent 对话"] },
+  { num: "05", title: "投资备忘录生成", desc: "一键输出符合机构投委会标准的结构化投资备忘录（IMemo），包含项目摘要、风险矩阵、尽调结论，可直接归档或分享。", emHigh: ["机构投委会标准"] },
+  { num: "06", title: "Pipeline 投资流程管理", desc: "从 新建 → 评估 → 尽调 → 决策 → 投资/否决，完整的项目生命周期管理。支持标签、跟进日期提醒、省份地图分布可视化。", emHigh: ["新建 → 评估 → 尽调 → 决策 → 投资/否决"] },
+];
+
+const DIM5 = [
+  { wt: "维度一", name: "时机与天花板", sub: "AI 主动检索细分赛道的真实市场规模与增速，不采信 BP 自称数据，给出独立判断。", formula: "市场规模 · 行业增速\n赛道成熟度" },
+  { wt: "维度二", name: "产品与壁垒", sub: "交叉比对行业真实竞品，客观评估技术成熟度与差异化壁垒深度。", formula: "技术就绪度 · 竞品排名\n护城河强度" },
+  { wt: "维度三", name: "资本效率与规模效应", sub: "基于顶级 VC 研究框架评估赛道商业属性，早期项目同样适用。", formula: "轻重资产结构 · 边际成本\n网络效应潜力" },
+  { wt: "维度四", name: "团队基因", sub: "多因子综合评估创始团队，经验深度、行业匹配度、团队完整性缺一不可。", formula: "行业经验 · 赛道匹配\n过往战绩 · 团队结构" },
+  { wt: "维度五", name: "BP 诚信度", sub: "AI 逐条核查 BP 中的关键声明，识别夸大、包装与事实性错误，量化可信程度。", formula: "声明核查 · 数据溯源\n一致性验证" },
+];
+
+const PIPELINE = [
+  { n: "01", l: "新建", d: "BP 上传完成，自动创建项目", done: true },
+  { n: "02", l: "已评估", d: "查阅报告后自动标记", done: true },
+  { n: "03", l: "待尽调", d: "标记值得深入的项目", done: true },
+  { n: "04", l: "尽调中", d: "AI 生成问卷，逐条填写", done: false },
+  { n: "05", l: "尽调完成", d: "评分自动校正，IMemo 生成", done: false },
+  { n: "06", l: "已决策", d: "投委会审议结论记录", done: false },
+  { n: "07", l: "已投资 / 已否决", d: "归档，供日后复盘参考", done: false },
+];
+
+const WORKFLOW = [
+  { n: "01", t: "注册 · 上传 BP", d: "支持 PDF/DOCX，绑定邮箱后即可上传。支持文字版与扫描版 PDF，最大提取 30,000 字符。" },
+  { n: "02", t: "AI 深度解析", d: "顶级大模型扮演行业专家 + 投资专家，逐条核查声明真实性，输出 5 维度量化数据，3 分钟完成。支持多模型选择。" },
+  { n: "03", t: "获取评分报告", d: "查看量化评分、声明核查结果、评级（A/B/C/D）与行动建议。可一键启动尽调问卷深入评估。" },
+  { n: "04", t: "Pipeline 跟进", d: "项目自动进入 Pipeline，生成 IMemo，标注阶段与标签，设置跟进日期，与团队分享报告。" },
+];
+
+const GRADES = [
+  { g: "A", cls: "bg-[#F0FDF4] text-[#15803D]", range: "≥ 85", verdict: "强烈推荐 Fast Track", vc: "text-[#15803D]", action: "24小时内约见创始人，立即启动尽调" },
+  { g: "B", cls: "bg-[rgba(27,79,216,0.08)] text-[#1B4FD8]", range: "70–84", verdict: "谨慎推荐 Proceed DD", vc: "text-[#1B4FD8]", action: "安排面谈，验证单位经济模型" },
+  { g: "C", cls: "bg-[#FFFBEB] text-[#B45309]", range: "60–69", verdict: "观望跟踪 Keep In View", vc: "text-[#B45309]", action: "季度跟踪，关注关键里程碑达成" },
+  { g: "D", cls: "bg-[#FEF2F2] text-[#B91C1C]", range: "< 60", verdict: "建议放弃 Reject", vc: "text-[#B91C1C]", action: "归档并标注否决原因，供投委会复盘" },
+];
+
+// ── Main page ─────────────────────────
+export default function LandingPage() {
+  const navigate = useNavigate();
+  useReveal();
+
+  const goSignup = () => navigate("/login");
+  const goDemo = () => navigate("/demo");
+
+  return (
+    <div className="bg-[#F6F7FA] text-[#0F1C36]" style={{ fontFamily: "var(--sans)" }}>
+      <BgCanvas />
+
+      {/* ── NAV ── */}
+      <nav className="fixed top-0 inset-x-0 z-50 h-[60px] flex items-center px-6 md:px-12 bg-[#F6F7FA]/95 backdrop-blur-md border-b border-[#D8DCE8]">
+        <button
+          type="button"
+          onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+          className="flex items-center gap-2.5 shrink-0 bg-transparent border-0 cursor-pointer p-0"
+        >
+          <LogoE size={32} />
+          <span className="font-serif-cn font-bold text-[15px] tracking-wide text-[#0D2145]">BP过滤机</span>
+        </button>
+        <div className="flex-1 hidden md:flex justify-center gap-9">
+          {[
+            ["核心功能", "#features"],
+            ["评分体系", "#dimensions"],
+            ["投资流程", "#pipeline"],
+            ["定价", "#pricing"],
+          ].map(([t, h]) => (
+            <a key={h} href={h} className="text-[13.5px] text-[#4B5A72] hover:text-[#0D2145] transition-colors">{t}</a>
+          ))}
         </div>
-
-        <nav className="hidden md:flex items-center gap-8">
-          <a href="#features" className="text-slate-300 hover:text-white transition-colors text-sm font-medium">核心能力</a>
-          <a href="#advantages" className="text-slate-300 hover:text-white transition-colors text-sm font-medium">独特优势</a>
-          <a href="#workflow" className="text-slate-300 hover:text-white transition-colors text-sm font-medium">使用流程</a>
-          <a href="#pricing" className="text-slate-300 hover:text-white transition-colors text-sm font-medium">服务方案</a>
-        </nav>
-
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => onNavigate("/login")}
-            className="px-4 py-2 text-slate-300 hover:text-white text-sm font-medium transition-colors"
-          >
-            登录
-          </button>
-          <button
-            onClick={() => onNavigate("/login")}
-            className="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold rounded-lg transition-all hover:shadow-lg hover:shadow-blue-500/25"
-          >
+        <div className="ml-auto flex items-center gap-3 shrink-0">
+          <button onClick={goSignup} className="text-[13.5px] text-[#4B5A72] hover:text-[#0D2145] py-1.5">登录</button>
+          <button onClick={goSignup} className="text-[13px] font-semibold text-white bg-[#1B4FD8] hover:bg-[#163069] px-5 py-2.5 rounded-[3px] transition-colors">
             免费注册
           </button>
         </div>
-      </div>
-    </header>
-  );
-}
+      </nav>
 
-// 动态背景组件
-function ParticleBackground() {
-  const [init, setInit] = useState(false);
+      {/* ── HERO ── */}
+      <section className="relative z-10 min-h-screen flex items-center px-6 md:px-12 pt-[100px] pb-[72px] overflow-hidden">
+        <div className="absolute -top-[100px] -right-[60px] w-[700px] h-[700px] pointer-events-none"
+             style={{ background: "radial-gradient(ellipse, rgba(27,79,216,.09) 0%, transparent 65%)" }} />
+        <div className="absolute -bottom-[80px] -left-[80px] w-[400px] h-[400px] pointer-events-none"
+             style={{ background: "radial-gradient(ellipse, rgba(13,33,69,.05) 0%, transparent 65%)" }} />
 
-  useEffect(() => {
-    initParticlesEngine(async (engine) => {
-      await loadSlim(engine);
-    }).then(() => {
-      setInit(true);
-    });
-  }, []);
-
-  return (
-    init && (
-      <Particles
-        id="tsparticles"
-        className="absolute inset-0"
-        options={{
-          background: { color: { value: "transparent" } },
-          fpsLimit: 120,
-          interactivity: {
-            events: {
-              onHover: { enable: true, mode: "grab" },
-              onClick: { enable: true, mode: "push" },
-            },
-            modes: {
-              grab: { distance: 140, links: { opacity: 0.5 } },
-              push: { quantity: 4 },
-            },
-          },
-          particles: {
-            color: { value: "#3B82F6" },
-            links: {
-              color: "#3B82F6",
-              distance: 150,
-              enable: true,
-              opacity: 0.2,
-              width: 1,
-            },
-            move: {
-              direction: "none",
-              enable: true,
-              outModes: { default: "bounce" },
-              random: false,
-              speed: 1,
-              straight: false,
-            },
-            number: { density: { enable: true, area: 800 }, value: 60 },
-            opacity: { value: 0.3 },
-            shape: { type: "circle" },
-            size: { value: { min: 1, max: 3 } },
-          },
-          detectRetina: true,
-        }}
-      />
-    )
-  );
-}
-
-// Hero 区域 - 强调注册登录
-function HeroSection({ onNavigate }) {
-  return (
-    <section className="relative min-h-screen flex items-center justify-center overflow-hidden bg-slate-950">
-      {/* 动态背景 */}
-      <div className="absolute inset-0">
-        <div className="absolute inset-0 bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950" />
-        <ParticleBackground />
-        {/* 渐变叠加 */}
-        <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-transparent to-transparent" />
-      </div>
-
-      <div className="relative z-10 max-w-6xl mx-auto px-6 py-32 text-center">
-        <FadeIn>
-          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400 text-sm mb-8">
-            <Sparkles className="w-4 h-4" />
-            <span>AI 大模型驱动的智能尽职调查</span>
-          </div>
-        </FadeIn>
-
-        {/* 名言引用 */}
-        <FadeIn delay={0.05}>
-          <blockquote className="max-w-3xl mx-auto mb-10">
-            <p className="text-2xl md:text-3xl font-serif text-white/90 leading-relaxed italic">
-              "伟大的投资不在于做对了多少极其困难的事，
-              <br className="hidden md:block" />
-              而在于避开了多少显而易见的愚蠢。"
+        <div className="max-w-[1280px] mx-auto w-full grid lg:grid-cols-2 gap-12 lg:gap-20 items-center">
+          <div>
+            <div className="inline-flex items-center gap-2 lp-fade font-mono-fin text-[11px] tracking-[.13em] text-[#1B4FD8] uppercase bg-[rgba(27,79,216,.07)] border border-[rgba(27,79,216,.2)] px-3 py-1 rounded-[2px] mb-5"
+                 style={{ animationDelay: ".1s" }}>
+              The AI Workspace for VC &amp; PE
+            </div>
+            <h1 className="font-serif-cn text-[clamp(40px,4.5vw,66px)] font-bold leading-[1.1] tracking-tight text-[#0D2145] mb-4 lp-fade"
+                style={{ animationDelay: ".2s" }}>
+              让每一个投资判断<br />
+              <em className="not-italic text-[#1B4FD8]">有据可依</em>
+            </h1>
+            <p className="text-[16px] text-[#4B5A72] leading-[1.75] max-w-[480px] mb-8 lp-fade"
+               style={{ animationDelay: ".3s" }}>
+              专为一级市场投资人打造的智能工作台。独创量化评分体系精准评估每份 BP，AI 逐条击破虚假陈述，多 Agent 协同覆盖分析、尽调、投资备忘录全链路。<br />
+              <strong className="text-[#0D2145] font-semibold">把繁琐留给 AI，把判断留给自己。</strong>
             </p>
-          </blockquote>
-        </FadeIn>
-
-        <FadeIn delay={0.1}>
-          <h1 className="text-5xl md:text-7xl font-bold text-white mb-6 tracking-tight leading-tight">
-            不再错过
-            <br />
-            <span className="bg-gradient-to-r from-blue-400 via-indigo-400 to-purple-400 bg-clip-text text-transparent">
-              任何优质项目
-            </span>
-          </h1>
-        </FadeIn>
-
-        <FadeIn delay={0.2}>
-          <p className="text-xl text-slate-400 mb-6 max-w-2xl mx-auto leading-relaxed">
-            基于千亿参数大模型，深度理解商业计划书内容
-            <br />
-            <span className="text-slate-500">10维全面评估，最大程度规避低质量项目</span>
-          </p>
-        </FadeIn>
-
-        <FadeIn delay={0.3}>
-          <p className="text-lg text-blue-400 mb-10 font-medium">
-            点击下方注册账号，免费体验AI智能分析
-          </p>
-        </FadeIn>
-
-        <FadeIn delay={0.4}>
-          <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-12">
-            <button
-              onClick={() => onNavigate("/login")}
-              className="px-8 py-4 bg-blue-600 hover:bg-blue-500 text-white font-semibold rounded-lg transition-all hover:shadow-lg hover:shadow-blue-500/25 flex items-center gap-2"
-            >
-              免费注册
-              <ArrowRight className="w-5 h-5" />
-            </button>
-            <button
-              onClick={() => onNavigate("/login")}
-              className="px-8 py-4 bg-slate-800 hover:bg-slate-700 text-white font-semibold rounded-lg transition-all border border-white/10"
-            >
-              已有账号登录
-            </button>
-          </div>
-        </FadeIn>
-
-        <FadeIn delay={0.5}>
-          <div className="flex flex-wrap items-center justify-center gap-6 text-slate-500">
-            <div className="flex items-center gap-2">
-              <Check className="w-4 h-4 text-emerald-500" />
-              <span className="text-sm">千亿参数大模型</span>
+            <div className="flex flex-wrap gap-3 items-center mb-9 lp-fade" style={{ animationDelay: ".4s" }}>
+              <button onClick={goSignup} className="text-[14px] font-semibold text-white bg-[#1B4FD8] hover:bg-[#163069] px-7 py-3 rounded-[3px] transition-colors">
+                免费开始使用 →
+              </button>
+              <button onClick={goDemo} className="text-[14px] font-medium text-[#0D2145] bg-transparent border-[1.5px] border-[#0D2145] hover:bg-[#0D2145] hover:text-white px-7 py-3 rounded-[3px] transition-all">
+                查看演示报告
+              </button>
             </div>
-            <div className="flex items-center gap-2">
-              <Check className="w-4 h-4 text-emerald-500" />
-              <span className="text-sm">10维深度评估</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <Check className="w-4 h-4 text-emerald-500" />
-              <span className="text-sm">反Type I错误</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <Check className="w-4 h-4 text-emerald-500" />
-              <span className="text-sm">数据隐私保护</span>
-            </div>
-          </div>
-        </FadeIn>
-      </div>
-
-      {/* 向下滚动指示器 */}
-      <motion.div
-        className="absolute bottom-8 left-1/2 -translate-x-1/2"
-        animate={{ y: [0, 10, 0] }}
-        transition={{ duration: 2, repeat: Infinity }}
-      >
-        <ChevronRight className="w-6 h-6 text-slate-600 rotate-90" />
-      </motion.div>
-    </section>
-  );
-}
-
-// 统计数据区域
-function StatsSection() {
-  return (
-    <section className="py-16 bg-slate-950 border-y border-white/5">
-      <div className="max-w-7xl mx-auto px-6">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-          {stats.map((stat, idx) => (
-            <FadeIn key={idx} delay={idx * 0.1}>
-              <div className="text-center">
-                <div className="text-4xl md:text-5xl font-bold text-white mb-2">{stat.value}</div>
-                <div className="text-slate-400 text-sm">{stat.label}</div>
-              </div>
-            </FadeIn>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-// 功能卡片组件
-function FeatureCard({ icon: Icon, title, desc, index }) {
-  return (
-    <FadeIn delay={index * 0.05} className="group">
-      <div className="p-6 rounded-xl bg-slate-900/50 border border-white/5 hover:border-blue-500/30 transition-all duration-300 hover:bg-slate-800/50">
-        <div className="w-12 h-12 rounded-lg bg-blue-500/10 flex items-center justify-center mb-4 group-hover:bg-blue-500/20 transition-colors">
-          <Icon className="w-6 h-6 text-blue-400" />
-        </div>
-        <h3 className="text-lg font-semibold text-white mb-2">{title}</h3>
-        <p className="text-slate-400 text-sm leading-relaxed">{desc}</p>
-      </div>
-    </FadeIn>
-  );
-}
-
-// 核心功能区域 - 强调AI大模型
-function FeaturesSection() {
-  return (
-    <section id="features" className="py-24 bg-slate-950">
-      <div className="max-w-7xl mx-auto px-6">
-        <FadeIn>
-          <div className="text-center mb-16">
-            <h2 className="text-4xl font-bold text-white mb-4">AI 大模型深度评估体系</h2>
-            <p className="text-slate-400 max-w-2xl mx-auto">
-              基于顶级千亿参数大模型，不只是关键词匹配，而是真正理解商业逻辑
-            </p>
-          </div>
-        </FadeIn>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6">
-          {scoringDimensions.map((item, idx) => (
-            <FeatureCard key={idx} {...item} index={idx} />
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-// 独特优势区域 - 强调反Type I错误
-function AdvantagesSection() {
-  return (
-    <section id="advantages" className="py-24 bg-slate-900">
-      <div className="max-w-7xl mx-auto px-6">
-        <FadeIn>
-          <div className="text-center mb-16">
-            <h2 className="text-4xl font-bold text-white mb-4">为什么选择我们</h2>
-            <p className="text-slate-400 max-w-2xl mx-auto">
-              专为投资人打造的AI尽调工具，解决传统方法的核心痛点
-            </p>
-          </div>
-        </FadeIn>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          {advantages.map((item, idx) => (
-            <FadeIn key={idx} delay={idx * 0.1}>
-              <div className="p-6 rounded-xl bg-slate-800/50 border border-white/5 hover:border-blue-500/30 transition-all duration-300">
-                <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center mb-4">
-                  <item.icon className="w-6 h-6 text-white" />
+            <div className="flex flex-wrap gap-5 items-center lp-fade" style={{ animationDelay: ".5s" }}>
+              {["独创量化评分体系", "虚假陈述逐条击破", "多模型按需切换"].map((t) => (
+                <div key={t} className="flex items-center gap-1.5 text-[12px] text-[#8E9BB0]">
+                  <div className="w-4 h-4 rounded-full bg-[#F0FDF4] border border-[rgba(21,128,61,.2)] flex items-center justify-center text-[9px] text-[#15803D] shrink-0">✓</div>
+                  {t}
                 </div>
-                <h3 className="text-lg font-semibold text-white mb-2">{item.title}</h3>
-                <p className="text-slate-400 text-sm leading-relaxed">{item.desc}</p>
-              </div>
-            </FadeIn>
-          ))}
-        </div>
-
-        {/* Type I 错误详细说明 */}
-        <FadeIn delay={0.3}>
-          <div className="mt-16 p-8 rounded-2xl bg-gradient-to-r from-blue-900/30 to-indigo-900/30 border border-blue-500/20">
-            <div className="flex flex-col md:flex-row items-center gap-6">
-              <div className="w-16 h-16 rounded-full bg-blue-500/20 flex items-center justify-center flex-shrink-0">
-                <AlertTriangle className="w-8 h-8 text-blue-400" />
-              </div>
-              <div className="text-center md:text-left">
-                <h3 className="text-xl font-bold text-white mb-2">什么是 Type I 错误？为什么它很重要？</h3>
-                <p className="text-slate-400 leading-relaxed">
-                  在投资中，Type I 错误意味着「错误地拒绝好项目」，即将优质项目误判为低质量。传统BP分析依赖人工审核或简单关键词匹配，
-                  容易因表面缺陷而错失具有潜力的优质项目。我们的AI大模型通过多维度交叉验证和深度理解能力，
-                  最大限度降低误判率，帮助投资人更准确地识别真正有价值的投资机会。
-                </p>
-              </div>
+              ))}
             </div>
           </div>
-        </FadeIn>
-      </div>
-    </section>
-  );
-}
 
-// 使用流程区域
-function WorkflowSection() {
-  return (
-    <section id="workflow" className="py-24 bg-slate-950">
-      <div className="max-w-7xl mx-auto px-6">
-        <FadeIn>
-          <div className="text-center mb-16">
-            <h2 className="text-4xl font-bold text-white mb-4">三步开启智能尽调</h2>
-            <p className="text-slate-400 max-w-2xl mx-auto">
-              简单流程，立即开始AI驱动的尽职调查
-            </p>
-          </div>
-        </FadeIn>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-          {workflow.map((item, idx) => (
-            <FadeIn key={idx} delay={idx * 0.2}>
-              <div className="relative">
-                {/* 连接线 */}
-                {idx < workflow.length - 1 && (
-                  <div className="hidden md:block absolute top-12 left-1/2 w-full h-0.5 bg-gradient-to-r from-blue-500 to-transparent opacity-30" />
-                )}
-
-                <div className="relative text-center">
-                  <div className="w-24 h-24 mx-auto mb-6 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center relative overflow-hidden">
-                    <div className="absolute inset-0 bg-white/10" />
-                    <span className="text-4xl font-bold text-white">{item.step}</span>
+          {/* 产品面板 mockup */}
+          <div className="lp-panel-in relative">
+            <div className="bg-[#0D2145] rounded-t-[6px] px-4 py-2.5 flex items-center gap-1.5">
+              <div className="w-2.5 h-2.5 rounded-full opacity-55" style={{ background: "#FF5F57" }} />
+              <div className="w-2.5 h-2.5 rounded-full opacity-55" style={{ background: "#FEBC2E" }} />
+              <div className="w-2.5 h-2.5 rounded-full opacity-55" style={{ background: "#28C840" }} />
+              <span className="font-mono-fin text-[11px] text-white/40 tracking-wider ml-2">BP过滤机 · Project Detail</span>
+            </div>
+            <div className="bg-white border border-[#D8DCE8] border-t-0 rounded-b-[6px] overflow-hidden"
+                 style={{ boxShadow: "0 16px 56px rgba(13,33,69,.12), 0 2px 8px rgba(13,33,69,.06)" }}>
+              <div className="flex border-b border-[#D8DCE8] bg-[#F6F7FA]">
+                {[["分析报告", true], ["工作区", false], ["尽调问卷", false], ["投资备忘录", false], ["项目备注", false]].map(([t, active]) => (
+                  <div key={t} className={`font-mono-fin text-[10.5px] tracking-wider px-4 py-2.5 cursor-default border-b-2 -mb-px ${active ? "text-[#1B4FD8] border-[#1B4FD8]" : "text-[#8E9BB0] border-transparent"}`}>
+                    {t}
                   </div>
-                  <h3 className="text-xl font-semibold text-white mb-2">{item.title}</h3>
-                  <p className="text-slate-400 text-sm">{item.desc}</p>
+                ))}
+              </div>
+              <div className="p-5">
+                <div className="mb-3.5">
+                  <div className="font-serif-cn text-[17px] font-bold text-[#0D2145] mb-0.5">某智能制造 SaaS</div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-mono-fin text-[10px] text-[#8E9BB0]">BP-2024-0087</span>
+                    <span className="text-[11px] text-[#4B5A72]">Pre-A · 3,000 万人民币</span>
+                    <div className="flex gap-1">
+                      <span className="font-mono-fin text-[9.5px] tracking-wider px-2 py-0.5 rounded-[2px] border bg-[#F0FDF4] text-[#15803D] border-[rgba(21,128,61,.2)]">已评估</span>
+                      <span className="font-mono-fin text-[9.5px] tracking-wider px-2 py-0.5 rounded-[2px] border bg-[rgba(27,79,216,.07)] text-[#1B4FD8] border-[rgba(27,79,216,.2)]">尽调中</span>
+                      <span className="font-mono-fin text-[9.5px] tracking-wider px-2 py-0.5 rounded-[2px] border bg-[#EEF1F7] text-[#8E9BB0] border-[#D8DCE8]">已决策</span>
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-end gap-4 pb-4 mb-4 border-b border-[#D8DCE8]">
+                  <div className="font-mono-fin text-[52px] font-medium leading-none text-[#B45309]">
+                    67<sub className="text-[18px] text-[#8E9BB0]">/100</sub>
+                  </div>
+                  <div className="flex-1">
+                    <div className="font-mono-fin text-[10px] tracking-wider text-[#8E9BB0] uppercase mb-1.5">综合评分 · Overall Score</div>
+                    <span className="inline-block font-mono-fin text-[11px] font-medium tracking-wider px-2.5 py-1 rounded-[2px] text-[#B45309] bg-[#FFFBEB] border border-[rgba(180,83,9,.2)]">B — 谨慎推荐</span>
+                  </div>
+                </div>
+                <div className="flex flex-col gap-2 mb-4">
+                  {[
+                    ["时机与天花板", 78, "hi"],
+                    ["产品与壁垒", 62, "mid"],
+                    ["资本效率", 70, "mid"],
+                    ["团队基因", 74, "hi"],
+                    ["BP诚信度", 32, "lo"],
+                  ].map(([n, s, lvl]) => (
+                    <div key={n} className="grid items-center gap-2.5" style={{ gridTemplateColumns: "90px 1fr 30px" }}>
+                      <span className="font-mono-fin text-[11px] text-[#4B5A72]">{n}</span>
+                      <div className="h-1 bg-[#EEF1F7] rounded-[2px] overflow-hidden">
+                        <div className="h-full rounded-[2px] transition-all" style={{
+                          width: `${s}%`,
+                          background: lvl === "hi" ? "#15803D" : lvl === "lo" ? "#B91C1C" : "#1B4FD8"
+                        }} />
+                      </div>
+                      <span className="font-mono-fin text-[11px] text-[#8E9BB0] text-right">{s}</span>
+                    </div>
+                  ))}
+                </div>
+                <div className="border-t border-[#D8DCE8] pt-3.5">
+                  <div className="font-mono-fin text-[10px] tracking-wider text-[#8E9BB0] uppercase mb-2">声明核查 · Claim Verification</div>
+                  {[
+                    ["bad", "「全球 TAM 超 5,000 亿」— 核查：严重夸大，细分市场仅 200 亿"],
+                    ["bad", "「独家专利技术」— 核查：专利申请中，尚未授权"],
+                    ["ok", "「已签约 3 家 500 强客户」— 核查：信息属实"],
+                  ].map(([k, t], i) => (
+                    <div key={i} className="flex items-start gap-2 mb-1.5">
+                      <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold shrink-0 mt-0.5 ${k === "bad" ? "text-[#B91C1C] bg-[#FEF2F2]" : "text-[#15803D] bg-[#F0FDF4]"}`}>
+                        {k === "bad" ? "✗" : "✓"}
+                      </span>
+                      <span className="text-[12px] text-[#4B5A72] leading-[1.5]">{t}</span>
+                    </div>
+                  ))}
                 </div>
               </div>
-            </FadeIn>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-// 服务方案区域
-function PricingSection({ onNavigate }) {
-  return (
-    <section id="pricing" className="py-24 bg-slate-900">
-      <div className="max-w-7xl mx-auto px-6">
-        <FadeIn>
-          <div className="text-center mb-16">
-            <h2 className="text-4xl font-bold text-white mb-4">灵活的服务方案</h2>
-            <p className="text-slate-400 max-w-2xl mx-auto">
-              根据您的需求选择合适的套餐，支持企业定制
-            </p>
+            </div>
           </div>
-        </FadeIn>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-5xl mx-auto">
-          {/* 免费版 */}
-          <FadeIn delay={0.1}>
-            <div className="p-8 rounded-2xl bg-slate-800/50 border border-white/10">
-              <h3 className="text-xl font-semibold text-white mb-2">免费版</h3>
-              <p className="text-3xl font-bold text-white mb-4">¥0<span className="text-slate-400 text-sm font-normal">/月</span></p>
-              <p className="text-slate-400 text-sm mb-6">适合个人投资人初步体验</p>
-              <ul className="space-y-3 mb-8">
-                <li className="flex items-center gap-2 text-slate-300 text-sm">
-                  <Check className="w-4 h-4 text-emerald-500" />
-                  每月 5 次BP分析
-                </li>
-                <li className="flex items-center gap-2 text-slate-300 text-sm">
-                  <Check className="w-4 h-4 text-emerald-500" />
-                  10维基础评估
-                </li>
-                <li className="flex items-center gap-2 text-slate-300 text-sm">
-                  <Check className="w-4 h-4 text-emerald-500" />
-                  风险提示
-                </li>
-              </ul>
-              <button
-                onClick={() => onNavigate("/login")}
-                className="block w-full py-3 text-center bg-slate-700 hover:bg-slate-600 text-white font-medium rounded-lg transition-colors"
-              >
-                免费注册
-              </button>
-            </div>
-          </FadeIn>
-
-          {/* 专业版 - 推荐 */}
-          <FadeIn delay={0.2}>
-            <div className="p-8 rounded-2xl bg-gradient-to-b from-blue-900/30 to-indigo-900/30 border-2 border-blue-500 relative">
-              <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-4 py-1 bg-blue-500 text-white text-xs font-semibold rounded-full">
-                推荐
-              </div>
-              <h3 className="text-xl font-semibold text-white mb-2">专业版</h3>
-              <p className="text-3xl font-bold text-white mb-4">¥999<span className="text-slate-400 text-sm font-normal">/月</span></p>
-              <p className="text-slate-400 text-sm mb-6">适合专业投资机构</p>
-              <ul className="space-y-3 mb-8">
-                <li className="flex items-center gap-2 text-slate-300 text-sm">
-                  <Check className="w-4 h-4 text-emerald-500" />
-                  无限次BP分析
-                </li>
-                <li className="flex items-center gap-2 text-slate-300 text-sm">
-                  <Check className="w-4 h-4 text-emerald-500" />
-                  10维深度评估
-                </li>
-                <li className="flex items-center gap-2 text-slate-300 text-sm">
-                  <Check className="w-4 h-4 text-emerald-500" />
-                  反Type I错误增强
-                </li>
-                <li className="flex items-center gap-2 text-slate-300 text-sm">
-                  <Check className="w-4 h-4 text-emerald-500" />
-                  投资建议报告
-                </li>
-                <li className="flex items-center gap-2 text-slate-300 text-sm">
-                  <Check className="w-4 h-4 text-emerald-500" />
-                  优先客服支持
-                </li>
-              </ul>
-              <button
-                onClick={() => onNavigate("/login")}
-                className="block w-full py-3 text-center bg-blue-600 hover:bg-blue-500 text-white font-medium rounded-lg transition-colors"
-              >
-                立即升级
-              </button>
-            </div>
-          </FadeIn>
-
-          {/* 企业版 */}
-          <FadeIn delay={0.3}>
-            <div className="p-8 rounded-2xl bg-slate-800/50 border border-white/10">
-              <h3 className="text-xl font-semibold text-white mb-2">企业版</h3>
-              <p className="text-3xl font-bold text-white mb-4">联系我们</p>
-              <p className="text-slate-400 text-sm mb-6">适合投资机构与FA团队</p>
-              <ul className="space-y-3 mb-8">
-                <li className="flex items-center gap-2 text-slate-300 text-sm">
-                  <Check className="w-4 h-4 text-emerald-500" />
-                  专属大模型定制
-                </li>
-                <li className="flex items-center gap-2 text-slate-300 text-sm">
-                  <Check className="w-4 h-4 text-emerald-500" />
-                  API 接口对接
-                </li>
-                <li className="flex items-center gap-2 text-slate-300 text-sm">
-                  <Check className="w-4 h-4 text-emerald-500" />
-                  团队协作管理
-                </li>
-                <li className="flex items-center gap-2 text-slate-300 text-sm">
-                  <Check className="w-4 h-4 text-emerald-500" />
-                  7x24专属支持
-                </li>
-              </ul>
-              <button
-                onClick={() => onNavigate("/login")}
-                className="block w-full py-3 text-center bg-slate-700 hover:bg-slate-600 text-white font-medium rounded-lg transition-colors"
-              >
-                联系我们
-              </button>
-            </div>
-          </FadeIn>
         </div>
-      </div>
-    </section>
-  );
-}
+      </section>
 
-// CTA 区域
-function CTASection({ onNavigate }) {
-  return (
-    <section className="py-24 bg-gradient-to-b from-slate-950 to-slate-900">
-      <div className="max-w-4xl mx-auto px-6 text-center">
-        <FadeIn>
-          <h2 className="text-4xl font-bold text-white mb-6">
-            让AI成为您的尽职调查助手
+      {/* ── METRICS ── */}
+      <div className="relative z-10 bg-[#0D2145] grid grid-cols-2 md:grid-cols-4">
+        {[
+          ["5", "", "维度量化评分，每维度独立建模，数学公式驱动"],
+          ["< 3", " min", "单份 BP 分析完成，传统人工需要 2–4 小时"],
+          ["90", "%", "噪声过滤率，帮助投资人聚焦有价值的项目"],
+          ["50,000", "+", "已分析 BP 数量，持续迭代行业专属模型"],
+        ].map(([n, em, d], i) => (
+          <div key={i} className="px-8 md:px-12 py-9 border-r border-white/10 last:border-r-0">
+            <div className="font-mono-fin text-[38px] font-medium text-white leading-none mb-2">
+              {n}<em className="not-italic text-[19px] text-white/40">{em}</em>
+            </div>
+            <div className="text-[13px] text-white/50 leading-[1.5] max-w-[200px]">{d}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* ── FEATURES ── */}
+      <section id="features" className="relative z-10 py-20 px-6 md:px-12">
+        <div className="max-w-[1280px] mx-auto">
+          <div className="font-mono-fin text-[11px] tracking-[.13em] text-[#1B4FD8] uppercase flex items-center gap-2.5 mb-3.5">
+            <span className="block w-4 h-0.5 bg-[#1B4FD8] rounded-sm" />核心功能 · Core Features
+          </div>
+          <h2 className="font-serif-cn text-[clamp(26px,2.7vw,40px)] font-bold leading-[1.2] text-[#0D2145] max-w-[520px] mb-12">
+            从 BP 上传到投资决策，全流程 AI 辅助
           </h2>
-          <p className="text-slate-400 mb-8 max-w-2xl mx-auto">
-            注册即可获得免费体验次数，让大模型帮助您发现更多优质项目
-          </p>
-          <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-            <button
-              onClick={() => onNavigate("/login")}
-              className="px-8 py-4 bg-blue-600 hover:bg-blue-500 text-white font-semibold rounded-lg transition-all hover:shadow-lg hover:shadow-blue-500/25 flex items-center gap-2"
-            >
-              免费注册体验
-              <ArrowRight className="w-5 h-5" />
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-px bg-[#D8DCE8] border border-[#D8DCE8] rounded-[4px] overflow-hidden lp-reveal">
+            {FEATURES.map((f) => (
+              <div key={f.num} className="bg-white p-9 hover:bg-[#EFF3FF] transition-colors">
+                <div className="font-mono-fin text-[11px] text-[#1B4FD8] tracking-[.1em] mb-3.5 opacity-60">{f.num}</div>
+                <div className="font-serif-cn text-[17px] font-bold text-[#0D2145] mb-2 leading-tight">{f.title}</div>
+                <div className="text-[13px] text-[#4B5A72] leading-[1.75]">{f.desc}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── 5 DIMENSIONS ── */}
+      <section id="dimensions" className="relative z-10 py-20 px-6 md:px-12 bg-[#EEF1F7] border-y border-[#D8DCE8]">
+        <div className="max-w-[1280px] mx-auto">
+          <div className="font-mono-fin text-[11px] tracking-[.13em] text-[#1B4FD8] uppercase flex items-center gap-2.5 mb-3.5">
+            <span className="block w-4 h-0.5 bg-[#1B4FD8] rounded-sm" />评分体系 · Scoring Dimensions
+          </div>
+          <h2 className="font-serif-cn text-[clamp(26px,2.7vw,40px)] font-bold leading-[1.2] text-[#0D2145] max-w-[600px] mb-12">
+            五大维度全面评估，量化替代直觉，结果有据可查
+          </h2>
+
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 lp-reveal">
+            {DIM5.map((d) => (
+              <div key={d.wt}
+                   className="relative overflow-hidden bg-white border border-[#D8DCE8] rounded-[4px] p-6 transition-all hover:border-[#1B4FD8] hover:shadow-[0_6px_24px_rgba(27,79,216,0.1)] group">
+                <div className="absolute top-0 inset-x-0 h-[3px] bg-[#1B4FD8] origin-left scale-x-0 group-hover:scale-x-100 transition-transform" />
+                <div className="font-mono-fin text-[10px] tracking-wider text-[#1B4FD8] mb-3 opacity-70">{d.wt}</div>
+                <div className="font-serif-cn text-[15px] font-bold text-[#0D2145] mb-2">{d.name}</div>
+                <div className="text-[11.5px] text-[#4B5A72] leading-[1.6] mb-3">{d.sub}</div>
+                <div className="font-mono-fin text-[10px] text-[#8E9BB0] bg-[#EEF1F7] px-2 py-1.5 rounded-[2px] leading-[1.5] whitespace-pre-line">{d.formula}</div>
+              </div>
+            ))}
+          </div>
+
+          <div className="grid lg:grid-cols-2 gap-10 mt-14 lp-reveal">
+            <div>
+              <div className="font-mono-fin text-[11px] tracking-[.13em] text-[#1B4FD8] uppercase flex items-center gap-2.5 mb-3.5">
+                <span className="block w-4 h-0.5 bg-[#1B4FD8] rounded-sm" />评级体系 · Grading
+              </div>
+              <table className="w-full">
+                <thead>
+                  <tr>
+                    {["评级", "分数区间", "结论", "行动建议"].map((h) => (
+                      <th key={h} className="font-mono-fin text-[10px] tracking-wider text-[#8E9BB0] uppercase text-left py-2 px-3.5 border-b-2 border-[#D8DCE8]">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {GRADES.map((g) => (
+                    <tr key={g.g}>
+                      <td className="py-3 px-3.5 border-b border-[#D8DCE8]">
+                        <span className={`inline-flex items-center justify-center w-8 h-8 rounded-full font-mono-fin text-[14px] font-bold ${g.cls}`}>{g.g}</span>
+                      </td>
+                      <td className="py-3 px-3.5 border-b border-[#D8DCE8] font-mono-fin text-[12px]">{g.range}</td>
+                      <td className={`py-3 px-3.5 border-b border-[#D8DCE8] text-[13px] font-semibold ${g.vc}`}>{g.verdict}</td>
+                      <td className="py-3 px-3.5 border-b border-[#D8DCE8] text-[12px] text-[#4B5A72] leading-[1.55]">{g.action}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div>
+              <div className="font-mono-fin text-[11px] tracking-[.13em] text-[#1B4FD8] uppercase flex items-center gap-2.5 mb-3.5">
+                <span className="block w-4 h-0.5 bg-[#1B4FD8] rounded-sm" />为什么不一样 · Why It's Different
+              </div>
+              <div className="flex flex-col gap-4">
+                {[
+                  ["客观，而非依赖大模型感觉", "市面上大多数 AI 分析工具让模型直接「给个评分」。我们不同——AI 只负责检索与分类，评分由独立的量化模型计算，结论有据可查，不受模型幻觉影响。"],
+                  ["不错杀潜力项目", "我们的模型专为早期项目优化。即使 BP 信息不完整，也不会因此重度惩罚评分。对于信息存疑的声明，系统给予中性处理，只有确凿的夸大才会影响结论。"],
+                  ["垂直赛道同样适用", "评分体系专为中国新兴赛道校准，不用旧时代「百亿市场」的标准误杀精品垂直项目。具身智能、低空经济、合成生物——每个赛道都能得到公平评估。"],
+                ].map(([t, d]) => (
+                  <div key={t} className="bg-white border border-[#D8DCE8] p-5 rounded-[3px]">
+                    <div className="font-serif-cn text-[14px] font-bold text-[#0D2145] mb-1.5">{t}</div>
+                    <div className="text-[13px] text-[#4B5A72] leading-[1.65]">{d}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ── PIPELINE ── */}
+      <section id="pipeline" className="relative z-10 py-20 px-6 md:px-12">
+        <div className="max-w-[1280px] mx-auto">
+          <div className="font-mono-fin text-[11px] tracking-[.13em] text-[#1B4FD8] uppercase flex items-center gap-2.5 mb-3.5">
+            <span className="block w-4 h-0.5 bg-[#1B4FD8] rounded-sm" />投资流程 · Deal Pipeline
+          </div>
+          <h2 className="font-serif-cn text-[clamp(26px,2.7vw,40px)] font-bold leading-[1.2] text-[#0D2145] max-w-[520px] mb-12">
+            从 BP 到投资决策，7 阶段全程追踪
+          </h2>
+
+          <div className="relative lp-reveal">
+            <div className="hidden lg:block absolute top-[26px] left-[26px] right-[26px] h-px"
+                 style={{ background: "linear-gradient(to right, #1B4FD8, #D8DCE8 80%)" }} />
+            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-5 relative">
+              {PIPELINE.map((p) => (
+                <div key={p.n} className="text-center">
+                  <div className={`w-[52px] h-[52px] rounded-full flex items-center justify-center mx-auto mb-4 relative z-10 border-2 border-[#1B4FD8] ${p.done ? "bg-[#1B4FD8]" : "bg-white"}`}>
+                    <span className={`font-mono-fin text-[13px] font-medium ${p.done ? "text-white" : "text-[#1B4FD8]"}`}>{p.n}</span>
+                  </div>
+                  <div className="font-serif-cn text-[12px] font-bold text-[#0D2145] mb-1">{p.l}</div>
+                  <div className="text-[11px] text-[#4B5A72] leading-[1.5]">{p.d}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-5 mt-14 lp-reveal">
+            {[
+              ["SHARE", "报告分享", "生成 3 天有效分享链接，报告可对外分享，附邀请码追踪。"],
+              ["GEO", "地理分布看板", "中国省份地图可视化，一眼看清项目地理集中度与覆盖范围。"],
+              ["STATS", "个人数据看板", "6个月趋势折线图、评级分布饼图、赛道分布，量化你的投资视野。"],
+              ["RANK", "排行榜", "与其他投资人比较分析数量与平均评分，发现行业热度趋势。"],
+            ].map(([k, t, d]) => (
+              <div key={k} className="bg-white border border-[#D8DCE8] p-6 rounded-[3px]">
+                <div className="font-mono-fin text-[10px] text-[#1B4FD8] tracking-[.1em] mb-2.5">{k}</div>
+                <div className="font-serif-cn text-[15px] font-bold text-[#0D2145] mb-1.5">{t}</div>
+                <div className="text-[12.5px] text-[#4B5A72] leading-[1.65]">{d}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── WORKFLOW ── */}
+      <section className="relative z-10 py-20 px-6 md:px-12 bg-[#EEF1F7] border-y border-[#D8DCE8]">
+        <div className="max-w-[1280px] mx-auto">
+          <div className="font-mono-fin text-[11px] tracking-[.13em] text-[#1B4FD8] uppercase flex items-center gap-2.5 mb-3.5">
+            <span className="block w-4 h-0.5 bg-[#1B4FD8] rounded-sm" />使用流程 · How It Works
+          </div>
+          <h2 className="font-serif-cn text-[clamp(26px,2.7vw,40px)] font-bold leading-[1.2] text-[#0D2145] max-w-[520px] mb-12">
+            4 步完成一份 BP 的完整尽调
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 lp-reveal">
+            {WORKFLOW.map((w) => (
+              <div key={w.n}>
+                <div className="w-[52px] h-[52px] border-2 border-[#1B4FD8] flex items-center justify-center mb-5 bg-white">
+                  <span className="font-mono-fin text-[14px] text-[#1B4FD8] font-medium">{w.n}</span>
+                </div>
+                <div className="font-serif-cn text-[16px] font-bold text-[#0D2145] mb-2">{w.t}</div>
+                <div className="text-[13px] text-[#4B5A72] leading-[1.65]">{w.d}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── PRICING ── */}
+      <section id="pricing" className="relative z-10 py-20 px-6 md:px-12">
+        <div className="max-w-[1280px] mx-auto">
+          <div className="font-mono-fin text-[11px] tracking-[.13em] text-[#1B4FD8] uppercase flex items-center gap-2.5 mb-3.5">
+            <span className="block w-4 h-0.5 bg-[#1B4FD8] rounded-sm" />服务方案 · Pricing
+          </div>
+          <h2 className="font-serif-cn text-[clamp(26px,2.7vw,40px)] font-bold leading-[1.2] text-[#0D2145] max-w-[520px] mb-12">
+            清晰定价，开箱即用
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-5 lp-reveal">
+            {[
+              {
+                name: "Starter", featured: false, price: "免费", cycle: "每月 5 份 BP 分析",
+                features: ["5 维量化评分报告", "声明核查 Red Flag 标注", "Pipeline 流程管理", "PDF 报告导出", "基础模型（标准速度）", "7 天历史记录"],
+                btn: { label: "免费注册", primary: false, action: goSignup },
+              },
+              {
+                name: "Professional", featured: true, price: "¥ 499", cycle: "/ 月 · 每月 20 份高级模型分析",
+                features: ["不限量 BP 分析", "<strong>高级模型可选</strong>（更强推理能力）", "AI 尽调问卷（DD）+ 校正评分", "多 Agent 工作区", "投资备忘录（IMemo）自动生成", "地理分布地图 + 数据看板", "报告分享链接", "历史记录永久保存"],
+                btn: { label: "开始使用", primary: true, action: goSignup },
+              },
+              {
+                name: "Enterprise", featured: false, price: "定制", cycle: "联系我们获取报价",
+                features: ["Professional 全部功能", "<strong>顶级旗舰模型</strong>（最高精度）", "私有化部署选项", "自定义评估维度与权重", "API 接口集成", "团队多账号管理", "数据隔离 SLA 保障", "专属培训与支持"],
+                btn: { label: "联系销售", primary: false, action: goSignup },
+              },
+            ].map((p) => (
+              <div key={p.name}
+                   className={`relative bg-white p-10 rounded-[4px] transition-shadow hover:shadow-[0_10px_36px_rgba(13,33,69,0.1)] ${p.featured ? "border-2 border-[#1B4FD8]" : "border border-[#D8DCE8]"}`}>
+                {p.featured && (
+                  <div className="absolute -top-px left-1/2 -translate-x-1/2 bg-[#1B4FD8] text-white font-mono-fin text-[10px] tracking-wider px-3 py-0.5 rounded-b-[4px]">
+                    最受欢迎
+                  </div>
+                )}
+                <div className="font-mono-fin text-[11px] tracking-[.12em] text-[#1B4FD8] uppercase mb-3.5">{p.name}</div>
+                <div className="font-mono-fin text-[38px] font-medium text-[#0D2145] leading-none mb-1">{p.price}</div>
+                <div className="font-mono-fin text-[12px] text-[#8E9BB0] mb-6">{p.cycle}</div>
+                <div className="h-px bg-[#D8DCE8] mb-5" />
+                <ul className="flex flex-col gap-2.5 mb-8 list-none">
+                  {p.features.map((f, i) => (
+                    <li key={i} className="flex items-start gap-2.5 text-[13px] text-[#4B5A72] leading-[1.5]">
+                      <span className="text-[#15803D] text-[12px] font-bold shrink-0 mt-0.5">✓</span>
+                      <span dangerouslySetInnerHTML={{ __html: f }} />
+                    </li>
+                  ))}
+                </ul>
+                <button
+                  onClick={p.btn.action}
+                  className={`w-full py-3 rounded-[3px] text-[14px] font-semibold transition-all ${
+                    p.btn.primary
+                      ? "bg-[#1B4FD8] hover:bg-[#163069] text-white"
+                      : "bg-transparent border-[1.5px] border-[#0D2145] text-[#0D2145] hover:bg-[#0D2145] hover:text-white"
+                  }`}
+                >
+                  {p.btn.label}
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── CTA BAND ── */}
+      <section className="relative z-10 bg-[#0D2145] text-center py-24 px-6 md:px-12 overflow-hidden">
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[900px] h-[400px] pointer-events-none"
+             style={{ background: "radial-gradient(ellipse, rgba(59,110,245,.15) 0%, transparent 65%)" }} />
+        <div className="relative z-10">
+          <div className="font-mono-fin text-[11px] tracking-[.13em] text-white/40 uppercase mb-4">立即开始 · Get Started</div>
+          <h2 className="font-serif-cn text-[clamp(28px,3.5vw,48px)] font-bold text-white max-w-[600px] mx-auto leading-[1.2] mb-3.5">
+            让 AI 帮你筛掉 90% 的无效 BP
+          </h2>
+          <p className="text-[15px] text-white/50 mb-9">专注精力在真正值得深入研究的项目上</p>
+          <div className="flex gap-3 justify-center flex-wrap">
+            <button onClick={goSignup} className="text-[14px] font-semibold text-[#0D2145] bg-white hover:opacity-90 px-8 py-3.5 rounded-[3px]">
+              免费注册账号
+            </button>
+            <button onClick={goDemo} className="text-[14px] font-medium text-white border-[1.5px] border-white/35 hover:border-white px-8 py-3.5 rounded-[3px] transition-colors">
+              查看演示报告
             </button>
           </div>
-        </FadeIn>
-      </div>
-    </section>
-  );
-}
+        </div>
+      </section>
 
-// 页脚
-function Footer() {
-  return (
-    <footer className="py-12 bg-slate-950 border-t border-white/5">
-      <div className="max-w-7xl mx-auto px-6">
-        <div className="flex flex-col md:flex-row items-center justify-between gap-6">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center">
-              <Brain className="w-5 h-5 text-white" />
+      {/* ── FOOTER ── */}
+      <footer className="relative z-10 bg-white border-t border-[#D8DCE8] pt-13 pb-8 px-6 md:px-12">
+        <div className="max-w-[1280px] mx-auto grid grid-cols-2 md:grid-cols-4 lg:grid-cols-[1.5fr_1fr_1fr_1fr] gap-10 mb-10">
+          <div className="col-span-2 md:col-span-4 lg:col-span-1">
+            <div className="flex items-center gap-2.5 font-serif-cn text-[15px] font-bold text-[#0D2145] mb-3">
+              <LogoE size={28} />
+              BP过滤机
             </div>
-            <span className="text-lg font-semibold text-white">BP过滤机</span>
+            <div className="text-[13px] text-[#8E9BB0] leading-[1.65] max-w-[240px]">
+              一级市场投资人的 AI Workspace。把 BP 分析、尽调流程与投资 Paperwork 交给 AI，让你专注于思考与发掘好项目。
+            </div>
           </div>
-
-          <div className="flex items-center gap-6">
-            <a href="#features" className="text-slate-400 hover:text-white transition-colors text-sm">
-              核心能力
-            </a>
-            <a href="#advantages" className="text-slate-400 hover:text-white transition-colors text-sm">
-              独特优势
-            </a>
-            <a href="#pricing" className="text-slate-400 hover:text-white transition-colors text-sm">
-              服务方案
-            </a>
+          {[
+            ["产品", [["核心功能", "#features"], ["5维评分体系", "#dimensions"], ["投资流程管理", "#pipeline"], ["定价方案", "#pricing"]]],
+            ["公司", [["关于我们", "#"], ["隐私政策", "#"], ["服务条款", "#"], ["联系我们", "#"]]],
+            ["资源", [["演示报告", "/demo"], ["使用文档", "#"], ["更新日志", "#"], ["排行榜", "/app/leaderboard"]]],
+          ].map(([title, links]) => (
+            <div key={title}>
+              <h4 className="font-mono-fin text-[10px] tracking-[.12em] text-[#8E9BB0] uppercase mb-3.5">{title}</h4>
+              <ul className="flex flex-col gap-2 list-none">
+                {links.map(([t, h]) => (
+                  <li key={t}>
+                    <a href={h} className="text-[13px] text-[#4B5A72] hover:text-[#0D2145] transition-colors">{t}</a>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </div>
+        <div className="max-w-[1280px] mx-auto border-t border-[#D8DCE8] pt-5 flex flex-col md:flex-row justify-between items-center gap-3">
+          <div className="font-mono-fin text-[11px] text-[#8E9BB0] tracking-wide">© 2026 BP过滤机 · garbagebpfilter.cn · All rights reserved</div>
+          <div className="flex gap-2">
+            {["多模型支持", "数据安全", "隐私合规"].map((b) => (
+              <span key={b} className="font-mono-fin text-[10px] text-[#8E9BB0] border border-[#D8DCE8] px-2 py-1 rounded-[2px]">{b}</span>
+            ))}
           </div>
         </div>
-
-        <div className="mt-8 pt-8 border-t border-white/5 text-center">
-          <p className="text-slate-500 text-sm">
-            © 2026 BP过滤机. 基于千亿参数大模型的商业计划书智能分析服务。
-          </p>
-        </div>
-      </div>
-    </footer>
-  );
-}
-
-// 主Landing页面组件
-export default function LandingPage() {
-  const navigate = useNavigate();
-
-  return (
-    <div className="min-h-screen bg-slate-950">
-      <GlassHeader onNavigate={navigate} />
-      <HeroSection onNavigate={navigate} />
-      <StatsSection />
-      <FeaturesSection />
-      <AdvantagesSection />
-      <WorkflowSection />
-      <PricingSection onNavigate={navigate} />
-      <CTASection onNavigate={navigate} />
-      <Footer />
+      </footer>
     </div>
   );
 }

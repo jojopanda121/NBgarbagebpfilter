@@ -82,28 +82,28 @@ export default function ContactBindingModal() {
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="bg-slate-900 border border-white/10 rounded-2xl p-6 max-w-md w-full relative">
+      <div className="bg-white border border-[#D8DCE8] rounded-2xl p-6 max-w-md w-full relative">
         <button
           onClick={() => setRequireContactBinding(false)}
-          className="absolute top-4 right-4 text-slate-500 hover:text-white"
+          className="absolute top-4 right-4 text-[#8E9BB0] hover:text-[#0D2145]"
         >
           <X className="w-5 h-5" />
         </button>
 
         <h2 className="text-lg font-bold mb-2">绑定邮箱</h2>
-        <p className="text-sm text-slate-400 mb-5">
+        <p className="text-sm text-[#4B5A72] mb-5">
           使用分析功能前，请先绑定您的邮箱地址。
         </p>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           {/* 邮箱输入 */}
           <div className="flex items-center gap-2">
-            <Mail className="w-4 h-4 text-slate-500 shrink-0" />
+            <Mail className="w-4 h-4 text-[#8E9BB0] shrink-0" />
             <input
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="flex-1 px-3 py-2 bg-slate-800 border border-white/10 rounded-lg focus:outline-none focus:border-blue-500 text-white text-sm"
+              className="flex-1 px-3 py-2 bg-[#EEF1F7] border border-[#D8DCE8] rounded-lg focus:outline-none focus:border-blue-500 text-[#0D2145] text-sm"
               placeholder="邮箱地址"
             />
           </div>
@@ -116,14 +116,14 @@ export default function ContactBindingModal() {
                 value={emailCode}
                 onChange={(e) => setEmailCode(e.target.value)}
                 maxLength={6}
-                className="flex-1 px-3 py-2 bg-slate-800 border border-white/10 rounded-lg focus:outline-none focus:border-blue-500 text-white text-sm"
+                className="flex-1 px-3 py-2 bg-[#EEF1F7] border border-[#D8DCE8] rounded-lg focus:outline-none focus:border-blue-500 text-[#0D2145] text-sm"
                 placeholder="输入 6 位验证码"
               />
               <button
                 type="button"
                 onClick={handleSendCode}
                 disabled={sendingCode || countdown > 0}
-                className="px-3 py-2 bg-slate-700 hover:bg-slate-600 disabled:bg-slate-800 disabled:text-slate-500 rounded-lg text-sm font-medium flex items-center gap-1 whitespace-nowrap"
+                className="px-3 py-2 bg-[#E5E9F4] hover:bg-slate-600 disabled:bg-[#EEF1F7] disabled:text-[#8E9BB0] rounded-lg text-sm font-medium flex items-center gap-1 whitespace-nowrap"
               >
                 {sendingCode ? (
                   <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -142,7 +142,7 @@ export default function ContactBindingModal() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full py-2 bg-blue-600 hover:bg-blue-500 disabled:bg-slate-700 rounded-lg text-sm font-medium transition-colors"
+            className="w-full py-2 bg-[#1B4FD8] hover:bg-[#163069] disabled:bg-[#E5E9F4] rounded-lg text-sm font-medium transition-colors"
           >
             {loading ? "绑定中..." : "确认绑定"}
           </button>

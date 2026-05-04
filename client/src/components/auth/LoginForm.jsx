@@ -56,19 +56,19 @@ export default function LoginForm({ onSuccess, defaultRedirect = "/app/dashboard
   };
 
   return (
-    <div className="bg-slate-900 border border-white/10 rounded-2xl p-6 sm:p-8 max-w-md mx-auto">
-      <h2 className="text-xl font-bold text-center mb-6">
+    <div className="bg-white border border-[#D8DCE8] rounded-[6px] p-6 sm:p-8 max-w-md mx-auto shadow-[0_10px_36px_rgba(13,33,69,0.08)]">
+      <h2 className="text-xl font-bold text-center mb-6 text-[#0D2145] font-serif-cn">
         {isRegister ? "注册账号" : "登录"}
       </h2>
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
-          <label className="block text-sm text-slate-400 mb-1">用户名</label>
+          <label className="block text-sm text-[#4B5A72] mb-1.5">用户名</label>
           <input
             type="text"
             value={username}
             onChange={(e) => setUsername(e.target.value)}
-            className="w-full px-4 py-2 bg-slate-800 border border-white/10 rounded-lg focus:outline-none focus:border-blue-500 text-white"
+            className="w-full px-4 py-2 bg-white border border-[#D8DCE8] rounded-[3px] focus:outline-none focus:border-[#1B4FD8] text-[#0D2145] placeholder:text-[#8E9BB0]"
             placeholder="2-32个字符"
             required
             minLength={2}
@@ -77,12 +77,12 @@ export default function LoginForm({ onSuccess, defaultRedirect = "/app/dashboard
         </div>
 
         <div>
-          <label className="block text-sm text-slate-400 mb-1">密码</label>
+          <label className="block text-sm text-[#4B5A72] mb-1.5">密码</label>
           <input
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            className="w-full px-4 py-2 bg-slate-800 border border-white/10 rounded-lg focus:outline-none focus:border-blue-500 text-white"
+            className="w-full px-4 py-2 bg-white border border-[#D8DCE8] rounded-[3px] focus:outline-none focus:border-[#1B4FD8] text-[#0D2145] placeholder:text-[#8E9BB0]"
             placeholder="至少6个字符"
             required
             minLength={6}
@@ -93,7 +93,7 @@ export default function LoginForm({ onSuccess, defaultRedirect = "/app/dashboard
           <div className="flex justify-end -mt-1">
             <Link
               to="/forgot-password"
-              className="text-xs text-slate-500 hover:text-blue-400 transition-colors"
+              className="text-xs text-[#8E9BB0] hover:text-[#1B4FD8] transition-colors"
             >
               忘记密码？
             </Link>
@@ -102,12 +102,12 @@ export default function LoginForm({ onSuccess, defaultRedirect = "/app/dashboard
 
         {isRegister && (
           <div>
-            <label className="block text-sm text-slate-400 mb-1">确认密码</label>
+            <label className="block text-sm text-[#4B5A72] mb-1.5">确认密码</label>
             <input
               type="password"
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
-              className="w-full px-4 py-2 bg-slate-800 border border-white/10 rounded-lg focus:outline-none focus:border-blue-500 text-white"
+              className="w-full px-4 py-2 bg-white border border-[#D8DCE8] rounded-[3px] focus:outline-none focus:border-[#1B4FD8] text-[#0D2145] placeholder:text-[#8E9BB0]"
               placeholder="再次输入密码"
               required
               minLength={6}
@@ -116,7 +116,7 @@ export default function LoginForm({ onSuccess, defaultRedirect = "/app/dashboard
         )}
 
         {error && (
-          <p className="text-sm text-red-400 bg-red-400/10 px-3 py-2 rounded-lg">
+          <p className="text-sm text-[#B91C1C] bg-[#FEF2F2] border border-[rgba(185,28,28,0.2)] px-3 py-2 rounded-[3px]">
             {error}
           </p>
         )}
@@ -124,7 +124,7 @@ export default function LoginForm({ onSuccess, defaultRedirect = "/app/dashboard
         <button
           type="submit"
           disabled={loading}
-          className="w-full py-2.5 bg-blue-600 hover:bg-blue-500 disabled:bg-slate-700 rounded-lg font-medium transition-colors flex items-center justify-center gap-2"
+          className="w-full py-2.5 bg-[#1B4FD8] hover:bg-[#163069] disabled:bg-[#BFC5D6] text-white rounded-[3px] font-semibold transition-colors flex items-center justify-center gap-2"
         >
           {loading ? (
             <span className="animate-spin w-5 h-5 border-2 border-white/30 border-t-white rounded-full" />
@@ -142,11 +142,11 @@ export default function LoginForm({ onSuccess, defaultRedirect = "/app/dashboard
         </button>
       </form>
 
-      <p className="text-center text-sm text-slate-500 mt-4">
+      <p className="text-center text-sm text-[#8E9BB0] mt-4">
         {isRegister ? "已有账号？" : "没有账号？"}
         <button
           onClick={() => { setIsRegister(!isRegister); setError(""); setConfirmPassword(""); }}
-          className="text-blue-400 hover:text-blue-300 ml-1"
+          className="text-[#1B4FD8] hover:text-[#163069] ml-1 font-medium"
         >
           {isRegister ? "去登录" : "注册"}
         </button>

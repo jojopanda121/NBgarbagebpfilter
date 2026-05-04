@@ -71,7 +71,7 @@ const UploadSection = memo(function UploadSection() {
         <div className="mb-6 p-5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-center">
           <Mail className="w-8 h-8 text-amber-400 mx-auto mb-2" />
           <p className="text-amber-300 font-medium mb-1">请先绑定邮箱后再使用分析功能</p>
-          <p className="text-sm text-slate-400 mb-3">绑定邮箱后即可开始分析商业计划书</p>
+          <p className="text-sm text-[#4B5A72] mb-3">绑定邮箱后即可开始分析商业计划书</p>
           <button
             onClick={() => navigate("/settings?tab=account")}
             className="px-5 py-2 bg-amber-500 hover:bg-amber-400 text-slate-900 font-medium rounded-lg transition-colors text-sm"
@@ -84,12 +84,12 @@ const UploadSection = memo(function UploadSection() {
       {/* 标题 */}
       <div className="text-center mb-6 sm:mb-8">
         <h2 className="text-xl sm:text-2xl font-bold mb-2">上传商业计划书</h2>
-        <p className="text-slate-400 mb-4">
+        <p className="text-[#4B5A72] mb-4">
           MiniMax M2.5 将扮演行业专家 + 投资专家，深度研究 BP 中每条声明，逐条核查真实性
         </p>
-        <div className="inline-flex items-center gap-2 px-4 py-2 bg-slate-800/50 rounded-full border border-white/10/50">
+        <div className="inline-flex items-center gap-2 px-4 py-2 bg-[#EEF1F7] rounded-full border border-[#D8DCE8]/50">
           <Lock className="w-3.5 h-3.5 text-emerald-400" />
-          <span className="text-sm text-slate-400">
+          <span className="text-sm text-[#4B5A72]">
             您的文件将安全存储，仅用于本次分析
           </span>
         </div>
@@ -109,7 +109,7 @@ const UploadSection = memo(function UploadSection() {
               ? "border-blue-500 bg-blue-500/5"
               : file
               ? "border-emerald-500/50 bg-emerald-500/5"
-              : "border-white/10 hover:border-gray-500 bg-slate-900/50"
+              : "border-[#D8DCE8] hover:border-[#BFC5D6] bg-white"
           }
         `}
       >
@@ -124,17 +124,17 @@ const UploadSection = memo(function UploadSection() {
           <div className="flex flex-col items-center gap-3">
             <FileText className="w-12 h-12 text-emerald-400" />
             <p className="text-lg font-medium text-emerald-400">{file.name}</p>
-            <p className="text-sm text-slate-500">
+            <p className="text-sm text-[#8E9BB0]">
               {(file.size / 1024 / 1024).toFixed(2)} MB · 点击更换文件
             </p>
           </div>
         ) : (
           <div className="flex flex-col items-center gap-3">
-            <Upload className="w-12 h-12 text-slate-500" />
-            <p className="text-lg text-slate-400">
+            <Upload className="w-12 h-12 text-[#8E9BB0]" />
+            <p className="text-lg text-[#4B5A72]">
               拖拽 PDF 到此处，或点击选择文件
             </p>
-            <p className="text-sm text-slate-600">支持文字版和扫描版 PDF</p>
+            <p className="text-sm text-[#8E9BB0]">支持文字版和扫描版 PDF</p>
           </div>
         )}
       </div>
@@ -155,8 +155,8 @@ const UploadSection = memo(function UploadSection() {
           mt-6 w-full py-4 rounded-xl text-lg font-semibold transition-all
           ${
             file && !analyzing && emailBound
-              ? "bg-gradient-to-r from-red-500 to-orange-500 hover:from-red-600 hover:to-orange-600 text-white shadow-lg shadow-red-500/20"
-              : "bg-slate-800 text-slate-500 cursor-not-allowed"
+              ? "bg-gradient-to-r from-red-500 to-orange-500 hover:from-red-600 hover:to-orange-600 text-[#0D2145] shadow-lg shadow-red-500/20"
+              : "bg-[#EEF1F7] text-[#8E9BB0] cursor-not-allowed"
           }
         `}
       >
@@ -175,7 +175,7 @@ const UploadSection = memo(function UploadSection() {
       {/* Powered by */}
       {!analyzing && (
         <div className="mt-8 text-center">
-          <p className="text-xs text-slate-600">Powered by MiniMax M2.5 · DeepThink 深度研究引擎 · 提取30000字符</p>
+          <p className="text-xs text-[#8E9BB0]">Powered by MiniMax M2.5 · DeepThink 深度研究引擎 · 提取30000字符</p>
         </div>
       )}
     </div>

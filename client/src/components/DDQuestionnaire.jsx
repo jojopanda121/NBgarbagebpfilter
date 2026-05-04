@@ -34,7 +34,7 @@ export default function DDQuestionnaire({ taskId, questionnaire, initialAnswers 
 
   if (!questionnaire || questionnaire.length === 0) {
     return (
-      <div className="text-center py-12 text-slate-400">
+      <div className="text-center py-12 text-[#4B5A72]">
         <CheckCircle2 className="w-12 h-12 mx-auto mb-3 text-emerald-500/50" />
         <p className="font-medium">本项目无需重点尽调核实</p>
         <p className="text-sm mt-1">所有关键声明均经核查，未发现需重点验证的存疑事项。</p>
@@ -93,15 +93,15 @@ export default function DDQuestionnaire({ taskId, questionnaire, initialAnswers 
   return (
     <div className="space-y-4">
       {/* 进度条 */}
-      <div className="bg-slate-900 border border-white/10 rounded-xl p-4">
+      <div className="bg-white border border-[#D8DCE8] rounded-xl p-4">
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-2">
             <ClipboardList className="w-4 h-4 text-blue-400" />
             <span className="text-sm font-medium">尽调核查问卷</span>
           </div>
-          <span className="text-sm text-slate-400">{answeredCount} / {questionnaire.length} 条已填写</span>
+          <span className="text-sm text-[#4B5A72]">{answeredCount} / {questionnaire.length} 条已填写</span>
         </div>
-        <div className="h-1.5 bg-slate-800 rounded-full overflow-hidden">
+        <div className="h-1.5 bg-[#EEF1F7] rounded-full overflow-hidden">
           <div
             className="h-full bg-blue-500 rounded-full transition-all duration-300"
             style={{ width: `${progress}%` }}
@@ -111,28 +111,28 @@ export default function DDQuestionnaire({ taskId, questionnaire, initialAnswers 
 
       {/* 重新评分结果 */}
       {rescoreResult && (
-        <div className="bg-slate-900 border border-white/10 rounded-xl p-4">
-          <p className="text-sm font-medium mb-2 text-slate-300">尽调校正结果</p>
+        <div className="bg-white border border-[#D8DCE8] rounded-xl p-4">
+          <p className="text-sm font-medium mb-2 text-[#0F1C36]">尽调校正结果</p>
           <div className="flex items-center gap-6">
             <div>
-              <p className="text-xs text-slate-500 mb-0.5">原始评分</p>
-              <p className="text-2xl font-bold text-slate-400">{rescoreResult.originalTotal}</p>
+              <p className="text-xs text-[#8E9BB0] mb-0.5">原始评分</p>
+              <p className="text-2xl font-bold text-[#4B5A72]">{rescoreResult.originalTotal}</p>
             </div>
-            <div className="text-2xl text-slate-600">→</div>
+            <div className="text-2xl text-[#8E9BB0]">→</div>
             <div>
-              <p className="text-xs text-slate-500 mb-0.5">校正后评分</p>
+              <p className="text-xs text-[#8E9BB0] mb-0.5">校正后评分</p>
               <p className={`text-2xl font-bold ${rescoreResult.delta >= 0 ? "text-emerald-400" : "text-red-400"}`}>
                 {rescoreResult.newTotal}
               </p>
             </div>
             <div>
-              <p className="text-xs text-slate-500 mb-0.5">变化</p>
+              <p className="text-xs text-[#8E9BB0] mb-0.5">变化</p>
               <p className={`text-lg font-semibold ${rescoreResult.delta >= 0 ? "text-emerald-400" : "text-red-400"}`}>
                 {rescoreResult.delta >= 0 ? "+" : ""}{rescoreResult.delta} 分
               </p>
             </div>
             <div>
-              <p className="text-xs text-slate-500 mb-0.5">新评级</p>
+              <p className="text-xs text-[#8E9BB0] mb-0.5">新评级</p>
               <p className="text-lg font-bold text-blue-400">{rescoreResult.newGrade}</p>
             </div>
           </div>
@@ -143,10 +143,10 @@ export default function DDQuestionnaire({ taskId, questionnaire, initialAnswers 
       {questionnaire.map((item, i) => {
         const currentAnswer = answers[String(item.claim_index)];
         const isExpanded = expanded[i] !== false; // 默认展开
-        const verdictStyle = VERDICT_COLOR[item.original_verdict] || "text-slate-400 bg-slate-500/10 border-slate-500/30";
+        const verdictStyle = VERDICT_COLOR[item.original_verdict] || "text-[#4B5A72] bg-slate-500/10 border-slate-500/30";
 
         return (
-          <div key={i} className="bg-slate-900 border border-white/10 rounded-xl overflow-hidden">
+          <div key={i} className="bg-white border border-[#D8DCE8] rounded-xl overflow-hidden">
             {/* 声明头部 */}
             <button
               className="w-full text-left p-4 flex items-start justify-between gap-3"
@@ -154,11 +154,11 @@ export default function DDQuestionnaire({ taskId, questionnaire, initialAnswers 
             >
               <div className="flex items-start gap-3 flex-1 min-w-0">
                 <div className={`shrink-0 w-5 h-5 rounded-full flex items-center justify-center mt-0.5 ${
-                  currentAnswer ? "bg-blue-500" : "bg-slate-700"
+                  currentAnswer ? "bg-blue-500" : "bg-[#E5E9F4]"
                 }`}>
                   {currentAnswer
-                    ? <CheckCircle2 className="w-3.5 h-3.5 text-white" />
-                    : <span className="text-xs text-slate-400">{i + 1}</span>
+                    ? <CheckCircle2 className="w-3.5 h-3.5 text-[#0D2145]" />
+                    : <span className="text-xs text-[#4B5A72]">{i + 1}</span>
                   }
                 </div>
                 <div className="min-w-0 flex-1">
@@ -167,7 +167,7 @@ export default function DDQuestionnaire({ taskId, questionnaire, initialAnswers 
                       {item.original_verdict}
                     </span>
                     {item.category && (
-                      <span className="px-2 py-0.5 rounded text-xs bg-slate-800 text-slate-400">
+                      <span className="px-2 py-0.5 rounded text-xs bg-[#EEF1F7] text-[#4B5A72]">
                         {item.category}
                       </span>
                     )}
@@ -181,34 +181,34 @@ export default function DDQuestionnaire({ taskId, questionnaire, initialAnswers 
                       </span>
                     )}
                   </div>
-                  <p className="text-sm text-slate-200 font-medium leading-relaxed">
+                  <p className="text-sm text-[#0F1C36] font-medium leading-relaxed">
                     {item.original_claim}
                   </p>
                   {item.diff && (
-                    <p className="text-xs text-slate-500 mt-0.5">{item.diff}</p>
+                    <p className="text-xs text-[#8E9BB0] mt-0.5">{item.diff}</p>
                   )}
                 </div>
               </div>
               {isExpanded
-                ? <ChevronUp className="w-4 h-4 text-slate-500 shrink-0 mt-1" />
-                : <ChevronDown className="w-4 h-4 text-slate-500 shrink-0 mt-1" />
+                ? <ChevronUp className="w-4 h-4 text-[#8E9BB0] shrink-0 mt-1" />
+                : <ChevronDown className="w-4 h-4 text-[#8E9BB0] shrink-0 mt-1" />
               }
             </button>
 
             {/* 展开内容 */}
             {isExpanded && (
-              <div className="px-4 pb-4 space-y-4 border-t border-white/5">
+              <div className="px-4 pb-4 space-y-4 border-t border-[#EEF1F7]">
                 {/* 核实方法 */}
                 {item.dd_methods?.length > 0 && (
                   <div className="pt-3">
-                    <p className="text-xs font-medium text-slate-400 mb-2 flex items-center gap-1.5">
+                    <p className="text-xs font-medium text-[#4B5A72] mb-2 flex items-center gap-1.5">
                       <AlertTriangle className="w-3 h-3" />
                       核实方法
                     </p>
                     <ul className="space-y-1.5">
                       {item.dd_methods.map((m, mi) => (
-                        <li key={mi} className="flex items-start gap-2 text-sm text-slate-300">
-                          <span className="shrink-0 w-4 h-4 rounded-full bg-slate-700 text-xs flex items-center justify-center mt-0.5">
+                        <li key={mi} className="flex items-start gap-2 text-sm text-[#0F1C36]">
+                          <span className="shrink-0 w-4 h-4 rounded-full bg-[#E5E9F4] text-xs flex items-center justify-center mt-0.5">
                             {mi + 1}
                           </span>
                           {m}
@@ -220,7 +220,7 @@ export default function DDQuestionnaire({ taskId, questionnaire, initialAnswers 
 
                 {/* 选项 A/B/C */}
                 <div>
-                  <p className="text-xs font-medium text-slate-400 mb-2">尽调结论</p>
+                  <p className="text-xs font-medium text-[#4B5A72] mb-2">尽调结论</p>
                   <div className="grid grid-cols-1 gap-2">
                     {Object.entries(item.options).map(([choice, label]) => {
                       const isSelected = currentAnswer === choice;
@@ -231,7 +231,7 @@ export default function DDQuestionnaire({ taskId, questionnaire, initialAnswers 
                           className={`flex items-start gap-3 p-3 rounded-lg border text-left transition-all ${
                             isSelected
                               ? OPTION_SELECTED_COLORS[choice]
-                              : "border-white/10 bg-slate-800/50 hover:border-white/20"
+                              : "border-[#D8DCE8] bg-[#EEF1F7] hover:border-[#BFC5D6]"
                           }`}
                         >
                           <div className={`shrink-0 w-5 h-5 rounded-full border-2 flex items-center justify-center mt-0.5 ${
@@ -241,7 +241,7 @@ export default function DDQuestionnaire({ taskId, questionnaire, initialAnswers 
                           </div>
                           <div>
                             <span className="text-xs font-bold mr-2 opacity-70">{choice}.</span>
-                            <span className={`text-sm ${isSelected ? OPTION_COLORS[choice] : "text-slate-300"}`}>
+                            <span className={`text-sm ${isSelected ? OPTION_COLORS[choice] : "text-[#0F1C36]"}`}>
                               {label}
                             </span>
                           </div>
@@ -257,24 +257,24 @@ export default function DDQuestionnaire({ taskId, questionnaire, initialAnswers 
       })}
 
       {/* 底部操作栏 */}
-      <div className="flex items-center justify-between p-4 bg-slate-900 border border-white/10 rounded-xl">
+      <div className="flex items-center justify-between p-4 bg-white border border-[#D8DCE8] rounded-xl">
         <div className="flex items-center gap-3">
           <button
             onClick={handleSave}
             disabled={saving || answeredCount === 0}
-            className="px-4 py-2 text-sm bg-slate-700 hover:bg-slate-600 disabled:opacity-50 rounded-lg transition-colors flex items-center gap-1.5"
+            className="px-4 py-2 text-sm bg-[#E5E9F4] hover:bg-slate-600 disabled:opacity-50 rounded-lg transition-colors flex items-center gap-1.5"
           >
             {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
             保存进度
           </button>
           {saveMsg && (
-            <span className="text-sm text-slate-400">{saveMsg}</span>
+            <span className="text-sm text-[#4B5A72]">{saveMsg}</span>
           )}
         </div>
         <button
           onClick={handleRescore}
           disabled={rescoring || answeredCount === 0}
-          className="px-5 py-2 text-sm bg-blue-600 hover:bg-blue-500 disabled:opacity-50 rounded-lg font-medium transition-colors flex items-center gap-1.5"
+          className="px-5 py-2 text-sm bg-[#1B4FD8] hover:bg-[#163069] disabled:opacity-50 rounded-lg font-medium transition-colors flex items-center gap-1.5"
         >
           {rescoring
             ? <Loader2 className="w-4 h-4 animate-spin" />

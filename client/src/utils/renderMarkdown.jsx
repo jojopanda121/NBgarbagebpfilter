@@ -51,9 +51,9 @@ export function renderMarkdown(text) {
 
       elements.push(
         <div key={i} className="flex gap-2 ml-4 my-0.5">
-          <span className="text-gray-500 shrink-0">•</span>
+          <span className="text-[#8E9BB0] shrink-0">•</span>
           <span
-            className="text-gray-400"
+            className="text-[#4B5A72]"
             dangerouslySetInnerHTML={{ __html: sanitizedHtml }}
           />
         </div>
@@ -70,7 +70,7 @@ export function renderMarkdown(text) {
       elements.push(
         <p
           key={i}
-          className="text-gray-400 my-1 leading-relaxed"
+          className="text-[#4B5A72] my-1 leading-relaxed"
           dangerouslySetInnerHTML={{ __html: sanitizedHtml }}
         />
       );

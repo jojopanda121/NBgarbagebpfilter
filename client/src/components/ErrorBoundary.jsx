@@ -24,25 +24,25 @@ export default class ErrorBoundary extends React.Component {
   render() {
     if (this.state.hasError) {
       return (
-        <div className="min-h-screen bg-slate-950 flex items-center justify-center p-6">
-          <div className="max-w-md w-full bg-slate-900 border border-white/10 rounded-xl p-8 text-center">
+        <div className="min-h-screen bg-[#F6F7FA] flex items-center justify-center p-6">
+          <div className="max-w-md w-full bg-white border border-[#D8DCE8] rounded-[6px] p-8 text-center shadow-[0_10px_36px_rgba(13,33,69,0.08)]">
             <div className="text-4xl mb-4">⚠️</div>
-            <h2 className="text-xl font-semibold text-slate-100 mb-2">
+            <h2 className="text-xl font-semibold text-[#0D2145] mb-2 font-serif-cn">
               页面渲染出错
             </h2>
-            <p className="text-slate-400 mb-4 text-sm">
+            <p className="text-[#4B5A72] mb-4 text-sm">
               {this.state.error?.message || "发生了意外错误，请刷新页面重试。"}
             </p>
             <div className="flex gap-3 justify-center">
               <button
                 onClick={this.handleReset}
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm transition-colors"
+                className="px-4 py-2 bg-[#1B4FD8] hover:bg-[#163069] text-white rounded-[3px] text-sm transition-colors font-semibold"
               >
                 重试
               </button>
               <button
                 onClick={() => window.location.reload()}
-                className="px-4 py-2 bg-slate-700 hover:bg-gray-600 text-slate-200 rounded-lg text-sm transition-colors"
+                className="px-4 py-2 bg-white border border-[#D8DCE8] hover:bg-[#EEF1F7] text-[#0D2145] rounded-[3px] text-sm transition-colors"
               >
                 刷新页面
               </button>

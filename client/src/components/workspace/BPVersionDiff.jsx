@@ -33,7 +33,7 @@ export default function BPVersionDiff({ project }) {
 
   if (versions.length < 2) {
     return (
-      <div className="text-slate-500 text-sm py-8">
+      <div className="text-[#8E9BB0] text-sm py-8">
         当前项目仅有 1 个版本，再上传一份新 BP 即可看到对比。
       </div>
     );
@@ -45,7 +45,7 @@ export default function BPVersionDiff({ project }) {
         <select
           value={vA}
           onChange={(e) => setVA(parseInt(e.target.value, 10))}
-          className="bg-slate-900 border border-slate-700 rounded px-2 py-1"
+          className="bg-white border border-[#D8DCE8] rounded px-2 py-1"
         >
           {versions.map((v) => (
             <option key={v.id} value={v.version_number}>
@@ -53,11 +53,11 @@ export default function BPVersionDiff({ project }) {
             </option>
           ))}
         </select>
-        <span className="text-slate-500">vs</span>
+        <span className="text-[#8E9BB0]">vs</span>
         <select
           value={vB}
           onChange={(e) => setVB(parseInt(e.target.value, 10))}
-          className="bg-slate-900 border border-slate-700 rounded px-2 py-1"
+          className="bg-white border border-[#D8DCE8] rounded px-2 py-1"
         >
           {versions.map((v) => (
             <option key={v.id} value={v.version_number}>
@@ -70,8 +70,8 @@ export default function BPVersionDiff({ project }) {
       {error && <div className="text-rose-400 text-sm">{error}</div>}
 
       {diff && (
-        <table className="w-full text-sm border border-slate-800">
-          <thead className="bg-slate-900 text-slate-400">
+        <table className="w-full text-sm border border-[#EEF1F7]">
+          <thead className="bg-white text-[#4B5A72]">
             <tr>
               <th className="text-left px-3 py-2">指标</th>
               <th className="text-left px-3 py-2">v{vA}</th>
@@ -84,16 +84,16 @@ export default function BPVersionDiff({ project }) {
               <tr
                 key={key}
                 className={
-                  "border-t border-slate-800 " +
-                  (c.changed ? "bg-slate-900/40" : "")
+                  "border-t border-[#EEF1F7] " +
+                  (c.changed ? "bg-white" : "")
                 }
               >
-                <td className="px-3 py-2 text-slate-300">{LABEL_MAP[key] || key}</td>
+                <td className="px-3 py-2 text-[#0F1C36]">{LABEL_MAP[key] || key}</td>
                 <td className="px-3 py-2">{fmt(c.from)}</td>
                 <td className="px-3 py-2">{fmt(c.to)}</td>
                 <td className="px-3 py-2">
                   {!c.changed ? (
-                    <span className="text-slate-500">—</span>
+                    <span className="text-[#8E9BB0]">—</span>
                   ) : c.deltaPct != null ? (
                     <span
                       className={
@@ -115,12 +115,12 @@ export default function BPVersionDiff({ project }) {
 
       {diff?.coreMetricsDiff?.length > 0 && (
         <div>
-          <h4 className="text-sm text-slate-400 mb-2">核心指标变化</h4>
+          <h4 className="text-sm text-[#4B5A72] mb-2">核心指标变化</h4>
           <ul className="space-y-1 text-sm">
             {diff.coreMetricsDiff.map((m) => (
               <li
                 key={m.name}
-                className="flex items-center gap-2 text-slate-300"
+                className="flex items-center gap-2 text-[#0F1C36]"
               >
                 <span
                   className={
@@ -129,7 +129,7 @@ export default function BPVersionDiff({ project }) {
                       ? "bg-emerald-900 text-emerald-200"
                       : m.status === "removed"
                       ? "bg-rose-900 text-rose-200"
-                      : "bg-slate-800 text-slate-300")
+                      : "bg-[#EEF1F7] text-[#0F1C36]")
                   }
                 >
                   {m.status === "added" ? "新增" : m.status === "removed" ? "删除" : "变更"}

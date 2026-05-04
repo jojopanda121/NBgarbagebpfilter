@@ -51,8 +51,10 @@ module.exports = {
       max_restarts: 10,
       restart_delay: 3000,      // 崩溃后等待 3s 再重启
 
-      // 优雅关闭：等待运行中的请求完成（最多 30s），与 server/index.js 的 SIGTERM 处理匹配
-      kill_timeout: 30000,
+      // 优雅关闭：等待运行中的请求完成（最多 5min），与 server/index.js 的
+      // GRACEFUL_SHUTDOWN_TIMEOUT_MS 默认值（5 * 60 * 1000）保持一致；
+      // 如调高 GRACEFUL_SHUTDOWN_TIMEOUT_MS，需同步上调本值，否则 PM2 会先发 SIGKILL
+      kill_timeout: 300000,
       listen_timeout: 10000,
       shutdown_with_message: false,
 

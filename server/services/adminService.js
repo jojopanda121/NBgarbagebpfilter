@@ -149,24 +149,23 @@ const getStats = () => {
     ORDER BY date
   `).all();
 
-  // 评分等级分布（从 result JSON 中提取 grade）
+  // 评分等级分布（M4: 用 SQLite json_extract 在 DB 层聚合，避免把全部 result JSON 加载到内存）
   let gradeDist = [];
   try {
-    const completeTasks = db.prepare(`
-      SELECT result FROM tasks WHERE status = 'complete' AND result IS NOT NULL
+    const rows = db.prepare(`
+      SELECT json_extract(result, '$.verdict.grade') AS grade, COUNT(*) AS count
+      FROM tasks
+      WHERE status = 'complete' AND result IS NOT NULL
+      GROUP BY grade
     `).all();
     const gradeCount = { A: 0, B: 0, C: 0, D: 0 };
-    for (const task of completeTasks) {
-      try {
-        const result = typeof task.result === "string" ? JSON.parse(task.result) : task.result;
-        const grade = result?.verdict?.grade;
-        if (grade && gradeCount[grade] !== undefined) {
-          gradeCount[grade]++;
-        }
-      } catch (_) { /* ignore parse errors */ }
+    for (const row of rows) {
+      if (row.grade && gradeCount[row.grade] !== undefined) {
+        gradeCount[row.grade] = row.count;
+      }
     }
     gradeDist = Object.entries(gradeCount).map(([grade, count]) => ({ grade, count }));
-  } catch (_) { /* ignore */ }
+  } catch (_) { /* ignore — older SQLite without JSON1 extension */ }
 
   // 日均分析量趋势（最近30天）
   const dailyAnalysisTrend = db.prepare(`

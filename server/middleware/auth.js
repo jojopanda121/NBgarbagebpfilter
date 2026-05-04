@@ -79,7 +79,9 @@ function signToken(user) {
 function revokeToken(jti, userId, expSeconds) {
   if (!jti) return;
   try {
-    const expIso = expSeconds
+    // M11: 严格校验 expSeconds，避免 NaN/undefined/Infinity 导致 Invalid Date 写入
+    const validExp = Number.isFinite(expSeconds) && expSeconds > 0;
+    const expIso = validExp
       ? new Date(expSeconds * 1000).toISOString()
       : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
     getDb()

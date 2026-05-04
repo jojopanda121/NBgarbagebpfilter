@@ -23,7 +23,7 @@ function subscribe(runId, res) {
   if (!subscribers.has(runId)) subscribers.set(runId, new Set());
   subscribers.get(runId).add(res);
 
-  // 心跳防止连接超时
+  // 心跳防止连接超时（M1: unref 避免阻塞进程退出）
   const heartbeat = setInterval(() => {
     try {
       res.write(": heartbeat\n\n");
@@ -31,15 +31,25 @@ function subscribe(runId, res) {
       cleanup();
     }
   }, HEARTBEAT_INTERVAL_MS);
+  if (typeof heartbeat.unref === "function") heartbeat.unref();
 
+  let cleaned = false;
   function cleanup() {
+    if (cleaned) return;
+    cleaned = true;
     clearInterval(heartbeat);
     subscribers.get(runId)?.delete(res);
     if (subscribers.get(runId)?.size === 0) subscribers.delete(runId);
   }
 
+  // M1: 监听多种连接终止事件，确保心跳定时器一定被清理
   res.on("close", cleanup);
   res.on("error", cleanup);
+  res.on("finish", cleanup);
+  if (res.req) {
+    res.req.on("close", cleanup);
+    res.req.on("aborted", cleanup);
+  }
 
   logger.info("[SSE] subscribe", { runId, totalSubs: subscribers.get(runId)?.size });
 }

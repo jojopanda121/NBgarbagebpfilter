@@ -73,8 +73,19 @@ function runMigrations(database) {
       })();
       console.log(`[DB] Migration applied: ${file}`);
     } catch (err) {
-      // 如果迁移失败（比如列已存在），记录警告但继续
-      console.log(`[DB] Migration ${file} skipped: ${err.message}`);
+      // M22: ALTER TABLE ADD COLUMN 在某些旧库可能因列已存在而冲突，这类幂等错误才允许跳过；
+      //      其他错误（语法、约束、磁盘 IO）必须 fail-fast，避免半执行状态进入生产。
+      const idempotentRe = /duplicate column name|already exists|index already exists/i;
+      if (idempotentRe.test(err.message)) {
+        console.warn(`[DB] Migration ${file} idempotent-skip: ${err.message}`);
+        // 记入 schema_migrations，避免反复尝试
+        try {
+          database.prepare("INSERT OR IGNORE INTO schema_migrations (version) VALUES (?)").run(file);
+        } catch (_) { /* ignore */ }
+      } else {
+        console.error(`[DB][FATAL] Migration ${file} failed: ${err.message}`);
+        throw new Error(`Migration ${file} failed: ${err.message}`);
+      }
     }
   }
 

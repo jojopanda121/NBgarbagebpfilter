@@ -277,9 +277,12 @@ const updateSettings = async (req, res, next) => {
 const getAllTasks = async (req, res, next) => {
   try {
     const { page, pageSize, status, search } = req.query;
+    // M12: 严格 clamp pageSize，避免 ?pageSize=99999999 触发 OOM
+    const safePage = Math.max(1, parseInt(page, 10) || 1);
+    const safePageSize = Math.min(100, Math.max(1, parseInt(pageSize, 10) || 20));
     const result = adminService.getAllTasks({
-      page: parseInt(page) || 1,
-      pageSize: parseInt(pageSize) || 20,
+      page: safePage,
+      pageSize: safePageSize,
       status,
       search,
     });

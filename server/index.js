@@ -88,6 +88,26 @@ app.use(helmet({
 }));
 app.use(cors(corsOptions));
 app.use(requestId);
+
+// M10: 写接口强制 Content-Type 校验，作为 CSRF 第二道防线
+// （CORS 已禁用 credentials，配合 application/json 要求可阻断绝大多数浏览器表单 CSRF）
+app.use((req, res, next) => {
+  const method = req.method;
+  if (method !== "POST" && method !== "PUT" && method !== "PATCH" && method !== "DELETE") {
+    return next();
+  }
+  // multipart 上传与 SSE 不在此校验范围
+  const ct = (req.headers["content-type"] || "").toLowerCase();
+  if (!ct) return next(); // 例如 DELETE 无 body
+  if (ct.startsWith("application/json")) return next();
+  if (ct.startsWith("multipart/form-data")) return next();
+  if (ct.startsWith("application/x-www-form-urlencoded")) {
+    // 表单 POST 通常意味着浏览器跨站发起，直接拒绝
+    return res.status(415).json({ error: "Unsupported Content-Type" });
+  }
+  return res.status(415).json({ error: "Unsupported Content-Type" });
+});
+
 app.use(express.json({ limit: "50mb" }));
 
 // ── API 路由 ──
@@ -117,9 +137,10 @@ app.get("/api/health", (_req, res) => {
   } catch (err) {
     checks.database = { status: "down", error: err.message };
   }
-  const ok = checks.database.status === "ok";
+  // M9: 关闭期间返回 503，让 LB / Docker / PM2 停止派发新流量
+  const ok = checks.database.status === "ok" && !shuttingDown;
   res.status(ok ? 200 : 503).json({
-    status: ok ? "ok" : "degraded",
+    status: shuttingDown ? "shutting_down" : (ok ? "ok" : "degraded"),
     model: getModelName(),
     search: "minimax_builtin",
     version: "3.0.0",
@@ -194,25 +215,29 @@ server.timeout = HTTP_TIMEOUT;
 server.requestTimeout = HTTP_TIMEOUT;
 server.keepAliveTimeout = HTTP_TIMEOUT + 1000;
 
-// 优雅关闭：停止接受新连接，等待现有请求完成（最多 30s）
+// 优雅关闭（M9）：超时与 LLM 调用对齐（5min），避免在长时间分析中途强行终止；
+// 关闭期间健康检查返回 503，让上游（Nginx/Docker/PM2）停止把流量打到本实例
 let shuttingDown = false;
+const GRACEFUL_TIMEOUT_MS = parseInt(process.env.GRACEFUL_SHUTDOWN_TIMEOUT_MS, 10) || 5 * 60 * 1000;
+function isShuttingDown() { return shuttingDown; }
 function gracefulShutdown(signal) {
   if (shuttingDown) return;
   shuttingDown = true;
-  console.log(`${signal} received, shutting down gracefully...`);
+  console.log(`${signal} received, shutting down gracefully (timeout=${GRACEFUL_TIMEOUT_MS}ms)...`);
   server.close(() => {
     console.log("All connections closed, exiting...");
     try { const { closeDb } = require("./db"); closeDb(); } catch {}
     process.exit(0);
   });
   setTimeout(() => {
-    console.error("Graceful shutdown timed out (30s), forcing exit...");
+    console.error(`Graceful shutdown timed out (${GRACEFUL_TIMEOUT_MS}ms), forcing exit...`);
     try { const { closeDb } = require("./db"); closeDb(); } catch {}
     process.exit(1);
-  }, 30_000).unref();
+  }, GRACEFUL_TIMEOUT_MS).unref();
 }
 process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
 process.on("SIGINT", () => gracefulShutdown("SIGINT"));
+module.exports = { isShuttingDown };
 
 // 全局兜底：避免后台异步任务的未捕获异常静默拖垮进程
 process.on("unhandledRejection", (reason) => {

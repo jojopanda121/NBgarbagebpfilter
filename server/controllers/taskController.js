@@ -33,8 +33,9 @@ function getTaskStatus(req, res) {
 /** GET /api/task/shared/:shareToken — 通过分享 token 查看报告（公开） */
 function getSharedTask(req, res) {
   const { shareToken } = req.params;
-  if (!shareToken) {
-    return res.status(400).json({ error: "缺少分享 token" });
+  // H6: 严格校验 share_token 格式（64 hex），防止注入/枚举尝试落到 DB
+  if (!shareToken || !/^[a-f0-9]{64}$/i.test(shareToken)) {
+    return res.status(400).json({ error: "分享链接无效" });
   }
 
   const db = getDb();

@@ -58,7 +58,8 @@ services:
       doc-service:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://localhost:3001/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      # M17: 改用 wget，兼容 Node 18+ 之前版本 / 不依赖 fetch 全局 API
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3001/api/health > /dev/null 2>&1 || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -73,6 +74,14 @@ services:
     restart: always
     expose:
       - "8001"
+    # M15: 为 doc-service 增加资源限制，避免大 PDF 解析吃光宿主机内存
+    deploy:
+      resources:
+        limits:
+          cpus: "1.5"
+          memory: 1536M
+        reservations:
+          memory: 256M
     healthcheck:
       test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
       interval: 30s
@@ -97,6 +106,7 @@ services:
       - production   # 仅在 --profile production 时启动
 
   # ── 数据库定时备份（每天凌晨3点） ──
+  # M16: 备份脚本加 set -euo pipefail 与产物大小校验，失败可在日志中明确发现
   backup:
     build:
       context: .
@@ -111,7 +121,27 @@ services:
     command:
       - -c
       - |
-        echo "0 3 * * * sqlite3 /data/app.db '.backup /data/backups/app_$$(date +\%Y\%m\%d_\%H\%M\%S).db' && find /data/backups -name '*.db' -mtime +30 -delete" | crontab - && \
+        cat > /usr/local/bin/do-backup.sh <<'BACKUP'
+        #!/bin/sh
+        set -eu
+        TS=$$(date +%Y%m%d_%H%M%S)
+        OUT="/data/backups/app_$${TS}.db"
+        mkdir -p /data/backups
+        if ! sqlite3 /data/app.db ".backup $${OUT}"; then
+          echo "[BACKUP][ERR] sqlite .backup failed at $${TS}" >&2
+          exit 1
+        fi
+        SZ=$$(stat -c%s "$${OUT}" 2>/dev/null || echo 0)
+        if [ "$${SZ}" -lt 1024 ]; then
+          echo "[BACKUP][ERR] backup file too small ($${SZ} bytes) at $${TS}" >&2
+          rm -f "$${OUT}"
+          exit 2
+        fi
+        find /data/backups -name '*.db' -mtime +30 -delete
+        echo "[BACKUP][OK] $${OUT} ($${SZ} bytes)"
+        BACKUP
+        chmod +x /usr/local/bin/do-backup.sh && \
+        echo "0 3 * * * /usr/local/bin/do-backup.sh >> /data/backups/backup.log 2>&1" | crontab - && \
         mkdir -p /data/backups && \
         crond -f -l 2
     profiles:

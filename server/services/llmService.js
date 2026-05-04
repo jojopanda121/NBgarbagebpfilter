@@ -180,7 +180,11 @@ async function callLLMWithThinking(systemPrompt, userContent, maxTokens = 16000,
  */
 async function callLLMChat(systemPrompt, messages, opts = {}) {
   const { maxTokens = 4096, onDelta, signal } = opts;
+  if (!config.minimaxApiKey) {
+    throw new Error("LLM 未配置：服务端缺少 MINIMAX_API_KEY，请在 .env 中设置后重启 PM2 进程");
+  }
   let lastError;
+  let streamUnsupported = false;
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     try {
@@ -194,7 +198,7 @@ async function callLLMChat(systemPrompt, messages, opts = {}) {
 
       const timeout = calcTimeout(maxTokens);
 
-      if (onDelta) {
+      if (onDelta && !streamUnsupported) {
         // H8: 流式模式 — 即便 stream 创建本身失败，也保证 timeout/abort 监听器被清理
         let stream;
         let onAbort;
@@ -253,14 +257,32 @@ async function callLLMChat(systemPrompt, messages, opts = {}) {
         timeout,
         `callLLMChat(maxTokens=${maxTokens})`
       );
-      return resp.content
+      const fullText = resp.content
         .filter((b) => b.type === "text")
         .map((b) => b.text)
         .join("");
+      // 如果调用方期望流式但上游不支持，至少把完整文本作为一个 delta 推给前端，
+      // 否则 SSE 端会出现"主持人开口但说不出话"的视觉假死。
+      if (onDelta && fullText) onDelta(fullText);
+      return fullText;
     } catch (err) {
       lastError = err;
       // 客户端取消不重试
       if (err?.message === "客户端取消" || signal?.aborted) break;
+
+      // 流式不被上游支持（MiniMax 兼容端点常见）→ 改走非流式，下一轮直接降级
+      const msg = err?.message || "";
+      if (
+        onDelta && !streamUnsupported &&
+        (err?.status === 400 || err?.status === 404 ||
+         msg.includes("stream") || msg.includes("SSE") ||
+         msg.includes("not supported") || msg.includes("unsupported"))
+      ) {
+        console.warn("[LLM/Chat] 流式不被支持，降级为非流式:", msg);
+        streamUnsupported = true;
+        continue;
+      }
+
       if (attempt < MAX_RETRIES && isRetryable(err)) {
         console.warn(`[LLM/Chat] 请求失败 (attempt ${attempt + 1}): ${err.message}`);
         continue;
@@ -268,7 +290,7 @@ async function callLLMChat(systemPrompt, messages, opts = {}) {
       break;
     }
   }
-  throw lastError;
+  throw normalizeLLMError(lastError);
 }
 
 /**

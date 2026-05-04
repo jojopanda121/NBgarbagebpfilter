@@ -51,11 +51,25 @@ module.exports = {
       max_restarts: 10,
       restart_delay: 3000,      // 崩溃后等待 3s 再重启
 
+      // 优雅关闭：等待运行中的请求完成（最多 5min），与 server/index.js 的
+      // GRACEFUL_SHUTDOWN_TIMEOUT_MS 默认值（5 * 60 * 1000）保持一致；
+      // 如调高 GRACEFUL_SHUTDOWN_TIMEOUT_MS，需同步上调本值，否则 PM2 会先发 SIGKILL
+      kill_timeout: 300000,
+      listen_timeout: 10000,
+      shutdown_with_message: false,
+
       // ── 日志（相对于 cwd） ──
       error_file: './logs/server-error.log',
       out_file:   './logs/server-out.log',
       merge_logs: true,
       log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
+      // M14: PM2 内置日志大小上限；同时建议安装 pm2-logrotate：
+      //   pm2 install pm2-logrotate
+      //   pm2 set pm2-logrotate:max_size 50M
+      //   pm2 set pm2-logrotate:retain 14
+      //   pm2 set pm2-logrotate:compress true
+      max_size: '50M',
+      retain: 14,
 
       // ── 生产环境变量 ──
       // 端口对齐 Zeabur/Nginx 约定（8080）；

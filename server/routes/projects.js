@@ -13,6 +13,10 @@ const {
   rescoreHandler,
   getIMemo,
   regenerateIMemoHandler,
+  getOnePagerHandler,
+  postOnePagerHandler,
+  regenerateOnePagerHandler,
+  downloadOnePagerPptxHandler,
 } = require("../controllers/projectController");
 
 const router = Router();
@@ -33,5 +37,11 @@ router.post("/:taskId/dd/rescore",   requireAuth, rescoreHandler);
 // IMemo
 router.get("/:taskId/imemo",                 requireAuth, getIMemo);
 router.post("/:taskId/imemo/regenerate",     requireAuth, regenerateIMemoHandler);
+
+// 一页投资亮点 PPT
+router.get("/:taskId/onepager",              requireAuth, getOnePagerHandler);
+router.post("/:taskId/onepager",             requireAuth, postOnePagerHandler);
+router.post("/:taskId/onepager/regenerate",  requireAuth, regenerateOnePagerHandler);
+router.get("/:taskId/onepager/pptx",         requireAuth, downloadOnePagerPptxHandler);
 
 module.exports = router;

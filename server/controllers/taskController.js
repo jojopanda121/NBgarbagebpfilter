@@ -33,8 +33,9 @@ function getTaskStatus(req, res) {
 /** GET /api/task/shared/:shareToken — 通过分享 token 查看报告（公开） */
 function getSharedTask(req, res) {
   const { shareToken } = req.params;
-  if (!shareToken) {
-    return res.status(400).json({ error: "缺少分享 token" });
+  // H6: 严格校验 share_token 格式（64 hex），防止注入/枚举尝试落到 DB
+  if (!shareToken || !/^[a-f0-9]{64}$/i.test(shareToken)) {
+    return res.status(400).json({ error: "分享链接无效" });
   }
 
   const db = getDb();
@@ -127,4 +128,21 @@ function softDeleteTask(req, res) {
   res.json({ success: true });
 }
 
-module.exports = { getTaskStatus, getSharedTask, shareTask, getUserTasks, softDeleteTask };
+/** DELETE /api/task/:taskId/share — 撤销分享链接（owner 或 admin） */
+function revokeShare(req, res) {
+  const { taskId } = req.params;
+  const userId = req.user.id;
+  const task = getTask(taskId);
+  if (!task) return res.status(404).json({ error: "任务不存在" });
+
+  const db = getDb();
+  const userRow = db.prepare("SELECT role FROM users WHERE id = ?").get(userId);
+  const isAdmin = userRow?.role === "admin";
+  if (task.user_id !== userId && !isAdmin) {
+    return res.status(403).json({ error: "无权撤销此分享" });
+  }
+  db.prepare("UPDATE tasks SET share_token = NULL, share_expires_at = NULL WHERE id = ?").run(taskId);
+  res.json({ success: true });
+}
+
+module.exports = { getTaskStatus, getSharedTask, shareTask, getUserTasks, softDeleteTask, revokeShare };

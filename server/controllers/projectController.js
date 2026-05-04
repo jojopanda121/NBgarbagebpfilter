@@ -12,6 +12,12 @@ const { getDb } = require("../db");
 const { getTask } = require("../services/taskService");
 const { generateDDQuestionnaire, saveDDAnswers, rescoreAfterDD } = require("../services/ddService");
 const { getOrGenerateIMemo, regenerateIMemo } = require("../services/iMemoService");
+const {
+  getOrGenerateOnePager,
+  regenerateOnePager,
+  renderOnePagerPptx,
+  buildPptxFilename,
+} = require("../services/pptService");
 
 // 合法的项目阶段枚举
 const VALID_STAGES = ["new", "reviewed", "dd_pending", "dd_in_progress", "dd_done", "decided", "passed", "rejected"];
@@ -299,6 +305,95 @@ function regenerateIMemoHandler(req, res) {
   }
 }
 
+/** GET /api/projects/:taskId/onepager — 取/生成一页 PPT JSON（用于前端预览） */
+async function getOnePagerHandler(req, res) {
+  const { taskId } = req.params;
+  const userId = req.user.id;
+  const db = getDb();
+
+  const task = getTask(taskId);
+  const err = checkOwner(task, userId, db);
+  if (err) return res.status(err === "任务不存在" ? 404 : 403).json({ error: err });
+  if (task.status !== "complete") {
+    return res.status(400).json({ error: "报告未完成，无法生成一页 PPT" });
+  }
+
+  try {
+    const data = await getOrGenerateOnePager(taskId);
+    res.json(data);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+}
+
+/** POST /api/projects/:taskId/onepager — 用户提交可选微调字段并重生成 */
+async function postOnePagerHandler(req, res) {
+  const { taskId } = req.params;
+  const userId = req.user.id;
+  const db = getDb();
+
+  const task = getTask(taskId);
+  const err = checkOwner(task, userId, db);
+  if (err) return res.status(err === "任务不存在" ? 404 : 403).json({ error: err });
+  if (task.status !== "complete") {
+    return res.status(400).json({ error: "报告未完成" });
+  }
+
+  const overrides = req.body && typeof req.body === "object" ? req.body.overrides || null : null;
+  try {
+    const data = await regenerateOnePager(taskId, overrides);
+    res.json(data);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+}
+
+/** POST /api/projects/:taskId/onepager/regenerate — 强制重生成（不带 overrides） */
+async function regenerateOnePagerHandler(req, res) {
+  const { taskId } = req.params;
+  const userId = req.user.id;
+  const db = getDb();
+
+  const task = getTask(taskId);
+  const err = checkOwner(task, userId, db);
+  if (err) return res.status(err === "任务不存在" ? 404 : 403).json({ error: err });
+
+  try {
+    const data = await regenerateOnePager(taskId, null);
+    res.json(data);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+}
+
+/** GET /api/projects/:taskId/onepager/pptx — 下载 .pptx */
+async function downloadOnePagerPptxHandler(req, res) {
+  const { taskId } = req.params;
+  const userId = req.user.id;
+  const db = getDb();
+
+  const task = getTask(taskId);
+  const err = checkOwner(task, userId, db);
+  if (err) return res.status(err === "任务不存在" ? 404 : 403).json({ error: err });
+  if (task.status !== "complete") {
+    return res.status(400).json({ error: "报告未完成" });
+  }
+
+  try {
+    const cache = await getOrGenerateOnePager(taskId);
+    const pptx = await renderOnePagerPptx(cache.json);
+    const filename = buildPptxFilename(cache.json.company_name);
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.presentationml.presentation");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="onepager.pptx"; filename*=UTF-8''${encodeURIComponent(filename)}`
+    );
+    res.send(pptx);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+}
+
 module.exports = {
   getProject,
   updateStage,
@@ -311,4 +406,8 @@ module.exports = {
   rescoreHandler,
   getIMemo,
   regenerateIMemoHandler,
+  getOnePagerHandler,
+  postOnePagerHandler,
+  regenerateOnePagerHandler,
+  downloadOnePagerPptxHandler,
 };

@@ -4,11 +4,14 @@
 // ============================================================
 
 const pLimit = require("p-limit");
-const { callLLM, callLLMWithThinking } = require("./llmService");
+const { callLLM, callLLMWithThinking, callLLMWithSearch } = require("./llmService");
 const { extractJson, extractJsonArray, extractPartialResult, ensureStringArray } = require("../utils/jsonParser");
 const { scoreProject } = require("../scoring");
 const logger = require("../utils/logger");
 const trackingService = require("./trackingService");
+const orchestrator = require("../agents/orchestrator");
+const dataLakeService = require("./dataLakeService");
+const crossMatchService = require("./crossMatchService");
 const {
   AGENT_A_PROMPT,
   CLAIM_VERDICT_BATCH_PROMPT,
@@ -21,6 +24,16 @@ const {
 
 const MAX_CLAIMS_PER_BATCH = 6; // 每批最多6条声明，防止输出截断导致JSON解析失败
 const MAX_CONCURRENT_BATCHES = 5; // 最多5个并发批次
+const PARALLEL_TASK_TIMEOUT_MS = 8 * 60 * 1000; // 单路并行任务上限 8min，避免一路 hang 拖死整个分析
+
+function withTaskTimeout(promise, label) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error(`${label} 任务超时（${PARALLEL_TASK_TIMEOUT_MS / 1000}s）`)), PARALLEL_TASK_TIMEOUT_MS).unref()
+    ),
+  ]);
+}
 
 /** 行业大类映射 — 通过关键词匹配将细分行业归类到统计大类（支持多标签） */
 const INDUSTRY_CATEGORIES = [
@@ -111,25 +124,32 @@ async function runAgentBWithBatchingAndResearch(extractedData, bpText, onProgres
   const bpContext = `请对处于 ${extractedData.industry || "未知"} 赛道的 ${extractedData.company_name || "未知公司"} 进行核查。产品：${extractedData.product_name || "未知"}。`;
 
   const limit = pLimit(MAX_CONCURRENT_BATCHES);
-  const batchResults = await Promise.all(
-    batches.map((batch, batchIdx) =>
-      limit(() =>
-        callLLM(
-          CLAIM_VERDICT_BATCH_PROMPT + "\n\n【重要】请严格只输出 JSON 数组，不要使用 markdown 代码块。",
-          `${bpContext}\n\n待核查声明批次 ${batchIdx + 1}/${batchCount}：\n${JSON.stringify(batch, null, 2)}`,
-          6144
-        ).then((raw) => {
-          const parsed = extractJsonArray(raw);
-          if (!parsed) {
+  // M8: 外层 try/catch 兜底 Promise.all 内部不可达异常（如 p-limit 自身错误）
+  let batchResults;
+  try {
+    batchResults = await Promise.all(
+      batches.map((batch, batchIdx) =>
+        limit(() =>
+          callLLM(
+            CLAIM_VERDICT_BATCH_PROMPT + "\n\n【重要】请严格只输出 JSON 数组，不要使用 markdown 代码块。",
+            `${bpContext}\n\n待核查声明批次 ${batchIdx + 1}/${batchCount}：\n${JSON.stringify(batch, null, 2)}`,
+            6144
+          ).then((raw) => {
+            const parsed = extractJsonArray(raw);
+            if (!parsed) {
+              return { failed: true, batch, batchIdx };
+            }
+            return { failed: false, results: parsed };
+          }).catch(() => {
             return { failed: true, batch, batchIdx };
-          }
-          return { failed: false, results: parsed };
-        }).catch(() => {
-          return { failed: true, batch, batchIdx };
-        })
+          })
+        )
       )
-    )
-  );
+    );
+  } catch (err) {
+    logger.error("[B.1] 批量并发调度本身异常，全部降级为失败批次:", err.message);
+    batchResults = batches.map((batch, batchIdx) => ({ failed: true, batch, batchIdx }));
+  }
 
   // Phase 1.5: 失败批次重试 — 先整体重试，再逐条降级
   const allClaimVerdicts = [];
@@ -200,10 +220,8 @@ async function runAgentBWithBatchingAndResearch(extractedData, bpText, onProgres
 
   onProgress({ type: "progress", stage: "report_parallel", percentage: 58, message: "三路并行：评分数据 + 五维深度分析 + 深度研究报告..." });
 
-  const [structuralOutcome, dimensionAnalysisResult, deepResearch] = await Promise.all([
-
-    // Task A: 评分数据（只要 validated_data，输出小，高可靠性）
-    (async () => {
+  const settled = await Promise.allSettled([
+    withTaskTimeout((async () => {
       // 层1: DeepThink（评分数据输出小，12000 足够）
       const judgeResult = await callLLMWithThinking(scoringPrompt, structuralInput, 12000, 5000);
       let result = extractJson(judgeResult.text);
@@ -254,10 +272,10 @@ async function runAgentBWithBatchingAndResearch(extractedData, bpText, onProgres
       }
 
       return { structuralResult: result, thinking: judgeResult.thinking || "" };
-    })(),
+    })(), "评分"),
 
     // Task B: 五维深度分析（专用调用，给足 token 空间输出完整分析）
-    (async () => {
+    withTaskTimeout((async () => {
       try {
         // 普通模式（不用 thinking，把 token 全给输出）
         const dimRaw = await callLLM(dimAnalysisPrompt, structuralInput, 16000);
@@ -287,13 +305,41 @@ async function runAgentBWithBatchingAndResearch(extractedData, bpText, onProgres
         logger.warn("[B.dim] 五维分析调用异常:", err.message);
         return null;
       }
-    })(),
+    })(), "五维分析"),
 
-    // Task C: 深度研究报告（token 上限提升至 16000）
-    (async () => {
-      return await callLLM(DEEP_RESEARCH_PROMPT, earlyDeepResearchInput, 16000);
-    })(),
+    // Task C: 深度研究报告（启用 MiniMax M2 web_search 工具，失败自动降级；并加 8min 任务级超时）
+    withTaskTimeout((async () => {
+      try {
+        const { text, searchUsed } = await callLLMWithSearch(
+          DEEP_RESEARCH_PROMPT,
+          earlyDeepResearchInput,
+          { maxTokens: 16000 }
+        );
+        if (searchUsed) logger.info("[B.deep] 深度研究已使用 web_search 增强");
+        return text;
+      } catch (e) {
+        logger.warn("[B.deep] web_search 调用失败，降级普通模式:", e.message);
+        return await callLLM(DEEP_RESEARCH_PROMPT, earlyDeepResearchInput, 16000);
+      }
+    })(), "深度研究"),
   ]);
+
+  const [scoringSettled, dimSettled, researchSettled] = settled;
+  // 评分失败时不能继续（核心数据），抛出由上游处理；其他两路失败则降级为 null
+  if (scoringSettled.status === "rejected") {
+    logger.warn("[Pipeline] 评分任务失败/超时", { reason: scoringSettled.reason?.message });
+  }
+  const structuralOutcome = scoringSettled.status === "fulfilled"
+    ? scoringSettled.value
+    : { structuralResult: null, thinking: "" };
+  const dimensionAnalysisResult = dimSettled.status === "fulfilled" ? dimSettled.value : null;
+  if (dimSettled.status === "rejected") {
+    logger.warn("[Pipeline] 五维分析失败/超时", { reason: dimSettled.reason?.message });
+  }
+  const deepResearch = researchSettled.status === "fulfilled" ? researchSettled.value : "";
+  if (researchSettled.status === "rejected") {
+    logger.warn("[Pipeline] 深度研究失败/超时", { reason: researchSettled.reason?.message });
+  }
 
   onProgress({ type: "progress", stage: "parallel_done", percentage: 84, message: "评分、维度分析与深度研究均已完成..." });
 
@@ -515,7 +561,7 @@ function buildValuationComparison(validatedData, extractedData, scoringInput, sc
  * 完整分析流水线（后台执行）
  * 优化：声明核查3批并发 + 深度研究与结构化评分并行
  */
-async function runPipeline(bpText, onProgress, taskId = null) {
+async function runPipeline(bpText, onProgress, taskId = null, userId = null) {
   const startTime = Date.now();
 
   onProgress({ type: "progress", stage: "pdf_done", percentage: 8, message: "文档解析完成，准备分析..." });
@@ -523,10 +569,28 @@ async function runPipeline(bpText, onProgress, taskId = null) {
   // Step 1: 数据提取
   const { extractedData, truncatedText } = await extractBPData(bpText, onProgress);
 
-  // Step 2: 声明核查（3批并发）+ 评分数据 + 五维深度分析 + 深度研究（三路并行）
-  onProgress({ type: "progress", stage: "agent_b_start", percentage: 32, message: "Agent B 启动（3批并发核查）..." });
-  const { claimVerdicts, structuralResult, thinking, dimensionAnalysisResult, deepResearch } =
-    await runAgentBWithBatchingAndResearch(extractedData, truncatedText, onProgress);
+  // Step 2: Agent B（声明核查+评分）与 6 个 Multiagent 并行启动，互不等待
+  onProgress({ type: "progress", stage: "agent_b_start", percentage: 32, message: "Agent B 启动（3批并发核查）+ 6个AI Agent 并行分析..." });
+
+  const [agentBResult, multiagent] = await Promise.all([
+    // 主流水线：声明核查 + 评分数据 + 五维深度分析 + 深度研究
+    runAgentBWithBatchingAndResearch(extractedData, truncatedText, onProgress),
+
+    // 新增：6 个 Multiagent 并行，捕获异常不影响主流程
+    (async () => {
+      try {
+        onProgress({ type: "progress", stage: "multiagent_start", percentage: 33, message: "6 个 AI Agent 深度分析启动中..." });
+        const { runId, multiagent: ma } = await orchestrator.runAllAgents(bpText, extractedData, taskId, userId);
+        onProgress({ type: "progress", stage: "multiagent_done", percentage: 85, message: "6 个 AI Agent 分析完成" });
+        return { runId, ...ma };
+      } catch (err) {
+        logger.warn("[Pipeline] multiagent 全局异常，不影响主报告:", err.message);
+        return {};
+      }
+    })(),
+  ]);
+
+  const { claimVerdicts, structuralResult, thinking, dimensionAnalysisResult, deepResearch } = agentBResult;
 
   // Agent A 数据兜底：如果结构化评分 3 层 + 抢救全部失败，用 Agent A 提取的数据直接评分
   let validatedData;
@@ -620,7 +684,7 @@ async function runPipeline(bpText, onProgress, taskId = null) {
     const trackCompanyName = extractedData.company_name;
     if (trackCompanyName && trackCompanyName.trim()) {
       // 异步执行，不 await，不阻塞返回
-      (async () => {
+      const trackingTask = (async () => {
         try {
           const entity = await trackingService.findOrCreateCompanyEntity(extractedData, taskId);
           if (taskId) {
@@ -640,10 +704,36 @@ async function runPipeline(bpText, onProgress, taskId = null) {
           logger.warn("训练数据采集失败（不影响主流程）", { error: innerErr.message });
         }
       })();
+      trackingTask.catch((err) => logger.warn("训练数据采集异步异常", { error: err.message }));
     }
   } catch (outerErr) {
     logger.warn("训练数据采集初始化异常", { error: outerErr.message });
   }
+
+  // 数据飞轮：异步写入数据沉淀表（不阻塞报告返回）
+  // isAnonymized 默认 1，未来可通过用户设置控制
+  (async () => {
+    try {
+      const userId = null; // 此处无法获取 userId，由 analyzeController 传递
+      dataLakeService.sinkAllAgentData({
+        taskId,
+        userId,
+        multiagent,
+        score: verdict?.total_score ?? null,
+        isAnonymized: 1,
+      });
+      const crossMatchInsights = crossMatchService.runCrossMatch({
+        taskId,
+        multiagent,
+        score: verdict?.total_score ?? null,
+      });
+      if (crossMatchInsights) {
+        logger.info("[Pipeline] 交叉识别完成", { taskId, insights: crossMatchInsights });
+      }
+    } catch (err) {
+      logger.warn("[Pipeline] 数据飞轮写入异常（不影响报告）:", err.message);
+    }
+  })();
 
   return {
     success: true,
@@ -654,6 +744,7 @@ async function runPipeline(bpText, onProgress, taskId = null) {
     thinking,
     deep_research: deepResearch,
     verdict,
+    multiagent,
     title,
     industry_category: industryCategory,
     industry_categories: industryCategories,

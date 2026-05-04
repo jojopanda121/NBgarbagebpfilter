@@ -3,8 +3,6 @@ import {
   User,
   Wallet,
   Lock,
-  Mail,
-  Save,
   Loader2,
   CheckCircle,
   AlertCircle,
@@ -26,7 +24,6 @@ import {
   Megaphone,
   MapPin,
   TrendingUp,
-  Calendar,
 } from "lucide-react";
 import { useSearchParams } from "react-router-dom";
 import api from "../services/api";
@@ -52,11 +49,6 @@ const ADMIN_ONLY_TABS = [
   { key: "site_content", label: "内容管理", icon: Edit },
   { key: "settings", label: "系统设置", icon: SettingsIcon },
   { key: "admin", label: "兑换码管理", icon: Shield },
-];
-
-const ADMIN_TABS = [
-  ...ADMIN_ONLY_TABS,
-  ...TABS,
 ];
 
 export default function SettingsPage({ adminMode = false }) {
@@ -265,6 +257,7 @@ export default function SettingsPage({ adminMode = false }) {
     if (activeTab === "tasks" && isAdmin) {
       loadTasks();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, isAdmin, userPage, userSearch, userStatus, feedbackPage, feedbackStatus, taskPage, taskStatus, taskSearch]);
 
   const loadUsers = async () => {
@@ -1831,7 +1824,7 @@ function PackagesTab({ packages, setPackages, setMessage }) {
     } catch (err) { setMessage({ type: "error", text: err.message }); }
   };
   const handleDelete = async (id) => {
-    if (!confirm("确定删除此套餐？")) return;
+    if (!window.confirm("确定删除此套餐？")) return;
     try { await api.delete(`/api/admin/packages/${id}`); const data = await api.get("/api/admin/packages"); setPackages(data.packages || []); } catch (err) { setMessage({ type: "error", text: err.message }); }
   };
   return (
@@ -2055,11 +2048,12 @@ function SiteContentTab({ setMessage }) {
 // 管理员面板组件
 function AdminPanel({ tokenQuota, setTokenQuota, tokenCount, setTokenCount, generating, setGenerating, setGeneratedToken, setMessage, adminTokens, setAdminTokens, adminAvailable, setAdminAvailable, loading, setLoading }) {
   const [allTokens, setAllTokens] = useState([]);
-  const [tokenPage, setTokenPage] = useState(1);
+  const [tokenPage] = useState(1);
   const [generatedTokens, setGeneratedTokens] = useState([]);
 
   useEffect(() => {
     loadAllTokens();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tokenPage]);
 
   const loadAllTokens = async () => {
@@ -2087,7 +2081,7 @@ function AdminPanel({ tokenQuota, setTokenQuota, tokenCount, setTokenCount, gene
   };
 
   const handleDeleteToken = async (token) => {
-    if (!confirm(`确定删除兑换码 ${token} 吗？删除后该兑换码将无法使用。`)) return;
+    if (!window.confirm(`确定删除兑换码 ${token} 吗？删除后该兑换码将无法使用。`)) return;
     try {
       await api.delete(`/api/admin/tokens/${token}`);
       setMessage({ type: "success", text: "兑换码已删除" });

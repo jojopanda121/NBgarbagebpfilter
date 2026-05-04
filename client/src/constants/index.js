@@ -1,5 +1,5 @@
-import { FileText, Search, Gavel } from "lucide-react";
-import { TrendingUp, Brain, BarChart3, Users, Shield } from "lucide-react";
+import { FileText, Gavel } from "lucide-react";
+import { TrendingUp, Brain, BarChart3, Users, Shield, DollarSign, AlertTriangle } from "lucide-react";
 
 // ── API 地址（保持原有读取方式，兼容云端生产环境）──
 export const API_BASE = process.env.REACT_APP_API_URL || "";
@@ -36,3 +36,13 @@ export const dimSubtitleMap = {
   team: "创始人赛道经验年数",
   external_risk: "声明核查结果",
 };
+
+// ── Multiagent 定义（Sprint 1）──
+export const AGENT_DEFS = [
+  { key: "project_summary", label: "项目摘要",   icon: FileText,       color: "blue" },
+  { key: "founder",         label: "创始人调查", icon: Users,          color: "purple" },
+  { key: "financial",       label: "财务核查",   icon: BarChart3,      color: "emerald" },
+  { key: "competitor",      label: "竞品分析",   icon: TrendingUp,     color: "orange" },
+  { key: "red_flag",        label: "红旗扫描",   icon: AlertTriangle,  color: "red" },
+  { key: "valuation",       label: "估值合理性", icon: DollarSign,     color: "yellow" },
+];

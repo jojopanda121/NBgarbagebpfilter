@@ -35,30 +35,7 @@ export function downloadReportAsPdf(result) {
   `
       : "";
 
-  // 冲突分析 HTML
-  const conflictsHtml =
-    verdict.conflicts?.length > 0
-      ? `
-    <div class="section">
-      <h2>冲突分析（BP 诉求 vs 搜索证据）</h2>
-      ${verdict.conflicts
-        .map(
-          (c) => `
-        <div class="conflict">
-          <span class="severity severity-${
-            c.severity === "严重" ? "high" : c.severity === "中等" ? "mid" : "low"
-          }">${c.severity}</span>
-          <p><strong style="color:#dc2626">BP 声称：</strong>${c.claim}</p>
-          <p><strong style="color:#059669">搜索发现：</strong>${c.evidence}</p>
-        </div>
-      `
-        )
-        .join("")}
-    </div>
-  `
-      : "";
-
-  // 深度研究（Markdown → HTML）
+// 深度研究（Markdown → HTML）
   const deepResearch = result.deep_research || "";
   const drHtml = deepResearch
     .replace(/^### (.*$)/gm, "<h3>$1</h3>")

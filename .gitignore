@@ -9,9 +9,11 @@ server/node_modules
 .env.production
 .env.development
 .env.test
+.dev-jwt-secret
 .DS_Store
 coverage
 .vscode
+.claude/worktrees/
 *.pyc
 __pycache__
 uploads/

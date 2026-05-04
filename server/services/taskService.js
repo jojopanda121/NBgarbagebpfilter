@@ -81,13 +81,7 @@ const ALLOWED_TASK_COLUMNS = new Set([
 function updateTask(taskId, fields) {
   const now = new Date().toISOString();
 
-  // 更新内存
-  const task = memoryTasks.get(taskId);
-  if (task) {
-    Object.assign(task, fields, { updated_at: now });
-  }
-
-  // 更新数据库
+  // M2: DB 为权威数据源 — 先写 DB，成功后再回写内存缓存，避免 DB 失败导致缓存与持久层不一致
   try {
     const db = getDb();
     const updates = [];
@@ -114,8 +108,17 @@ function updateTask(taskId, fields) {
     values.push(taskId);
 
     db.prepare(`UPDATE tasks SET ${updates.join(", ")} WHERE id = ?`).run(...values);
+
+    // DB 写入成功后再更新内存缓存
+    const task = memoryTasks.get(taskId);
+    if (task) {
+      Object.assign(task, fields, { updated_at: now });
+    }
   } catch (err) {
+    // 关键失败 — DB 与内存均不更新，避免脏缓存
     console.warn(`[TaskService] DB update failed for task ${taskId}: ${err.message}`);
+    // 失效内存缓存：下次 getTask 会强制走 DB（即便落后也是真值）
+    memoryTasks.delete(taskId);
   }
 }
 

@@ -101,15 +101,20 @@ function deductQuota(userId) {
  * @param {number} userId
  * @param {string} deductType - "free" 或 "paid"，与 deductQuota 返回的 type 对应
  */
+// H2: 列名白名单 + 静态 SQL，杜绝任何拼接路径
+const REFUND_STMTS = {
+  free: "UPDATE quotas SET free_quota = free_quota + 1, updated_at = datetime('now') WHERE user_id = ?",
+  paid: "UPDATE quotas SET paid_quota = paid_quota + 1, updated_at = datetime('now') WHERE user_id = ?",
+};
+
 function refundQuota(userId, deductType = "free") {
   const db = getDb();
   try {
-    const column = deductType === "paid" ? "paid_quota" : "free_quota";
+    const sql = REFUND_STMTS[deductType] || REFUND_STMTS.free;
+    db.prepare(sql).run(userId);
+    // H4: SQLite 中 MAX() 是聚合函数；用 CASE 表达式裁剪到 0
     db.prepare(
-      `UPDATE quotas SET ${column} = ${column} + 1, updated_at = datetime('now') WHERE user_id = ?`
-    ).run(userId);
-    db.prepare(
-      "UPDATE users SET usage_count = MAX(0, usage_count - 1), updated_at = datetime('now') WHERE id = ?"
+      "UPDATE users SET usage_count = CASE WHEN usage_count > 0 THEN usage_count - 1 ELSE 0 END, updated_at = datetime('now') WHERE id = ?"
     ).run(userId);
     return { success: true };
   } catch (err) {

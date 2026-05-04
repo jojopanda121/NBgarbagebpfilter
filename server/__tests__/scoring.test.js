@@ -7,7 +7,6 @@ const {
   calculateTotalScore,
   getGrade,
   scoreProject,
-  VERDICT_SCORE_MAP,
 } = require("../scoring");
 
 describe("calculateDimension1_TimingAndCeiling (S1)", () => {

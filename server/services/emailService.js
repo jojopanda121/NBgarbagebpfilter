@@ -40,8 +40,12 @@ async function sendEmailCode(toEmail) {
     await sendViaTencentSES(toEmail, code);
     return { success: true, expiresIn: CODE_EXPIRE_TIME / 1000 };
   } catch (err) {
-    console.error("[EmailService] 发送失败:", err.message);
-    throw err;
+    // H7: 仅记录消息文本，避免把含 Authorization 头的 err 对象整体写入日志
+    console.error("[EmailService] 发送失败:", err && err.message);
+    // 抛出脱敏后的新错误，杜绝调用方再次序列化原始 err 时泄露密钥
+    const safe = new Error(err?.message || "邮件发送失败");
+    safe.code = err?.code;
+    throw safe;
   }
 }
 

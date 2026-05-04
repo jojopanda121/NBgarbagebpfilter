@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import {
-  ClipboardList, CheckCircle2, Circle, AlertTriangle,
+  ClipboardList, CheckCircle2, AlertTriangle,
   Loader2, RefreshCw, ChevronDown, ChevronUp
 } from "lucide-react";
 import api from "../services/api";

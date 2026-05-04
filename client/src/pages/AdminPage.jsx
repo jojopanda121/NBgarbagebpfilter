@@ -1,5 +1,5 @@
 import React from "react";
-import { useSearchParams, Navigate } from "react-router-dom";
+import { Navigate } from "react-router-dom";
 import useAuthStore from "../store/useAuthStore";
 import SettingsPage from "./SettingsPage";
 
@@ -9,7 +9,6 @@ import SettingsPage from "./SettingsPage";
  */
 export default function AdminPage() {
   const user = useAuthStore((s) => s.user);
-  const [searchParams] = useSearchParams();
 
   // 非管理员重定向到设置页
   if (user?.role !== "admin") {

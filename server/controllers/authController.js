@@ -4,7 +4,7 @@
 // ============================================================
 
 const bcrypt = require("bcryptjs");
-const { signToken } = require("../middleware/auth");
+const { signToken, revokeToken } = require("../middleware/auth");
 const { isValidUsername, isValidPassword, isValidEmail } = require("../utils/validation");
 const { createUser, getUserByUsername, bindUserContact, getUserById, getUserByEmail, updateLastLogin, updateUserPassword } = require("../services/userService");
 const { initializeQuota, getUserQuota } = require("../services/quotaService");
@@ -49,10 +49,15 @@ async function register(req, res) {
     })();
 
     // 处理邀请关系（事务外，失败不影响注册）
+    // M3: 用 try/catch 包裹，避免抛错冒泡到外层 catch 误报"注册失败"
     if (invite_code) {
-      const inviter = getUserByInviteCode(invite_code);
-      if (inviter) {
-        processReferral(inviter.id, result.id, "invite_link");
+      try {
+        const inviter = getUserByInviteCode(invite_code);
+        if (inviter) {
+          processReferral(inviter.id, result.id, "invite_link");
+        }
+      } catch (refErr) {
+        console.warn("[Register] 邀请关系处理失败（不影响注册）:", refErr && refErr.message);
       }
     }
 
@@ -254,4 +259,16 @@ async function resetPassword(req, res) {
   }
 }
 
-module.exports = { register, login, getMe, bindContact, forgotPassword, resetPassword };
+/** POST /api/auth/logout — 登出，吊销当前 token */
+function logout(req, res) {
+  try {
+    if (req.user?.jti) {
+      revokeToken(req.user.jti, req.user.id, req.user.exp);
+    }
+  } catch (err) {
+    console.warn("[Logout] revoke error:", err.message);
+  }
+  res.json({ success: true });
+}
+
+module.exports = { register, login, getMe, bindContact, forgotPassword, resetPassword, logout };

@@ -62,7 +62,7 @@ function analyze(req, res) {
     const isPdf = mime === "application/pdf" || name.endsWith(".pdf");
     const isPptx = mime === "application/vnd.openxmlformats-officedocument.presentationml.presentation" || name.endsWith(".pptx");
     if (!isPdf && !isPptx) {
-      fs.unlink(req.file.path, () => {});
+      fs.promises.unlink(req.file.path).catch(() => {});
       return res.status(400).json({ error: "请上传 PDF 或 PPTX 格式的文件" });
     }
   }
@@ -73,7 +73,12 @@ function analyze(req, res) {
   if (userId) {
     const db = getDb();
     const userRow = db.prepare("SELECT role FROM users WHERE id = ?").get(userId);
-    isAdmin = userRow?.role === "admin";
+    // H5: 用户不存在（如已被删除）时直接拒绝，避免给"幽灵用户"扣额度
+    if (!userRow) {
+      if (req.file) fs.promises.unlink(req.file.path).catch(() => {});
+      return res.status(401).json({ error: "用户不存在或已被删除，请重新登录" });
+    }
+    isAdmin = userRow.role === "admin";
   }
 
   // 文件去重：计算哈希，检查是否有已完成的相同文件结果
@@ -86,14 +91,14 @@ function analyze(req, res) {
         const running = findRunningTask(userId, fileHash);
         if (running) {
           // 相同文件正在分析中，直接返回已有的 taskId（不扣额度）
-          fs.unlink(req.file.path, () => {});
+          fs.promises.unlink(req.file.path).catch(() => {});
           return res.json({ taskId: running.id, cached: false, resuming: true });
         }
 
         const existing = findExistingResult(userId, fileHash);
         if (existing) {
           // 相同文件已分析过，直接返回之前的结果（不扣额度）
-          fs.unlink(req.file.path, () => {});
+          fs.promises.unlink(req.file.path).catch(() => {});
           // 创建一个新任务记录指向旧结果，方便历史记录追踪
           const task = createTask(userId);
           updateTask(task.id, {
@@ -116,7 +121,7 @@ function analyze(req, res) {
   if (!isAdmin && userId) {
     const deductResult = deductQuota(userId);
     if (!deductResult.success) {
-      if (req.file) fs.unlink(req.file.path, () => {});
+      if (req.file) fs.promises.unlink(req.file.path).catch(() => {});
       return res.status(403).json({
         error: "额度不足，请充值",
         code: 4032,
@@ -128,9 +133,18 @@ function analyze(req, res) {
 
   // 在响应前提取所有需要的 req 数据（响应后 req 对象可能被 GC）
   const filePath = req.file ? req.file.path : null;
-  const fileMode = req.file
-    ? ((req.file.originalname || "").toLowerCase().endsWith(".pptx") ? "pptx" : "pdf")
-    : null;
+  // M21: fileMode 严格白名单，禁止从扩展名推断未知模式
+  const ALLOWED_FILE_MODES = new Set(["pdf", "pptx"]);
+  let fileMode = null;
+  if (req.file) {
+    const lower = (req.file.originalname || "").toLowerCase();
+    if (lower.endsWith(".pptx")) fileMode = "pptx";
+    else if (lower.endsWith(".pdf")) fileMode = "pdf";
+    if (!ALLOWED_FILE_MODES.has(fileMode)) {
+      fs.promises.unlink(req.file.path).catch(() => {});
+      return res.status(400).json({ error: "不支持的文件类型" });
+    }
+  }
   const directText = req.body?.text || null;
   const clientIp = req.headers?.["x-forwarded-for"]?.split(",")[0]?.trim() || req.ip || req.socket?.remoteAddress || null;
 
@@ -142,6 +156,7 @@ function analyze(req, res) {
   }
   res.json({ taskId: task.id });
 
+  // H1: 立即链式注册 .catch，确保 IIFE 任何同步/异步异常都不会触发 unhandledRejection
   (async () => {
     let bpText = "";
     try {
@@ -157,7 +172,10 @@ function analyze(req, res) {
           } catch {}
           throw new Error("文档解析失败: " + userMessage);
         } finally {
-          try { fs.unlinkSync(filePath); } catch {}
+          // M5: 异步清理临时文件，避免阻塞事件循环
+          fs.promises.unlink(filePath).catch((err) => {
+            console.warn(`[Analyze] 临时文件清理失败: ${filePath}`, err.message);
+          });
         }
       } else {
         bpText = directText;
@@ -171,7 +189,7 @@ function analyze(req, res) {
         if (type === "progress") updateTask(task.id, { stage, percentage, message });
       };
 
-      const result = await runPipeline(bpText, onProgress, task.id);
+      const result = await runPipeline(bpText, onProgress, task.id, userId);
 
       // 保存额外的任务元数据（title, industry_category, client_ip, file_hash）
       const extraFields = {
@@ -182,23 +200,28 @@ function analyze(req, res) {
         result,
       };
 
-      // 安全写入新字段（列可能尚未通过迁移创建）
+      // 安全写入新字段（列可能尚未通过迁移创建；M13: 严格类型检查防 verdict=null 导致空指针）
       try {
-        if (result.title) extraFields.title = result.title;
-        // 多标签分类：以 JSON 数组存储
-        if (result.industry_categories) {
-          extraFields.industry_category = JSON.stringify(result.industry_categories);
-        } else if (result.industry_category) {
-          extraFields.industry_category = result.industry_category;
-        }
-        if (fileHash) extraFields.file_hash = fileHash;
-        // total_score 独立字段（便于排行榜查询）
-        if (result.verdict?.total_score != null) {
-          extraFields.total_score = result.verdict.total_score;
-        }
-        // 项目所在地
-        if (result.project_location) {
-          extraFields.project_location = result.project_location;
+        if (result && typeof result === "object") {
+          if (typeof result.title === "string" && result.title) extraFields.title = result.title;
+          // 多标签分类：以 JSON 数组存储
+          if (Array.isArray(result.industry_categories) && result.industry_categories.length > 0) {
+            extraFields.industry_category = JSON.stringify(result.industry_categories);
+          } else if (typeof result.industry_category === "string" && result.industry_category) {
+            extraFields.industry_category = result.industry_category;
+          }
+          if (fileHash) extraFields.file_hash = fileHash;
+          // total_score 独立字段（便于排行榜查询）
+          const totalScore = result.verdict && typeof result.verdict === "object"
+            ? result.verdict.total_score
+            : null;
+          if (totalScore != null && Number.isFinite(Number(totalScore))) {
+            extraFields.total_score = Number(totalScore);
+          }
+          // 项目所在地
+          if (typeof result.project_location === "string" && result.project_location) {
+            extraFields.project_location = result.project_location;
+          }
         }
         // 客户端 IP（已在响应前提取）
         if (clientIp) extraFields.client_ip = clientIp;
@@ -213,7 +236,14 @@ function analyze(req, res) {
         refundQuota(userId, quotaDeductType);
       }
     }
-  })();
+  })().catch((err) => {
+    // H1 兜底：链式注册，确保即便 IIFE 在 await 之前同步抛出也能被捕获
+    console.error(`[任务 ${task.id.slice(0, 8)}] 未捕获异常:`, err && err.stack ? err.stack : err);
+    try {
+      updateTask(task.id, { status: "error", error: "服务器内部错误" });
+      if (userId && !isAdmin && quotaDeductType) refundQuota(userId, quotaDeductType);
+    } catch (_) { /* ignore */ }
+  });
 }
 
 module.exports = { analyze };

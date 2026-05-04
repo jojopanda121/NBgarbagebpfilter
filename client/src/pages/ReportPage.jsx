@@ -19,7 +19,6 @@ export default function ReportPage() {
   const [copied, setCopied] = useState(false);
 
   const token = useAuthStore((s) => s.token);
-  const user = useAuthStore((s) => s.user);
   const isSharedMode = !!shareToken;
 
   useEffect(() => {

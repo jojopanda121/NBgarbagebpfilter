@@ -38,15 +38,15 @@ export default function WorkspaceProjectListPage() {
     <div className="max-w-6xl mx-auto px-6 py-8">
       <header className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-medium text-slate-100">我的项目</h1>
-          <p className="text-sm text-slate-500 mt-1">
+          <h1 className="text-2xl font-medium text-[#0D2145]">我的项目</h1>
+          <p className="text-sm text-[#8E9BB0] mt-1">
             每次上传 BP 都会自动归档到对应项目，多版本永不覆盖。
           </p>
         </div>
         <button
           onClick={handleMigrate}
           disabled={migrating}
-          className="text-sm px-3 py-1.5 border border-slate-700 hover:border-slate-500 rounded text-slate-300 disabled:opacity-40"
+          className="text-sm px-3 py-1.5 border border-[#D8DCE8] hover:border-[#BFC5D6] rounded text-[#0F1C36] disabled:opacity-40"
           title="把还没有项目归属的历史 BP 一键整理成项目"
         >
           {migrating ? "整理中..." : "一键整理历史 BP"}
@@ -63,8 +63,8 @@ export default function WorkspaceProjectListPage() {
               className={[
                 "px-3 py-1 rounded-md text-xs",
                 active
-                  ? "bg-slate-700 text-slate-100"
-                  : "text-slate-400 hover:bg-slate-800",
+                  ? "bg-[#E5E9F4] text-[#0D2145]"
+                  : "text-[#4B5A72] hover:bg-[#EEF1F7]",
               ].join(" ")}
             >
               {opt.label}
@@ -75,9 +75,9 @@ export default function WorkspaceProjectListPage() {
 
       {error && <div className="text-rose-400 text-sm mb-4">{error}</div>}
       {loading ? (
-        <div className="text-slate-500 text-sm">加载中...</div>
+        <div className="text-[#8E9BB0] text-sm">加载中...</div>
       ) : projects.length === 0 ? (
-        <div className="text-slate-500 text-sm py-12 text-center border border-dashed border-slate-800 rounded">
+        <div className="text-[#8E9BB0] text-sm py-12 text-center border border-dashed border-[#EEF1F7] rounded">
           还没有项目。先<Link className="text-emerald-400 mx-1" to="/app/dashboard">上传一份 BP</Link>试试。
         </div>
       ) : (

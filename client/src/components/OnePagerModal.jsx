@@ -80,12 +80,12 @@ export default function OnePagerModal({ taskId, onClose }) {
       onClick={onClose}
     >
       <div
-        className="relative bg-slate-900 border border-white/10 rounded-2xl max-w-[1280px] w-full mt-8 mb-8 shadow-2xl"
+        className="relative bg-white border border-[#D8DCE8] rounded-2xl max-w-[1280px] w-full mt-8 mb-8 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         {/* 顶部操作栏 */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-white/10">
-          <div className="flex items-center gap-2 text-slate-200">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-[#D8DCE8]">
+          <div className="flex items-center gap-2 text-[#0F1C36]">
             <FileText className="w-4 h-4 text-amber-400" />
             <span className="font-semibold">一页投资亮点 PPT 预览</span>
             {data?.search_used && (
@@ -98,14 +98,14 @@ export default function OnePagerModal({ taskId, onClose }) {
           <div className="flex items-center gap-2">
             <button
               onClick={() => setShowOverrides((v) => !v)}
-              className="px-3 py-1.5 text-sm bg-slate-800 hover:bg-slate-700 rounded-lg"
+              className="px-3 py-1.5 text-sm bg-[#EEF1F7] hover:bg-[#E5E9F4] rounded-lg"
             >
               {showOverrides ? "收起微调" : "微调内容"}
             </button>
             <button
               onClick={() => handleRegenerate(false)}
               disabled={regenerating || loading}
-              className="px-3 py-1.5 text-sm bg-slate-800 hover:bg-slate-700 disabled:opacity-50 rounded-lg flex items-center gap-1.5"
+              className="px-3 py-1.5 text-sm bg-[#EEF1F7] hover:bg-[#E5E9F4] disabled:opacity-50 rounded-lg flex items-center gap-1.5"
             >
               {regenerating ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
               重新生成
@@ -113,24 +113,24 @@ export default function OnePagerModal({ taskId, onClose }) {
             <button
               onClick={handleDownload}
               disabled={downloading || loading || !data}
-              className="px-3 py-1.5 text-sm bg-amber-600 hover:bg-amber-500 disabled:opacity-50 rounded-lg flex items-center gap-1.5 text-white"
+              className="px-3 py-1.5 text-sm bg-amber-600 hover:bg-amber-500 disabled:opacity-50 rounded-lg flex items-center gap-1.5 text-[#0D2145]"
             >
               {downloading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
               下载 .pptx
             </button>
             <button
               onClick={onClose}
-              className="ml-1 p-1.5 hover:bg-slate-800 rounded-lg"
+              className="ml-1 p-1.5 hover:bg-[#EEF1F7] rounded-lg"
               aria-label="关闭"
             >
-              <X className="w-4 h-4 text-slate-400" />
+              <X className="w-4 h-4 text-[#4B5A72]" />
             </button>
           </div>
         </div>
 
         {/* 可选微调表单 */}
         {showOverrides && (
-          <div className="px-5 py-4 border-b border-white/10 bg-slate-950/40">
+          <div className="px-5 py-4 border-b border-[#D8DCE8] bg-[#F6F7FA]/40">
             <div className="grid grid-cols-2 gap-3">
               <Field
                 label="本轮轮次（可选）"
@@ -161,7 +161,7 @@ export default function OnePagerModal({ taskId, onClose }) {
               <button
                 onClick={() => handleRegenerate(true)}
                 disabled={regenerating}
-                className="px-4 py-1.5 text-sm bg-emerald-700 hover:bg-emerald-600 disabled:opacity-50 rounded-lg text-white"
+                className="px-4 py-1.5 text-sm bg-emerald-700 hover:bg-emerald-600 disabled:opacity-50 rounded-lg text-[#0D2145]"
               >
                 {regenerating ? "生成中..." : "应用微调并重生成"}
               </button>
@@ -172,7 +172,7 @@ export default function OnePagerModal({ taskId, onClose }) {
         {/* 主体 */}
         <div className="p-5">
           {loading && (
-            <div className="flex items-center justify-center py-20 text-slate-400">
+            <div className="flex items-center justify-center py-20 text-[#4B5A72]">
               <Loader2 className="w-5 h-5 animate-spin mr-2" />
               正在结合多 Agent 分析与公开资料生成一页 PPT...
             </div>
@@ -183,7 +183,7 @@ export default function OnePagerModal({ taskId, onClose }) {
               <p className="text-red-400 mb-3">{error}</p>
               <button
                 onClick={fetchOnePager}
-                className="px-4 py-1.5 bg-slate-800 hover:bg-slate-700 rounded-lg text-sm"
+                className="px-4 py-1.5 bg-[#EEF1F7] hover:bg-[#E5E9F4] rounded-lg text-sm"
               >
                 重试
               </button>
@@ -200,13 +200,13 @@ export default function OnePagerModal({ taskId, onClose }) {
 function Field({ label, value, onChange, placeholder }) {
   return (
     <label className="block">
-      <span className="block text-xs text-slate-400 mb-1">{label}</span>
+      <span className="block text-xs text-[#4B5A72] mb-1">{label}</span>
       <input
         type="text"
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        className="w-full px-3 py-1.5 bg-slate-900 border border-white/10 rounded-lg text-sm text-slate-200 focus:outline-none focus:border-amber-500"
+        className="w-full px-3 py-1.5 bg-white border border-[#D8DCE8] rounded-lg text-sm text-[#0F1C36] focus:outline-none focus:border-amber-500"
       />
     </label>
   );

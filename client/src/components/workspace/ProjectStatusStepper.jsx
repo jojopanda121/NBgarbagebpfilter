@@ -35,10 +35,10 @@ export default function ProjectStatusStepper({ project, onChange }) {
             className={[
               "px-2.5 py-1 rounded-md text-xs transition-colors",
               active
-                ? "bg-emerald-600 text-white"
+                ? "bg-emerald-600 text-[#0D2145]"
                 : done
-                ? "bg-slate-700 text-slate-300"
-                : "bg-slate-800 text-slate-500 hover:bg-slate-700 hover:text-slate-300",
+                ? "bg-[#E5E9F4] text-[#0F1C36]"
+                : "bg-[#EEF1F7] text-[#8E9BB0] hover:bg-[#E5E9F4] hover:text-[#0F1C36]",
             ].join(" ")}
             title={`点击切换到「${meta.label}」`}
           >

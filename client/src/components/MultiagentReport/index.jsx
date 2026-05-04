@@ -9,25 +9,25 @@ import {
 function SectionCard({ title, icon: Icon, iconColor = "text-blue-400", children, defaultOpen = false }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
-    <div className="border border-white/10 rounded-xl overflow-hidden">
+    <div className="border border-[#D8DCE8] rounded-xl overflow-hidden">
       <button
         onClick={() => setOpen((v) => !v)}
-        className="w-full flex items-center justify-between px-4 py-3 bg-slate-900/60 hover:bg-slate-800/60 transition-colors"
+        className="w-full flex items-center justify-between px-4 py-3 bg-white/90 hover:bg-[#EEF1F7] transition-colors"
       >
         <div className="flex items-center gap-2">
           <Icon className={`w-4 h-4 ${iconColor} shrink-0`} />
-          <span className="text-sm font-semibold text-slate-200">{title}</span>
+          <span className="text-sm font-semibold text-[#0F1C36]">{title}</span>
         </div>
-        {open ? <ChevronUp className="w-4 h-4 text-slate-400" /> : <ChevronDown className="w-4 h-4 text-slate-400" />}
+        {open ? <ChevronUp className="w-4 h-4 text-[#4B5A72]" /> : <ChevronDown className="w-4 h-4 text-[#4B5A72]" />}
       </button>
-      {open && <div className="px-4 pb-4 pt-3 bg-slate-950/40 space-y-3">{children}</div>}
+      {open && <div className="px-4 pb-4 pt-3 bg-[#F6F7FA]/40 space-y-3">{children}</div>}
     </div>
   );
 }
 
 function Tag({ text, color = "slate" }) {
   const colors = {
-    slate:   "bg-slate-700/50 text-slate-300",
+    slate:   "bg-[#E5E9F4]/50 text-[#0F1C36]",
     blue:    "bg-blue-500/20 text-blue-300",
     emerald: "bg-emerald-500/20 text-emerald-300",
     red:     "bg-red-500/20 text-red-300",
@@ -45,8 +45,8 @@ function InfoRow({ label, value }) {
   if (!value && value !== 0) return null;
   return (
     <div className="flex items-start gap-2 text-sm">
-      <span className="text-slate-500 shrink-0 min-w-[90px]">{label}</span>
-      <span className="text-slate-200">{String(value)}</span>
+      <span className="text-[#8E9BB0] shrink-0 min-w-[90px]">{label}</span>
+      <span className="text-[#0F1C36]">{String(value)}</span>
     </div>
   );
 }
@@ -57,7 +57,7 @@ function BulletList({ items, color = "blue" }) {
   return (
     <ul className="space-y-1">
       {items.map((item, i) => (
-        <li key={i} className="flex items-start gap-2 text-sm text-slate-300">
+        <li key={i} className="flex items-start gap-2 text-sm text-[#0F1C36]">
           <span className={`mt-2 w-1.5 h-1.5 rounded-full shrink-0 ${dotColors[color] || dotColors.blue}`} />
           {String(item)}
         </li>
@@ -69,11 +69,11 @@ function BulletList({ items, color = "blue" }) {
 // ─── Section: 项目摘要 ───────────────────────────────────────
 
 function ProjectSummarySection({ data }) {
-  if (!data || data.partial) return <p className="text-sm text-slate-500">项目摘要分析未完成</p>;
+  if (!data || data.partial) return <p className="text-sm text-[#8E9BB0]">项目摘要分析未完成</p>;
   return (
     <div className="space-y-3">
       {data.one_line_pitch && (
-        <p className="text-sm text-slate-200 font-medium border-l-2 border-blue-500 pl-3">
+        <p className="text-sm text-[#0F1C36] font-medium border-l-2 border-blue-500 pl-3">
           {data.one_line_pitch}
         </p>
       )}
@@ -89,11 +89,11 @@ function ProjectSummarySection({ data }) {
       </div>
       {Array.isArray(data.core_metrics) && data.core_metrics.length > 0 && (
         <div>
-          <p className="text-xs text-slate-500 mb-1.5 uppercase tracking-wide">核心指标亮点</p>
+          <p className="text-xs text-[#8E9BB0] mb-1.5 uppercase tracking-wide">核心指标亮点</p>
           <BulletList items={data.core_metrics} color="blue" />
         </div>
       )}
-      {data.summary && <p className="text-sm text-slate-400 leading-relaxed">{data.summary}</p>}
+      {data.summary && <p className="text-sm text-[#4B5A72] leading-relaxed">{data.summary}</p>}
     </div>
   );
 }
@@ -101,18 +101,18 @@ function ProjectSummarySection({ data }) {
 // ─── Section: 创始人画像 ─────────────────────────────────────
 
 function FounderSection({ data }) {
-  if (!data || data.partial) return <p className="text-sm text-slate-500">创始人调查未完成</p>;
+  if (!data || data.partial) return <p className="text-sm text-[#8E9BB0]">创始人调查未完成</p>;
   const founders = data.founders || [];
   return (
     <div className="space-y-4">
       {founders.map((f, i) => (
-        <div key={i} className="border border-white/5 rounded-lg p-3 space-y-2">
+        <div key={i} className="border border-[#EEF1F7] rounded-lg p-3 space-y-2">
           <div className="flex items-center gap-2">
-            <span className="text-sm font-semibold text-slate-200">{f.name || "未知"}</span>
+            <span className="text-sm font-semibold text-[#0F1C36]">{f.name || "未知"}</span>
             {f.title && <Tag text={f.title} color="blue" />}
             {f.relevant_years > 0 && <Tag text={`赛道经验 ${f.relevant_years}年`} color="emerald" />}
           </div>
-          {f.background && <p className="text-sm text-slate-400">{f.background}</p>}
+          {f.background && <p className="text-sm text-[#4B5A72]">{f.background}</p>}
           {Array.isArray(f.notable_achievements) && f.notable_achievements.length > 0 && (
             <BulletList items={f.notable_achievements} color="emerald" />
           )}
@@ -125,7 +125,7 @@ function FounderSection({ data }) {
       ))}
       {Array.isArray(data.team_risk_flags) && data.team_risk_flags.length > 0 && (
         <div>
-          <p className="text-xs text-slate-500 mb-1.5 uppercase tracking-wide">团队风险提示</p>
+          <p className="text-xs text-[#8E9BB0] mb-1.5 uppercase tracking-wide">团队风险提示</p>
           <BulletList items={data.team_risk_flags} color="orange" />
         </div>
       )}
@@ -146,11 +146,11 @@ const VERDICT_ICONS = {
 };
 
 function FinancialSection({ data }) {
-  if (!data || data.partial) return <p className="text-sm text-slate-500">财务核查未完成</p>;
+  if (!data || data.partial) return <p className="text-sm text-[#8E9BB0]">财务核查未完成</p>;
   return (
     <div className="space-y-3">
       {data.financial_summary && (
-        <p className="text-sm text-slate-300 border-l-2 border-emerald-500 pl-3">{data.financial_summary}</p>
+        <p className="text-sm text-[#0F1C36] border-l-2 border-emerald-500 pl-3">{data.financial_summary}</p>
       )}
       <div className="grid grid-cols-2 gap-2">
         <InfoRow label="当前收入" value={data.revenue_data?.current_arr ? `${data.revenue_data.current_arr} 亿元` : null} />
@@ -162,13 +162,13 @@ function FinancialSection({ data }) {
       </div>
       {Array.isArray(data.financial_consistency_check) && data.financial_consistency_check.length > 0 && (
         <div>
-          <p className="text-xs text-slate-500 mb-1.5 uppercase tracking-wide">自洽性核查</p>
+          <p className="text-xs text-[#8E9BB0] mb-1.5 uppercase tracking-wide">自洽性核查</p>
           <ul className="space-y-1.5">
             {data.financial_consistency_check.map((c, i) => (
               <li key={i} className="flex items-start gap-2 text-sm">
-                {VERDICT_ICONS[c.verdict] || <AlertCircle className="w-3.5 h-3.5 text-slate-500 shrink-0" />}
-                <span className="text-slate-300">{c.item}</span>
-                {c.detail && <span className="text-slate-500">— {c.detail}</span>}
+                {VERDICT_ICONS[c.verdict] || <AlertCircle className="w-3.5 h-3.5 text-[#8E9BB0] shrink-0" />}
+                <span className="text-[#0F1C36]">{c.item}</span>
+                {c.detail && <span className="text-[#8E9BB0]">— {c.detail}</span>}
               </li>
             ))}
           </ul>
@@ -176,12 +176,12 @@ function FinancialSection({ data }) {
       )}
       {Array.isArray(data.anomalies) && data.anomalies.length > 0 && (
         <div>
-          <p className="text-xs text-slate-500 mb-1.5 uppercase tracking-wide">异常点</p>
+          <p className="text-xs text-[#8E9BB0] mb-1.5 uppercase tracking-wide">异常点</p>
           <ul className="space-y-1.5">
             {data.anomalies.map((a, i) => (
               <li key={i} className="flex items-start gap-2 text-sm">
                 <Tag text={`严重度 ${a.severity}`} color={SEVERITY_COLORS[a.severity] || "yellow"} />
-                <span className="text-slate-300">{a.description}</span>
+                <span className="text-[#0F1C36]">{a.description}</span>
               </li>
             ))}
           </ul>
@@ -194,12 +194,12 @@ function FinancialSection({ data }) {
 // ─── Section: 竞品分析 ───────────────────────────────────────
 
 function CompetitorSection({ data }) {
-  if (!data || data.partial) return <p className="text-sm text-slate-500">竞品分析未完成</p>;
+  if (!data || data.partial) return <p className="text-sm text-[#8E9BB0]">竞品分析未完成</p>;
   const competitors = data.competitors || [];
   return (
     <div className="space-y-3">
       {data.competitive_landscape_summary && (
-        <p className="text-sm text-slate-300 border-l-2 border-orange-500 pl-3">{data.competitive_landscape_summary}</p>
+        <p className="text-sm text-[#0F1C36] border-l-2 border-orange-500 pl-3">{data.competitive_landscape_summary}</p>
       )}
       <div className="flex items-center gap-2 flex-wrap">
         {data.subject_competitive_position && <Tag text={data.subject_competitive_position} color="blue" />}
@@ -209,7 +209,7 @@ function CompetitorSection({ data }) {
         <div className="overflow-x-auto">
           <table className="w-full text-xs">
             <thead>
-              <tr className="text-slate-500 border-b border-white/5">
+              <tr className="text-[#8E9BB0] border-b border-[#EEF1F7]">
                 <th className="text-left pb-2 pr-3 font-medium">竞品</th>
                 <th className="text-left pb-2 pr-3 font-medium">阶段</th>
                 <th className="text-left pb-2 pr-3 font-medium">威胁</th>
@@ -218,13 +218,13 @@ function CompetitorSection({ data }) {
             </thead>
             <tbody className="divide-y divide-white/5">
               {competitors.map((c, i) => (
-                <tr key={i} className="text-slate-300">
+                <tr key={i} className="text-[#0F1C36]">
                   <td className="py-2 pr-3 font-medium whitespace-nowrap">{c.name}</td>
                   <td className="py-2 pr-3 whitespace-nowrap">{c.funding_stage || "—"}</td>
                   <td className="py-2 pr-3 whitespace-nowrap">
                     <Tag text={c.threat_level || "—"} color={c.threat_level === "高" ? "red" : c.threat_level === "中" ? "yellow" : "emerald"} />
                   </td>
-                  <td className="py-2 text-slate-400 max-w-[200px] truncate">{c.key_differentiator || "—"}</td>
+                  <td className="py-2 text-[#4B5A72] max-w-[200px] truncate">{c.key_differentiator || "—"}</td>
                 </tr>
               ))}
             </tbody>
@@ -233,7 +233,7 @@ function CompetitorSection({ data }) {
       )}
       {Array.isArray(data.key_competitive_risks) && data.key_competitive_risks.length > 0 && (
         <div>
-          <p className="text-xs text-slate-500 mb-1.5 uppercase tracking-wide">竞争风险</p>
+          <p className="text-xs text-[#8E9BB0] mb-1.5 uppercase tracking-wide">竞争风险</p>
           <BulletList items={data.key_competitive_risks} color="orange" />
         </div>
       )}
@@ -250,36 +250,36 @@ const RISK_LEVEL_STYLE = {
 };
 
 function RedFlagSection({ data }) {
-  if (!data || data.partial) return <p className="text-sm text-slate-500">红旗扫描未完成</p>;
+  if (!data || data.partial) return <p className="text-sm text-[#8E9BB0]">红旗扫描未完成</p>;
   const flags = data.red_flags || [];
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-3">
         {data.overall_risk_level && (
-          <span className={`px-3 py-1 rounded-full text-sm font-semibold border ${RISK_LEVEL_STYLE[data.overall_risk_level] || "bg-slate-700 text-slate-300 border-slate-600"}`}>
+          <span className={`px-3 py-1 rounded-full text-sm font-semibold border ${RISK_LEVEL_STYLE[data.overall_risk_level] || "bg-[#E5E9F4] text-[#0F1C36] border-slate-600"}`}>
             {data.overall_risk_level}
           </span>
         )}
-        {data.risk_summary && <p className="text-sm text-slate-400 flex-1">{data.risk_summary}</p>}
+        {data.risk_summary && <p className="text-sm text-[#4B5A72] flex-1">{data.risk_summary}</p>}
       </div>
       {Array.isArray(data.critical_issues) && data.critical_issues.length > 0 && (
         <div>
-          <p className="text-xs text-slate-500 mb-1.5 uppercase tracking-wide">核心关注点</p>
+          <p className="text-xs text-[#8E9BB0] mb-1.5 uppercase tracking-wide">核心关注点</p>
           <BulletList items={data.critical_issues} color="red" />
         </div>
       )}
       {flags.length > 0 && (
         <div className="space-y-2">
-          <p className="text-xs text-slate-500 uppercase tracking-wide">风险清单（{flags.length} 项）</p>
+          <p className="text-xs text-[#8E9BB0] uppercase tracking-wide">风险清单（{flags.length} 项）</p>
           {flags.map((f, i) => (
-            <div key={i} className="border border-white/5 rounded-lg p-3 space-y-1">
+            <div key={i} className="border border-[#EEF1F7] rounded-lg p-3 space-y-1">
               <div className="flex items-center gap-2">
                 <Tag text={f.flag_type} color={f.severity >= 4 ? "red" : f.severity >= 3 ? "orange" : "yellow"} />
                 <Tag text={`严重度 ${f.severity}`} color={f.severity >= 4 ? "red" : f.severity >= 3 ? "orange" : "yellow"} />
               </div>
-              <p className="text-sm text-slate-300">{f.description}</p>
+              <p className="text-sm text-[#0F1C36]">{f.description}</p>
               {f.suggested_dd_question && (
-                <p className="text-xs text-slate-500 italic">追问：{f.suggested_dd_question}</p>
+                <p className="text-xs text-[#8E9BB0] italic">追问：{f.suggested_dd_question}</p>
               )}
             </div>
           ))}
@@ -287,7 +287,7 @@ function RedFlagSection({ data }) {
       )}
       {Array.isArray(data.positive_signals) && data.positive_signals.length > 0 && (
         <div>
-          <p className="text-xs text-slate-500 mb-1.5 uppercase tracking-wide">正面信号</p>
+          <p className="text-xs text-[#8E9BB0] mb-1.5 uppercase tracking-wide">正面信号</p>
           <BulletList items={data.positive_signals} color="emerald" />
         </div>
       )}
@@ -302,12 +302,12 @@ const VALUATION_VERDICT_COLOR = {
 };
 
 function ValuationSection({ data }) {
-  if (!data || data.partial) return <p className="text-sm text-slate-500">估值分析未完成</p>;
+  if (!data || data.partial) return <p className="text-sm text-[#8E9BB0]">估值分析未完成</p>;
   const ba = data.benchmark_analysis || {};
   return (
     <div className="space-y-3">
       {data.valuation_summary && (
-        <p className="text-sm text-slate-300 border-l-2 border-yellow-500 pl-3">{data.valuation_summary}</p>
+        <p className="text-sm text-[#0F1C36] border-l-2 border-yellow-500 pl-3">{data.valuation_summary}</p>
       )}
       <div className="grid grid-cols-2 gap-2">
         <InfoRow label="声称估值" value={data.claimed_valuation_rmb ? `${data.claimed_valuation_rmb} 亿元` : "未披露"} />
@@ -317,13 +317,13 @@ function ValuationSection({ data }) {
       </div>
       {ba.valuation_vs_benchmark && (
         <div className="flex items-center gap-2">
-          <span className="text-xs text-slate-500">估值评级：</span>
+          <span className="text-xs text-[#8E9BB0]">估值评级：</span>
           <Tag text={ba.valuation_vs_benchmark} color={VALUATION_VERDICT_COLOR[ba.valuation_vs_benchmark] || "slate"} />
         </div>
       )}
       {data.suggested_valuation_range_rmb?.low != null && (
         <div className="bg-yellow-500/5 border border-yellow-500/20 rounded-lg p-3">
-          <p className="text-xs text-slate-500 mb-1">建议估值区间</p>
+          <p className="text-xs text-[#8E9BB0] mb-1">建议估值区间</p>
           <p className="text-sm font-semibold text-yellow-300">
             {data.suggested_valuation_range_rmb.low} — {data.suggested_valuation_range_rmb.high} 亿元
           </p>
@@ -331,13 +331,13 @@ function ValuationSection({ data }) {
       )}
       {Array.isArray(data.key_valuation_drivers) && data.key_valuation_drivers.length > 0 && (
         <div>
-          <p className="text-xs text-slate-500 mb-1.5 uppercase tracking-wide">估值支撑因素</p>
+          <p className="text-xs text-[#8E9BB0] mb-1.5 uppercase tracking-wide">估值支撑因素</p>
           <BulletList items={data.key_valuation_drivers} color="emerald" />
         </div>
       )}
       {Array.isArray(data.valuation_risks) && data.valuation_risks.length > 0 && (
         <div>
-          <p className="text-xs text-slate-500 mb-1.5 uppercase tracking-wide">估值风险</p>
+          <p className="text-xs text-[#8E9BB0] mb-1.5 uppercase tracking-wide">估值风险</p>
           <BulletList items={data.valuation_risks} color="red" />
         </div>
       )}
@@ -359,7 +359,7 @@ const MultiagentReport = memo(function MultiagentReport({ multiagent }) {
 
   return (
     <div className="mt-6 space-y-2">
-      <h2 className="text-base font-bold text-slate-200 mb-3 flex items-center gap-2">
+      <h2 className="text-base font-bold text-[#0F1C36] mb-3 flex items-center gap-2">
         <Shield className="w-5 h-5 text-blue-400" />
         AI 深度尽调报告
       </h2>

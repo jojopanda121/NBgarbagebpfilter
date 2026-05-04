@@ -1,7 +1,7 @@
 import React from "react";
 
 const STATUS_META = {
-  screening: { label: "初筛", color: "bg-slate-700 text-slate-200" },
+  screening: { label: "初筛", color: "bg-[#E5E9F4] text-[#0F1C36]" },
   met: { label: "已见面", color: "bg-blue-900 text-blue-100" },
   shortlisted: { label: "立项", color: "bg-indigo-900 text-indigo-100" },
   dd: { label: "尽调中", color: "bg-amber-900 text-amber-100" },
@@ -12,7 +12,7 @@ const STATUS_META = {
 };
 
 export default function ProjectStatusBadge({ status }) {
-  const meta = STATUS_META[status] || { label: status, color: "bg-slate-700 text-slate-200" };
+  const meta = STATUS_META[status] || { label: status, color: "bg-[#E5E9F4] text-[#0F1C36]" };
   return (
     <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${meta.color}`}>
       {meta.label}

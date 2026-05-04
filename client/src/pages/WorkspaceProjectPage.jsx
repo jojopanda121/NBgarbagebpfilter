@@ -36,10 +36,10 @@ function OverviewTab({ project }) {
       {cards.map((c) => (
         <div
           key={c.label}
-          className="border border-slate-800 rounded p-4 bg-slate-900"
+          className="border border-[#EEF1F7] rounded p-4 bg-white"
         >
-          <div className="text-xs text-slate-500">{c.label}</div>
-          <div className="mt-2 text-lg text-slate-100">{c.value}</div>
+          <div className="text-xs text-[#8E9BB0]">{c.label}</div>
+          <div className="mt-2 text-lg text-[#0D2145]">{c.value}</div>
         </div>
       ))}
     </div>
@@ -49,18 +49,18 @@ function OverviewTab({ project }) {
 function ReportsTab({ project }) {
   const tasks = project.tasks || [];
   if (!tasks.length) {
-    return <div className="text-slate-500 text-sm py-6">暂无 Agent 报告</div>;
+    return <div className="text-[#8E9BB0] text-sm py-6">暂无 Agent 报告</div>;
   }
   return (
     <ul className="space-y-2">
       {tasks.map((t) => (
-        <li key={t.id} className="border border-slate-800 rounded p-3 bg-slate-900">
+        <li key={t.id} className="border border-[#EEF1F7] rounded p-3 bg-white">
           <div className="flex items-center justify-between">
             <div>
-              <div className="text-sm text-slate-200">
+              <div className="text-sm text-[#0F1C36]">
                 {t.title || t.archive_number || t.id}
               </div>
-              <div className="text-xs text-slate-500 mt-1">
+              <div className="text-xs text-[#8E9BB0] mt-1">
                 {t.created_at} · 评分 {t.total_score?.toFixed?.(1) ?? "—"}
               </div>
             </div>
@@ -81,14 +81,14 @@ function FilesTab({ project }) {
   // 占位：Sprint 2 暂不实现独立资料上传，沿用 BP 文件
   const versions = project.versions || [];
   if (!versions.length) {
-    return <div className="text-slate-500 text-sm py-6">暂无资料</div>;
+    return <div className="text-[#8E9BB0] text-sm py-6">暂无资料</div>;
   }
   return (
     <ul className="space-y-2">
       {versions.map((v) => (
-        <li key={v.id} className="border border-slate-800 rounded p-3 bg-slate-900 text-sm">
-          <span className="text-slate-300">v{v.version_number}</span>
-          <span className="text-slate-500 ml-2">{v.uploaded_at}</span>
+        <li key={v.id} className="border border-[#EEF1F7] rounded p-3 bg-white text-sm">
+          <span className="text-[#0F1C36]">v{v.version_number}</span>
+          <span className="text-[#8E9BB0] ml-2">{v.uploaded_at}</span>
           {v.task_id && (
             <Link
               to={`/report/${v.task_id}`}
@@ -108,7 +108,7 @@ export default function WorkspaceProjectPage() {
   const { project, loading, error, refresh } = useWorkspaceProject(id);
   const [activeTab, setActiveTab] = useState("overview");
 
-  if (loading) return <div className="p-8 text-slate-500">加载中...</div>;
+  if (loading) return <div className="p-8 text-[#8E9BB0]">加载中...</div>;
   if (error)
     return (
       <div className="p-8 text-rose-400 text-sm">
@@ -120,24 +120,24 @@ export default function WorkspaceProjectPage() {
   return (
     <div className="max-w-6xl mx-auto px-6 py-8">
       <div className="mb-2">
-        <Link to="/app/projects" className="text-xs text-slate-500 hover:text-slate-300">
+        <Link to="/app/projects" className="text-xs text-[#8E9BB0] hover:text-[#0F1C36]">
           ← 我的项目
         </Link>
       </div>
 
-      <header className="border-b border-slate-800 pb-5 mb-6">
+      <header className="border-b border-[#EEF1F7] pb-5 mb-6">
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div className="min-w-0">
-            <h1 className="text-2xl font-medium text-slate-100">{project.name}</h1>
+            <h1 className="text-2xl font-medium text-[#0D2145]">{project.name}</h1>
             {project.one_liner && (
-              <p className="text-sm text-slate-400 mt-1">{project.one_liner}</p>
+              <p className="text-sm text-[#4B5A72] mt-1">{project.one_liner}</p>
             )}
-            <div className="mt-2 flex items-center gap-3 text-xs text-slate-500">
+            <div className="mt-2 flex items-center gap-3 text-xs text-[#8E9BB0]">
               {project.industry && <span>{project.industry}</span>}
               {project.stage && <span>· {project.stage}</span>}
               {project.region && <span>· {project.region}</span>}
               {project.latest_score != null && (
-                <span className="text-slate-300">
+                <span className="text-[#0F1C36]">
                   · 评分 {Number(project.latest_score).toFixed(1)}
                 </span>
               )}
@@ -147,7 +147,7 @@ export default function WorkspaceProjectPage() {
         </div>
       </header>
 
-      <nav className="flex gap-1 mb-6 border-b border-slate-800">
+      <nav className="flex gap-1 mb-6 border-b border-[#EEF1F7]">
         {TABS.map((t) => {
           const active = activeTab === t.key;
           return (
@@ -157,8 +157,8 @@ export default function WorkspaceProjectPage() {
               className={[
                 "px-3 py-2 text-sm transition-colors -mb-px border-b-2",
                 active
-                  ? "text-slate-100 border-emerald-500"
-                  : "text-slate-500 border-transparent hover:text-slate-300",
+                  ? "text-[#0D2145] border-emerald-500"
+                  : "text-[#8E9BB0] border-transparent hover:text-[#0F1C36]",
               ].join(" ")}
             >
               {t.label}

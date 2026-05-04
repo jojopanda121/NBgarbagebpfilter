@@ -224,14 +224,14 @@ export default function LandingPage() {
 
       {/* ── NAV ── */}
       <nav className="fixed top-0 inset-x-0 z-50 h-[60px] flex items-center px-6 md:px-12 bg-[#F6F7FA]/95 backdrop-blur-md border-b border-[#D8DCE8]">
-        <a
-          href="#"
-          onClick={(e) => { e.preventDefault(); window.scrollTo({ top: 0, behavior: "smooth" }); }}
-          className="flex items-center gap-2.5 shrink-0"
+        <button
+          type="button"
+          onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+          className="flex items-center gap-2.5 shrink-0 bg-transparent border-0 cursor-pointer p-0"
         >
           <LogoE size={32} />
           <span className="font-serif-cn font-bold text-[15px] tracking-wide text-[#0D2145]">BP过滤机</span>
-        </a>
+        </button>
         <div className="flex-1 hidden md:flex justify-center gap-9">
           {[
             ["核心功能", "#features"],

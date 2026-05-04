@@ -24,7 +24,7 @@ function StatusIcon({ status, color }) {
   if (status === "complete") return <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />;
   if (status === "running")  return <Loader2 className={`w-4 h-4 ${COLOR_MAP[color]?.icon || "text-blue-400"} animate-spin shrink-0`} />;
   if (status === "error")    return <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />;
-  return <Clock className="w-4 h-4 text-slate-500 shrink-0" />;
+  return <Clock className="w-4 h-4 text-[#8E9BB0] shrink-0" />;
 }
 
 function statusLabel(status) {
@@ -81,7 +81,7 @@ const AgentProgress = memo(function AgentProgress({ runId }) {
   return (
     <div className="mt-6 space-y-3">
       <div className="flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-slate-300 tracking-wide uppercase">
+        <h3 className="text-sm font-semibold text-[#0F1C36] tracking-wide uppercase">
           AI 深度尽调 · 6 个 Agent
         </h3>
         <span className={`text-xs font-mono tabular-nums ${allDone ? "text-emerald-400" : "text-blue-400"}`}>
@@ -104,20 +104,20 @@ const AgentProgress = memo(function AgentProgress({ runId }) {
                 flex flex-col gap-1.5 p-3 rounded-xl border transition-all duration-300
                 ${isDone ? "bg-emerald-500/5 border-emerald-500/20" : ""}
                 ${isRun  ? `${c.bg} ${c.ring}` : ""}
-                ${!isDone && !isRun ? "bg-slate-900/40 border-white/5 opacity-50" : ""}
+                ${!isDone && !isRun ? "bg-white border-[#EEF1F7] opacity-50" : ""}
               `}
             >
               <div className="flex items-center gap-2">
-                <div className={`w-6 h-6 rounded-md flex items-center justify-center shrink-0 ${isDone ? "bg-emerald-500/20" : isRun ? c.bg : "bg-slate-800"}`}>
+                <div className={`w-6 h-6 rounded-md flex items-center justify-center shrink-0 ${isDone ? "bg-emerald-500/20" : isRun ? c.bg : "bg-[#EEF1F7]"}`}>
                   <Icon className={`w-3.5 h-3.5 ${isDone ? "text-emerald-400" : c.icon}`} />
                 </div>
-                <span className={`text-xs font-medium flex-1 truncate ${isDone ? "text-emerald-300" : isRun ? c.text : "text-slate-500"}`}>
+                <span className={`text-xs font-medium flex-1 truncate ${isDone ? "text-emerald-300" : isRun ? c.text : "text-[#8E9BB0]"}`}>
                   {label}
                 </span>
                 <StatusIcon status={status} color={color} />
               </div>
 
-              <p className="text-xs leading-snug text-slate-400 truncate pl-0.5" title={summary || statusLabel(status)}>
+              <p className="text-xs leading-snug text-[#4B5A72] truncate pl-0.5" title={summary || statusLabel(status)}>
                 {summary || statusLabel(status)}
               </p>
             </div>

@@ -1,0 +1,27 @@
+<svg width="600" height="120" viewBox="0 0 600 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+  
+  <rect width="120" height="120" rx="18" fill="#1B4FD8"></rect>
+  
+  <circle cx="34" cy="34" r="9" fill="white" opacity="0.2"></circle>
+  <circle cx="86" cy="34" r="9" fill="white" opacity="0.2"></circle>
+  <circle cx="34" cy="86" r="9" fill="white" opacity="0.2"></circle>
+  <circle cx="86" cy="86" r="9" fill="white" opacity="0.2"></circle>
+  
+  <line x1="34" y1="34" x2="60" y2="60" stroke="white" stroke-width="2" opacity="0.25"></line>
+  <line x1="86" y1="34" x2="60" y2="60" stroke="white" stroke-width="2" opacity="0.25"></line>
+  <line x1="34" y1="86" x2="60" y2="60" stroke="white" stroke-width="2" opacity="0.25"></line>
+  <line x1="86" y1="86" x2="60" y2="60" stroke="white" stroke-width="2" opacity="0.25"></line>
+  
+  <circle cx="60" cy="60" r="11" fill="white" opacity="0.92"></circle>
+  
+  <rect x="20" y="24" width="80" height="8" rx="4" fill="white" opacity="0.85"></rect>
+  <rect x="30" y="56" width="60" height="8" rx="4" fill="white" opacity="0.85"></rect>
+  <rect x="42" y="88" width="36" height="8" rx="4" fill="white" opacity="0.85"></rect>
+  
+  <circle cx="60" cy="60" r="5" fill="#C9A84C"></circle>
+
+  
+  <text x="148" y="68" font-family="&#39;Noto Serif SC&#39;, &#39;Source Han Serif SC&#39;, serif" font-size="44" font-weight="700" fill="#0D2145" letter-spacing="1">BP过滤机</text>
+  
+  <text x="150" y="94" font-family="&#39;JetBrains Mono&#39;, &#39;Courier New&#39;, monospace" font-size="15" fill="#4B5A72" letter-spacing="2">AI-Powered Deal Screening</text>
+</svg>

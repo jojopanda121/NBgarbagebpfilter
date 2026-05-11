@@ -1,0 +1,104 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── PitchBook-style 亮色金融主题 (设计 by Claude Design) ─────────── */
+@import url('https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@300;400;600;700&family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;1,300&family=JetBrains+Mono:wght@400;500&display=swap');
+
+:root {
+  --navy:    #0A1F3D;
+  --navy2:   #122D5A;
+  --accent:  #1749C9;
+  --accent2: #2E63E8;
+  --gold:    #8C5C00;
+  --bg:      #F4F6FB;
+  --bg2:     #FFFFFF;
+  --bg3:     #E9EDF6;
+  --bg4:     #DDE3F0;
+  --border:  #CBD1E0;
+  --border2: #A8B0C8;
+  --text:    #0C1A30;
+  --mid:     #2D3D54;
+  --dim:     #526078;
+  --red:     #B91C1C;
+  --red-bg:  #FEF2F2;
+  --green:   #0F6B30;
+  --grn-bg:  #EDFBF2;
+  --amber:   #92480A;
+  --amb-bg:  #FFF7ED;
+  --serif:   'Noto Serif SC', serif;
+  --sans:    'DM Sans', sans-serif;
+  --mono:    'JetBrains Mono', monospace;
+}
+
+@layer base {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: #C9CFDB transparent;
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    -webkit-font-smoothing: antialiased;
+  }
+}
+
+@layer utilities {
+  .font-serif-cn { font-family: var(--serif); }
+  .font-mono-fin { font-family: var(--mono); }
+
+  .text-gradient {
+    @apply bg-gradient-to-r from-blue-700 via-indigo-700 to-blue-900 bg-clip-text text-transparent;
+  }
+
+  .glass {
+    @apply bg-white/80 backdrop-blur-md border-b border-[#D8DCE8];
+  }
+
+  .card-hover {
+    @apply transition-all duration-300 hover:border-[#1B4FD8]/40 hover:shadow-[0_6px_24px_rgba(27,79,216,0.08)];
+  }
+}
+
+/* 自定义滚动条（亮色） */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: #C9CFDB;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #A6AFC2;
+}
+
+/* 选中文本 */
+::selection {
+  background: rgba(27, 79, 216, 0.18);
+  color: var(--navy);
+}
+
+/* ── Landing Page 动画 ──────────────────────────── */
+@keyframes lpFadeUp {
+  from { opacity: 0; transform: translateY(18px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes lpPanelIn {
+  from { opacity: 0; transform: translateY(24px) scale(.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+.lp-fade { opacity: 0; animation: lpFadeUp .7s forwards; }
+.lp-panel-in { opacity: 0; animation: lpPanelIn .9s .45s forwards; }
+.lp-reveal {
+  opacity: 0; transform: translateY(20px);
+  transition: opacity .65s ease, transform .65s ease;
+}
+.lp-reveal.is-visible { opacity: 1; transform: translateY(0); }

@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BP过滤机 — Logo 方案探索</title>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@600;700&family=DM+Sans:wght@400;500;600&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+<script type="text/babel" src="design-canvas.jsx"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #ECEEF4; font-family: 'DM Sans', sans-serif; }
+
+  /* shared logo preview styles */
+  .logo-bg-light { background: #F6F7FA; }
+  .logo-bg-dark  { background: #0D2145; }
+  .logo-bg-white { background: #FFFFFF; }
+
+  .preview-row {
+    display: flex; gap: 16px; align-items: center;
+    padding: 20px 24px;
+  }
+  .preview-cell {
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 4px; border: 1px solid rgba(0,0,0,.07);
+  }
+
+  .variant-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px; letter-spacing: .1em;
+    color: #8E9BB0; margin-bottom: 8px; text-transform: uppercase;
+  }
+  .variant-name {
+    font-family: 'Noto Serif SC', serif;
+    font-size: 17px; font-weight: 700; color: #0D2145; margin-bottom: 6px;
+  }
+  .variant-desc {
+    font-size: 12.5px; color: #4B5A72; line-height: 1.6; max-width: 360px;
+  }
+  .card-inner {
+    padding: 28px 28px 24px;
+  }
+  .card-divider {
+    height: 1px; background: #E0E4EE; margin: 0 28px;
+  }
+  .usage-row {
+    padding: 16px 28px 20px;
+    display: flex; gap: 12px; align-items: center; flex-wrap: wrap;
+  }
+  .usage-chip {
+    font-size: 11px; color: #8E9BB0; background: #EEF1F7;
+    padding: 3px 9px; border-radius: 12px; border: 1px solid #D8DCE8;
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel">
+const { useState } = React;
+
+// ─── COLOR TOKENS ──────────────────────────────────────
+const C = {
+  navy:   '#0D2145',
+  navy2:  '#163069',
+  blue:   '#1B4FD8',
+  blue2:  '#3B6EF5',
+  gold:   '#A0700A',
+  gold2:  '#C9A84C',
+  white:  '#FFFFFF',
+  bg:     '#F6F7FA',
+};
+
+// ─── LOGO A: "FILTER STACK" ────────────────────────────
+// 3 descending horizontal bars (funnel top view) + circuit dot — geometric, clean
+function LogoA({ size = 40, dark = false }) {
+  const fg  = dark ? C.white : C.navy;
+  const acc = C.blue;
+  const s   = size;
+  return (
+    <svg width={s} height={s} viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+      {/* Background square */}
+      <rect width="40" height="40" fill={dark ? C.navy : C.blue} rx="6"/>
+      {/* Three filter bars, narrowing down — funnel abstraction */}
+      <rect x="7"  y="10" width="26" height="3.5" rx="1.75" fill="white" opacity="0.95"/>
+      <rect x="11" y="17" width="18" height="3.5" rx="1.75" fill="white" opacity="0.95"/>
+      <rect x="15" y="24" width="10" height="3.5" rx="1.75" fill="white" opacity="0.95"/>
+      {/* AI dot — accent pulse indicator */}
+      <circle cx="20" cy="33" r="2.5" fill={C.gold2}/>
+    </svg>
+  );
+}
+
+function LogoAText({ size = 40, dark = false, showText = true }) {
+  return (
+    <div style={{ display:'flex', alignItems:'center', gap: size * 0.28 }}>
+      <LogoA size={size} dark={dark} />
+      {showText && (
+        <span style={{
+          fontFamily: "'Noto Serif SC', serif",
+          fontSize: size * 0.38,
+          fontWeight: 700,
+          color: dark ? C.white : C.navy,
+          letterSpacing: '0.02em',
+          lineHeight: 1,
+        }}>BP过滤机</span>
+      )}
+    </div>
+  );
+}
+
+// ─── LOGO B: "CIRCUIT FUNNEL" ─────────────────────────
+// Downward triangle funnel + circuit nodes — filters + AI circuitry
+function LogoB({ size = 40, dark = false }) {
+  const bg = dark ? C.navy : C.blue;
+  return (
+    <svg width={size} height={size} viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <rect width="40" height="40" fill={bg} rx="6"/>
+      {/* Funnel outline */}
+      <path d="M7 10 L33 10 L23 22 L23 32 L17 32 L17 22 Z" fill="none" stroke="white" strokeWidth="2.2" strokeLinejoin="round"/>
+      {/* Circuit node on output */}
+      <circle cx="20" cy="35.5" r="1.8" fill={C.gold2}/>
+      {/* Small circuit branches */}
+      <line x1="20" x2="20" y1="33.7" y2="32" stroke={C.gold2} strokeWidth="1.4"/>
+      {/* AI spark top-right */}
+      <circle cx="30" cy="10" r="2.2" fill="white" opacity=".5"/>
+      <circle cx="30" cy="10" r="1" fill={C.gold2}/>
+    </svg>
+  );
+}
+
+function LogoBText({ size = 40, dark = false, showText = true }) {
+  return (
+    <div style={{ display:'flex', alignItems:'center', gap: size * 0.28 }}>
+      <LogoB size={size} dark={dark} />
+      {showText && (
+        <span style={{
+          fontFamily: "'Noto Serif SC', serif",
+          fontSize: size * 0.38,
+          fontWeight: 700,
+          color: dark ? C.white : C.navy,
+          letterSpacing: '0.02em',
+          lineHeight: 1,
+        }}>BP过滤机</span>
+      )}
+    </div>
+  );
+}
+
+// ─── LOGO C: "LAYERED SHIELD" ─────────────────────────
+// Shield shape with horizontal scan lines — security/filter + financial authority
+function LogoC({ size = 40, dark = false }) {
+  const bg = dark ? C.navy : C.navy;
+  return (
+    <svg width={size} height={size} viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <rect width="40" height="40" fill={bg} rx="6"/>
+      {/* Shield */}
+      <path d="M20 5 L33 10 L33 22 C33 28.5 27 34.5 20 37 C13 34.5 7 28.5 7 22 L7 10 Z"
+            fill="none" stroke={C.blue2} strokeWidth="1.8"/>
+      {/* Filter lines inside shield */}
+      <line x1="12" x2="28" y1="16" y2="16" stroke="white" strokeWidth="1.8" strokeLinecap="round" opacity=".9"/>
+      <line x1="14" x2="26" y1="21" y2="21" stroke="white" strokeWidth="1.8" strokeLinecap="round" opacity=".9"/>
+      <line x1="17" x2="23" y1="26" y2="26" stroke="white" strokeWidth="1.8" strokeLinecap="round" opacity=".9"/>
+      {/* Gold accent dot */}
+      <circle cx="20" cy="31" r="1.8" fill={C.gold2}/>
+    </svg>
+  );
+}
+
+function LogoCText({ size = 40, dark = false, showText = true }) {
+  return (
+    <div style={{ display:'flex', alignItems:'center', gap: size * 0.28 }}>
+      <LogoC size={size} dark={dark} />
+      {showText && (
+        <span style={{
+          fontFamily: "'Noto Serif SC', serif",
+          fontSize: size * 0.38,
+          fontWeight: 700,
+          color: dark ? C.white : C.navy,
+          letterSpacing: '0.02em',
+          lineHeight: 1,
+        }}>BP过滤机</span>
+      )}
+    </div>
+  );
+}
+
+// ─── LOGO D: "BP MONOGRAM" ────────────────────────────
+// Clean "BP" lettermark in a geometric frame — institutional, minimal
+function LogoD({ size = 40, dark = false }) {
+  const bg = dark ? C.navy : C.navy;
+  return (
+    <svg width={size} height={size} viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <rect width="40" height="40" fill={bg} rx="2"/>
+      {/* Gold accent top bar */}
+      <rect x="0" y="0" width="40" height="3" fill={C.gold2} rx="1"/>
+      {/* B letterform */}
+      <text x="5" y="28" fontFamily="'JetBrains Mono', monospace" fontSize="20" fontWeight="500" fill="white" letterSpacing="-0.5">BP</text>
+      {/* Subtle filter line below text */}
+      <line x1="5" x2="35" y1="33" y2="33" stroke={C.blue2} strokeWidth="1.2" opacity=".6"/>
+      <line x1="5" x2="26" y1="36.5" y2="36.5" stroke={C.blue2} strokeWidth="1.2" opacity=".4"/>
+    </svg>
+  );
+}
+
+function LogoDText({ size = 40, dark = false, showText = true }) {
+  return (
+    <div style={{ display:'flex', alignItems:'center', gap: size * 0.28 }}>
+      <LogoD size={size} dark={dark} />
+      {showText && (
+        <span style={{
+          fontFamily: "'Noto Serif SC', serif",
+          fontSize: size * 0.38,
+          fontWeight: 700,
+          color: dark ? C.white : C.navy,
+          letterSpacing: '0.02em',
+          lineHeight: 1,
+        }}>BP过滤机</span>
+      )}
+    </div>
+  );
+}
+
+// ─── LOGO E: "NEURAL FILTER" ─────────────────────────
+// Abstract: overlapping hexagon grid (neural/data) with a filter cut-through
+function LogoE({ size = 40, dark = false }) {
+  const bg = dark ? C.navy : C.blue;
+  return (
+    <svg width={size} height={size} viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <rect width="40" height="40" fill={bg} rx="6"/>
+      {/* Neural nodes */}
+      <circle cx="12" cy="12" r="3" fill="white" opacity=".25"/>
+      <circle cx="28" cy="12" r="3" fill="white" opacity=".25"/>
+      <circle cx="20" cy="20" r="3.5" fill="white" opacity=".9"/>
+      <circle cx="12" cy="28" r="3" fill="white" opacity=".25"/>
+      <circle cx="28" cy="28" r="3" fill="white" opacity=".25"/>
+      {/* Connections */}
+      <line x1="12" y1="12" x2="20" y2="20" stroke="white" strokeWidth="1" opacity=".3"/>
+      <line x1="28" y1="12" x2="20" y2="20" stroke="white" strokeWidth="1" opacity=".3"/>
+      <line x1="12" y1="28" x2="20" y2="20" stroke="white" strokeWidth="1" opacity=".3"/>
+      <line x1="28" y1="28" x2="20" y2="20" stroke="white" strokeWidth="1" opacity=".3"/>
+      {/* Filter bar overlay */}
+      <rect x="7"  y="8"  width="26" height="2.5" rx="1.25" fill="white" opacity=".7"/>
+      <rect x="10" y="19" width="20" height="2.5" rx="1.25" fill="white" opacity=".7"/>
+      <rect x="14" y="30" width="12" height="2.5" rx="1.25" fill="white" opacity=".7"/>
+      {/* Gold center pulse */}
+      <circle cx="20" cy="20" r="1.5" fill={C.gold2}/>
+    </svg>
+  );
+}
+
+function LogoEText({ size = 40, dark = false, showText = true }) {
+  return (
+    <div style={{ display:'flex', alignItems:'center', gap: size * 0.28 }}>
+      <LogoE size={size} dark={dark} />
+      {showText && (
+        <span style={{
+          fontFamily: "'Noto Serif SC', serif",
+          fontSize: size * 0.38,
+          fontWeight: 700,
+          color: dark ? C.white : C.navy,
+          letterSpacing: '0.02em',
+          lineHeight: 1,
+        }}>BP过滤机</span>
+      )}
+    </div>
+  );
+}
+
+// ─── LOGO CARD COMPONENT ──────────────────────────────
+function LogoCard({ variant, name, concept, desc, TextComp, IconComp }) {
+  return (
+    <div style={{ background:'white', border:'1px solid #DDE1EA', borderRadius: 4, overflow:'hidden' }}>
+      <div className="card-inner">
+        <div className="variant-label">{variant} · {concept}</div>
+        <div className="variant-name">{name}</div>
+        <div className="variant-desc">{desc}</div>
+      </div>
+
+      <div className="card-divider"/>
+
+      {/* Preview on light bg */}
+      <div className="preview-row" style={{ background:'#F6F7FA', flexWrap:'wrap', gap:20 }}>
+        {/* Large icon */}
+        <div className="preview-cell logo-bg-white" style={{ width:80, height:80 }}>
+          <IconComp size={56} dark={false}/>
+        </div>
+        {/* Nav size */}
+        <div className="preview-cell logo-bg-white" style={{ padding:'0 16px', height:48 }}>
+          <TextComp size={32} dark={false}/>
+        </div>
+        {/* App icon rounded */}
+        <div style={{ width:60, height:60, borderRadius:14, overflow:'hidden', border:'1px solid rgba(0,0,0,.07)' }}>
+          <IconComp size={60} dark={false}/>
+        </div>
+      </div>
+
+      {/* Preview on dark bg */}
+      <div className="preview-row" style={{ background:'#0D2145', flexWrap:'wrap', gap:20 }}>
+        <div className="preview-cell" style={{ width:80, height:80, background:'rgba(255,255,255,.05)', border:'1px solid rgba(255,255,255,.1)' }}>
+          <IconComp size={56} dark={true}/>
+        </div>
+        <div className="preview-cell" style={{ padding:'0 16px', height:48, background:'rgba(255,255,255,.05)', border:'1px solid rgba(255,255,255,.08)' }}>
+          <TextComp size={32} dark={true}/>
+        </div>
+        {/* Social avatar */}
+        <div style={{ width:60, height:60, borderRadius:'50%', overflow:'hidden', border:'2px solid rgba(255,255,255,.15)' }}>
+          <IconComp size={60} dark={true}/>
+        </div>
+      </div>
+
+      <div className="card-divider"/>
+      <div className="usage-row">
+        <span style={{ fontSize:11, color:'#8E9BB0', fontFamily:'var(--mono)', letterSpacing:'.06em' }}>适用场景</span>
+        <span className="usage-chip">导航栏</span>
+        <span className="usage-chip">App 图标</span>
+        <span className="usage-chip">社交媒体头像</span>
+      </div>
+    </div>
+  );
+}
+
+// ─── MAIN APP ─────────────────────────────────────────
+function App() {
+  const logos = [
+    {
+      variant: 'Option A',
+      name: '过滤层叠',
+      concept: 'Filter Stack',
+      desc: '三条递减横线象征「层层过滤」，底部金色圆点代表 AI 输出的精华信号。极简几何，在小尺寸下识别度最高，导航栏首选。',
+      TextComp: LogoAText,
+      IconComp: LogoA,
+    },
+    {
+      variant: 'Option B',
+      name: '电路漏斗',
+      concept: 'Circuit Funnel',
+      desc: '传统漏斗形态 + 电路节点，直接传达「过滤」动作，AI感来自末端的金色节点出口。金融工具感强，概念最直白。',
+      TextComp: LogoBText,
+      IconComp: LogoB,
+    },
+    {
+      variant: 'Option C',
+      name: '盾形过滤',
+      concept: 'Shield Filter',
+      desc: '盾形轮廓传达「保护投资人免受劣质BP侵害」，内部三条渐缩线表示过滤层。权威感最强，适合强调安全与机构属性。',
+      TextComp: LogoCText,
+      IconComp: LogoC,
+    },
+    {
+      variant: 'Option D',
+      name: '机构字标',
+      concept: 'BP Monogram',
+      desc: '「BP」等宽字体字标 + 金色顶部装饰条 + 底部渐淡过滤线。高盛/Bloomberg 式机构风，极度克制，适合强调专业身份。',
+      TextComp: LogoDText,
+      IconComp: LogoD,
+    },
+    {
+      variant: 'Option E',
+      name: '神经过滤',
+      concept: 'Neural Filter',
+      desc: '神经网络节点 + 过滤条叠加，同时传达 AI 智能与过滤筛选两个概念。层次最丰富，适合科技感强的场景。',
+      TextComp: LogoEText,
+      IconComp: LogoE,
+    },
+  ];
+
+  return (
+    <DesignCanvas>
+      <DCSection id="logos" title="BP过滤机 — Logo 方案探索">
+        {logos.map(logo => (
+          <DCArtboard
+            key={logo.variant}
+            id={logo.variant}
+            label={`${logo.variant}: ${logo.name}`}
+            width={500}
+            height={420}
+          >
+            <LogoCard {...logo}/>
+          </DCArtboard>
+        ))}
+      </DCSection>
+    </DesignCanvas>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>

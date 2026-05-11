@@ -1,0 +1,1256 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BP过滤机 — 投资人的 AI Workspace</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@300;400;600;700&family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;1,300&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  /* ── Core navy/blue brand ── */
+  --navy:    #0A1F3D;
+  --navy2:   #122D5A;
+  --accent:  #1749C9;
+  --accent2: #2E63E8;
+
+  /* ── Gold (kept, deepened for contrast) ── */
+  --gold:    #8C5C00;
+
+  /* ── Backgrounds — cool off-white, very subtle blue tint ── */
+  --bg:      #F4F6FB;
+  --bg2:     #FFFFFF;
+  --bg3:     #E9EDF6;
+  --bg4:     #DDE3F0;
+
+  /* ── Borders ── */
+  --border:  #CBD1E0;
+  --border2: #A8B0C8;
+
+  /* ── Text hierarchy — dramatically stronger ── */
+  --text:    #0C1A30;   /* near-black navy — headings, primary */
+  --mid:     #2D3D54;   /* dark slate — all body copy, descriptions */
+  --dim:     #526078;   /* medium slate — secondary labels, meta */
+  --muted:   #7A8CA0;   /* only for true decorative / tertiary info */
+
+  /* ── Semantic colors ── */
+  --red:     #B91C1C;
+  --red-bg:  #FEF2F2;
+  --green:   #0F6B30;
+  --grn-bg:  #EDFBF2;
+  --amber:   #92480A;
+  --amb-bg:  #FFF7ED;
+
+  /* ── Typography ── */
+  --serif:   'Noto Serif SC', serif;
+  --sans:    'DM Sans', sans-serif;
+  --mono:    'JetBrains Mono', monospace;
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 15px;
+  line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+/* dynamic canvas background */
+#bg-canvas {
+  position: fixed; inset: 0; z-index: 0;
+  pointer-events: none;
+}
+
+/* ── NAV ──────────────────────────────────────── */
+nav {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+  height: 60px;
+  display: flex; align-items: center;
+  padding: 0 48px;
+  background: rgba(244,246,251,0.97);
+  backdrop-filter: blur(14px);
+  border-bottom: 1px solid var(--border);
+}
+.nav-logo {
+  display: flex; align-items: center; gap: 10px;
+  text-decoration: none; flex-shrink: 0;
+}
+.nav-mark {
+  width: 32px; height: 32px;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.nav-name {
+  font-family: var(--serif); font-size: 15px; font-weight: 700;
+  color: var(--text); letter-spacing: 0.02em;
+}
+.nav-links {
+  flex: 1; display: flex; justify-content: center; gap: 36px;
+}
+.nav-links a {
+  font-size: 13.5px; color: var(--dim); text-decoration: none;
+  letter-spacing: 0.01em; transition: color .18s;
+}
+.nav-links a:hover { color: var(--navy); }
+.nav-right { display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
+.btn-ghost {
+  font-family: var(--sans); font-size: 13.5px; color: var(--dim);
+  background: none; border: none; cursor: pointer; padding: 6px 2px;
+  transition: color .18s;
+}
+.btn-ghost:hover { color: var(--navy); }
+.btn-primary {
+  font-family: var(--sans); font-size: 13px; font-weight: 600;
+  color: #fff; background: var(--accent);
+  border: none; padding: 9px 22px; border-radius: 3px; cursor: pointer;
+  transition: background .18s;
+}
+.btn-primary:hover { background: var(--navy2); }
+.btn-outline {
+  font-family: var(--sans); font-size: 13px; font-weight: 600;
+  color: var(--text); background: none;
+  border: 1.5px solid var(--text); padding: 9px 22px;
+  border-radius: 3px; cursor: pointer; transition: all .18s;
+}
+.btn-outline:hover { background: var(--text); color: #fff; }
+
+/* ── HERO ─────────────────────────────────────── */
+.hero {
+  position: relative; z-index: 1;
+  min-height: 100vh;
+  display: flex; align-items: center;
+  padding: 100px 48px 72px;
+  overflow: hidden;
+}
+.hero-blob {
+  position: absolute; top: -100px; right: -60px;
+  width: 700px; height: 700px;
+  background: radial-gradient(ellipse, rgba(27,79,216,.09) 0%, transparent 65%);
+  pointer-events: none;
+}
+.hero-blob2 {
+  position: absolute; bottom: -80px; left: -80px;
+  width: 400px; height: 400px;
+  background: radial-gradient(ellipse, rgba(13,33,69,.05) 0%, transparent 65%);
+  pointer-events: none;
+}
+.hero-inner {
+  max-width: 1280px; margin: 0 auto; width: 100%;
+  display: grid; grid-template-columns: 1fr 1fr;
+  gap: 80px; align-items: center;
+}
+.hero-eyebrow {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-family: var(--mono); font-size: 11px; letter-spacing: .13em;
+  color: var(--accent); text-transform: uppercase; font-weight: 600;
+  background: rgba(23,73,201,.08); border: 1px solid rgba(23,73,201,.25);
+  padding: 4px 12px; border-radius: 2px; margin-bottom: 22px;
+  opacity: 0; animation: fadeUp .7s .1s forwards;
+}
+.hero-h1 {
+  font-family: var(--serif);
+  font-size: clamp(40px, 4.5vw, 66px);
+  font-weight: 700; line-height: 1.1; letter-spacing: -.01em;
+  color: var(--text); margin-bottom: 16px;
+  opacity: 0; animation: fadeUp .7s .2s forwards;
+}
+.hero-h1 em { font-style: normal; color: var(--accent); }
+.hero-sub {
+  font-size: 16px; color: var(--mid); line-height: 1.75;
+  max-width: 480px; margin-bottom: 32px;
+  opacity: 0; animation: fadeUp .7s .3s forwards;
+}
+.hero-sub strong { color: var(--text); font-weight: 600; }
+.hero-ctas {
+  display: flex; gap: 12px; align-items: center; margin-bottom: 36px;
+  opacity: 0; animation: fadeUp .7s .4s forwards;
+}
+.hero-ctas .btn-primary { font-size: 14px; padding: 12px 28px; }
+.hero-ctas .btn-outline  { font-size: 14px; padding: 12px 28px; }
+.hero-trust {
+  display: flex; gap: 20px; align-items: center;
+  opacity: 0; animation: fadeUp .7s .5s forwards;
+}
+.trust-item {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 12px; color: var(--mid);
+}
+.trust-check {
+  width: 16px; height: 16px; border-radius: 50%;
+  background: var(--grn-bg); border: 1px solid rgba(21,128,61,.2);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 9px; color: var(--green); flex-shrink: 0;
+}
+
+/* ── PRODUCT PANEL ──────────────────────────── */
+.hero-panel {
+  opacity: 0; animation: panelIn .9s .45s forwards;
+  position: relative;
+}
+@keyframes panelIn {
+  from { opacity: 0; transform: translateY(24px) scale(.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+.panel-chrome {
+  background: var(--navy); border-radius: 6px 6px 0 0;
+  padding: 11px 16px; display: flex; align-items: center; gap: 7px;
+}
+.chrome-dot { width: 10px; height: 10px; border-radius: 50%; opacity: .55; }
+.chrome-label {
+  font-family: var(--mono); font-size: 11px;
+  color: rgba(255,255,255,.65); letter-spacing: .07em; margin-left: 8px;
+}
+.panel-body {
+  background: var(--bg2);
+  border: 1px solid var(--border); border-top: none;
+  border-radius: 0 0 6px 6px;
+  box-shadow: 0 16px 56px rgba(13,33,69,.12), 0 2px 8px rgba(13,33,69,.06);
+  overflow: hidden;
+}
+
+/* Tabs inside panel */
+.panel-tabs {
+  display: flex; border-bottom: 1px solid var(--border);
+  background: var(--bg);
+}
+.panel-tab {
+  font-family: var(--mono); font-size: 10.5px; letter-spacing: .06em;
+  padding: 10px 16px; color: var(--dim); cursor: pointer;
+  border-bottom: 2px solid transparent; margin-bottom: -1px;
+  transition: all .18s;
+}
+.panel-tab:not(.active):hover { color: var(--mid); }
+.panel-tab.active { color: var(--accent); border-color: var(--accent); }
+
+.panel-content { padding: 20px; }
+
+/* Score row */
+.score-row {
+  display: flex; align-items: flex-end; gap: 16px;
+  padding-bottom: 18px; margin-bottom: 18px;
+  border-bottom: 1px solid var(--border);
+}
+.score-num {
+  font-family: var(--mono); font-size: 52px; font-weight: 700;
+  line-height: 1; color: var(--amber);
+}
+.score-num sub { font-size: 18px; color: var(--mid); }
+.score-meta { flex: 1; }
+.score-lbl {
+  font-family: var(--mono); font-size: 10px; letter-spacing: .1em;
+  color: var(--dim); text-transform: uppercase; margin-bottom: 5px;
+  font-weight: 600;
+}
+.verdict-pill {
+  display: inline-block; font-family: var(--mono); font-size: 11px;
+  font-weight: 500; letter-spacing: .07em; padding: 4px 10px;
+  border-radius: 2px;
+}
+.vp-warn { color: var(--amber); background: var(--amb-bg); border: 1px solid rgba(146,72,10,.3); font-weight: 700; }
+.vp-pass { color: var(--green); background: var(--grn-bg); border: 1px solid rgba(15,107,48,.3); font-weight: 700; }
+.vp-fail { color: var(--red);   background: var(--red-bg); border: 1px solid rgba(185,28,28,.3); font-weight: 700; }
+
+/* Dimension bars */
+.dims { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
+.dim-row { display: grid; grid-template-columns: 90px 1fr 30px; align-items: center; gap: 10px; }
+.dim-name { font-size: 11px; color: var(--text); font-family: var(--mono); letter-spacing: .03em; font-weight: 500; }
+.dim-track { height: 4px; background: var(--bg3); border-radius: 2px; overflow: hidden; }
+.dim-fill  { height: 100%; border-radius: 2px; transition: width 1.2s cubic-bezier(.4,0,.2,1); }
+.dim-fill.hi  { background: var(--green); }
+.dim-fill.mid { background: var(--accent); }
+.dim-fill.lo  { background: var(--red); }
+.dim-score { font-family: var(--mono); font-size: 11px; color: var(--mid); text-align: right; font-weight: 600; }
+
+/* Pipeline stages */
+.stages-row { display: flex; gap: 4px; margin-bottom: 0; }
+.stage-pill {
+  font-family: var(--mono); font-size: 9.5px; letter-spacing: .06em;
+  padding: 3px 8px; border-radius: 2px; border: 1px solid;
+}
+.sp-done  { color: var(--green); background: var(--grn-bg); border-color: rgba(15,107,48,.35); font-weight: 600; }
+.sp-act   { color: var(--accent); background: rgba(23,73,201,.08); border-color: rgba(23,73,201,.3); font-weight: 600; }
+.sp-next  { color: var(--mid); background: var(--bg3); border-color: var(--border); font-weight: 600; }
+
+/* Flag list */
+.flags { border-top: 1px solid var(--border); padding-top: 14px; }
+.flags-label {
+  font-family: var(--mono); font-size: 10px; letter-spacing: .1em;
+  color: var(--dim); text-transform: uppercase; margin-bottom: 8px;
+  font-weight: 600;
+}
+.flag-item { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 7px; }
+.flag-ico {
+  width: 16px; height: 16px; border-radius: 50%; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 9px; font-weight: 700; margin-top: 1px;
+}
+.fi-bad { color: var(--red);   background: var(--red-bg); border: 1px solid rgba(185,28,28,.2); }
+.fi-ok  { color: var(--green); background: var(--grn-bg); border: 1px solid rgba(15,107,48,.2); }
+.flag-text { font-size: 12px; color: var(--text); line-height: 1.5; }
+
+/* ── METRICS BAR ─────────────────────────────── */
+.metrics-bar {
+  position: relative; z-index: 1;
+  background: var(--navy);
+  display: grid; grid-template-columns: repeat(4, 1fr);
+}
+.metric-cell {
+  padding: 34px 48px;
+  border-right: 1px solid rgba(255,255,255,.09);
+}
+.metric-cell:last-child { border-right: none; }
+.metric-n {
+  font-family: var(--mono); font-size: 38px; font-weight: 700;
+  color: #fff; line-height: 1; margin-bottom: 8px;
+}
+.metric-n em { font-style: normal; font-size: 19px; color: rgba(255,255,255,.6); }
+.metric-d { font-size: 13px; color: rgba(255,255,255,.8); line-height: 1.5; max-width: 200px; }
+
+/* ── SECTION WRAPPERS ────────────────────────── */
+.section { position: relative; z-index: 1; padding: 88px 48px; }
+.section-inner { max-width: 1280px; margin: 0 auto; }
+.section.alt { background: #EDF0F8; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+
+.sec-tag {
+  font-family: var(--mono); font-size: 11px; letter-spacing: .13em;
+  color: var(--accent); text-transform: uppercase; font-weight: 700;
+  display: flex; align-items: center; gap: 10px; margin-bottom: 14px;
+}
+.sec-tag::before { content: ''; display: block; width: 18px; height: 2px; background: var(--accent); border-radius: 1px; }
+.sec-h2 {
+  font-family: var(--serif); font-size: clamp(26px, 2.7vw, 40px);
+  font-weight: 700; line-height: 1.2; color: var(--text);
+  max-width: 520px; margin-bottom: 52px;
+}
+
+/* ── FEATURES GRID ───────────────────────────── */
+.feat-grid {
+  display: grid; grid-template-columns: repeat(3, 1fr);
+  gap: 1px; background: var(--border);
+  border: 1px solid var(--border); border-radius: 4px; overflow: hidden;
+}
+.feat {
+  background: var(--bg2); padding: 36px 30px;
+  transition: background .22s;
+}
+.feat:hover { background: #EAF0FF; }
+.feat-num { font-family: var(--mono); font-size: 11px; color: var(--accent); letter-spacing: .1em; margin-bottom: 14px; opacity: .85; font-weight: 600; }
+.feat-title { font-family: var(--serif); font-size: 17px; font-weight: 700; color: var(--text); margin-bottom: 9px; line-height: 1.3; }
+.feat-desc { font-size: 13px; color: var(--mid); line-height: 1.75; }
+.feat-desc em { font-style: normal; color: var(--accent); font-weight: 600; }
+
+
+/* ── 5 DIMENSIONS ────────────────────────────── */
+.dim5-grid {
+  display: grid; grid-template-columns: repeat(5, 1fr);
+  gap: 16px;
+}
+.dim5-card {
+  background: var(--bg2); border: 1px solid var(--border);
+  border-radius: 4px; padding: 24px 20px;
+  position: relative; overflow: hidden;
+  transition: box-shadow .22s, border-color .22s;
+}
+.dim5-card:hover { border-color: var(--accent); box-shadow: 0 6px 24px rgba(23,73,201,.12); }
+.dim5-card::before {
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px;
+  background: var(--accent); transform: scaleX(0); transform-origin: left;
+  transition: transform .25s; border-radius: 2px 2px 0 0;
+}
+.dim5-card:hover::before { transform: scaleX(1); }
+.dim5-wt {
+  font-family: var(--mono); font-size: 10px; letter-spacing: .08em;
+  color: var(--accent); margin-bottom: 12px; opacity: 1; font-weight: 600;
+}
+.dim5-name { font-family: var(--serif); font-size: 15px; font-weight: 700; color: var(--text); margin-bottom: 8px; }
+.dim5-sub { font-size: 11.5px; color: var(--mid); line-height: 1.6; margin-bottom: 12px; font-size: 12px; }
+.dim5-formula {
+  font-family: var(--mono); font-size: 10px; color: var(--mid);
+  background: var(--bg3); padding: 6px 8px; border-radius: 2px;
+  letter-spacing: .03em; line-height: 1.5;
+}
+
+/* ── PIPELINE ────────────────────────────────── */
+.pipeline-wrap { position: relative; }
+.pipeline-line {
+  position: absolute; top: 26px; left: 26px; right: 26px;
+  height: 1px; background: linear-gradient(to right, var(--accent), var(--border) 80%);
+}
+.pipeline-steps { display: grid; grid-template-columns: repeat(7, 1fr); gap: 20px; position: relative; }
+.pipe-step { text-align: center; }
+.pipe-dot {
+  width: 52px; height: 52px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  margin: 0 auto 16px; position: relative; z-index: 1;
+  background: var(--bg2); border: 2px solid var(--accent);
+}
+.pipe-dot.done { background: var(--accent); }
+.pipe-dot-num { font-family: var(--mono); font-size: 13px; color: var(--accent); font-weight: 700; }
+.pipe-dot.done .pipe-dot-num { color: #fff; }
+.pipe-label { font-family: var(--serif); font-size: 12px; font-weight: 700; color: var(--text); margin-bottom: 4px; }
+.pipe-desc { font-size: 11px; color: var(--dim); line-height: 1.5; }
+
+/* ── WORKFLOW ────────────────────────────────── */
+.workflow-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 32px; }
+.wf-step {}
+.wf-num-wrap {
+  width: 52px; height: 52px; border: 2px solid var(--accent);
+  display: flex; align-items: center; justify-content: center;
+  margin-bottom: 20px; background: var(--bg2);
+  position: relative; z-index: 1;
+}
+.wf-num { font-family: var(--mono); font-size: 14px; color: var(--accent); font-weight: 700; }
+.wf-title { font-family: var(--serif); font-size: 16px; font-weight: 700; color: var(--text); margin-bottom: 8px; }
+.wf-desc { font-size: 13px; color: var(--mid); line-height: 1.65; }
+
+/* ── SCORECARD EXPLAINER ─────────────────────── */
+.scorecard-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; align-items: start; }
+.grade-table { width: 100%; border-collapse: collapse; }
+.grade-table th {
+  font-family: var(--mono); font-size: 10px; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--mid); text-align: left;
+  padding: 8px 14px; border-bottom: 2px solid var(--border); font-weight: 700;
+}
+.grade-table td { padding: 12px 14px; border-bottom: 1px solid var(--border); font-size: 13px; vertical-align: middle; color: var(--text); }
+.grade-table tr:last-child td { border-bottom: none; }
+.grade-badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 32px; height: 32px; border-radius: 50%;
+  font-family: var(--mono); font-size: 14px; font-weight: 700;
+}
+.gb-a { background: var(--grn-bg); color: var(--green); }
+.gb-b { background: rgba(27,79,216,.08); color: var(--accent); }
+.gb-c { background: var(--amb-bg); color: var(--amber); }
+.gb-d { background: var(--red-bg); color: var(--red); }
+.grade-action { font-size: 12px; color: var(--mid); line-height: 1.55; font-weight: 500; }
+
+/* ── PRICING ─────────────────────────────────── */
+.pricing-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+.plan {
+  background: var(--bg2); border: 1px solid var(--border);
+  border-radius: 4px; padding: 40px 32px; position: relative;
+  transition: box-shadow .22s;
+}
+.plan:hover { box-shadow: 0 10px 36px rgba(13,33,69,.1); }
+.plan.featured { border: 2px solid var(--accent); }
+.plan-badge {
+  position: absolute; top: -1px; left: 50%; transform: translateX(-50%);
+  background: var(--accent); color: #fff;
+  font-family: var(--mono); font-size: 10px; letter-spacing: .1em;
+  padding: 3px 12px; border-radius: 0 0 4px 4px;
+}
+.plan-name { font-family: var(--mono); font-size: 11px; letter-spacing: .12em; color: var(--accent); text-transform: uppercase; margin-bottom: 14px; font-weight: 700; }
+.plan-price { font-family: var(--mono); font-size: 38px; font-weight: 700; color: var(--text); line-height: 1; margin-bottom: 4px; }
+.plan-cycle { font-size: 12px; color: var(--mid); font-family: var(--mono); margin-bottom: 24px; }
+.plan-hr { height: 1px; background: var(--border); margin-bottom: 22px; }
+.plan-features { list-style: none; margin-bottom: 32px; display: flex; flex-direction: column; gap: 9px; }
+.plan-features li { display: flex; align-items: flex-start; gap: 9px; font-size: 13px; color: var(--text); line-height: 1.5; }
+.plan-features li::before { content: '✓'; color: var(--green); font-size: 12px; font-weight: 700; flex-shrink: 0; margin-top: 1px; }
+
+/* ── CTA BAND ────────────────────────────────── */
+.cta-band {
+  position: relative; z-index: 1;
+  background: var(--navy); text-align: center; padding: 96px 48px;
+  overflow: hidden;
+}
+.cta-band::before {
+  content: '';
+  position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+  width: 900px; height: 400px;
+  background: radial-gradient(ellipse, rgba(59,110,245,.15) 0%, transparent 65%);
+  pointer-events: none;
+}
+.cta-tag { font-family: var(--mono); font-size: 11px; letter-spacing: .13em; color: rgba(255,255,255,.65); text-transform: uppercase; margin-bottom: 16px; font-weight: 600; }
+.cta-h2 { font-family: var(--serif); font-size: clamp(28px, 3.5vw, 48px); font-weight: 700; color: #fff; max-width: 600px; margin: 0 auto 14px; line-height: 1.2; }
+.cta-sub { font-size: 15px; color: rgba(255,255,255,.82); margin-bottom: 36px; }
+.cta-actions { display: flex; gap: 12px; justify-content: center; }
+.btn-white { font-family: var(--sans); font-size: 14px; font-weight: 600; color: var(--navy); background: #fff; border: none; padding: 13px 32px; border-radius: 3px; cursor: pointer; transition: opacity .18s; }
+.btn-white:hover { opacity: .88; }
+.btn-ghost-white { font-family: var(--sans); font-size: 14px; font-weight: 500; color: #fff; background: none; border: 1.5px solid rgba(255,255,255,.35); padding: 13px 32px; border-radius: 3px; cursor: pointer; transition: border-color .18s; }
+.btn-ghost-white:hover { border-color: #fff; }
+
+/* ── FOOTER ──────────────────────────────────── */
+footer {
+  position: relative; z-index: 1;
+  background: var(--bg2); border-top: 1px solid var(--border);
+  padding: 52px 48px 32px;
+}
+.footer-grid {
+  display: grid; grid-template-columns: 1.5fr 1fr 1fr 1fr;
+  gap: 40px; max-width: 1280px; margin: 0 auto 40px;
+}
+.footer-logo { display: flex; align-items: center; gap: 10px; font-family: var(--serif); font-size: 15px; font-weight: 700; color: var(--text); margin-bottom: 12px; }
+.footer-tag { font-size: 13px; color: var(--mid); line-height: 1.65; max-width: 240px; }
+.footer-col h4 { font-family: var(--mono); font-size: 10px; letter-spacing: .12em; color: var(--dim); text-transform: uppercase; margin-bottom: 14px; font-weight: 700; }
+.footer-col ul { list-style: none; display: flex; flex-direction: column; gap: 8px; }
+.footer-col a { font-size: 13px; color: var(--mid); text-decoration: none; transition: color .18s; font-weight: 500; }
+.footer-col a:hover { color: var(--navy); }
+.footer-bottom { max-width: 1280px; margin: 0 auto; border-top: 1px solid var(--border); padding-top: 22px; display: flex; justify-content: space-between; align-items: center; }
+.footer-copy { font-family: var(--mono); font-size: 11px; color: var(--dim); letter-spacing: .04em; }
+.footer-badges { display: flex; gap: 8px; }
+.fbadge { font-family: var(--mono); font-size: 10px; color: var(--mid); border: 1px solid var(--border2); padding: 3px 8px; border-radius: 2px; font-weight: 500; }
+
+/* ── ANIMATIONS ──────────────────────────────── */
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(18px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+.reveal {
+  opacity: 0; transform: translateY(20px);
+  transition: opacity .65s ease, transform .65s ease;
+}
+.reveal.visible { opacity: 1; transform: translateY(0); }
+
+/* ── TWEAKS PANEL ────────────────────────────── */
+#tweaks-panel {
+  display: none; position: fixed; bottom: 24px; right: 24px; z-index: 9999;
+  background: #fff; border: 1px solid var(--border2); border-radius: 6px;
+  padding: 20px; width: 268px;
+  box-shadow: 0 16px 48px rgba(13,33,69,.16);
+}
+#tweaks-panel h3 {
+  font-family: var(--mono); font-size: 11px; letter-spacing: .12em;
+  color: var(--navy); text-transform: uppercase;
+  margin-bottom: 18px; padding-bottom: 12px; border-bottom: 1px solid var(--border);
+}
+.tw-row { margin-bottom: 16px; }
+.tw-label { font-family: var(--mono); font-size: 10px; letter-spacing: .1em; color: var(--mid); text-transform: uppercase; margin-bottom: 7px; display: block; font-weight: 700; }
+.tw-opts { display: flex; flex-direction: column; gap: 5px; }
+.tw-opt {
+  display: flex; align-items: center; gap: 8px;
+  cursor: pointer; font-size: 12.5px; color: var(--text);
+  padding: 6px 10px; border: 1px solid transparent; border-radius: 3px; transition: all .18s;
+}
+.tw-opt:hover { background: var(--bg3); }
+.tw-opt.active { border-color: var(--accent); color: var(--accent); background: rgba(27,79,216,.05); }
+.tw-swatch { width: 13px; height: 13px; border-radius: 2px; border: 1px solid rgba(0,0,0,.1); flex-shrink: 0; }
+</style>
+</head>
+<body>
+
+<!-- NAV -->
+<canvas id="bg-canvas"></canvas>
+
+<nav>
+  <a href="#" class="nav-logo">
+    <div class="nav-mark">
+      <svg width="32" height="32" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <rect width="40" height="40" rx="6" fill="#1B4FD8"/>
+        <circle cx="10" cy="10" r="4.5" fill="white" opacity="0.2"/>
+        <circle cx="30" cy="10" r="4.5" fill="white" opacity="0.2"/>
+        <circle cx="10" cy="30" r="4.5" fill="white" opacity="0.2"/>
+        <circle cx="30" cy="30" r="4.5" fill="white" opacity="0.2"/>
+        <line x1="10" y1="10" x2="20" y2="20" stroke="white" stroke-width="1.4" opacity="0.28"/>
+        <line x1="30" y1="10" x2="20" y2="20" stroke="white" stroke-width="1.4" opacity="0.28"/>
+        <line x1="10" y1="30" x2="20" y2="20" stroke="white" stroke-width="1.4" opacity="0.28"/>
+        <line x1="30" y1="30" x2="20" y2="20" stroke="white" stroke-width="1.4" opacity="0.28"/>
+        <rect x="5" y="6.5" width="30" height="3.5" rx="1.75" fill="white" opacity="0.88"/>
+        <rect x="8" y="18" width="24" height="3.5" rx="1.75" fill="white" opacity="0.88"/>
+        <rect x="12" y="29.5" width="16" height="3.5" rx="1.75" fill="white" opacity="0.88"/>
+        <circle cx="20" cy="20" r="3" fill="#C9A84C"/>
+      </svg>
+    </div>
+    <span class="nav-name">BP过滤机</span>
+  </a>
+  <div class="nav-links">
+    <a href="#features">核心功能</a>
+    <a href="#dimensions">评分体系</a>
+    <a href="#pipeline">投资流程</a>
+    <a href="#pricing">定价</a>
+  </div>
+  <div class="nav-right">
+    <button class="btn-ghost">登录</button>
+    <button class="btn-primary">免费注册</button>
+  </div>
+</nav>
+
+<!-- HERO -->
+<div class="hero">
+  <div class="hero-blob"></div>
+  <div class="hero-blob2"></div>
+  <div class="hero-inner">
+    <div>
+      <div class="hero-eyebrow">The AI Workspace for VC &amp; PE</div>
+      <h1 class="hero-h1">让每一个投资判断<br><em>有据可依</em></h1>
+      <p class="hero-sub">
+        专为一级市场投资人打造的智能工作台。独创量化评分体系精准评估每份 BP，AI 逐条击破虚假陈述，多 Agent 协同覆盖分析、尽调、投资备忘录全链路。<br>
+        <strong>把繁琐留给 AI，把判断留给自己。</strong>
+      </p>
+      <div class="hero-ctas">
+        <button class="btn-primary">免费开始使用 →</button>
+        <button class="btn-outline">查看演示报告</button>
+      </div>
+      <div class="hero-trust">
+        <div class="trust-item"><div class="trust-check">✓</div>独创量化评分体系</div>
+        <div class="trust-item"><div class="trust-check">✓</div>虚假陈述逐条击破</div>
+        <div class="trust-item"><div class="trust-check">✓</div>多模型按需切换</div>
+      </div>
+    </div>
+
+    <!-- ANALYSIS PANEL MOCKUP -->
+    <div class="hero-panel">
+      <div class="panel-chrome">
+        <div class="chrome-dot" style="background:#FF5F57"></div>
+        <div class="chrome-dot" style="background:#FEBC2E"></div>
+        <div class="chrome-dot" style="background:#28C840"></div>
+        <span class="chrome-label">BP过滤机 · Project Detail</span>
+      </div>
+      <div class="panel-body">
+        <div class="panel-tabs">
+          <div class="panel-tab active">分析报告</div>
+          <div class="panel-tab">工作区</div>
+          <div class="panel-tab">尽调问卷</div>
+          <div class="panel-tab">投资备忘录</div>
+          <div class="panel-tab">项目备注</div>
+        </div>
+        <div class="panel-content">
+          <!-- project meta -->
+          <div style="margin-bottom:14px;">
+            <div style="font-family:var(--serif);font-size:17px;font-weight:700;color:var(--text);margin-bottom:3px;">某智能制造 SaaS</div>
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+              <span style="font-family:var(--mono);font-size:10px;color:var(--dim);font-weight:600;">BP-2024-0087</span>
+              <span style="font-size:11px;color:var(--text);font-weight:500;">Pre-A · 3,000 万人民币</span>
+              <div class="stages-row">
+                <span class="stage-pill sp-done">已评估</span>
+                <span class="stage-pill sp-act">尽调中</span>
+                <span class="stage-pill sp-next">已决策</span>
+              </div>
+            </div>
+          </div>
+          <!-- score -->
+          <div class="score-row">
+            <div class="score-num">67<sub>/100</sub></div>
+            <div class="score-meta">
+              <div class="score-lbl">综合评分 · Overall Score</div>
+              <div class="verdict-pill vp-warn">B — 谨慎推荐</div>
+            </div>
+          </div>
+          <!-- dims -->
+          <div class="dims">
+            <div class="dim-row">
+              <span class="dim-name">时机与天花板</span>
+              <div class="dim-track"><div class="dim-fill hi" style="width:78%"></div></div>
+              <span class="dim-score">78</span>
+            </div>
+            <div class="dim-row">
+              <span class="dim-name">产品与壁垒</span>
+              <div class="dim-track"><div class="dim-fill mid" style="width:62%"></div></div>
+              <span class="dim-score">62</span>
+            </div>
+            <div class="dim-row">
+              <span class="dim-name">资本效率</span>
+              <div class="dim-track"><div class="dim-fill mid" style="width:70%"></div></div>
+              <span class="dim-score">70</span>
+            </div>
+            <div class="dim-row">
+              <span class="dim-name">团队基因</span>
+              <div class="dim-track"><div class="dim-fill hi" style="width:74%"></div></div>
+              <span class="dim-score">74</span>
+            </div>
+            <div class="dim-row">
+              <span class="dim-name">BP诚信度</span>
+              <div class="dim-track"><div class="dim-fill lo" style="width:32%"></div></div>
+              <span class="dim-score">32</span>
+            </div>
+          </div>
+          <!-- flags -->
+          <div class="flags">
+            <div class="flags-label">声明核查 · Claim Verification</div>
+            <div class="flag-item">
+              <span class="flag-ico fi-bad">✗</span>
+              <span class="flag-text">「全球 TAM 超 5,000 亿」— 核查：严重夸大，细分市场仅 200 亿</span>
+            </div>
+            <div class="flag-item">
+              <span class="flag-ico fi-bad">✗</span>
+              <span class="flag-text">「独家专利技术」— 核查：专利申请中，尚未授权</span>
+            </div>
+            <div class="flag-item">
+              <span class="flag-ico fi-ok">✓</span>
+              <span class="flag-text">「已签约 3 家 500 强客户」— 核查：信息属实</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- METRICS BAR -->
+<div class="metrics-bar">
+  <div class="metric-cell">
+    <div class="metric-n">5</div>
+    <div class="metric-d">维度量化评分，每维度独立建模，数学公式驱动</div>
+  </div>
+  <div class="metric-cell">
+    <div class="metric-n">&lt; 3<em> min</em></div>
+    <div class="metric-d">单份 BP 分析完成，传统人工需要 2–4 小时</div>
+  </div>
+  <div class="metric-cell">
+    <div class="metric-n">90<em>%</em></div>
+    <div class="metric-d">噪声过滤率，帮助投资人聚焦有价值的项目</div>
+  </div>
+  <div class="metric-cell">
+    <div class="metric-n">50,000<em>+</em></div>
+    <div class="metric-d">已分析 BP 数量，持续迭代行业专属模型</div>
+  </div>
+</div>
+
+<!-- FEATURES -->
+<div class="section" id="features">
+  <div class="section-inner">
+    <div class="sec-tag">核心功能 · Core Features</div>
+    <div class="sec-h2">从 BP 上传到投资决策，全流程 AI 辅助</div>
+    <div class="feat-grid reveal">
+      <div class="feat">
+        <div class="feat-num">01</div>
+        <div class="feat-title">5维量化评分模型</div>
+        <div class="feat-desc">告别「拍脑袋打分」。AI 输出<em>严谨枚举值与绝对数值</em>，JS 端执行纯数学计算，每维度有独立公式与业务逻辑，结果完全可追溯。</div>
+      </div>
+      <div class="feat">
+        <div class="feat-num">02</div>
+        <div class="feat-title">声明逐条核查</div>
+        <div class="feat-desc">针对 BP 中每条关键声明，AI 扮演<em>行业专家 + 投资专家</em>进行辩证研究，输出「诚实 / 存疑 / 夸大 / 证伪」结论，直接反映 BP 诚信度评分。</div>
+      </div>
+      <div class="feat">
+        <div class="feat-num">03</div>
+        <div class="feat-title">尽调问卷（DD）</div>
+        <div class="feat-desc">一键启动<em>AI 生成定制化尽调问卷</em>，完成后自动重新评分，体现尽调信息对综合判断的校正。Pipeline 状态同步更新。</div>
+      </div>
+      <div class="feat">
+        <div class="feat-num">04</div>
+        <div class="feat-title">多 Agent 工作区</div>
+        <div class="feat-desc">每个项目有独立工作区，支持与<em>多个专业 Agent 对话</em>——市场分析、财务模型、竞品研究、风险评估，随时调出深度分析。</div>
+      </div>
+      <div class="feat">
+        <div class="feat-num">05</div>
+        <div class="feat-title">投资备忘录生成</div>
+        <div class="feat-desc">一键输出符合<em>机构投委会标准</em>的结构化投资备忘录（IMemo），包含项目摘要、风险矩阵、尽调结论，可直接归档或分享。</div>
+      </div>
+      <div class="feat">
+        <div class="feat-num">06</div>
+        <div class="feat-title">Pipeline 投资流程管理</div>
+        <div class="feat-desc">从 <em>新建 → 评估 → 尽调 → 决策 → 投资/否决</em>，完整的项目生命周期管理。支持标签、跟进日期提醒、省份地图分布可视化。</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 5 DIMENSIONS -->
+<div class="section alt" id="dimensions">
+  <div class="section-inner">
+    <div class="sec-tag">评分体系 · Scoring Dimensions</div>
+    <div class="sec-h2">五大维度全面评估，量化替代直觉，结果有据可查</div>
+    <div class="dim5-grid reveal">
+      <div class="dim5-card">
+        <div class="dim5-wt">维度一</div>
+        <div class="dim5-name">时机与天花板</div>
+        <div class="dim5-sub">AI 主动检索细分赛道的真实市场规模与增速，不采信 BP 自称数据，给出独立判断。</div>
+        <div class="dim5-formula">市场规模 · 行业增速<br>赛道成熟度</div>
+      </div>
+      <div class="dim5-card">
+        <div class="dim5-wt">维度二</div>
+        <div class="dim5-name">产品与壁垒</div>
+        <div class="dim5-sub">交叉比对行业真实竞品，客观评估技术成熟度与差异化壁垒深度。</div>
+        <div class="dim5-formula">技术就绪度 · 竞品排名<br>护城河强度</div>
+      </div>
+      <div class="dim5-card">
+        <div class="dim5-wt">维度三</div>
+        <div class="dim5-name">资本效率与规模效应</div>
+        <div class="dim5-sub">基于顶级 VC 研究框架评估赛道商业属性，早期项目同样适用。</div>
+        <div class="dim5-formula">轻重资产结构 · 边际成本<br>网络效应潜力</div>
+      </div>
+      <div class="dim5-card">
+        <div class="dim5-wt">维度四</div>
+        <div class="dim5-name">团队基因</div>
+        <div class="dim5-sub">多因子综合评估创始团队，经验深度、行业匹配度、团队完整性缺一不可。</div>
+        <div class="dim5-formula">行业经验 · 赛道匹配<br>过往战绩 · 团队结构</div>
+      </div>
+      <div class="dim5-card">
+        <div class="dim5-wt">维度五</div>
+        <div class="dim5-name">BP 诚信度</div>
+        <div class="dim5-sub">AI 逐条核查 BP 中的关键声明，识别夸大、包装与事实性错误，量化可信程度。</div>
+        <div class="dim5-formula">声明核查 · 数据溯源<br>一致性验证</div>
+      </div>
+    </div>
+
+    <!-- Grade table -->
+    <div class="scorecard-grid reveal" style="margin-top:56px;">
+      <div>
+        <div class="sec-tag" style="margin-bottom:14px;">评级体系 · Grading</div>
+        <table class="grade-table">
+          <thead>
+            <tr>
+              <th>评级</th>
+              <th>分数区间</th>
+              <th>结论</th>
+              <th>行动建议</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><span class="grade-badge gb-a">A</span></td>
+              <td><span style="font-family:var(--mono);font-size:12px;color:var(--text);font-weight:600;">≥ 85</span></td>
+              <td style="font-weight:700;color:var(--green);">强烈推荐 Fast Track</td>
+              <td class="grade-action">24小时内约见创始人，立即启动尽调</td>
+            </tr>
+            <tr>
+              <td><span class="grade-badge gb-b">B</span></td>
+              <td><span style="font-family:var(--mono);font-size:12px;color:var(--text);font-weight:600;">70–84</span></td>
+              <td style="font-weight:700;color:var(--accent);">谨慎推荐 Proceed DD</td>
+              <td class="grade-action">安排面谈，验证单位经济模型</td>
+            </tr>
+            <tr>
+              <td><span class="grade-badge gb-c">C</span></td>
+              <td><span style="font-family:var(--mono);font-size:12px;color:var(--text);font-weight:600;">60–69</span></td>
+              <td style="font-weight:700;color:var(--amber);">观望跟踪 Keep In View</td>
+              <td class="grade-action">季度跟踪，关注关键里程碑达成</td>
+            </tr>
+            <tr>
+              <td><span class="grade-badge gb-d">D</span></td>
+              <td><span style="font-family:var(--mono);font-size:12px;color:var(--text);font-weight:600;">&lt; 60</span></td>
+              <td style="font-weight:700;color:var(--red);">建议放弃 Reject</td>
+              <td class="grade-action">归档并标注否决原因，供投委会复盘</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div>
+        <div class="sec-tag" style="margin-bottom:14px;">为什么不一样 · Why It's Different</div>
+        <div style="display:flex;flex-direction:column;gap:16px;">
+          <div style="background:var(--bg2);border:1px solid var(--border);padding:20px 22px;border-radius:3px;">
+            <div style="font-family:var(--serif);font-size:14px;font-weight:700;color:var(--text);margin-bottom:6px;">客观，而非依赖大模型感觉</div>
+            <div style="font-size:13px;color:var(--mid);line-height:1.65;">市面上大多数 AI 分析工具让模型直接「给个评分」。我们不同——AI 只负责检索与分类，评分由独立的量化模型计算，结论有据可查，不受模型幻觉影响。</div>
+          </div>
+          <div style="background:var(--bg2);border:1px solid var(--border);padding:20px 22px;border-radius:3px;">
+            <div style="font-family:var(--serif);font-size:14px;font-weight:700;color:var(--text);margin-bottom:6px;">不错杀潜力项目</div>
+            <div style="font-size:13px;color:var(--mid);line-height:1.65;">我们的模型专为早期项目优化。即使 BP 信息不完整，也不会因此重度惩罚评分。对于信息存疑的声明，系统给予中性处理，只有确凿的夸大才会影响结论。</div>
+          </div>
+          <div style="background:var(--bg2);border:1px solid var(--border);padding:20px 22px;border-radius:3px;">
+            <div style="font-family:var(--serif);font-size:14px;font-weight:700;color:var(--text);margin-bottom:6px;">垂直赛道同样适用</div>
+            <div style="font-size:13px;color:var(--mid);line-height:1.65;">评分体系专为中国新兴赛道校准，不用旧时代「百亿市场」的标准误杀精品垂直项目。具身智能、低空经济、合成生物——每个赛道都能得到公平评估。</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- PIPELINE -->
+<div class="section" id="pipeline">
+  <div class="section-inner">
+    <div class="sec-tag">投资流程 · Deal Pipeline</div>
+    <div class="sec-h2">从 BP 到投资决策，7 阶段全程追踪</div>
+    <div class="pipeline-wrap reveal">
+      <div class="pipeline-line"></div>
+      <div class="pipeline-steps">
+        <div class="pipe-step">
+          <div class="pipe-dot done"><span class="pipe-dot-num">01</span></div>
+          <div class="pipe-label">新建</div>
+          <div class="pipe-desc">BP 上传完成，自动创建项目</div>
+        </div>
+        <div class="pipe-step">
+          <div class="pipe-dot done"><span class="pipe-dot-num">02</span></div>
+          <div class="pipe-label">已评估</div>
+          <div class="pipe-desc">查阅报告后自动标记</div>
+        </div>
+        <div class="pipe-step">
+          <div class="pipe-dot done"><span class="pipe-dot-num">03</span></div>
+          <div class="pipe-label">待尽调</div>
+          <div class="pipe-desc">标记值得深入的项目</div>
+        </div>
+        <div class="pipe-step">
+          <div class="pipe-dot"><span class="pipe-dot-num">04</span></div>
+          <div class="pipe-label">尽调中</div>
+          <div class="pipe-desc">AI 生成问卷，逐条填写</div>
+        </div>
+        <div class="pipe-step">
+          <div class="pipe-dot"><span class="pipe-dot-num">05</span></div>
+          <div class="pipe-label">尽调完成</div>
+          <div class="pipe-desc">评分自动校正，IMemo 生成</div>
+        </div>
+        <div class="pipe-step">
+          <div class="pipe-dot"><span class="pipe-dot-num">06</span></div>
+          <div class="pipe-label">已决策</div>
+          <div class="pipe-desc">投委会审议结论记录</div>
+        </div>
+        <div class="pipe-step">
+          <div class="pipe-dot"><span class="pipe-dot-num">07</span></div>
+          <div class="pipe-label">已投资 / 已否决</div>
+          <div class="pipe-desc">归档，供日后复盘参考</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- extra features row -->
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:20px;margin-top:52px;" class="reveal">
+      <div style="background:var(--bg2);border:1px solid var(--border);padding:24px 22px;border-radius:3px;">
+        <div style="font-family:var(--mono);font-size:10px;color:var(--accent);letter-spacing:.1em;margin-bottom:10px;font-weight:700;">SHARE</div>
+        <div style="font-family:var(--serif);font-size:15px;font-weight:700;color:var(--text);margin-bottom:7px;">报告分享</div>
+        <div style="font-size:12.5px;color:var(--mid);line-height:1.65;">生成 3 天有效分享链接，报告可对外分享，附邀请码追踪。</div>
+      </div>
+      <div style="background:var(--bg2);border:1px solid var(--border);padding:24px 22px;border-radius:3px;">
+        <div style="font-family:var(--mono);font-size:10px;color:var(--accent);letter-spacing:.1em;margin-bottom:10px;font-weight:700;">GEO</div>
+        <div style="font-family:var(--serif);font-size:15px;font-weight:700;color:var(--text);margin-bottom:7px;">地理分布看板</div>
+        <div style="font-size:12.5px;color:var(--mid);line-height:1.65;">中国省份地图可视化，一眼看清项目地理集中度与覆盖范围。</div>
+      </div>
+      <div style="background:var(--bg2);border:1px solid var(--border);padding:24px 22px;border-radius:3px;">
+        <div style="font-family:var(--mono);font-size:10px;color:var(--accent);letter-spacing:.1em;margin-bottom:10px;font-weight:700;">STATS</div>
+        <div style="font-family:var(--serif);font-size:15px;font-weight:700;color:var(--text);margin-bottom:7px;">个人数据看板</div>
+        <div style="font-size:12.5px;color:var(--mid);line-height:1.65;">6个月趋势折线图、评级分布饼图、赛道分布，量化你的投资视野。</div>
+      </div>
+      <div style="background:var(--bg2);border:1px solid var(--border);padding:24px 22px;border-radius:3px;">
+        <div style="font-family:var(--mono);font-size:10px;color:var(--accent);letter-spacing:.1em;margin-bottom:10px;font-weight:700;">RANK</div>
+        <div style="font-family:var(--serif);font-size:15px;font-weight:700;color:var(--text);margin-bottom:7px;">排行榜</div>
+        <div style="font-size:12.5px;color:var(--mid);line-height:1.65;">与其他投资人比较分析数量与平均评分，发现行业热度趋势。</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- WORKFLOW -->
+<div class="section alt">
+  <div class="section-inner">
+    <div class="sec-tag">使用流程 · How It Works</div>
+    <div class="sec-h2">4 步完成一份 BP 的完整尽调</div>
+    <div class="workflow-grid reveal">
+      <div class="wf-step">
+        <div class="wf-num-wrap"><span class="wf-num">01</span></div>
+        <div class="wf-title">注册 · 上传 BP</div>
+        <div class="wf-desc">支持 PDF/DOCX，绑定邮箱后即可上传。支持文字版与扫描版 PDF，最大提取 30,000 字符。</div>
+      </div>
+      <div class="wf-step">
+        <div class="wf-num-wrap"><span class="wf-num">02</span></div>
+        <div class="wf-title">AI 深度解析</div>
+        <div class="wf-desc">顶级大模型扮演行业专家 + 投资专家，逐条核查声明真实性，输出 5 维度量化数据，3 分钟完成。支持多模型选择。</div>
+      </div>
+      <div class="wf-step">
+        <div class="wf-num-wrap"><span class="wf-num">03</span></div>
+        <div class="wf-title">获取评分报告</div>
+        <div class="wf-desc">查看量化评分、声明核查结果、评级（A/B/C/D）与行动建议。可一键启动尽调问卷深入评估。</div>
+      </div>
+      <div class="wf-step">
+        <div class="wf-num-wrap"><span class="wf-num">04</span></div>
+        <div class="wf-title">Pipeline 跟进</div>
+        <div class="wf-desc">项目自动进入 Pipeline，生成 IMemo，标注阶段与标签，设置跟进日期，与团队分享报告。</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- PRICING -->
+<div class="section" id="pricing">
+  <div class="section-inner">
+    <div class="sec-tag">服务方案 · Pricing</div>
+    <div class="sec-h2">清晰定价，开箱即用</div>
+    <div class="pricing-grid reveal">
+      <div class="plan">
+        <div class="plan-name">Starter</div>
+        <div class="plan-price">免费</div>
+        <div class="plan-cycle">每月 5 份 BP 分析</div>
+        <div class="plan-hr"></div>
+        <ul class="plan-features">
+          <li>5 维量化评分报告</li>
+          <li>声明核查 Red Flag 标注</li>
+          <li>Pipeline 流程管理</li>
+          <li>PDF 报告导出</li>
+          <li>基础模型（标准速度）</li>
+          <li>7 天历史记录</li>
+        </ul>
+        <button class="btn-outline" style="width:100%;padding:11px;">免费注册</button>
+      </div>
+      <div class="plan featured">
+        <div class="plan-badge">最受欢迎</div>
+        <div class="plan-name">Professional</div>
+        <div class="plan-price">¥ 499</div>
+        <div class="plan-cycle">/ 月 · 每月 20 份高级模型分析</div>
+        <div class="plan-hr"></div>
+        <ul class="plan-features">
+          <li>不限量 BP 分析</li>
+          <li><strong>高级模型可选</strong>（更强推理能力）</li>
+          <li>AI 尽调问卷（DD）+ 校正评分</li>
+          <li>多 Agent 工作区</li>
+          <li>投资备忘录（IMemo）自动生成</li>
+          <li>地理分布地图 + 数据看板</li>
+          <li>报告分享链接</li>
+          <li>历史记录永久保存</li>
+        </ul>
+        <button class="btn-primary" style="width:100%;padding:11px;">开始使用</button>
+      </div>
+      <div class="plan">
+        <div class="plan-name">Enterprise</div>
+        <div class="plan-price">定制</div>
+        <div class="plan-cycle">联系我们获取报价</div>
+        <div class="plan-hr"></div>
+        <ul class="plan-features">
+          <li>Professional 全部功能</li>
+          <li><strong>顶级旗舰模型</strong>（最高精度）</li>
+          <li>私有化部署选项</li>
+          <li>自定义评估维度与权重</li>
+          <li>API 接口集成</li>
+          <li>团队多账号管理</li>
+          <li>数据隔离 SLA 保障</li>
+          <li>专属培训与支持</li>
+        </ul>
+        <button class="btn-outline" style="width:100%;padding:11px;">联系销售</button>
+      </div>
+    </div>
+
+
+  </div>
+</div>
+
+<!-- CTA BAND -->
+<div class="cta-band">
+  <div style="position:relative;z-index:1;">
+    <div class="cta-tag">立即开始 · Get Started</div>
+    <div class="cta-h2">让 AI 帮你筛掉 90% 的无效 BP</div>
+    <div class="cta-sub">专注精力在真正值得深入研究的项目上</div>
+    <div class="cta-actions">
+      <button class="btn-white">免费注册账号</button>
+      <button class="btn-ghost-white">预约产品演示</button>
+    </div>
+  </div>
+</div>
+
+<!-- FOOTER -->
+<footer>
+  <div class="footer-grid">
+    <div>
+      <div class="footer-logo">
+        <div class="nav-mark">
+          <svg width="28" height="28" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect width="40" height="40" rx="6" fill="#1B4FD8"/>
+            <circle cx="10" cy="10" r="4.5" fill="white" opacity="0.2"/>
+            <circle cx="30" cy="10" r="4.5" fill="white" opacity="0.2"/>
+            <circle cx="10" cy="30" r="4.5" fill="white" opacity="0.2"/>
+            <circle cx="30" cy="30" r="4.5" fill="white" opacity="0.2"/>
+            <line x1="10" y1="10" x2="20" y2="20" stroke="white" stroke-width="1.4" opacity="0.28"/>
+            <line x1="30" y1="10" x2="20" y2="20" stroke="white" stroke-width="1.4" opacity="0.28"/>
+            <line x1="10" y1="30" x2="20" y2="20" stroke="white" stroke-width="1.4" opacity="0.28"/>
+            <line x1="30" y1="30" x2="20" y2="20" stroke="white" stroke-width="1.4" opacity="0.28"/>
+            <rect x="5" y="6.5" width="30" height="3.5" rx="1.75" fill="white" opacity="0.88"/>
+            <rect x="8" y="18" width="24" height="3.5" rx="1.75" fill="white" opacity="0.88"/>
+            <rect x="12" y="29.5" width="16" height="3.5" rx="1.75" fill="white" opacity="0.88"/>
+            <circle cx="20" cy="20" r="3" fill="#C9A84C"/>
+          </svg>
+        </div>
+        BP过滤机
+      </div>
+      <div class="footer-tag">一级市场投资人的 AI Workspace。把 BP 分析、尽调流程与投资 Paperwork 交给 AI，让你专注于思考与发掘好项目。</div>
+    </div>
+    <div class="footer-col">
+      <h4>产品</h4>
+      <ul>
+        <li><a href="#">核心功能</a></li>
+        <li><a href="#">5维评分体系</a></li>
+        <li><a href="#">投资流程管理</a></li>
+        <li><a href="#">定价方案</a></li>
+      </ul>
+    </div>
+    <div class="footer-col">
+      <h4>公司</h4>
+      <ul>
+        <li><a href="#">关于我们</a></li>
+        <li><a href="#">隐私政策</a></li>
+        <li><a href="#">服务条款</a></li>
+        <li><a href="#">联系我们</a></li>
+      </ul>
+    </div>
+    <div class="footer-col">
+      <h4>资源</h4>
+      <ul>
+        <li><a href="#">演示报告</a></li>
+        <li><a href="#">使用文档</a></li>
+        <li><a href="#">更新日志</a></li>
+        <li><a href="#">排行榜</a></li>
+      </ul>
+    </div>
+  </div>
+  <div class="footer-bottom">
+    <div class="footer-copy">© 2026 BP过滤机 · garbagebpfilter.cn · All rights reserved</div>
+    <div class="footer-badges">
+      <span class="fbadge">多模型支持</span>
+      <span class="fbadge">数据安全</span>
+      <span class="fbadge">隐私合规</span>
+    </div>
+  </div>
+</footer>
+
+<!-- TWEAKS PANEL -->
+<div id="tweaks-panel">
+  <h3>Tweaks</h3>
+  <div class="tw-row">
+    <span class="tw-label">主色调</span>
+    <div class="tw-opts" id="tw-accent">
+      <div class="tw-opt active" data-a="blue" data-c1="#1749C9" data-c2="#2E63E8" data-navy="#0A1F3D">
+        <div class="tw-swatch" style="background:#1749C9"></div> 深蓝（默认）
+      </div>
+      <div class="tw-opt" data-a="teal" data-c1="#0B7A6E" data-c2="#17A89A" data-navy="#063B35">
+        <div class="tw-swatch" style="background:#0B7A6E"></div> 青绿
+      </div>
+      <div class="tw-opt" data-a="slate" data-c1="#334155" data-c2="#64748B" data-navy="#0F172A">
+        <div class="tw-swatch" style="background:#334155"></div> 石板灰
+      </div>
+    </div>
+  </div>
+  <div class="tw-row">
+    <span class="tw-label">背景基调</span>
+    <div class="tw-opts" id="tw-bg">
+      <div class="tw-opt active" data-bg="warm" data-bgv="#F6F7FA">
+        <div class="tw-swatch" style="background:#F6F7FA;border-color:#ccc"></div> 暖白（默认）
+      </div>
+      <div class="tw-opt" data-bg="pure" data-bgv="#FFFFFF">
+        <div class="tw-swatch" style="background:#FFFFFF;border-color:#ccc"></div> 纯白
+      </div>
+      <div class="tw-opt" data-bg="cream" data-bgv="#FAF8F3">
+        <div class="tw-swatch" style="background:#FAF8F3;border-color:#ccc"></div> 米色
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── DYNAMIC BACKGROUND CANVAS ────────────────────────────
+(function() {
+  const canvas = document.getElementById('bg-canvas');
+  const ctx = canvas.getContext('2d');
+  let W, H, nodes, animId;
+  const NAVY = '13,33,69';
+  const BLUE = '27,79,216';
+
+  function resize() {
+    W = canvas.width  = window.innerWidth;
+    H = canvas.height = window.innerHeight;
+  }
+
+  function makeNodes(n) {
+    return Array.from({ length: n }, () => ({
+      x: Math.random() * W,
+      y: Math.random() * H,
+      vx: (Math.random() - 0.5) * 0.35,
+      vy: (Math.random() - 0.5) * 0.35,
+      r: Math.random() * 1.8 + 0.6,
+      pulse: Math.random() * Math.PI * 2,
+    }));
+  }
+
+  function draw(t) {
+    ctx.clearRect(0, 0, W, H);
+
+    // Soft gradient mesh overlay
+    const grad = ctx.createRadialGradient(W * 0.72, H * 0.18, 0, W * 0.72, H * 0.18, W * 0.55);
+    grad.addColorStop(0,   `rgba(${BLUE},0.055)`);
+    grad.addColorStop(1,   `rgba(${BLUE},0)`);
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, W, H);
+
+    const grad2 = ctx.createRadialGradient(W * 0.1, H * 0.75, 0, W * 0.1, H * 0.75, W * 0.4);
+    grad2.addColorStop(0,  `rgba(${NAVY},0.04)`);
+    grad2.addColorStop(1,  `rgba(${NAVY},0)`);
+    ctx.fillStyle = grad2;
+    ctx.fillRect(0, 0, W, H);
+
+    // Move nodes
+    nodes.forEach(nd => {
+      nd.x += nd.vx;
+      nd.y += nd.vy;
+      nd.pulse += 0.012;
+      if (nd.x < 0 || nd.x > W) nd.vx *= -1;
+      if (nd.y < 0 || nd.y > H) nd.vy *= -1;
+    });
+
+    // Draw connections
+    const LINK_DIST = Math.min(W, H) * 0.14;
+    for (let i = 0; i < nodes.length; i++) {
+      for (let j = i + 1; j < nodes.length; j++) {
+        const dx = nodes[i].x - nodes[j].x;
+        const dy = nodes[i].y - nodes[j].y;
+        const dist = Math.sqrt(dx*dx + dy*dy);
+        if (dist < LINK_DIST) {
+          const alpha = (1 - dist / LINK_DIST) * 0.1;
+          ctx.beginPath();
+          ctx.moveTo(nodes[i].x, nodes[i].y);
+          ctx.lineTo(nodes[j].x, nodes[j].y);
+          ctx.strokeStyle = `rgba(${BLUE},${alpha})`;
+          ctx.lineWidth = 0.8;
+          ctx.stroke();
+        }
+      }
+    }
+
+    // Draw nodes
+    nodes.forEach(nd => {
+      const pulse = Math.sin(nd.pulse) * 0.3 + 0.7;
+      ctx.beginPath();
+      ctx.arc(nd.x, nd.y, nd.r * pulse, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(${BLUE},${0.18 * pulse})`;
+      ctx.fill();
+    });
+
+    // Subtle horizontal scan lines (data terminal feel)
+    const lineCount = 6;
+    for (let i = 0; i < lineCount; i++) {
+      const y = ((t * 0.018 + i / lineCount) % 1) * H;
+      const lineGrad = ctx.createLinearGradient(0, y, W, y);
+      lineGrad.addColorStop(0,    `rgba(${BLUE},0)`);
+      lineGrad.addColorStop(0.5,  `rgba(${BLUE},0.028)`);
+      lineGrad.addColorStop(1,    `rgba(${BLUE},0)`);
+      ctx.fillStyle = lineGrad;
+      ctx.fillRect(0, y, W, 1.5);
+    }
+
+    animId = requestAnimationFrame(draw);
+  }
+
+  function init() {
+    resize();
+    nodes = makeNodes(55);
+    cancelAnimationFrame(animId);
+    requestAnimationFrame(draw);
+  }
+
+  window.addEventListener('resize', () => { resize(); nodes = makeNodes(55); });
+  init();
+})();
+window.addEventListener('message', e => {
+  if (e.data?.type === '__activate_edit_mode')   document.getElementById('tweaks-panel').style.display = 'block';
+  if (e.data?.type === '__deactivate_edit_mode') document.getElementById('tweaks-panel').style.display = 'none';
+});
+window.parent.postMessage({ type: '__edit_mode_available' }, '*');
+
+const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
+  "accentTheme": "blue",
+  "bgTheme": "warm"
+}/*EDITMODE-END*/;
+
+document.querySelectorAll('#tw-accent .tw-opt').forEach(opt => {
+  opt.addEventListener('click', () => {
+    document.querySelectorAll('#tw-accent .tw-opt').forEach(o => o.classList.remove('active'));
+    opt.classList.add('active');
+    document.documentElement.style.setProperty('--accent',  opt.dataset.c1);
+    document.documentElement.style.setProperty('--accent2', opt.dataset.c2);
+    document.documentElement.style.setProperty('--navy',    opt.dataset.navy);
+    document.documentElement.style.setProperty('--navy2',   opt.dataset.navy);
+    window.parent.postMessage({ type: '__edit_mode_set_keys', edits: { accentTheme: opt.dataset.a } }, '*');
+  });
+});
+document.querySelectorAll('#tw-bg .tw-opt').forEach(opt => {
+  opt.addEventListener('click', () => {
+    document.querySelectorAll('#tw-bg .tw-opt').forEach(o => o.classList.remove('active'));
+    opt.classList.add('active');
+    document.documentElement.style.setProperty('--bg', opt.dataset.bgv);
+    window.parent.postMessage({ type: '__edit_mode_set_keys', edits: { bgTheme: opt.dataset.bg } }, '*');
+  });
+});
+
+// ── SCROLL REVEAL ─────────────────────────────────────
+const io = new IntersectionObserver(entries => {
+  entries.forEach(e => { if (e.isIntersecting) { e.target.classList.add('visible'); io.unobserve(e.target); } });
+}, { threshold: 0.08 });
+document.querySelectorAll('.reveal').forEach(el => io.observe(el));
+</script>
+</body>
+</html>

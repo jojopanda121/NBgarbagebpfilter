@@ -1,0 +1,22 @@
+<svg width="256" height="256" viewBox="0 0 256 256" fill="none" xmlns="http://www.w3.org/2000/svg">
+  
+  <rect width="256" height="256" rx="40" fill="#0D2145"></rect>
+  
+  <circle cx="77" cy="77" r="19" fill="#3B6EF5" opacity="0.35"></circle>
+  <circle cx="179" cy="77" r="19" fill="#3B6EF5" opacity="0.35"></circle>
+  <circle cx="77" cy="179" r="19" fill="#3B6EF5" opacity="0.35"></circle>
+  <circle cx="179" cy="179" r="19" fill="#3B6EF5" opacity="0.35"></circle>
+  
+  <line x1="77" y1="77" x2="128" y2="128" stroke="#3B6EF5" stroke-width="5" opacity="0.3"></line>
+  <line x1="179" y1="77" x2="128" y2="128" stroke="#3B6EF5" stroke-width="5" opacity="0.3"></line>
+  <line x1="77" y1="179" x2="128" y2="128" stroke="#3B6EF5" stroke-width="5" opacity="0.3"></line>
+  <line x1="179" y1="179" x2="128" y2="128" stroke="#3B6EF5" stroke-width="5" opacity="0.3"></line>
+  
+  <circle cx="128" cy="128" r="22" fill="white" opacity="0.9"></circle>
+  
+  <rect x="44" y="52" width="168" height="16" rx="8" fill="white" opacity="0.9"></rect>
+  <rect x="64" y="120" width="128" height="16" rx="8" fill="white" opacity="0.9"></rect>
+  <rect x="90" y="188" width="76" height="16" rx="8" fill="white" opacity="0.9"></rect>
+  
+  <circle cx="128" cy="128" r="10" fill="#C9A84C"></circle>
+</svg>

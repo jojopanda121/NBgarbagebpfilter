@@ -22,4 +22,12 @@ data/
 *.db
 .github/
 .claude/
+__pycache__
+*.pyc
+*.pyo
+.DS_Store
+.vscode
+coverage
+dist
+uploads
 # doc-service/ - 不能排除，需要单独构建

@@ -1,58 +1,58 @@
 # ============================================================
 # Dockerfile — GarbageBPFilter v3.0 主应用
-#
-# 架构变更（v3.0）：
-#   - Python 文档提取已移至独立微服务（doc-service），
-#     此镜像保留 Python fallback（DOC_SERVICE_URL 未配置时使用本地提取）
-#   - SQLite 数据库持久化到 /app/data 目录
-#   - better-sqlite3 需要 build 工具
 # ============================================================
+
+FROM node:20-slim AS frontend-builder
+
+WORKDIR /app
+
+COPY client/package*.json ./client/
+RUN cd client && npm ci
+
+COPY client/ ./client/
+RUN cd client && npm run build
 
 FROM node:20-slim
 
-# 系统依赖：Python（fallback）+ 构建工具（better-sqlite3 native addon）+ wget（健康检查）
+# 系统依赖：Python fallback + better-sqlite3 构建工具 + OCR/PDF 依赖 + wget 健康检查
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-        python3 python3-pip python3-dev \
+        python3 \
+        python3-pip \
+        python3-dev \
+        python3-venv \
         build-essential \
         libgl1 \
         libglib2.0-0 \
+        tesseract-ocr \
+        poppler-utils \
         wget && \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# Python 依赖（fallback 文档提取）
 COPY scripts/requirements.txt ./scripts/
-RUN pip3 install --no-cache-dir --break-system-packages \
-        -r scripts/requirements.txt
+RUN python3 -m venv /app/.venv && \
+    /app/.venv/bin/pip install --no-cache-dir -r scripts/requirements.txt
 
-# Node 依赖（利用 Docker 层缓存）
+ENV PATH="/app/.venv/bin:$PATH"
+
 COPY package*.json ./
-COPY client/package*.json ./client/
 COPY server/package*.json ./server/
+RUN cd server && npm ci --omit=dev
 
-RUN cd client && npm install && \
-    cd ../server && npm install
+COPY server/ ./server/
+COPY scripts/ ./scripts/
+COPY --from=frontend-builder /app/client/build ./client/build
 
-# 复制全部源码
-COPY . .
-
-# 构建前端
-RUN cd client && npm run build
-
-# 创建数据和日志目录，以非 root 用户运行（安全加固）
 RUN groupadd -r appuser && useradd -r -g appuser -d /app appuser && \
     mkdir -p /app/data /app/logs && \
     chown -R appuser:appuser /app
 USER appuser
 
-# 暴露端口（默认 3001）
 EXPOSE 3001
 
-# 健康检查（M17: 使用 wget，避免依赖 Node 18+ 的全局 fetch；--spider 仅探活）
 HEALTHCHECK --interval=30s --timeout=10s --retries=3 --start-period=30s \
   CMD wget -q --spider http://localhost:3001/api/health || exit 1
 
-# 启动后端
 CMD ["node", "server/index.js"]

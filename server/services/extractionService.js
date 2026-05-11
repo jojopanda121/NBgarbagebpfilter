@@ -23,6 +23,7 @@ async function extractDocText(filePath, mode) {
 /** 通过远程 FastAPI 微服务提取（M7: 指数退避重试） */
 async function extractViaService(filePath, mode) {
   const fs = require("fs");
+  const { Blob } = require("buffer");
   const fileBuf = fs.readFileSync(filePath);
 
   const MAX_ATTEMPTS = 3;

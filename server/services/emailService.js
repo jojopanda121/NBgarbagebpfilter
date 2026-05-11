@@ -25,6 +25,9 @@ async function sendEmailCode(toEmail) {
   if (!SES_CONFIG.secretId || !SES_CONFIG.secretKey || !SES_CONFIG.fromEmail) {
     throw new Error("邮箱服务未配置，请联系管理员设置腾讯云 SES");
   }
+  if (!SES_CONFIG.templateId) {
+    throw new Error("邮箱模板未配置，请在腾讯云 SES 控制台创建模板并设置 TENCENT_SES_TEMPLATE_ID");
+  }
 
   if (!SES_CONFIG.templateId) {
     throw new Error("邮箱模板未配置，请设置 TENCENT_SES_TEMPLATE_ID");
@@ -50,7 +53,7 @@ async function sendEmailCode(toEmail) {
 }
 
 /**
- * 腾讯云 SES SendEmail 实现（模板发送）
+ * 腾讯云 SES SendEmail 实现（模板发送模式）
  */
 async function sendViaTencentSES(toEmail, code) {
   const endpoint = "ses.tencentcloudapi.com";
@@ -58,7 +61,7 @@ async function sendViaTencentSES(toEmail, code) {
   const action = "SendEmail";
   const version = "2020-10-02";
 
-  // 请求体 — 使用 Template 模式
+  // 请求体：使用 Template 代替 Simple，满足腾讯云 SES 模板发送要求
   const payload = {
     FromEmailAddress: SES_CONFIG.fromEmail,
     Destination: [toEmail],

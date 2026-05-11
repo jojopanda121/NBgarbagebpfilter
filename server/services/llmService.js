@@ -432,10 +432,268 @@ function getModelName() {
   return MODEL;
 }
 
+// ============================================================
+// callLLMAgentic — 工作区"类 Claude"调用核心
+//
+// 把 MiniMax 的三个能力（thinking / streaming / tool use）合一暴露：
+//   - thinking_delta → onEvent({ type: "thinking_delta", text })
+//   - text_delta     → onEvent({ type: "text_delta",     text })
+//   - tool_use       → onEvent({ type: "tool_use", id, name, input })
+//     调用方在 onEvent 里 await toolRunner(name, input) 不需要——
+//     toolRunner 由参数传入，本函数内部完成 tool_result 注入 + 多轮循环。
+//
+// 自动降级路径：
+//   1. stream + thinking + tools           （首选，类 Claude 体验）
+//   2. non-stream + thinking + tools       （shim 不支持 thinking-stream）
+//   3. non-stream + tools                  （shim 拒绝 thinking）
+//   4. non-stream 纯文本 + 文本 TOOL_CALL    （shim 拒绝 tools，由调用方解析）
+// 第 4 步只返回 final_text，让调用方走老路；前 3 步都会触发 thinking/text/tool 事件。
+//
+// 选项：
+//   system           string         系统提示
+//   messages         array          [{ role, content }]
+//   tools            array          Anthropic 工具声明
+//   toolRunner       fn(name,input)=> string|Promise<string>
+//   thinkingBudget   number         默认 4000，传 0 = 不开 thinking
+//   maxTokens        number         默认 6000
+//   maxToolRounds    number         默认 4
+//   onEvent          fn(event)      所有事件回调（见上）
+//   signal           AbortSignal
+// ============================================================
+async function callLLMAgentic(opts) {
+  ensureMinimaxConfigured();
+  const {
+    system,
+    messages,
+    tools = [],
+    toolRunner,
+    thinkingBudget = 4000,
+    maxTokens = 6000,
+    maxToolRounds = 4,
+    onEvent = () => {},
+    signal,
+  } = opts;
+
+  const safeEmit = (event) => {
+    try { onEvent(event); } catch (e) {
+      console.warn("[Agentic] onEvent 抛出，已忽略:", e?.message);
+    }
+  };
+
+  // 三档能力开关（按上游报错动态降级）
+  let enableThinking = thinkingBudget > 0;
+  let enableTools = Array.isArray(tools) && tools.length > 0;
+  let enableStream = true;
+
+  const convo = Array.isArray(messages) ? messages.map((m) => ({ ...m })) : [];
+  let finalText = "";
+  let totalRounds = 0;
+  let stopReason = null;
+
+  for (let round = 0; round < Math.max(1, maxToolRounds); round++) {
+    if (signal?.aborted) throw new Error("客户端取消");
+    totalRounds++;
+    safeEmit({ type: "round_start", round });
+
+    const reqBody = {
+      model: MODEL,
+      max_tokens: maxTokens,
+      system,
+      messages: convo,
+    };
+    if (enableThinking) reqBody.thinking = { type: "enabled", budget_tokens: thinkingBudget };
+    if (enableTools) reqBody.tools = tools;
+
+    const timeout = calcTimeout(maxTokens) * (enableThinking ? 2 : 1);
+    let assistantContent = []; // 收集到的 content blocks，下一轮喂回 convo
+    let textInRound = "";
+
+    try {
+      if (enableStream) {
+        // ── 流式路径 ─────────────────────────────────
+        const blocks = {}; // index → { type, ... }
+        const stream = await new Promise((resolve, reject) => {
+          const t = setTimeout(() => reject(new Error(`LLM 请求超时 (${timeout}ms): agentic-stream`)), timeout);
+          try {
+            const s = anthropic.messages.stream(reqBody);
+            clearTimeout(t);
+            resolve(s);
+          } catch (e) { clearTimeout(t); reject(e); }
+        });
+
+        let onAbort = () => { try { stream.controller?.abort?.(); } catch (_) {} };
+        if (signal) signal.addEventListener("abort", onAbort);
+
+        try {
+          for await (const ev of stream) {
+            if (ev.type === "content_block_start") {
+              const i = ev.index;
+              const cb = ev.content_block || {};
+              blocks[i] = { type: cb.type, name: cb.name, id: cb.id, text: "", thinking: "", input_json: "" };
+              if (cb.type === "thinking") safeEmit({ type: "thinking_start" });
+              else if (cb.type === "text") safeEmit({ type: "text_start" });
+              else if (cb.type === "tool_use") safeEmit({ type: "tool_use_start", id: cb.id, name: cb.name });
+            } else if (ev.type === "content_block_delta") {
+              const b = blocks[ev.index];
+              if (!b) continue;
+              const d = ev.delta || {};
+              if (d.type === "thinking_delta" && d.thinking) {
+                b.thinking += d.thinking;
+                safeEmit({ type: "thinking_delta", text: d.thinking });
+              } else if (d.type === "text_delta" && d.text) {
+                b.text += d.text;
+                textInRound += d.text;
+                safeEmit({ type: "text_delta", text: d.text });
+              } else if (d.type === "input_json_delta" && d.partial_json) {
+                b.input_json += d.partial_json;
+              }
+            } else if (ev.type === "content_block_stop") {
+              const b = blocks[ev.index];
+              if (!b) continue;
+              if (b.type === "thinking") safeEmit({ type: "thinking_stop" });
+              else if (b.type === "text") safeEmit({ type: "text_stop" });
+              else if (b.type === "tool_use") {
+                let parsed = {};
+                if (b.input_json) {
+                  try { parsed = JSON.parse(b.input_json); }
+                  catch (e) { console.warn("[Agentic] tool_use 输入 JSON 解析失败:", e.message); }
+                }
+                b.input = parsed;
+                safeEmit({ type: "tool_use", id: b.id, name: b.name, input: parsed });
+              }
+            } else if (ev.type === "message_delta") {
+              if (ev.delta?.stop_reason) stopReason = ev.delta.stop_reason;
+            }
+          }
+        } finally {
+          if (signal) signal.removeEventListener("abort", onAbort);
+        }
+
+        // 拼回 assistantContent 给下一轮
+        const ordered = Object.keys(blocks).map(Number).sort((a, b) => a - b);
+        for (const i of ordered) {
+          const b = blocks[i];
+          if (b.type === "thinking") assistantContent.push({ type: "thinking", thinking: b.thinking });
+          else if (b.type === "text") assistantContent.push({ type: "text", text: b.text });
+          else if (b.type === "tool_use") assistantContent.push({ type: "tool_use", id: b.id, name: b.name, input: b.input || {} });
+        }
+      } else {
+        // ── 非流式路径 ───────────────────────────────
+        const resp = await withTimeout(
+          anthropic.messages.create(reqBody),
+          timeout,
+          "agentic-nonstream"
+        );
+        stopReason = resp.stop_reason || null;
+        for (const b of resp.content || []) {
+          if (b.type === "thinking" && b.thinking) {
+            safeEmit({ type: "thinking_start" });
+            safeEmit({ type: "thinking_delta", text: b.thinking });
+            safeEmit({ type: "thinking_stop" });
+            assistantContent.push({ type: "thinking", thinking: b.thinking });
+          } else if (b.type === "text" && b.text) {
+            safeEmit({ type: "text_start" });
+            safeEmit({ type: "text_delta", text: b.text });
+            safeEmit({ type: "text_stop" });
+            textInRound += b.text;
+            assistantContent.push({ type: "text", text: b.text });
+          } else if (b.type === "tool_use") {
+            safeEmit({ type: "tool_use_start", id: b.id, name: b.name });
+            safeEmit({ type: "tool_use", id: b.id, name: b.name, input: b.input || {} });
+            assistantContent.push({ type: "tool_use", id: b.id, name: b.name, input: b.input || {} });
+          }
+        }
+      }
+    } catch (err) {
+      const msg = err?.message || "";
+      const status = err?.status;
+
+      // 客户端取消，直接抛
+      if (msg === "客户端取消" || signal?.aborted) throw err;
+
+      // 1) stream 不支持 → 降级非流式
+      if (enableStream && (status === 400 || status === 404 ||
+          /stream|SSE|unsupported|not supported|invalid params/i.test(msg))) {
+        console.warn("[Agentic] stream 路径报错，降级为非流式:", msg);
+        enableStream = false;
+        round--; totalRounds--;
+        continue;
+      }
+      // 2) thinking 不支持 → 关 thinking 重试
+      if (enableThinking && (status === 400 || /thinking|invalid params|unsupported/i.test(msg))) {
+        console.warn("[Agentic] thinking 不被接受，关闭后重试:", msg);
+        enableThinking = false;
+        round--; totalRounds--;
+        continue;
+      }
+      // 3) tools 不支持 → 关 tools，让调用方走老 TOOL_CALL 文本解析
+      if (enableTools && (status === 400 || /tools?|invalid params|unsupported/i.test(msg))) {
+        console.warn("[Agentic] tools 不被接受，关闭后重试:", msg);
+        enableTools = false;
+        round--; totalRounds--;
+        continue;
+      }
+      // 4) 真正失败 → 抛
+      throw normalizeLLMError(err);
+    }
+
+    if (textInRound) finalText = textInRound;
+    safeEmit({ type: "round_end", round, stop_reason: stopReason });
+
+    // 决定是否继续：只有 tool_use 才继续，否则结束
+    const toolUses = assistantContent.filter((b) => b.type === "tool_use");
+    if (toolUses.length === 0 || stopReason === "end_turn") {
+      break;
+    }
+    if (!toolRunner) {
+      console.warn("[Agentic] 模型请求工具但调用方未提供 toolRunner，强行退出循环");
+      break;
+    }
+
+    // 把这一轮 assistant 内容写入会话历史
+    convo.push({ role: "assistant", content: assistantContent });
+
+    // 执行所有 tool_use，回灌 tool_result
+    const toolResults = [];
+    for (const tu of toolUses) {
+      if (signal?.aborted) throw new Error("客户端取消");
+      let resultText = "";
+      let isError = false;
+      try {
+        const r = await toolRunner(tu.name, tu.input || {});
+        resultText = typeof r === "string" ? r : JSON.stringify(r || {});
+        safeEmit({ type: "tool_result", id: tu.id, name: tu.name, result: resultText, error: false });
+      } catch (e) {
+        isError = true;
+        resultText = `工具调用失败：${e?.message || e}`;
+        safeEmit({ type: "tool_result", id: tu.id, name: tu.name, result: resultText, error: true });
+      }
+      toolResults.push({
+        type: "tool_result",
+        tool_use_id: tu.id,
+        content: resultText,
+        is_error: isError,
+      });
+    }
+    convo.push({ role: "user", content: toolResults });
+  }
+
+  safeEmit({ type: "done", final_text: finalText, total_rounds: totalRounds, stop_reason: stopReason });
+  return {
+    text: finalText,
+    rounds: totalRounds,
+    stop_reason: stopReason,
+    used_thinking: enableThinking,
+    used_tools: enableTools,
+    used_stream: enableStream,
+  };
+}
+
 module.exports = {
   callLLM,
   callLLMWithThinking,
   callLLMChat,
   callLLMWithSearch,
+  callLLMAgentic,
   getModelName,
 };

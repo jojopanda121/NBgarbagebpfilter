@@ -10,7 +10,7 @@ const fs = require("fs");
 const path = require("path");
 const { getDb } = require("../db");
 const { getTask } = require("./taskService");
-const { callLLM, callLLMChat } = require("./llmService");
+const { callLLM, callLLMAgentic } = require("./llmService");
 const { buildSearchQueries, runWebSearch, formatSearchContext } = require("./webSearchService");
 const { queryMemory, formatMemoryPack } = require("./memory/memoryRouter");
 const { createWorkingMemory, appendWorkingFinding } = require("./memory/workingMemoryStore");
@@ -178,14 +178,46 @@ function readArtifactExtract(storagePath, maxChars = 5000) {
   }
 }
 
-function clearConversation(conversationId) {
+/**
+ * 按 scope 清空：
+ *   - "chat":    只清聊天记录（含专家 internal 消息）
+ *   - "uploads": 只清用户上传材料（kind = 'upload'）
+ *   - "outputs": 只清 AI 生成产物（kind LIKE 'generated_%'）
+ *   - "all":     全清（向后兼容旧客户端）
+ */
+function clearConversation(conversationId, scope = "all") {
   const db = getDb();
-  const artifacts = db.prepare("SELECT * FROM workspace_artifacts WHERE conversation_id = ?").all(conversationId);
-  for (const artifact of artifacts) removeArtifactFiles(artifact);
-  db.prepare("DELETE FROM workspace_artifacts WHERE conversation_id = ?").run(conversationId);
-  db.prepare("DELETE FROM workspace_messages WHERE conversation_id = ?").run(conversationId);
+  const result = { scope, deleted_messages: 0, deleted_artifacts: 0 };
+
+  if (scope === "chat" || scope === "all") {
+    const info = db.prepare("DELETE FROM workspace_messages WHERE conversation_id = ?").run(conversationId);
+    result.deleted_messages = info.changes;
+  }
+
+  if (scope === "uploads" || scope === "all") {
+    const uploads = db.prepare(
+      "SELECT * FROM workspace_artifacts WHERE conversation_id = ? AND kind = 'upload'"
+    ).all(conversationId);
+    for (const a of uploads) removeArtifactFiles(a);
+    const info = db.prepare(
+      "DELETE FROM workspace_artifacts WHERE conversation_id = ? AND kind = 'upload'"
+    ).run(conversationId);
+    result.deleted_artifacts += info.changes;
+  }
+
+  if (scope === "outputs" || scope === "all") {
+    const outs = db.prepare(
+      "SELECT * FROM workspace_artifacts WHERE conversation_id = ? AND kind LIKE 'generated_%'"
+    ).all(conversationId);
+    for (const a of outs) removeArtifactFiles(a);
+    const info = db.prepare(
+      "DELETE FROM workspace_artifacts WHERE conversation_id = ? AND kind LIKE 'generated_%'"
+    ).run(conversationId);
+    result.deleted_artifacts += info.changes;
+  }
+
   db.prepare("UPDATE workspace_conversations SET updated_at = datetime('now') WHERE id = ?").run(conversationId);
-  return { deleted_messages: true, deleted_artifacts: artifacts.length };
+  return result;
 }
 
 function runWorkspaceMemoryGc() {
@@ -195,8 +227,10 @@ function runWorkspaceMemoryGc() {
 // ── 上下文构建 ─────────────────────────────────────────────
 
 /**
- * 抽取项目核心上下文（紧凑版，~2-3k tokens）
- * 来源：tasks.result.extracted_data / verdict / claim_verdicts + 最近 artifact summaries
+ * 抽取项目核心上下文（~3-5k tokens）
+ * 来源：tasks.result.extracted_data / verdict / dimension_analysis / deep_research / claim_verdicts
+ *       + 最近 artifact summaries（用户上传材料）
+ * 每次调用都现读 DB，不做进程缓存——保证用户每轮提问都拿到最新事实。
  */
 function buildProjectContext(taskId, conversationId) {
   const task = getTask(taskId);
@@ -211,18 +245,21 @@ function buildProjectContext(taskId, conversationId) {
   const ed = result.extracted_data || {};
   const v = result.verdict || {};
   const dims = v.dimensions || {};
-  const claims = result.claim_verdicts || [];
+  const deepResearch = result.deep_research || {};
+  const claims = result.claim_verdicts || result.validated_data?.claim_verdicts || [];
 
   const riskyClaims = claims
     .filter(c => ["夸大", "严重夸大", "信息不对称", "证伪"].includes(c.verdict))
-    .slice(0, 8)
+    .slice(0, 10)
     .map(c => `- [${c.verdict}] ${c.original_claim}${c.diff ? `（${c.diff}）` : ""}`)
     .join("\n");
 
   const dimSummary = Object.entries(dims)
     .map(([k, val]) => {
       const score = val?.score ?? val?.total_score;
-      return `  - ${k}: ${score != null ? `${score}分` : "—"}`;
+      const rationale = val?.finding || val?.score_rationale;
+      const tail = rationale ? `：${String(rationale).slice(0, 160)}` : "";
+      return `  - ${k}: ${score != null ? `${score}分` : "—"}${tail}`;
     })
     .join("\n");
 
@@ -241,9 +278,21 @@ function buildProjectContext(taskId, conversationId) {
     `各维度:`,
     dimSummary || "  （无）",
     "",
-    `# 主要风险/信息不对称`,
+    `# BP 声明核查（夸大/证伪/信息不对称）`,
     riskyClaims || "（暂未发现明显风险声明）",
   ];
+
+  // 深度研究核心段落（限长，避免 prompt 爆掉）
+  const dr = collectDeepResearchExcerpts(deepResearch, 2400);
+  if (dr) {
+    lines.push("", `# AI 深度研究报告摘要`, dr);
+  }
+
+  // 五维详细分析摘要（每维 ~200 字以内）
+  const dimDetail = collectDimensionAnalysis(dims, 1600);
+  if (dimDetail) {
+    lines.push("", `# 五维分析详情`, dimDetail);
+  }
 
   // 附加最近 artifact summaries
   if (conversationId) {
@@ -265,6 +314,72 @@ function buildProjectContext(taskId, conversationId) {
     }
   }
   return lines.join("\n");
+}
+
+function collectDeepResearchExcerpts(deepResearch, maxChars) {
+  if (!deepResearch) return "";
+  // 深度研究有时是 LLM 直出的长文本（pipelineService 的 callLLM 走兜底分支），
+  // 此时直接截断返回；只有结构化对象才走字段映射。
+  if (typeof deepResearch === "string") {
+    const trimmed = deepResearch.replace(/\s+/g, " ").trim();
+    if (!trimmed) return "";
+    return trimmed.length > maxChars ? trimmed.slice(0, maxChars) + "…（深度研究已截断）" : trimmed;
+  }
+  if (typeof deepResearch !== "object") return "";
+  const order = [
+    ["industry_overview", "行业概览"],
+    ["market_landscape", "市场格局"],
+    ["competitive_landscape", "竞争格局"],
+    ["growth_drivers", "增长驱动"],
+    ["policy_context", "政策背景"],
+    ["technology_trends", "技术趋势"],
+    ["risks", "外部风险"],
+    ["conclusion", "研究结论"],
+    ["summary", "研究摘要"],
+  ];
+  const parts = [];
+  let total = 0;
+  for (const [key, label] of order) {
+    const raw = deepResearch[key];
+    if (!raw) continue;
+    const text = typeof raw === "string" ? raw : JSON.stringify(raw);
+    const trimmed = text.replace(/\s+/g, " ").trim();
+    if (!trimmed) continue;
+    const remaining = maxChars - total;
+    if (remaining <= 80) break;
+    const slice = trimmed.length > remaining ? trimmed.slice(0, remaining) + "…" : trimmed;
+    parts.push(`## ${label}\n${slice}`);
+    total += slice.length;
+  }
+  // 兜底：如果上面字段都为空但 deepResearch 本身有内容，直接 stringify 截一段
+  if (parts.length === 0) {
+    const fallback = JSON.stringify(deepResearch).slice(0, maxChars);
+    if (fallback && fallback !== "{}") return fallback;
+  }
+  return parts.join("\n\n");
+}
+
+function collectDimensionAnalysis(dims, maxChars) {
+  if (!dims || typeof dims !== "object") return "";
+  const parts = [];
+  let total = 0;
+  for (const [dim, val] of Object.entries(dims)) {
+    if (!val || typeof val !== "object") continue;
+    const text =
+      val.comprehensive_analysis ||
+      val.score_rationale ||
+      val.finding ||
+      val.ai_finding ||
+      "";
+    const trimmed = String(text).replace(/\s+/g, " ").trim();
+    if (!trimmed) continue;
+    const remaining = maxChars - total;
+    if (remaining <= 80) break;
+    const slice = trimmed.length > remaining ? trimmed.slice(0, remaining) + "…" : trimmed;
+    parts.push(`- ${dim}: ${slice}`);
+    total += slice.length;
+  }
+  return parts.join("\n");
 }
 
 // ── Routing：决定调度哪些专家 ───────────────────────────────
@@ -338,6 +453,8 @@ function leakedToolCall(text = "") {
 async function runExpert(agentName, projectCtx, history, userMsg, opts = {}) {
   const sys = buildWorkspaceExpertPrompt(agentName);
   const runId = opts.runId || uuid();
+  const onEvent = typeof opts.onEvent === "function" ? opts.onEvent : () => {};
+
   createWorkingMemory(runId, opts.taskId || "unknown", agentName, userMsg.slice(0, 600));
   const memoryPack = await queryMemory({
     userId: opts.userId,
@@ -360,7 +477,7 @@ async function runExpert(agentName, projectCtx, history, userMsg, opts = {}) {
   }
 
   const userPrompt = [
-    `# 项目上下文`,
+    `# 项目上下文（事实清单，禁止整段复述）`,
     projectCtx,
     "",
     memoryContext,
@@ -371,18 +488,48 @@ async function runExpert(agentName, projectCtx, history, userMsg, opts = {}) {
     "",
     `# 用户当前问题`,
     userMsg,
+    "",
+    `# 你的任务`,
+    `先在 thinking 块里**真实地推理**：你最关注哪 2-3 个证据？产生了什么疑虑？最后怎么权衡得出结论？`,
+    `再写最终回答 200-400 字，第一人称表达。不要复述项目上下文原文。`,
   ].join("\n");
 
-  let text = await callLLM(sys, userPrompt, 1500);
-  if (leakedToolCall(text)) {
-    console.warn(`[Workspace] ${agentName} 输出了工具调用文本，重试最终回答`);
-    text = await callLLM(
-      `${sys}\n\n重要：服务端已经完成必要检索。不要输出“实时搜索工具”“我来检索”“web_search”、XML、JSON 工具调用语法；直接给最终分析结论。`,
-      userPrompt,
-      1500
-    );
+  let thinkingBuf = "";
+  let textBuf = "";
+
+  try {
+    await callLLMAgentic({
+      system: sys,
+      messages: [{ role: "user", content: userPrompt }],
+      thinkingBudget: opts.thinkingBudget ?? 3000,
+      maxTokens: 2000,
+      maxToolRounds: 1, // 专家不调工具
+      signal: opts.signal,
+      onEvent: (ev) => {
+        if (ev.type === "thinking_delta") {
+          thinkingBuf += ev.text;
+          onEvent({ agent: agentName, type: "thinking", text: ev.text });
+        } else if (ev.type === "text_delta") {
+          textBuf += ev.text;
+          onEvent({ agent: agentName, type: "text", text: ev.text });
+        }
+      },
+    });
+  } catch (err) {
+    throw err;
   }
-  const content = stripModelToolCalls(text);
+
+  // 后兜底：若上游一句话都没吐（thinking 也没出），降级一次普通 callLLM
+  if (!textBuf.trim()) {
+    console.warn(`[Workspace] ${agentName} agentic 无输出，降级为 callLLM`);
+    const fallback = await callLLM(sys, userPrompt, 1500);
+    textBuf = stripModelToolCalls(fallback);
+    if (textBuf) onEvent({ agent: agentName, type: "text", text: textBuf });
+  } else if (leakedToolCall(textBuf)) {
+    textBuf = stripModelToolCalls(textBuf);
+  }
+
+  const content = textBuf.trim();
   appendWorkingFinding(runId, agentName, content.slice(0, 300));
   keeper.processAgentOutput({
     taskId: opts.taskId,
@@ -391,7 +538,7 @@ async function runExpert(agentName, projectCtx, history, userMsg, opts = {}) {
     content,
     taskType: opts.taskType,
   }).catch((err) => console.warn(`[Keeper] ${agentName} 记忆提炼失败:`, err.message));
-  return { agent: agentName, content, memory_used: memoryPack };
+  return { agent: agentName, content, thinking: thinkingBuf, memory_used: memoryPack };
 }
 
 async function runExpertsParallel(agents, projectCtx, history, userMsg, onExpertDone, opts = {}) {
@@ -409,15 +556,105 @@ async function runExpertsParallel(agents, projectCtx, history, userMsg, onExpert
   return Promise.all(tasks);
 }
 
-// ── Host 流式汇总 ──────────────────────────────────────────
+// ── Host：thinking + tools 真 agentic 调用 ─────────────────
 
-async function streamHostSummary({ projectCtx, history, userMsg, expertOutputs, onDelta, signal, memoryPack }) {
+const HOST_TOOL_SCHEMAS = [
+  {
+    name: "generate_pptx",
+    description: "生成 PPT 文件（投委会演示、路演材料、项目简报）。slides 数组每项是一页，title 是页标题，bullets 是要点。",
+    input_schema: {
+      type: "object",
+      properties: {
+        title: { type: "string", description: "PPT 标题" },
+        subtitle: { type: "string", description: "副标题（可选）" },
+        slides: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              title: { type: "string", description: "页标题" },
+              bullets: { type: "array", items: { type: "string" }, description: "要点 3-6 条" },
+              notes: { type: "string", description: "演讲备注（可选）" },
+            },
+            required: ["title", "bullets"],
+          },
+        },
+      },
+      required: ["title", "slides"],
+    },
+  },
+  {
+    name: "generate_docx",
+    description: "生成 Word 文件（尽调备忘录、会议纪要、投资 memo、风险清单）。sections 数组每项是一节。",
+    input_schema: {
+      type: "object",
+      properties: {
+        title: { type: "string" },
+        subtitle: { type: "string" },
+        sections: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              heading: { type: "string", description: "节标题" },
+              paragraphs: { type: "array", items: { type: "string" } },
+              bullets: { type: "array", items: { type: "string" } },
+            },
+            required: ["heading"],
+          },
+        },
+      },
+      required: ["title", "sections"],
+    },
+  },
+  {
+    name: "generate_xlsx",
+    description: "生成 Excel 文件（财务模型、尽调清单、风险台账、竞品表）。sheets 数组每项是一个 sheet。",
+    input_schema: {
+      type: "object",
+      properties: {
+        title: { type: "string" },
+        sheets: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              name: { type: "string", description: "Sheet 名" },
+              headers: { type: "array", items: { type: "string" } },
+              rows: { type: "array", items: { type: "array", items: { type: "string" } } },
+            },
+            required: ["name", "headers", "rows"],
+          },
+        },
+      },
+      required: ["title", "sheets"],
+    },
+  },
+];
+
+/**
+ * Host 主推理 —— thinking + tools + stream 一气呵成。
+ * 调用方通过 onEvent 收所有事件：thinking_delta / text_delta / tool_use / tool_result。
+ * 工具真执行：toolRunner 由外部传入（route 层接 doc-service），artifact 写库由 toolRunner 完成。
+ *
+ * @returns {Promise<{ text, thinking, artifacts: array, used_tools, used_thinking, used_stream }>}
+ */
+async function runHostAgentic({
+  projectCtx,
+  history,
+  userMsg,
+  expertOutputs,
+  memoryPack,
+  signal,
+  onEvent = () => {},
+  hostToolRunner, // (toolName, input) => Promise<{ artifact, summary }>
+}) {
   const expertBlock = expertOutputs.length > 0
     ? expertOutputs.map(e => `## ${e.agent} 专家意见\n${e.content}`).join("\n\n")
-    : "（无专家协助，直接回答）";
+    : "（这一轮没有调用专家）";
 
   const userPrompt = [
-    `# 项目上下文`,
+    `# 项目上下文（事实清单，禁止整段复述）`,
     projectCtx,
     "",
     memoryPack ? formatMemoryPack(memoryPack) : "",
@@ -428,17 +665,80 @@ async function streamHostSummary({ projectCtx, history, userMsg, expertOutputs, 
     `# 用户当前消息`,
     userMsg,
     "",
-    `# 专家意见汇总`,
+    `# 各专家本轮意见（你的素材，不要逐条复读）`,
     expertBlock,
     "",
-    "请融会贯通后给用户回答。"
+    `# 你的任务`,
+    `1. 先在 thinking 块里**真实地推理**：你最被什么打动 / 被什么动摇？专家意见之间有没有矛盾？最后凝结成什么 thesis？`,
+    `2. 如果用户要生成文件，先在 thinking 里规划好结构，再调用对应工具（generate_pptx / generate_docx / generate_xlsx），args 必须是合法 JSON。`,
+    `3. 工具返回 tool_result 后，写最终答复给用户：第一人称投资判断，不复述上下文，不复读专家原话。`,
+    `4. 如果只是问答（不要生成文件），跳过工具，直接写答复。`,
   ].join("\n");
 
-  return callLLMChat(
-    WORKSPACE_HOST_SYSTEM_PROMPT,
-    [{ role: "user", content: userPrompt }],
-    { maxTokens: 3000, onDelta, signal }
-  );
+  const artifacts = [];
+  let thinking = "";
+  let text = "";
+
+  const toolRunner = async (name, input) => {
+    if (typeof hostToolRunner !== "function") {
+      return `工具暂不可用：缺少 hostToolRunner`;
+    }
+    try {
+      const r = await hostToolRunner(name, input);
+      if (r?.artifact) {
+        artifacts.push(r.artifact);
+        return r.summary || `已生成 ${r.artifact.filename}`;
+      }
+      return r?.summary || "工具执行完成";
+    } catch (e) {
+      throw e;
+    }
+  };
+
+  const result = await callLLMAgentic({
+    system: WORKSPACE_HOST_SYSTEM_PROMPT,
+    messages: [{ role: "user", content: userPrompt }],
+    tools: HOST_TOOL_SCHEMAS,
+    toolRunner,
+    thinkingBudget: 5000,
+    maxTokens: 6000,
+    maxToolRounds: 4,
+    signal,
+    onEvent: (ev) => {
+      if (ev.type === "thinking_delta") thinking += ev.text;
+      if (ev.type === "text_delta") text += ev.text;
+      onEvent(ev);
+    },
+  });
+
+  // 没开 tools 的降级路径：从 text 里抓 <TOOL_CALL>
+  if (!result.used_tools) {
+    const parsed = parseToolCalls(text);
+    if (parsed.length > 0 && hostToolRunner) {
+      onEvent({ type: "fallback_text_tool_call", count: parsed.length });
+      for (const p of parsed) {
+        try {
+          const r = await hostToolRunner(p.tool, p.args || {});
+          if (r?.artifact) {
+            artifacts.push(r.artifact);
+            onEvent({ type: "tool_result", id: `fallback-${Date.now()}`, name: p.tool, result: r.summary || "已生成", error: false });
+          }
+        } catch (e) {
+          onEvent({ type: "tool_result", id: `fallback-${Date.now()}`, name: p.tool, result: e.message, error: true });
+        }
+      }
+      text = stripToolCalls(text);
+    }
+  }
+
+  return {
+    text: text.trim(),
+    thinking,
+    artifacts,
+    used_thinking: result.used_thinking,
+    used_tools: result.used_tools,
+    used_stream: result.used_stream,
+  };
 }
 
 // ── 工具调用解析 ───────────────────────────────────────────
@@ -751,7 +1051,8 @@ module.exports = {
   buildProjectContext,
   runHostRouting,
   runExpertsParallel,
-  streamHostSummary,
+  runHostAgentic,
+  executeDocumentTool,
   parseToolCalls,
   stripToolCalls,
   normalizeToolCalls,

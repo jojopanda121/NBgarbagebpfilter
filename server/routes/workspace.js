@@ -165,14 +165,21 @@ router.post("/:taskId/upload", requireAuth, upload.single("file"), async (req, r
   }
 });
 
-// ── 清空当前工作区对话和材料产出 ───────────────────────────
+// ── 按 scope 清空（chat | uploads | outputs | all） ────────
+const VALID_CLEAR_SCOPES = new Set(["chat", "uploads", "outputs", "all"]);
+
 router.delete("/:taskId/messages", requireAuth, (req, res) => {
   const { taskId } = req.params;
   const own = checkTaskOwnership(taskId, req.user.id);
   if (own.error) return res.status(own.status).json({ error: own.error });
 
+  const scope = (req.query.scope || "chat").toString();
+  if (!VALID_CLEAR_SCOPES.has(scope)) {
+    return res.status(400).json({ error: `非法 scope: ${scope}` });
+  }
+
   const conv = ws.createOrGetConversation(taskId, req.user.id);
-  const result = ws.clearConversation(conv.id);
+  const result = ws.clearConversation(conv.id, scope);
   res.json({ ok: true, ...result });
 });
 
@@ -253,25 +260,58 @@ router.post("/:taskId/messages", requireAuth, upload.single("file"), async (req,
     const routing = await ws.runHostRouting(projectCtx, history, effectiveUserMsg);
     sendEvent("routing", routing);
 
-    // Step 2: experts
+    // ── Step 2: experts —— 真 thinking + 流式 ──────────────
+    // 每位专家自己有 expert_msg_id；thinking/text 都按 (run_id, agent, msg_id) 分组流给前端。
     let expertOutputs = [];
+    const expertMsgIds = {}; // agent -> stable msg id
     if (routing.agents?.length > 0) {
-      sendEvent("phase", { phase: "experts", agents: routing.agents });
+      sendEvent("phase", { phase: "experts", agents: routing.agents, run_id: runId });
+      for (const a of routing.agents) {
+        const eid = require("crypto").randomBytes(16).toString("hex");
+        expertMsgIds[a] = eid;
+        sendEvent("expert_start", { id: eid, agent: a, run_id: runId });
+      }
       expertOutputs = await ws.runExpertsParallel(
         routing.agents, projectCtx, history, effectiveUserMsg,
         (out) => {
-          // 写入 agent 消息
-          const eid = ws.appendMessage(conv.id, "agent", out.agent, out.content, { error: !!out.error });
-          sendEvent("expert", { id: eid, agent: out.agent, content: out.content, error: !!out.error });
+          const eid = expertMsgIds[out.agent] || require("crypto").randomBytes(16).toString("hex");
+          // 落库：标 internal + run_id，正文存 content，thinking 存 metadata（可大）
+          ws.appendMessage(conv.id, "agent", out.agent, out.content, {
+            internal: true,
+            run_id: runId,
+            thinking: out.thinking || "",
+            error: !!out.error,
+          });
+          sendEvent("expert_done", {
+            id: eid,
+            agent: out.agent,
+            content: out.content,
+            run_id: runId,
+            error: !!out.error,
+          });
         },
-        { taskId, userId, runId, taskType: routing.task_type }
+        {
+          taskId, userId, runId,
+          taskType: routing.task_type,
+          signal: ac.signal,
+          onEvent: (ev) => {
+            const eid = expertMsgIds[ev.agent];
+            if (!eid) return;
+            if (ev.type === "thinking") {
+              sendEvent("expert_thinking_delta", { id: eid, agent: ev.agent, run_id: runId, delta: ev.text });
+            } else if (ev.type === "text") {
+              sendEvent("expert_text_delta", { id: eid, agent: ev.agent, run_id: runId, delta: ev.text });
+            }
+          },
+        }
       );
     }
 
-    // Step 3: host 流式汇总
-    sendEvent("phase", { phase: "host" });
+    // ── Step 3: host —— thinking + tools 真 agentic ───────
+    sendEvent("phase", { phase: "host", run_id: runId });
     const hostMsgId = require("crypto").randomBytes(16).toString("hex");
-    sendEvent("host_start", { id: hostMsgId });
+    sendEvent("host_start", { id: hostMsgId, run_id: runId });
+
     const hostMemoryPack = await ws.queryMemory({
       userId,
       taskId,
@@ -281,68 +321,87 @@ router.post("/:taskId/messages", requireAuth, upload.single("file"), async (req,
       intent: routing.task_type,
     });
 
-    let fullText = "";
-    await ws.streamHostSummary({
-      projectCtx,
-      history: ws.listMessages(conv.id, 30), // 包含刚写入的 expert
-      userMsg: effectiveUserMsg,
-      expertOutputs,
-      memoryPack: hostMemoryPack,
-      signal: ac.signal,
-      onDelta: (delta) => {
-        fullText += delta;
-        sendEvent("token", { id: hostMsgId, delta });
-      },
-    });
+    // toolRunner：真执行 doc-service 工具，artifact 入库 + 推前端
+    const hostToolRunner = async (toolName, input) => {
+      const artifact = await ws.executeDocumentTool({
+        tool: toolName,
+        args: input || {},
+        conversationId: conv.id,
+        messageId: hostMsgId,
+      });
+      sendEvent("artifact", artifact);
+      return { artifact, summary: artifact.summary || `已生成 ${artifact.filename}` };
+    };
 
-    // 解析 tool calls
-    const parsedToolCalls = ws.parseToolCalls(fullText);
-    const cleanContent = ws.stripToolCalls(fullText) || fullText;
-    const toolCalls = ws.normalizeToolCalls(parsedToolCalls, {
-      routing,
-      userMsg: effectiveUserMsg,
-      cleanContent,
-      expertOutputs,
-    });
+    let hostResult;
+    try {
+      hostResult = await ws.runHostAgentic({
+        projectCtx,
+        history: ws.listMessages(conv.id, 30),
+        userMsg: effectiveUserMsg,
+        expertOutputs,
+        memoryPack: hostMemoryPack,
+        signal: ac.signal,
+        hostToolRunner,
+        onEvent: (ev) => {
+          if (ev.type === "thinking_delta") {
+            sendEvent("host_thinking_delta", { id: hostMsgId, run_id: runId, delta: ev.text });
+          } else if (ev.type === "text_delta") {
+            sendEvent("host_text_delta", { id: hostMsgId, run_id: runId, delta: ev.text });
+            // 兼容老客户端：同时发 token 事件
+            sendEvent("token", { id: hostMsgId, delta: ev.text });
+          } else if (ev.type === "tool_use_start") {
+            sendEvent("host_tool_use_start", { id: hostMsgId, run_id: runId, tool_id: ev.id, name: ev.name });
+          } else if (ev.type === "tool_use") {
+            sendEvent("host_tool_use", { id: hostMsgId, run_id: runId, tool_id: ev.id, name: ev.name, input: ev.input });
+          } else if (ev.type === "tool_result") {
+            sendEvent("host_tool_result", {
+              id: hostMsgId, run_id: runId, tool_id: ev.id, name: ev.name,
+              result: typeof ev.result === "string" ? ev.result.slice(0, 500) : ev.result,
+              error: !!ev.error,
+            });
+          }
+        },
+      });
+    } catch (err) {
+      throw err;
+    }
 
-    // 持久化 host 消息（用上面预先生成的 hostMsgId）
+    const cleanContent = (hostResult.text || "").trim();
+    const hostArtifacts = hostResult.artifacts || [];
+
+    // 持久化 host 消息
     const db = getDb();
     db.prepare(
       `INSERT INTO workspace_messages (id, conversation_id, role, agent_name, content, metadata)
        VALUES (?, ?, 'agent', 'host', ?, ?)`
     ).run(
       hostMsgId, conv.id, cleanContent,
-      JSON.stringify({ routing, tool_calls: toolCalls })
+      JSON.stringify({
+        routing,
+        run_id: runId,
+        thinking: hostResult.thinking || "",
+        artifacts: hostArtifacts.map((a) => ({ id: a.id, filename: a.filename, kind: a.kind })),
+        used_thinking: hostResult.used_thinking,
+        used_tools: hostResult.used_tools,
+        used_stream: hostResult.used_stream,
+      })
     );
     db.prepare("UPDATE workspace_conversations SET updated_at = datetime('now') WHERE id = ?")
       .run(conv.id);
 
-    sendEvent("host_done", { id: hostMsgId, content: cleanContent });
+    sendEvent("host_done", { id: hostMsgId, content: cleanContent, run_id: runId });
     ws.processHostMemory({
-      taskId,
-      userId,
-      content: cleanContent,
-      taskType: routing.task_type,
+      taskId, userId, content: cleanContent, taskType: routing.task_type,
     }).catch((err) => console.warn("[Workspace] Host 记忆提炼失败:", err.message));
 
-    // 执行 tool calls
-    let toolResults = [];
-    if (toolCalls.length > 0) {
-      sendEvent("phase", { phase: "tools", count: toolCalls.length });
-      toolResults = await ws.executeToolCalls(toolCalls, {
-        conversationId: conv.id,
-        messageId: hostMsgId,
-      });
-      for (const r of toolResults) {
-        if (r.artifact) sendEvent("artifact", r.artifact);
-        else sendEvent("tool_error", { tool: r.tool, error: r.error });
-      }
+    if (hostArtifacts.length > 0) {
       ws.processSkillCandidate({
         userId,
         taskType: routing.task_type,
         userMessage: effectiveUserMsg,
-        toolCalls,
-        artifactResults: toolResults,
+        toolCalls: hostArtifacts.map((a) => ({ tool: a.kind?.replace(/^generated_/, "generate_") })),
+        artifactResults: hostArtifacts.map((a) => ({ artifact: a })),
         runId,
       });
     }

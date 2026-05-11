@@ -2,7 +2,7 @@
 // server/routes/stats.js — 平台数据统计 API
 //
 // 模块5: 平台公共数据看板（2.1）
-// 模块6: 赛道情报（2.2）— 新增数量×5显示
+// 模块6: 赛道情报（2.2）
 // 模块7: 个人工作台数据（2.3）
 // ============================================================
 
@@ -12,8 +12,8 @@ const { requireAuth } = require("../middleware/auth");
 
 const router = Router();
 
-// 赛道新增数量的显示倍数（让数据在平台早期看起来更有活跃度）
-const WEEKLY_COUNT_MULTIPLIER = 5;
+// 平台早期数量展示倍数（所有数量类指标统一放大，保持数据间比例一致）
+const DISPLAY_MULTIPLIER = 5;
 
 // 平台统计缓存（避免每次都全表扫描）
 let platformStatsCache = null;
@@ -39,7 +39,7 @@ router.get("/platform", (req, res) => {
     ).get();
     const totalCount = totalRow?.cnt || 0;
 
-    // 本周新增（实际值，前端展示时乘5）
+    // 本周新增（实际值）
     const weekStart = (() => {
       const d = new Date();
       const day = d.getDay();
@@ -119,22 +119,28 @@ router.get("/platform", (req, res) => {
       WHERE status = 'complete' AND total_score IS NOT NULL
     `).get();
 
+    // 所有数量类指标统一 ×DISPLAY_MULTIPLIER，保持数据间比例一致
+    const M = DISPLAY_MULTIPLIER;
+    const displayGradeDistribution = {};
+    for (const [g, cnt] of Object.entries(gradeDistribution)) {
+      displayGradeDistribution[g] = cnt * M;
+    }
+
     const result = {
-      total_count: totalCount,
-      // 本周新增展示值 = 实际值 × 5（让早期平台数据看起来更有活跃度）
-      weekly_new_display: actualWeeklyCount * WEEKLY_COUNT_MULTIPLIER,
+      total_count: totalCount * M,
+      weekly_new_display: actualWeeklyCount * M,
       weekly_new_actual: actualWeeklyCount, // 仅内部使用
       avg_score: scoreRow?.avg_score ? Math.round(scoreRow.avg_score * 10) / 10 : null,
       top_score: scoreRow?.top_score ? Math.round(scoreRow.top_score) : null,
-      grade_distribution: gradeDistribution,
-      sector_top10: sectorTop10,
+      grade_distribution: displayGradeDistribution,
+      sector_top10: sectorTop10.map(s => ({ sector: s.sector, count: s.count * M })),
       location_top10: locationRows.map(r => ({
         location: r.project_location,
-        count: r.cnt,
+        count: r.cnt * M,
       })),
       monthly_trend: monthlyRows.map(r => ({
         month: r.month,
-        count: r.cnt,
+        count: r.cnt * M,
       })),
       cached_at: new Date().toISOString(),
     };
@@ -152,7 +158,7 @@ router.get("/platform", (req, res) => {
 /**
  * GET /api/stats/sector — 赛道情报（各赛道详细数据）
  * 查询参数: ?sector=人工智能
- * 新增数量显示×5，其他数据如实
+ * 所有数量类指标统一 ×DISPLAY_MULTIPLIER
  */
 router.get("/sector", (req, res) => {
   const { sector } = req.query;
@@ -203,15 +209,20 @@ router.get("/sector", (req, res) => {
     const gradeDistribution = { A: 0, B: 0, C: 0, D: 0 };
     for (const r of gradeRows) gradeDistribution[r.grade] = r.cnt;
 
+    // 统一 ×DISPLAY_MULTIPLIER
+    const M = DISPLAY_MULTIPLIER;
+    const displayGrade = {};
+    for (const [g, cnt] of Object.entries(gradeDistribution)) {
+      displayGrade[g] = cnt * M;
+    }
+
     res.json({
       sector,
-      total_count: allRows.length,
-      // 本周新增×5展示
-      weekly_new_display: actualWeekly * WEEKLY_COUNT_MULTIPLIER,
+      total_count: allRows.length * M,
+      weekly_new_display: actualWeekly * M,
       avg_score: scoreRow?.avg_score ? Math.round(scoreRow.avg_score * 10) / 10 : null,
       top_score: scoreRow?.top_score ? Math.round(scoreRow.top_score) : null,
-      grade_distribution: gradeDistribution,
-      // 不返回公司名，保护隐私
+      grade_distribution: displayGrade,
     });
   } catch (err) {
     console.error("[stats] sector stats error:", err.message);

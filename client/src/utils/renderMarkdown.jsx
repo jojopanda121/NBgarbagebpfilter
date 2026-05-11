@@ -18,25 +18,25 @@ export function renderMarkdown(text) {
 
     if (line.startsWith("# ")) {
       elements.push(
-        <h1 key={i} className="text-xl font-bold mt-6 mb-3 text-gray-100">
+        <h1 key={i} className="text-xl font-bold mt-6 mb-3 text-[#0D2145]">
           {line.slice(2)}
         </h1>
       );
     } else if (line.startsWith("## ")) {
       elements.push(
-        <h2 key={i} className="text-lg font-bold mt-5 mb-2 text-gray-200">
+        <h2 key={i} className="text-lg font-bold mt-5 mb-2 text-[#0D2145]">
           {line.slice(3)}
         </h2>
       );
     } else if (line.startsWith("### ")) {
       elements.push(
-        <h3 key={i} className="text-base font-semibold mt-4 mb-2 text-gray-200">
+        <h3 key={i} className="text-base font-semibold mt-4 mb-2 text-[#0F1C36]">
           {line.slice(4)}
         </h3>
       );
     } else if (line.startsWith("**") && line.endsWith("**")) {
       elements.push(
-        <p key={i} className="font-bold mt-4 mb-1 text-gray-200">
+        <p key={i} className="font-bold mt-4 mb-1 text-[#0F1C36]">
           {line.replace(/\*\*/g, "")}
         </p>
       );
@@ -45,15 +45,15 @@ export function renderMarkdown(text) {
         .slice(2)
         .replace(
           /\*\*(.*?)\*\*/g,
-          '<strong class="text-gray-200">$1</strong>'
+          '<strong class="text-[#0D2145]">$1</strong>'
         );
       const sanitizedHtml = DOMPurify.sanitize(htmlContent, sanitizeConfig);
 
       elements.push(
         <div key={i} className="flex gap-2 ml-4 my-0.5">
-          <span className="text-[#8E9BB0] shrink-0">•</span>
+          <span className="text-[#5B677A] shrink-0">•</span>
           <span
-            className="text-[#4B5A72]"
+            className="text-[#0F1C36]"
             dangerouslySetInnerHTML={{ __html: sanitizedHtml }}
           />
         </div>
@@ -63,14 +63,14 @@ export function renderMarkdown(text) {
     } else {
       const htmlContent = line.replace(
         /\*\*(.*?)\*\*/g,
-        '<strong class="text-gray-200">$1</strong>'
+        '<strong class="text-[#0D2145]">$1</strong>'
       );
       const sanitizedHtml = DOMPurify.sanitize(htmlContent, sanitizeConfig);
 
       elements.push(
         <p
           key={i}
-          className="text-[#4B5A72] my-1 leading-relaxed"
+          className="text-[#0F1C36] my-1 leading-relaxed"
           dangerouslySetInnerHTML={{ __html: sanitizedHtml }}
         />
       );

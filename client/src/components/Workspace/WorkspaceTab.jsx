@@ -8,7 +8,8 @@
 import React, { useEffect, useRef, useState } from "react";
 import {
   Send, Paperclip, Loader2, AlertCircle, Download,
-  TrendingUp, DollarSign, Cpu, Shield, MessageSquare, FileBox
+  TrendingUp, DollarSign, Cpu, Shield, MessageSquare, FileBox,
+  CheckCircle2, X, Trash2
 } from "lucide-react";
 import api from "../../services/api";
 import useAuthStore from "../../store/useAuthStore";
@@ -24,6 +25,13 @@ const AGENT_META = {
 };
 
 const ALL_AGENTS = ["host", "market", "finance", "tech", "risk"];
+
+const ARTIFACT_KIND_LABEL = {
+  generated_pptx: "AI 生成 PPT",
+  generated_docx: "AI 生成 Word",
+  generated_xlsx: "AI 生成 Excel",
+  upload: "上传",
+};
 
 function bytes(n) {
   if (n == null) return "";
@@ -41,7 +49,7 @@ export default function WorkspaceTab({ taskId }) {
   const [phase, setPhase]         = useState("idle");     // idle | routing | experts | host | tools
   const [streaming, setStreaming] = useState(false);
   const [input, setInput]         = useState("");
-  const [uploading, setUploading] = useState(false);
+  const [pendingFile, setPendingFile] = useState(null);
 
   const fileInputRef = useRef(null);
   const scrollRef = useRef(null);
@@ -74,8 +82,11 @@ export default function WorkspaceTab({ taskId }) {
 
   const handleSend = async () => {
     const text = input.trim();
-    if (!text || streaming) return;
+    const fileToSend = pendingFile;
+    if ((!text && !fileToSend) || streaming) return;
     setInput("");
+    setPendingFile(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
     setStreaming(true);
     setPhase("routing");
     setActiveAgents([]);
@@ -140,13 +151,14 @@ export default function WorkspaceTab({ taskId }) {
             break;
           default: break;
         }
-      }, ac.signal);
+      }, ac.signal, fileToSend);
     } catch (err) {
       if (err.name !== "AbortError") {
         setMessages(m => [...m, {
           id: `err-${Date.now()}`, role: "system", agent_name: null,
           content: `请求失败：${err.message}`, created_at: new Date().toISOString(),
         }]);
+        if (fileToSend) setPendingFile(fileToSend);
       }
     } finally {
       setStreaming(false);
@@ -160,26 +172,27 @@ export default function WorkspaceTab({ taskId }) {
     abortRef.current?.abort();
   };
 
+  const handleClearConversation = async () => {
+    if (streaming) return;
+    const ok = window.confirm("清空后会删除当前工作区的全部聊天记录、材料和生成文件。确定清空吗？");
+    if (!ok) return;
+    try {
+      await api.delete(`/api/workspace/${taskId}/messages`);
+      setMessages([]);
+      setArtifacts([]);
+      setPendingFile(null);
+      setActiveAgents([]);
+      setPhase("idle");
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    } catch (err) {
+      alert("清空失败：" + err.message);
+    }
+  };
+
   const handleFile = async (e) => {
     const f = e.target.files?.[0];
     if (!f) return;
-    setUploading(true);
-    try {
-      const fd = new FormData();
-      fd.append("file", f);
-      const data = await api.upload(`/api/workspace/${taskId}/upload`, fd);
-      setArtifacts(a => [data.artifact, ...a]);
-      // 拉一次最新历史，把 system 摘要消息合并进来
-      try {
-        const refreshed = await api.get(`/api/workspace/${taskId}/messages`);
-        setMessages(refreshed.messages || []);
-      } catch {}
-    } catch (err) {
-      alert("上传失败：" + err.message);
-    } finally {
-      setUploading(false);
-      if (fileInputRef.current) fileInputRef.current.value = "";
-    }
+    setPendingFile(f);
   };
 
   const downloadArtifact = (art) => {
@@ -192,6 +205,18 @@ export default function WorkspaceTab({ taskId }) {
       a.href = url; a.download = art.filename; a.click();
       URL.revokeObjectURL(url);
     }).catch(err => alert("下载失败：" + err.message));
+  };
+
+  const deleteArtifact = async (art) => {
+    if (streaming) return;
+    const ok = window.confirm(`删除「${art.filename}」吗？`);
+    if (!ok) return;
+    try {
+      await api.delete(`/api/workspace/${taskId}/artifacts/${art.id}`);
+      setArtifacts(items => items.filter(item => item.id !== art.id));
+    } catch (err) {
+      alert("删除失败：" + err.message);
+    }
   };
 
   if (loading) return (
@@ -207,9 +232,9 @@ export default function WorkspaceTab({ taskId }) {
   );
 
   return (
-    <div className="grid grid-cols-12 gap-4 min-h-[600px]">
+    <div className="grid grid-cols-12 gap-4 h-[min(720px,calc(100vh-190px))] min-h-[520px] overflow-hidden">
       {/* 左：Agent 面板 */}
-      <aside className="col-span-12 lg:col-span-2 space-y-2">
+      <aside className="col-span-12 lg:col-span-2 space-y-2 overflow-y-auto pr-1">
         <h3 className="text-xs font-medium text-[#4B5A72] uppercase tracking-wider mb-2">AI 团队</h3>
         {ALL_AGENTS.map(name => {
           const meta = AGENT_META[name];
@@ -235,8 +260,21 @@ export default function WorkspaceTab({ taskId }) {
       </aside>
 
       {/* 中：聊天流 */}
-      <section className="col-span-12 lg:col-span-7 flex flex-col bg-white border border-[#EEF1F7] rounded-xl overflow-hidden min-h-[600px]">
-        <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-3">
+      <section className="col-span-12 lg:col-span-7 flex min-h-0 flex-col bg-white border border-[#EEF1F7] rounded-xl overflow-hidden">
+        <div className="flex items-center justify-between border-b border-[#EEF1F7] px-4 py-2">
+          <div className="text-sm font-medium text-[#0F1C36]">工作区对话</div>
+          <button
+            type="button"
+            onClick={handleClearConversation}
+            disabled={streaming || (messages.length === 0 && artifacts.length === 0)}
+            className="inline-flex items-center gap-1.5 rounded-md border border-[#D8DCE8] px-2 py-1 text-xs text-[#4B5A72] hover:border-red-300 hover:text-red-700 disabled:opacity-40 disabled:hover:text-[#4B5A72]"
+            title="清空对话、材料和产出"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+            清空
+          </button>
+        </div>
+        <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto p-4 space-y-3">
           {messages.length === 0 && (
             <div className="text-center text-[#8E9BB0] py-12">
               <MessageSquare className="w-10 h-10 mx-auto mb-2 opacity-40" />
@@ -252,17 +290,17 @@ export default function WorkspaceTab({ taskId }) {
             <input
               ref={fileInputRef}
               type="file"
-              accept=".pdf,.pptx,.txt,.md"
+              accept=".pdf,.pptx,.docx,.xlsx,.csv,.txt,.md"
               onChange={handleFile}
               className="hidden"
             />
             <button
               onClick={() => fileInputRef.current?.click()}
-              disabled={uploading || streaming}
+              disabled={streaming}
               className="p-2 text-[#4B5A72] hover:text-[#0D2145] disabled:opacity-50 transition-colors"
-              title="上传补充材料 (PDF/PPTX/TXT)"
+              title="上传补充材料 (PDF/PPTX/DOCX/XLSX/CSV/TXT)"
             >
-              {uploading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Paperclip className="w-5 h-5" />}
+              <Paperclip className="w-5 h-5" />
             </button>
             <textarea
               value={input}
@@ -289,7 +327,7 @@ export default function WorkspaceTab({ taskId }) {
             ) : (
               <button
                 onClick={handleSend}
-                disabled={!input.trim()}
+                disabled={!input.trim() && !pendingFile}
                 className="px-3 py-2 bg-[#1B4FD8] hover:bg-[#163069] disabled:bg-[#E5E9F4] disabled:text-[#8E9BB0] rounded-lg flex items-center gap-1.5"
               >
                 <Send className="w-4 h-4" />
@@ -297,6 +335,24 @@ export default function WorkspaceTab({ taskId }) {
               </button>
             )}
           </div>
+          {pendingFile && (
+            <div className="mt-2 inline-flex max-w-full items-center gap-2 rounded-lg border border-[#BFC5D6] bg-white px-2.5 py-1.5 text-xs text-[#0F1C36]">
+              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+              <span className="truncate">{pendingFile.name}</span>
+              <span className="text-[#5B677A] shrink-0">{bytes(pendingFile.size)}</span>
+              <button
+                type="button"
+                onClick={() => {
+                  setPendingFile(null);
+                  if (fileInputRef.current) fileInputRef.current.value = "";
+                }}
+                className="p-0.5 text-[#5B677A] hover:text-[#0F1C36]"
+                title="移除附件"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
           {phase !== "idle" && (
             <div className="mt-2 text-xs text-[#8E9BB0] flex items-center gap-2">
               <Loader2 className="w-3 h-3 animate-spin" />
@@ -310,7 +366,7 @@ export default function WorkspaceTab({ taskId }) {
       </section>
 
       {/* 右：Artifacts */}
-      <aside className="col-span-12 lg:col-span-3">
+      <aside className="col-span-12 lg:col-span-3 min-h-0 overflow-y-auto pr-1">
         <h3 className="text-xs font-medium text-[#4B5A72] uppercase tracking-wider mb-2 flex items-center gap-1.5">
           <FileBox className="w-3.5 h-3.5" />
           材料 & 产出 ({artifacts.length})
@@ -318,7 +374,7 @@ export default function WorkspaceTab({ taskId }) {
         <div className="space-y-2">
           {artifacts.length === 0 && (
             <p className="text-xs text-[#8E9BB0] px-3 py-4 border border-dashed border-[#D8DCE8] rounded-lg text-center">
-              用户上传的补充材料和 AI 生成的 PPT 会出现在这里
+              用户上传的补充材料和 AI 生成的 PPT / Word / Excel 会出现在这里
             </p>
           )}
           {artifacts.map(art => (
@@ -327,16 +383,26 @@ export default function WorkspaceTab({ taskId }) {
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-medium truncate" title={art.filename}>{art.filename}</p>
                   <p className="text-xs text-[#8E9BB0] mt-0.5">
-                    {art.kind === "generated_pptx" ? "AI 生成" : "上传"} · {bytes(art.size_bytes)}
+                    {ARTIFACT_KIND_LABEL[art.kind] || "文件"} · {bytes(art.size_bytes)}
                   </p>
                 </div>
-                <button
-                  onClick={() => downloadArtifact(art)}
-                  className="p-1.5 text-[#4B5A72] hover:text-[#0D2145]"
-                  title="下载"
-                >
-                  <Download className="w-4 h-4" />
-                </button>
+                <div className="flex shrink-0 items-center gap-1">
+                  <button
+                    onClick={() => downloadArtifact(art)}
+                    className="p-1.5 text-[#4B5A72] hover:text-[#0D2145]"
+                    title="下载"
+                  >
+                    <Download className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={() => deleteArtifact(art)}
+                    disabled={streaming}
+                    className="p-1.5 text-[#4B5A72] hover:text-red-700 disabled:opacity-40"
+                    title="删除"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
               {art.summary && (
                 <p className="text-xs text-[#4B5A72] mt-1.5 line-clamp-3">{art.summary}</p>

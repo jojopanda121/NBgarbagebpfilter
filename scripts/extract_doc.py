@@ -6,9 +6,12 @@
   pptx — 使用 python-pptx 直接提取幻灯片文本与演讲者备注（无 OCR）
   pdf  — 文字优先策略：PyMuPDF 直接提取；仅当 avg_chars_per_page <= 50 时
           回退 RapidOCR（替代 Tesseract，速度更快、无需系统依赖）
+  docx — 提取 Word 段落和表格
+  xlsx — 提取 Excel 工作表预览
+  csv  — 提取 CSV 预览
 
 用法: python extract_doc.py <path_to_file> <mode>
-      mode: pptx | pdf
+      mode: pptx | pdf | docx | xlsx | csv
 输出: 纯文本到 stdout；错误时 stderr JSON + exit 1
 """
 
@@ -16,6 +19,7 @@ import sys
 import os
 import re
 import json
+import csv
 
 
 # ─────────────────────────────────────────────────────────────
@@ -54,6 +58,74 @@ def extract_pptx(file_path: str) -> str:
         parts.append("\n".join(slide_parts))
 
     return "\n\n".join(parts).strip()
+
+
+def extract_docx(file_path: str) -> str:
+    try:
+        from docx import Document
+    except ImportError:
+        raise RuntimeError("请安装 python-docx: pip install python-docx")
+
+    doc = Document(file_path)
+    parts = []
+    for para in doc.paragraphs:
+        text = para.text.strip()
+        if text:
+            parts.append(text)
+    for table_idx, table in enumerate(doc.tables, 1):
+        rows = []
+        for row in table.rows:
+            cells = [cell.text.strip().replace("\n", " ") for cell in row.cells]
+            if any(cells):
+                rows.append(" | ".join(cells))
+        if rows:
+            parts.append(f"[表格 {table_idx}]\n" + "\n".join(rows))
+    return "\n\n".join(parts).strip()
+
+
+def extract_xlsx(file_path: str) -> str:
+    try:
+        from openpyxl import load_workbook
+    except ImportError:
+        raise RuntimeError("请安装 openpyxl: pip install openpyxl")
+
+    wb = load_workbook(file_path, data_only=True, read_only=True)
+    parts = []
+    for ws in wb.worksheets:
+        lines = [f"# Sheet: {ws.title}"]
+        row_count = 0
+        for row in ws.iter_rows(values_only=True):
+            values = ["" if v is None else str(v) for v in row]
+            if not any(v.strip() for v in values):
+                continue
+            lines.append(" | ".join(values[:20]))
+            row_count += 1
+            if row_count >= 80:
+                lines.append("...（已截断，仅展示前 80 行非空数据）")
+                break
+        if row_count:
+            parts.append("\n".join(lines))
+    wb.close()
+    return "\n\n".join(parts).strip()
+
+
+def extract_csv(file_path: str) -> str:
+    encodings = ("utf-8-sig", "utf-8", "gb18030")
+    last_error = None
+    for enc in encodings:
+        try:
+            with open(file_path, "r", encoding=enc, newline="") as f:
+                reader = csv.reader(f)
+                lines = []
+                for idx, row in enumerate(reader):
+                    if idx >= 120:
+                        lines.append("...（已截断，仅展示前 120 行）")
+                        break
+                    lines.append(" | ".join(row[:30]))
+                return "\n".join(lines).strip()
+        except UnicodeDecodeError as e:
+            last_error = e
+    raise RuntimeError(f"CSV 编码识别失败: {last_error}")
 
 
 # ─────────────────────────────────────────────────────────────
@@ -158,7 +230,7 @@ def extract_pdf(file_path: str) -> str:
 def main():
     if len(sys.argv) < 3:
         print("用法: python extract_doc.py <path_to_file> <mode>", file=sys.stderr)
-        print("  mode: pptx | pdf", file=sys.stderr)
+        print("  mode: pptx | pdf | docx | xlsx | csv", file=sys.stderr)
         sys.exit(1)
 
     file_path = sys.argv[1]
@@ -178,7 +250,7 @@ def main():
             file=sys.stderr,
         )
         sys.exit(1)
-    if file_size < 100:
+    if file_size < 100 and mode in ("pdf", "pptx", "docx", "xlsx"):
         print(
             json.dumps(
                 {"error": f"文件大小异常（{file_size} 字节），可能不是有效文件"},
@@ -193,8 +265,14 @@ def main():
             out = extract_pptx(file_path)
         elif mode == "pdf":
             out = extract_pdf(file_path)
+        elif mode == "docx":
+            out = extract_docx(file_path)
+        elif mode == "xlsx":
+            out = extract_xlsx(file_path)
+        elif mode == "csv":
+            out = extract_csv(file_path)
         else:
-            raise ValueError(f"不支持的 mode: {mode}，请使用 pptx 或 pdf")
+            raise ValueError(f"不支持的 mode: {mode}，请使用 pptx、pdf、docx、xlsx 或 csv")
 
         if not out:
             print("警告: 未能从文件中提取到任何文本", file=sys.stderr)

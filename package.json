@@ -7,18 +7,22 @@
   },
   "scripts": {
     "install:python": "pip3 install --break-system-packages -r scripts/requirements.txt 2>/dev/null || pip3 install -r scripts/requirements.txt",
-    "install:all": "cd client && npm install && cd ../server && npm install && npm run install:python",
+    "install:doc-service": "pip3 install --break-system-packages -r doc-service/requirements.txt 2>/dev/null || pip3 install -r doc-service/requirements.txt",
+    "install:all": "cd client && npm install && cd ../server && npm install && cd .. && npm run install:python && npm run install:doc-service",
     "build": "cd client && npm install && npm run build",
     "start": "pm2 start ecosystem.config.js --env production",
     "start:dev": "pm2 start ecosystem.config.js --env development",
-    "stop": "pm2 stop garbagebpfilter",
-    "restart": "pm2 restart garbagebpfilter",
-    "logs": "pm2 logs garbagebpfilter",
-    "deploy": "npm run install:python && npm run build && npm start",
+    "stop": "pm2 stop ecosystem.config.js",
+    "restart": "pm2 restart ecosystem.config.js --update-env",
+    "logs": "pm2 logs",
+    "deploy": "npm run install:python && npm run install:doc-service && npm run build && npm start",
     "docker:up": "docker-compose up -d --build",
     "docker:down": "docker-compose down",
     "docker:logs": "docker-compose logs -f app",
     "docker:prod": "docker-compose --profile production up -d --build",
     "lint": "cd server && npx eslint . --ext .js"
+  },
+  "dependencies": {
+    "pm2": "^6.0.14"
   }
 }

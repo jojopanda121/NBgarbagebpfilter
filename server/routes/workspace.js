@@ -16,6 +16,60 @@ const ws = require("../services/workspaceService");
 const router = Router();
 const upload = multer({ dest: os.tmpdir(), limits: { fileSize: 50 * 1024 * 1024 } });
 
+function decodeUploadName(name = "") {
+  if (!name) return name;
+  // multer/busboy 在某些环境会把 UTF-8 文件名按 latin1 暴露，表现为 ä¸å¸...。
+  if (!/[\u00C0-\u00FF]/.test(name)) return name;
+  try {
+    const decoded = Buffer.from(name, "latin1").toString("utf8");
+    return decoded.includes("\uFFFD") ? name : decoded;
+  } catch {
+    return name;
+  }
+}
+
+async function persistWorkspaceUpload({ file, conversationId, taskId, userId }) {
+  if (!file) return { artifact: null, text: "", summary: "" };
+
+  const tmpPath = file.path;
+  const originalName = decodeUploadName(file.originalname);
+  const ext = (path.extname(originalName) || "").slice(1).toLowerCase();
+  const mode = ["pdf", "pptx", "docx", "xlsx", "csv"].includes(ext) ? ext : null;
+
+  let text = "";
+  if (mode) {
+    try { text = await extractDocText(tmpPath, mode); }
+    catch (err) { console.warn("[Workspace] 提取失败:", err.message); }
+  } else if (file.mimetype?.startsWith("text/")) {
+    text = fs.readFileSync(tmpPath, "utf-8");
+  }
+  const summary = text ? await ws.summarizeUploadedText(text, originalName) : "（无法提取文本，仅记录文件名）";
+
+  const convDir = path.join(ws.ARTIFACTS_ROOT, conversationId);
+  if (!fs.existsSync(convDir)) fs.mkdirSync(convDir, { recursive: true });
+  const safeName = originalName.replace(/[\\/:*?"<>|]+/g, "_");
+  const dest = path.join(convDir, `${Date.now()}-${safeName}`);
+  fs.copyFileSync(tmpPath, dest);
+  if (text) ws.saveArtifactExtractedText(dest, text);
+
+  const artifact = ws.insertArtifact({
+    conversationId,
+    kind: "upload",
+    filename: originalName,
+    storagePath: dest,
+    mimeType: file.mimetype,
+    sizeBytes: file.size,
+    summary,
+  });
+
+  if (taskId && userId && summary) {
+    ws.processUploadMemory({ taskId, userId, filename: originalName, summary })
+      .catch((err) => console.warn("[Workspace] 上传材料记忆提炼失败:", err.message));
+  }
+
+  return { artifact, text, summary };
+}
+
 /** 校验任务归属：只有 owner 或 admin 可访问 */
 function checkTaskOwnership(taskId, userId) {
   const task = getTask(taskId);
@@ -27,6 +81,11 @@ function checkTaskOwnership(taskId, userId) {
   }
   return { task };
 }
+
+// ── GET workspace agent/tool capabilities ───────────────────
+router.get("/capabilities", requireAuth, (req, res) => {
+  res.json(ws.listWorkspaceCapabilities());
+});
 
 // ── GET 历史消息 ────────────────────────────────────────────
 router.get("/:taskId/messages", requireAuth, (req, res) => {
@@ -67,6 +126,18 @@ router.get("/:taskId/artifacts/:artifactId/download", requireAuth, (req, res) =>
   res.download(art.storage_path, art.filename);
 });
 
+// ── 删除 artifact ──────────────────────────────────────────
+router.delete("/:taskId/artifacts/:artifactId", requireAuth, (req, res) => {
+  const { taskId, artifactId } = req.params;
+  const own = checkTaskOwnership(taskId, req.user.id);
+  if (own.error) return res.status(own.status).json({ error: own.error });
+
+  const conv = ws.createOrGetConversation(taskId, req.user.id);
+  const ok = ws.deleteArtifact(artifactId, conv.id);
+  if (!ok) return res.status(404).json({ error: "文件不存在" });
+  res.json({ ok: true });
+});
+
 // ── 上传补充材料 ───────────────────────────────────────────
 router.post("/:taskId/upload", requireAuth, upload.single("file"), async (req, res) => {
   const { taskId } = req.params;
@@ -75,62 +146,45 @@ router.post("/:taskId/upload", requireAuth, upload.single("file"), async (req, r
   if (!req.file) return res.status(400).json({ error: "未上传文件" });
 
   const conv = ws.createOrGetConversation(taskId, req.user.id);
-  const tmpPath = req.file.path;
-  const originalName = req.file.originalname;
-  const ext = (path.extname(originalName) || "").slice(1).toLowerCase();
-  const mode = ext === "pdf" ? "pdf" : ext === "pptx" ? "pptx" : null;
 
   try {
-    let text = "";
-    if (mode) {
-      try { text = await extractDocText(tmpPath, mode); }
-      catch (err) { console.warn("[Workspace] 提取失败:", err.message); }
-    } else if (req.file.mimetype?.startsWith("text/")) {
-      text = fs.readFileSync(tmpPath, "utf-8");
-    }
-    const summary = text ? await ws.summarizeUploadedText(text, originalName) : "（无法提取文本，仅记录文件名）";
-
-    // 持久化原文件到 artifacts 目录
-    const convDir = path.join(ws.ARTIFACTS_ROOT, conv.id);
-    if (!fs.existsSync(convDir)) fs.mkdirSync(convDir, { recursive: true });
-    const safeName = originalName.replace(/[\\/:*?"<>|]+/g, "_");
-    const dest = path.join(convDir, `${Date.now()}-${safeName}`);
-    fs.copyFileSync(tmpPath, dest);
-
-    const art = ws.insertArtifact({
+    const { artifact } = await persistWorkspaceUpload({
+      file: req.file,
       conversationId: conv.id,
-      kind: "upload",
-      filename: originalName,
-      storagePath: dest,
-      mimeType: req.file.mimetype,
-      sizeBytes: req.file.size,
-      summary,
+      taskId,
+      userId: req.user.id,
     });
-
-    // 写一条 system 消息把摘要落到对话里
-    ws.appendMessage(conv.id, "system", null,
-      `[补充材料] ${originalName}\n摘要：${summary}`,
-      { artifact_id: art.id }
-    );
-
-    res.json({ artifact: art });
+    res.json({ artifact });
   } catch (err) {
     console.error("[Workspace] 上传处理失败:", err);
     res.status(500).json({ error: err.message || "上传处理失败" });
   } finally {
-    try { fs.unlinkSync(tmpPath); } catch {}
+    if (req.file?.path) {
+      try { fs.unlinkSync(req.file.path); } catch {}
+    }
   }
 });
 
+// ── 清空当前工作区对话和材料产出 ───────────────────────────
+router.delete("/:taskId/messages", requireAuth, (req, res) => {
+  const { taskId } = req.params;
+  const own = checkTaskOwnership(taskId, req.user.id);
+  if (own.error) return res.status(own.status).json({ error: own.error });
+
+  const conv = ws.createOrGetConversation(taskId, req.user.id);
+  const result = ws.clearConversation(conv.id);
+  res.json({ ok: true, ...result });
+});
+
 // ── 发送消息（SSE 流式） ───────────────────────────────────
-router.post("/:taskId/messages", requireAuth, async (req, res) => {
+router.post("/:taskId/messages", requireAuth, upload.single("file"), async (req, res) => {
   const { taskId } = req.params;
   const userId = req.user.id;
   const own = checkTaskOwnership(taskId, userId);
   if (own.error) return res.status(own.status).json({ error: own.error });
 
   const userMsg = (req.body?.content || "").toString().trim();
-  if (!userMsg) return res.status(400).json({ error: "消息内容为空" });
+  if (!userMsg && !req.file) return res.status(400).json({ error: "消息内容为空" });
   if (userMsg.length > 4000) return res.status(400).json({ error: "消息过长（限 4000 字）" });
 
   // SSE 头
@@ -141,27 +195,62 @@ router.post("/:taskId/messages", requireAuth, async (req, res) => {
   res.flushHeaders?.();
 
   const sendEvent = (event, data) => {
+    if (res.destroyed || res.writableEnded) return false;
     res.write(`event: ${event}\n`);
     res.write(`data: ${JSON.stringify(data)}\n\n`);
+    return true;
   };
 
   // 客户端断开监听
   const ac = new AbortController();
-  req.on("close", () => { ac.abort(); });
+  let completed = false;
+  const runId = require("crypto").randomBytes(16).toString("hex");
+  const abortIfOpen = () => {
+    if (!completed) ac.abort();
+  };
+  req.on("aborted", abortIfOpen);
+  res.on("close", abortIfOpen);
 
   try {
     const conv = ws.createOrGetConversation(taskId, userId);
+    let attached = null;
+    if (req.file) {
+      attached = await persistWorkspaceUpload({
+        file: req.file,
+        conversationId: conv.id,
+        taskId,
+        userId,
+      });
+    }
 
     // 写入 user 消息
-    const userMsgId = ws.appendMessage(conv.id, "user", null, userMsg);
-    sendEvent("user_message", { id: userMsgId, content: userMsg });
+    const attachmentLine = attached?.artifact ? `\n\n[附件] ${attached.artifact.filename}` : "";
+    const displayUserMsg = `${userMsg || "请分析附件"}${attachmentLine}`;
+    const userMsgId = ws.appendMessage(conv.id, "user", null, displayUserMsg, attached?.artifact ? {
+      artifact_id: attached.artifact.id,
+      filename: attached.artifact.filename,
+    } : null);
+    sendEvent("user_message", {
+      id: userMsgId,
+      content: displayUserMsg,
+      artifact: attached?.artifact || null,
+    });
+    if (attached?.artifact) sendEvent("artifact", attached.artifact);
 
     const projectCtx = ws.buildProjectContext(taskId, conv.id);
     const history = ws.listMessages(conv.id, 30).slice(0, -1); // 不含刚加入的 user 消息
+    const attachmentPrompt = attached?.artifact ? [
+      "",
+      "# 本轮用户随消息上传的附件",
+      `文件名: ${attached.artifact.filename}`,
+      `摘要: ${attached.summary}`,
+      attached.text ? `正文摘录:\n${attached.text.length > 12000 ? attached.text.slice(0, 12000) + "\n...（附件正文已截断）" : attached.text}` : "正文不可提取。",
+    ].join("\n") : "";
+    const effectiveUserMsg = `${userMsg || "请分析附件"}${attachmentPrompt}`;
 
     // Step 1: routing
     sendEvent("phase", { phase: "routing" });
-    const routing = await ws.runHostRouting(projectCtx, history, userMsg);
+    const routing = await ws.runHostRouting(projectCtx, history, effectiveUserMsg);
     sendEvent("routing", routing);
 
     // Step 2: experts
@@ -169,12 +258,13 @@ router.post("/:taskId/messages", requireAuth, async (req, res) => {
     if (routing.agents?.length > 0) {
       sendEvent("phase", { phase: "experts", agents: routing.agents });
       expertOutputs = await ws.runExpertsParallel(
-        routing.agents, projectCtx, history, userMsg,
+        routing.agents, projectCtx, history, effectiveUserMsg,
         (out) => {
           // 写入 agent 消息
           const eid = ws.appendMessage(conv.id, "agent", out.agent, out.content, { error: !!out.error });
           sendEvent("expert", { id: eid, agent: out.agent, content: out.content, error: !!out.error });
-        }
+        },
+        { taskId, userId, runId, taskType: routing.task_type }
       );
     }
 
@@ -182,13 +272,22 @@ router.post("/:taskId/messages", requireAuth, async (req, res) => {
     sendEvent("phase", { phase: "host" });
     const hostMsgId = require("crypto").randomBytes(16).toString("hex");
     sendEvent("host_start", { id: hostMsgId });
+    const hostMemoryPack = await ws.queryMemory({
+      userId,
+      taskId,
+      agentName: "host",
+      taskType: routing.task_type,
+      userMessage: effectiveUserMsg,
+      intent: routing.task_type,
+    });
 
     let fullText = "";
     await ws.streamHostSummary({
       projectCtx,
       history: ws.listMessages(conv.id, 30), // 包含刚写入的 expert
-      userMsg,
+      userMsg: effectiveUserMsg,
       expertOutputs,
+      memoryPack: hostMemoryPack,
       signal: ac.signal,
       onDelta: (delta) => {
         fullText += delta;
@@ -197,8 +296,14 @@ router.post("/:taskId/messages", requireAuth, async (req, res) => {
     });
 
     // 解析 tool calls
-    const toolCalls = ws.parseToolCalls(fullText);
+    const parsedToolCalls = ws.parseToolCalls(fullText);
     const cleanContent = ws.stripToolCalls(fullText) || fullText;
+    const toolCalls = ws.normalizeToolCalls(parsedToolCalls, {
+      routing,
+      userMsg: effectiveUserMsg,
+      cleanContent,
+      expertOutputs,
+    });
 
     // 持久化 host 消息（用上面预先生成的 hostMsgId）
     const db = getDb();
@@ -213,22 +318,41 @@ router.post("/:taskId/messages", requireAuth, async (req, res) => {
       .run(conv.id);
 
     sendEvent("host_done", { id: hostMsgId, content: cleanContent });
+    ws.processHostMemory({
+      taskId,
+      userId,
+      content: cleanContent,
+      taskType: routing.task_type,
+    }).catch((err) => console.warn("[Workspace] Host 记忆提炼失败:", err.message));
 
     // 执行 tool calls
+    let toolResults = [];
     if (toolCalls.length > 0) {
       sendEvent("phase", { phase: "tools", count: toolCalls.length });
-      const results = await ws.executeToolCalls(toolCalls, {
+      toolResults = await ws.executeToolCalls(toolCalls, {
         conversationId: conv.id,
         messageId: hostMsgId,
       });
-      for (const r of results) {
+      for (const r of toolResults) {
         if (r.artifact) sendEvent("artifact", r.artifact);
         else sendEvent("tool_error", { tool: r.tool, error: r.error });
       }
+      ws.processSkillCandidate({
+        userId,
+        taskType: routing.task_type,
+        userMessage: effectiveUserMsg,
+        toolCalls,
+        artifactResults: toolResults,
+        runId,
+      });
     }
 
     sendEvent("done", { ok: true });
   } catch (err) {
+    if (ac.signal.aborted || err?.message === "客户端取消") {
+      console.warn("[Workspace] SSE 连接已取消");
+      return;
+    }
     console.error("[Workspace] SSE 错误:", err);
     // 给前端一个可读的中文错误，便于排查"无法对话"的根因
     let msg = err.message || "服务器错误";
@@ -237,7 +361,14 @@ router.post("/:taskId/messages", requireAuth, async (req, res) => {
     }
     sendEvent("error", { message: msg });
   } finally {
-    res.end();
+    completed = true;
+    req.removeListener("aborted", abortIfOpen);
+    res.removeListener("close", abortIfOpen);
+    if (req.file?.path) {
+      try { fs.unlinkSync(req.file.path); } catch {}
+    }
+    try { require("../services/memory/workingMemoryStore").clearWorkingMemory(runId); } catch {}
+    if (!res.destroyed && !res.writableEnded) res.end();
   }
 });
 

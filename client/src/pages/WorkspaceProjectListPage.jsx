@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { Link } from "react-router-dom";
 import { useWorkspaceProjectList } from "../hooks/useWorkspaceProject";
 import workspaceProjectApi from "../services/workspaceProjectApi";
-import ProjectCard from "../components/workspace/ProjectCard";
+import ProjectCard from "../components/Workspace/ProjectCard";
 
 const STATUS_OPTIONS = [
   { value: "", label: "全部" },

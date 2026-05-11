@@ -1,13 +1,15 @@
 import React, { useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { useWorkspaceProject } from "../hooks/useWorkspaceProject";
-import ProjectStatusStepper from "../components/workspace/ProjectStatusStepper";
-import BPVersionDiff from "../components/workspace/BPVersionDiff";
-import ProjectTimeline from "../components/workspace/ProjectTimeline";
-import ProjectNotesPanel from "../components/workspace/ProjectNotesPanel";
+import ProjectStatusStepper from "../components/Workspace/ProjectStatusStepper";
+import BPVersionDiff from "../components/Workspace/BPVersionDiff";
+import ProjectTimeline from "../components/Workspace/ProjectTimeline";
+import ProjectNotesPanel from "../components/Workspace/ProjectNotesPanel";
+import WorkspaceTab from "../components/Workspace/WorkspaceTab";
 
 const TABS = [
   { key: "overview", label: "概览" },
+  { key: "workspace", label: "AI 工作区" },
   { key: "versions", label: "BP 历史" },
   { key: "reports", label: "Agent 报告" },
   { key: "files", label: "资料" },
@@ -103,6 +105,23 @@ function FilesTab({ project }) {
   );
 }
 
+function WorkspaceChatTab({ project }) {
+  const latestTask =
+    project.tasks?.[0] ||
+    project.versions?.find((v) => v.task_id);
+  const taskId = latestTask?.id || latestTask?.task_id;
+
+  if (!taskId) {
+    return (
+      <div className="text-[#5B677A] text-sm py-8">
+        当前项目还没有可对话的 BP 版本。
+      </div>
+    );
+  }
+
+  return <WorkspaceTab taskId={taskId} />;
+}
+
 export default function WorkspaceProjectPage() {
   const { id } = useParams();
   const { project, loading, error, refresh } = useWorkspaceProject(id);
@@ -169,6 +188,7 @@ export default function WorkspaceProjectPage() {
 
       <main>
         {activeTab === "overview" && <OverviewTab project={project} />}
+        {activeTab === "workspace" && <WorkspaceChatTab project={project} />}
         {activeTab === "versions" && <BPVersionDiff project={project} />}
         {activeTab === "reports" && <ReportsTab project={project} />}
         {activeTab === "files" && <FilesTab project={project} />}

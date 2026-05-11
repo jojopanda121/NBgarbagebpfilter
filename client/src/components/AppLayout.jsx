@@ -9,7 +9,7 @@ import AnnouncementBanner from "./AnnouncementBanner";
  */
 export default function AppLayout() {
   return (
-    <>
+    <div className="app-shell min-h-screen">
       <Header />
       <AnnouncementBanner />
       <Outlet />
@@ -17,6 +17,6 @@ export default function AppLayout() {
         <p>BP过滤机 · AI Workspace for VC &amp; PE · 5 维量化评分 · 多模型按需切换</p>
         <p className="mt-1">© 2026 garbagebpfilter.cn · All rights reserved</p>
       </footer>
-    </>
+    </div>
   );
 }

@@ -6,10 +6,16 @@
 
 const Anthropic = require("@anthropic-ai/sdk").default;
 const config = require("../config");
+const { runWebSearch, formatSearchContext } = require("./webSearchService");
+
+function resolveAnthropicBaseURL() {
+  const host = (config.minimaxApiHost || "https://api.minimax.io").replace(/\/+$/, "");
+  return host.endsWith("/anthropic") ? host : `${host}/anthropic`;
+}
 
 const anthropic = new Anthropic({
   apiKey: config.minimaxApiKey,
-  baseURL: "https://api.minimax.io/anthropic",
+  baseURL: resolveAnthropicBaseURL(),
 });
 
 const MODEL = config.minimaxModel;
@@ -18,6 +24,12 @@ const MODEL = config.minimaxModel;
 const LLM_TIMEOUT_MS = 300 * 1000;    // 单次请求超时 300s（5分钟），大 prompt 需要更多时间
 const MAX_RETRIES = 3;                  // 最多重试 3 次（共 4 次尝试）
 const BASE_DELAY_MS = 2000;             // 重试基础延迟 2s
+
+function ensureMinimaxConfigured() {
+  if (!config.minimaxApiKey) {
+    throw new Error("LLM 未配置：服务端缺少 MINIMAX_API_KEY，请在 .env 中设置后重启进程");
+  }
+}
 
 /** 根据 maxTokens 动态计算超时时间 */
 function calcTimeout(maxTokens) {
@@ -76,6 +88,7 @@ function normalizeLLMError(err) {
 
 /** 调用 MiniMax LLM（普通模式），含超时和重试 */
 async function callLLM(systemPrompt, userContent, maxTokens = 8192) {
+  ensureMinimaxConfigured();
   let lastError;
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
@@ -117,6 +130,7 @@ async function callLLM(systemPrompt, userContent, maxTokens = 8192) {
 
 /** 调用 MiniMax LLM（深度思考模式，不支持时自动降级），含超时和重试 */
 async function callLLMWithThinking(systemPrompt, userContent, maxTokens = 16000, thinkingBudget = 8000) {
+  ensureMinimaxConfigured();
   try {
     let lastError;
 
@@ -180,9 +194,7 @@ async function callLLMWithThinking(systemPrompt, userContent, maxTokens = 16000,
  */
 async function callLLMChat(systemPrompt, messages, opts = {}) {
   const { maxTokens = 4096, onDelta, signal } = opts;
-  if (!config.minimaxApiKey) {
-    throw new Error("LLM 未配置：服务端缺少 MINIMAX_API_KEY，请在 .env 中设置后重启 PM2 进程");
-  }
+  ensureMinimaxConfigured();
   let lastError;
   let streamUnsupported = false;
 
@@ -294,8 +306,9 @@ async function callLLMChat(systemPrompt, messages, opts = {}) {
 }
 
 /**
- * 调用 MiniMax LLM 并启用 web_search 工具（M2 系列内置）
- * 让模型自主决定何时检索公开资料，服务端无需自行执行检索。
+ * 调用 MiniMax LLM 并启用 web_search 工具。
+ * MiniMax Anthropic 兼容端点不接受 type:"web_search" 这种内置工具声明；
+ * 这里声明为函数工具，由本服务端执行搜索并把结果回填给模型。
  *
  * 回退：若服务端不识别工具，自动降级为普通 callLLM。
  *
@@ -307,10 +320,25 @@ async function callLLMChat(systemPrompt, messages, opts = {}) {
  * @returns {Promise<{ text: string, searchUsed: boolean }>}
  */
 async function callLLMWithSearch(systemPrompt, userContent, opts = {}) {
+  ensureMinimaxConfigured();
   const { maxTokens = 8192, maxToolRounds = 6 } = opts;
 
-  // MiniMax M2 内置 web_search：通过 Anthropic 兼容端点声明 type:"web_search"
-  const tools = [{ type: "web_search", name: "web_search" }];
+  const tools = [{
+    name: "web_search",
+    description: "Search the public web for recent market, policy, company, competitor, regulatory, or news information.",
+    input_schema: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "Search query." },
+        queries: {
+          type: "array",
+          items: { type: "string" },
+          description: "Optional multiple search queries.",
+        },
+      },
+      required: ["query"],
+    },
+  }];
 
   let searchUsed = false;
   let lastError;
@@ -350,17 +378,24 @@ async function callLLMWithSearch(systemPrompt, userContent, opts = {}) {
         const toolUses = resp.content.filter((b) => b.type === "tool_use");
         if (toolUses.length === 0 || resp.stop_reason === "end_turn") break;
 
-        // MiniMax 服务端模式：服务端会自动执行 web_search 并把结果嵌入下一条消息；
-        // 客户端模式：返回兜底 tool_result 让模型基于已有上下文继续输出，避免循环卡住。
         searchUsed = true;
         convo.push({ role: "assistant", content: resp.content });
-        convo.push({
-          role: "user",
-          content: toolUses.map((tu) => ({
+        const toolResults = [];
+        for (const tu of toolUses) {
+          const input = tu.input || {};
+          const queries = Array.isArray(input.queries) && input.queries.length
+            ? input.queries
+            : [input.query || input.q || ""];
+          const rows = await runWebSearch(queries);
+          toolResults.push({
             type: "tool_result",
             tool_use_id: tu.id,
-            content: "（已由服务端检索处理，请基于已有上下文继续输出最终 JSON）",
-          })),
+            content: formatSearchContext(rows) || "未取得可用搜索结果。请基于已有上下文直接回答，并明确说明哪些信息仍待核实。",
+          });
+        }
+        convo.push({
+          role: "user",
+          content: toolResults,
         });
       }
 
@@ -368,15 +403,18 @@ async function callLLMWithSearch(systemPrompt, userContent, opts = {}) {
     } catch (err) {
       lastError = err;
       const msg = err?.message || "";
-      // 服务端不识别 web_search 工具 → 降级
+      // 工具声明不被服务端识别 → 降级
       if (
         err?.status === 400 ||
-        msg.includes("tool") ||
-        msg.includes("web_search") ||
+        msg.includes("invalid params") ||
         msg.includes("unsupported")
       ) {
         console.warn("[LLM/Search] web_search 不可用，降级为普通模式:", msg);
-        const text = await callLLM(systemPrompt, userContent, maxTokens);
+        const text = await callLLM(
+          `${systemPrompt}\n\n重要：当前未能执行联网检索。不要输出 tool_call、web_search 或“我来搜索”。请基于已有上下文直接回答，并标注待核实信息。`,
+          userContent,
+          maxTokens
+        );
         return { text, searchUsed: false };
       }
       if (attempt < MAX_RETRIES && isRetryable(err)) continue;

@@ -142,7 +142,12 @@ app.get("/api/health", (_req, res) => {
   res.status(ok ? 200 : 503).json({
     status: shuttingDown ? "shutting_down" : (ok ? "ok" : "degraded"),
     model: getModelName(),
-    search: "minimax_builtin",
+    search: {
+      provider: "minimax_coding_plan",
+      configured: !!(config.minimaxCodePlanKey || config.minimaxApiKey),
+      keySource: config.minimaxCodePlanKey ? "MINIMAX_CODE_PLAN_KEY" : "MINIMAX_API_KEY",
+      openclawReady: !!config.minimaxCodePlanKey,
+    },
     version: "3.0.0",
     checks,
     timestamp: new Date().toISOString(),

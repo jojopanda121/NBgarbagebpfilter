@@ -23,6 +23,7 @@ data/*.db
 data/*.db-journal
 data/*.db-wal
 data/*.db-shm
+data/workspace_artifacts/
 *.db
 *.db-journal
 *.db-wal

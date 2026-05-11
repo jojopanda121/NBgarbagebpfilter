@@ -3,17 +3,17 @@
 // GarbageBPFilter v2.0 (client/ + server/ 分离架构)
 //
 // 前置步骤:
-//   1. cp .env.example .env   # 填写 MINIMAX_API_KEY / SERPER_API_KEY
+//   1. cp .env.example .env   # 填写 MINIMAX_API_KEY；联网搜索可选填 MINIMAX_CODE_PLAN_KEY
 //   2. cd client && npm install && npm run build   # 构建前端到 client/build/
 //   3. cd server && npm install                    # 安装后端依赖
 //
 // 启动命令:
 //   pm2 start ecosystem.config.js --env production   # 生产
 //   pm2 start ecosystem.config.js --env development  # 开发
-//   pm2 logs garbagebpfilter                         # 查看日志
+//   pm2 logs                                        # 查看日志
 //   pm2 monit                                        # 实时监控
-//   pm2 stop garbagebpfilter                         # 停止
-//   pm2 restart garbagebpfilter                      # 重启
+//   pm2 stop ecosystem.config.js                     # 停止
+//   pm2 restart ecosystem.config.js                  # 重启
 //   pm2 delete garbagebpfilter                       # 删除进程
 //   pm2 save && pm2 startup                          # 设置开机自启
 //
@@ -86,6 +86,26 @@ module.exports = {
         NODE_ENV: 'development',
         PORT: 3001,
       },
+    },
+    {
+      name: 'doc-service',
+      script: 'python3',
+      args: '-m uvicorn main:app --host 0.0.0.0 --port 8001',
+      cwd: `${__dirname}/doc-service`,
+      instances: 1,
+      exec_mode: 'fork',
+      autorestart: true,
+      watch: false,
+      max_memory_restart: '800M',
+      min_uptime: '5s',
+      max_restarts: 10,
+      restart_delay: 3000,
+      error_file: './logs/doc-service-error.log',
+      out_file: './logs/doc-service-out.log',
+      merge_logs: true,
+      log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
+      env_production: {},
+      env_development: {},
     },
   ],
 };

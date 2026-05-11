@@ -102,3 +102,71 @@
   transition: opacity .65s ease, transform .65s ease;
 }
 .lp-reveal.is-visible { opacity: 1; transform: translateY(0); }
+
+/* ── 登录后应用区：WCAG AA 级别的浅色工作台对比度修正 ─────────── */
+.app-shell {
+  color: #0F1C36;
+}
+
+.app-shell .text-\[\#8E9BB0\],
+.app-shell .placeholder\:text-\[\#8E9BB0\]::placeholder {
+  color: #5B677A;
+}
+
+.app-shell .text-blue-300,
+.app-shell .text-blue-400 {
+  color: #1D4ED8;
+}
+
+.app-shell .text-emerald-300,
+.app-shell .text-emerald-400,
+.app-shell .text-green-400 {
+  color: #047857;
+}
+
+.app-shell .text-yellow-300,
+.app-shell .text-yellow-400,
+.app-shell .text-amber-300,
+.app-shell .text-amber-400 {
+  color: #A16207;
+}
+
+.app-shell .text-orange-300,
+.app-shell .text-orange-400 {
+  color: #C2410C;
+}
+
+.app-shell .text-red-300,
+.app-shell .text-red-400 {
+  color: #B91C1C;
+}
+
+.app-shell .text-rose-300,
+.app-shell .text-rose-400 {
+  color: #BE123C;
+}
+
+.app-shell .text-cyan-300,
+.app-shell .text-cyan-400 {
+  color: #0E7490;
+}
+
+.app-shell .text-purple-400 {
+  color: #7E22CE;
+}
+
+.app-shell .bg-\[\#1B4FD8\],
+.app-shell .bg-blue-500,
+.app-shell .bg-blue-600,
+.app-shell .bg-emerald-600,
+.app-shell .bg-emerald-700,
+.app-shell .bg-red-600,
+.app-shell .bg-amber-500,
+.app-shell .bg-amber-600 {
+  color: #FFFFFF;
+}
+
+.app-shell .bg-\[\#1B4FD8\]:disabled,
+.app-shell .disabled\:bg-\[\#E5E9F4\]:disabled {
+  color: #5B677A;
+}

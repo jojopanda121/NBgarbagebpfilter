@@ -13,6 +13,7 @@ Docker 启动：
 """
 
 import io
+import csv
 import os
 import tempfile
 from pathlib import Path
@@ -100,6 +101,76 @@ def extract_pptx_text(file_path: str) -> str:
     return "\n\n".join(slides_text)
 
 
+def extract_docx_text(file_path: str) -> str:
+    """从 DOCX 提取段落和表格文本"""
+    from docx import Document
+
+    doc = Document(file_path)
+    parts = []
+
+    for para in doc.paragraphs:
+        text = para.text.strip()
+        if text:
+            parts.append(text)
+
+    for table_idx, table in enumerate(doc.tables, 1):
+        rows = []
+        for row in table.rows:
+            cells = [cell.text.strip().replace("\n", " ") for cell in row.cells]
+            if any(cells):
+                rows.append(" | ".join(cells))
+        if rows:
+            parts.append(f"[表格 {table_idx}]\n" + "\n".join(rows))
+
+    return "\n\n".join(parts)
+
+
+def extract_xlsx_text(file_path: str) -> str:
+    """从 XLSX 提取工作表预览文本，保留表头和前 80 行"""
+    from openpyxl import load_workbook
+
+    wb = load_workbook(file_path, data_only=True, read_only=True)
+    parts = []
+
+    for ws in wb.worksheets:
+        lines = [f"# Sheet: {ws.title}"]
+        row_count = 0
+        for row in ws.iter_rows(values_only=True):
+            values = ["" if v is None else str(v) for v in row]
+            if not any(v.strip() for v in values):
+                continue
+            lines.append(" | ".join(values[:20]))
+            row_count += 1
+            if row_count >= 80:
+                lines.append("...（已截断，仅展示前 80 行非空数据）")
+                break
+        if row_count > 0:
+            parts.append("\n".join(lines))
+
+    wb.close()
+    return "\n\n".join(parts)
+
+
+def extract_csv_text(file_path: str) -> str:
+    """从 CSV 提取前 120 行文本"""
+    encodings = ("utf-8-sig", "utf-8", "gb18030")
+    last_error = None
+    for enc in encodings:
+        try:
+            with open(file_path, "r", encoding=enc, newline="") as f:
+                reader = csv.reader(f)
+                lines = []
+                for idx, row in enumerate(reader):
+                    if idx >= 120:
+                        lines.append("...（已截断，仅展示前 120 行）")
+                        break
+                    lines.append(" | ".join(row[:30]))
+                return "\n".join(lines)
+        except UnicodeDecodeError as e:
+            last_error = e
+    raise RuntimeError(f"CSV 编码识别失败: {last_error}")
+
+
 @app.post("/extract")
 async def extract_text(
     file: UploadFile = File(...),
@@ -110,13 +181,13 @@ async def extract_text(
 
     Args:
         file: 上传的 PDF 或 PPTX 文件
-        mode: 文件类型 ("pdf" 或 "pptx")
+        mode: 文件类型 ("pdf"、"pptx"、"docx"、"xlsx" 或 "csv")
 
     Returns:
         { "text": "提取的文本内容", "chars": 字符数 }
     """
-    if mode not in ("pdf", "pptx"):
-        raise HTTPException(status_code=400, detail="不支持的文件类型，仅支持 pdf/pptx")
+    if mode not in ("pdf", "pptx", "docx", "xlsx", "csv"):
+        raise HTTPException(status_code=400, detail="不支持的文件类型，仅支持 pdf/pptx/docx/xlsx/csv")
 
     # 保存到临时文件
     suffix = f".{mode}"
@@ -128,6 +199,12 @@ async def extract_text(
     try:
         if mode == "pptx":
             text = extract_pptx_text(tmp_path)
+        elif mode == "docx":
+            text = extract_docx_text(tmp_path)
+        elif mode == "xlsx":
+            text = extract_xlsx_text(tmp_path)
+        elif mode == "csv":
+            text = extract_csv_text(tmp_path)
         else:
             text = extract_pdf_text(tmp_path)
 
@@ -198,24 +275,26 @@ def _build_pptx(payload: GeneratePptxPayload) -> bytes:
 
     blank_layout = prs.slide_layouts[6]
 
-    # 封面页
-    cover = prs.slides.add_slide(blank_layout)
-    paint_bg(cover)
-    title_box = cover.shapes.add_textbox(Inches(0.8), Inches(2.6), Inches(11.7), Inches(1.6))
-    tf = title_box.text_frame
-    tf.word_wrap = True
-    p = tf.paragraphs[0]
-    p.text = payload.title
-    p.font.size = Pt(44)
-    p.font.bold = True
-    p.font.color.rgb = TEXT
+    skip_cover = len(payload.slides) == 1 and (payload.subtitle or "").lower() == "one page"
+    if not skip_cover:
+        # 封面页
+        cover = prs.slides.add_slide(blank_layout)
+        paint_bg(cover)
+        title_box = cover.shapes.add_textbox(Inches(0.8), Inches(2.6), Inches(11.7), Inches(1.6))
+        tf = title_box.text_frame
+        tf.word_wrap = True
+        p = tf.paragraphs[0]
+        p.text = payload.title
+        p.font.size = Pt(44)
+        p.font.bold = True
+        p.font.color.rgb = TEXT
 
-    if payload.subtitle:
-        sub_box = cover.shapes.add_textbox(Inches(0.8), Inches(4.2), Inches(11.7), Inches(0.8))
-        sp = sub_box.text_frame.paragraphs[0]
-        sp.text = payload.subtitle
-        sp.font.size = Pt(20)
-        sp.font.color.rgb = SUB
+        if payload.subtitle:
+            sub_box = cover.shapes.add_textbox(Inches(0.8), Inches(4.2), Inches(11.7), Inches(0.8))
+            sp = sub_box.text_frame.paragraphs[0]
+            sp.text = payload.subtitle
+            sp.font.size = Pt(20)
+            sp.font.color.rgb = SUB
 
     # 内容页
     for idx, slide_spec in enumerate(payload.slides, 1):
@@ -283,6 +362,126 @@ async def generate_pptx(payload: GeneratePptxPayload):
         io.BytesIO(data),
         media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
         headers=headers,
+    )
+
+
+# ── Word / Excel 生成 ───────────────────────────────────────
+
+class DocxSection(BaseModel):
+    heading: str
+    paragraphs: Optional[List[str]] = None
+    bullets: Optional[List[str]] = None
+
+
+class GenerateDocxPayload(BaseModel):
+    title: str
+    subtitle: Optional[str] = None
+    sections: List[DocxSection]
+
+
+def _build_docx(payload: GenerateDocxPayload) -> bytes:
+    from docx import Document
+    from docx.shared import Pt, RGBColor
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+
+    doc = Document()
+    styles = doc.styles
+    styles["Normal"].font.name = "Microsoft YaHei"
+    styles["Normal"].font.size = Pt(10.5)
+
+    title = doc.add_heading(payload.title, level=0)
+    title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    if payload.subtitle:
+        sub = doc.add_paragraph(payload.subtitle)
+        sub.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        if sub.runs:
+            sub.runs[0].font.color.rgb = RGBColor(0x5B, 0x67, 0x7A)
+
+    for section in payload.sections:
+        doc.add_heading(section.heading or "未命名章节", level=1)
+        for para in section.paragraphs or []:
+            if para:
+                doc.add_paragraph(para)
+        for bullet in section.bullets or []:
+            if bullet:
+                doc.add_paragraph(bullet, style="List Bullet")
+
+    buf = io.BytesIO()
+    doc.save(buf)
+    buf.seek(0)
+    return buf.getvalue()
+
+
+@app.post("/generate/docx")
+async def generate_docx(payload: GenerateDocxPayload):
+    if not payload.sections:
+        raise HTTPException(status_code=400, detail="sections 不能为空")
+    try:
+        data = _build_docx(payload)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Word 生成失败: {str(e)}")
+    return StreamingResponse(
+        io.BytesIO(data),
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={"Content-Disposition": "attachment; filename=document.docx"},
+    )
+
+
+class SheetSpec(BaseModel):
+    name: str
+    headers: Optional[List[str]] = None
+    rows: Optional[List[List[str]]] = None
+
+
+class GenerateXlsxPayload(BaseModel):
+    title: str
+    sheets: List[SheetSpec]
+
+
+def _build_xlsx(payload: GenerateXlsxPayload) -> bytes:
+    import xlsxwriter
+
+    buf = io.BytesIO()
+    workbook = xlsxwriter.Workbook(buf, {"in_memory": True})
+    title_fmt = workbook.add_format({"bold": True, "font_size": 14, "font_color": "#0F1C36"})
+    header_fmt = workbook.add_format({"bold": True, "bg_color": "#E5E9F4", "font_color": "#0F1C36", "border": 1})
+    cell_fmt = workbook.add_format({"text_wrap": True, "valign": "top", "border": 1})
+
+    for idx, sheet in enumerate(payload.sheets):
+        safe_name = (sheet.name or f"Sheet{idx + 1}")[:31].replace("/", "_").replace("\\", "_")
+        ws = workbook.add_worksheet(safe_name)
+        ws.write(0, 0, payload.title, title_fmt)
+
+        headers = sheet.headers or []
+        rows = sheet.rows or []
+        start_row = 2
+        for col, header in enumerate(headers):
+            ws.write(start_row, col, header, header_fmt)
+            ws.set_column(col, col, 18)
+        for r_idx, row in enumerate(rows, start_row + 1):
+            for c_idx, value in enumerate(row):
+                ws.write(r_idx, c_idx, value, cell_fmt)
+        if headers:
+            ws.freeze_panes(start_row + 1, 0)
+            ws.autofilter(start_row, 0, start_row + max(len(rows), 1), max(len(headers) - 1, 0))
+
+    workbook.close()
+    buf.seek(0)
+    return buf.getvalue()
+
+
+@app.post("/generate/xlsx")
+async def generate_xlsx(payload: GenerateXlsxPayload):
+    if not payload.sheets:
+        raise HTTPException(status_code=400, detail="sheets 不能为空")
+    try:
+        data = _build_xlsx(payload)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Excel 生成失败: {str(e)}")
+    return StreamingResponse(
+        io.BytesIO(data),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=workbook.xlsx"},
     )
 
 

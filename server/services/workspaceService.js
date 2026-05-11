@@ -2,7 +2,7 @@
 // server/services/workspaceService.js — 多 Agent 工作区服务
 //
 // 负责：会话/消息/附件的存取，项目上下文构建，主持人 routing，
-// 专家并行调用，host 流式汇总，工具调用解析（generate_pptx）。
+// 专家并行调用，host 流式汇总，工具调用解析（registry allowlist）。
 // ============================================================
 
 const crypto = require("crypto");
@@ -10,18 +10,29 @@ const fs = require("fs");
 const path = require("path");
 const { getDb } = require("../db");
 const { getTask } = require("./taskService");
-const { callLLM, callLLMChat, callLLMWithSearch } = require("./llmService");
+const { callLLM, callLLMChat } = require("./llmService");
+const { buildSearchQueries, runWebSearch, formatSearchContext } = require("./webSearchService");
+const { queryMemory, formatMemoryPack } = require("./memory/memoryRouter");
+const { createWorkingMemory, appendWorkingFinding } = require("./memory/workingMemoryStore");
+const keeper = require("./memory/keeperService");
+const { runMemoryGc } = require("./memory/gcService");
 const config = require("../config");
 const {
   WORKSPACE_HOST_ROUTING_PROMPT,
   WORKSPACE_HOST_SYSTEM_PROMPT,
   buildWorkspaceExpertPrompt,
 } = require("../utils/prompts");
+const {
+  getAgentNames,
+  getSearchEnabledAgents,
+  assertToolAllowed,
+  listWorkspaceCapabilities,
+} = require("../utils/workspaceRegistry");
 
 const ARTIFACTS_ROOT = path.join(__dirname, "..", "..", "data", "workspace_artifacts");
 if (!fs.existsSync(ARTIFACTS_ROOT)) fs.mkdirSync(ARTIFACTS_ROOT, { recursive: true });
 
-const VALID_AGENTS = ["market", "finance", "tech", "risk"];
+const VALID_AGENTS = getAgentNames();
 
 function uuid() { return crypto.randomBytes(16).toString("hex"); }
 
@@ -58,6 +69,7 @@ function appendMessage(conversationId, role, agentName, content, metadata) {
   );
   db.prepare("UPDATE workspace_conversations SET updated_at = datetime('now') WHERE id = ?")
     .run(conversationId);
+  compactSlidingWindow(conversationId);
   return id;
 }
 
@@ -77,6 +89,27 @@ function listMessages(conversationId, limit = 200) {
 
 function safeParse(s) { try { return JSON.parse(s); } catch { return null; } }
 
+function compactSlidingWindow(conversationId) {
+  const db = getDb();
+  const maxMessages = 120;
+  const maxChars = 300000;
+  const rows = db.prepare(
+    `SELECT id, content FROM workspace_messages
+     WHERE conversation_id = ?
+     ORDER BY created_at DESC`
+  ).all(conversationId);
+  let chars = 0;
+  const deleteIds = [];
+  rows.forEach((row, idx) => {
+    chars += String(row.content || "").length;
+    if (idx >= maxMessages || chars > maxChars) deleteIds.push(row.id);
+  });
+  if (deleteIds.length) {
+    const stmt = db.prepare("DELETE FROM workspace_messages WHERE id = ?");
+    for (const id of deleteIds) stmt.run(id);
+  }
+}
+
 // ── Artifacts ──────────────────────────────────────────────
 
 function listArtifacts(conversationId) {
@@ -92,6 +125,26 @@ function getArtifact(artifactId) {
   return db.prepare("SELECT * FROM workspace_artifacts WHERE id = ?").get(artifactId);
 }
 
+function removeArtifactFiles(artifact) {
+  if (!artifact?.storage_path) return;
+  for (const p of [artifact.storage_path, extractedTextPath(artifact.storage_path)]) {
+    try {
+      if (fs.existsSync(p)) fs.unlinkSync(p);
+    } catch (err) {
+      console.warn("[Workspace] 删除 artifact 文件失败:", err.message);
+    }
+  }
+}
+
+function deleteArtifact(artifactId, conversationId) {
+  const db = getDb();
+  const artifact = getArtifact(artifactId);
+  if (!artifact || artifact.conversation_id !== conversationId) return false;
+  removeArtifactFiles(artifact);
+  db.prepare("DELETE FROM workspace_artifacts WHERE id = ?").run(artifactId);
+  return true;
+}
+
 function insertArtifact({ conversationId, messageId, kind, filename, storagePath, mimeType, sizeBytes, summary }) {
   const db = getDb();
   const id = uuid();
@@ -101,6 +154,42 @@ function insertArtifact({ conversationId, messageId, kind, filename, storagePath
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(id, conversationId, messageId || null, kind, filename, storagePath, mimeType || null, sizeBytes || null, summary || null);
   return db.prepare("SELECT * FROM workspace_artifacts WHERE id = ?").get(id);
+}
+
+function extractedTextPath(storagePath) {
+  return `${storagePath}.extracted.txt`;
+}
+
+function saveArtifactExtractedText(storagePath, text) {
+  if (!text || !text.trim()) return null;
+  const sidecar = extractedTextPath(storagePath);
+  fs.writeFileSync(sidecar, text, "utf-8");
+  return sidecar;
+}
+
+function readArtifactExtract(storagePath, maxChars = 5000) {
+  const sidecar = extractedTextPath(storagePath);
+  if (!fs.existsSync(sidecar)) return "";
+  try {
+    const text = fs.readFileSync(sidecar, "utf-8");
+    return text.length > maxChars ? text.slice(0, maxChars) + "\n...（材料正文已截断）" : text;
+  } catch {
+    return "";
+  }
+}
+
+function clearConversation(conversationId) {
+  const db = getDb();
+  const artifacts = db.prepare("SELECT * FROM workspace_artifacts WHERE conversation_id = ?").all(conversationId);
+  for (const artifact of artifacts) removeArtifactFiles(artifact);
+  db.prepare("DELETE FROM workspace_artifacts WHERE conversation_id = ?").run(conversationId);
+  db.prepare("DELETE FROM workspace_messages WHERE conversation_id = ?").run(conversationId);
+  db.prepare("UPDATE workspace_conversations SET updated_at = datetime('now') WHERE id = ?").run(conversationId);
+  return { deleted_messages: true, deleted_artifacts: artifacts.length };
+}
+
+function runWorkspaceMemoryGc() {
+  return runMemoryGc({ artifactRoot: ARTIFACTS_ROOT, artifactMaxAgeDays: 30 });
 }
 
 // ── 上下文构建 ─────────────────────────────────────────────
@@ -162,6 +251,17 @@ function buildProjectContext(taskId, conversationId) {
     if (arts.length > 0) {
       lines.push("", "# 用户已补充材料摘要");
       for (const a of arts) lines.push(`- ${a.filename}: ${a.summary}`);
+
+      const excerpts = arts
+        .map((a) => ({ filename: a.filename, excerpt: readArtifactExtract(a.storage_path, 3500) }))
+        .filter((a) => a.excerpt)
+        .slice(0, 2);
+      if (excerpts.length > 0) {
+        lines.push("", "# 最近上传材料正文摘录（仅当用户要求分析材料时使用）");
+        for (const a of excerpts) {
+          lines.push(`## ${a.filename}`, a.excerpt);
+        }
+      }
     }
   }
   return lines.join("\n");
@@ -176,12 +276,30 @@ async function runHostRouting(projectCtx, history, userMsg) {
     raw = await callLLM(WORKSPACE_HOST_ROUTING_PROMPT, userPrompt, 512);
   } catch (err) {
     console.warn("[Workspace] routing LLM 失败，回退为空:", err.message);
-    return { agents: [], reason: "routing_failed" };
+    return inferRoutingFromText(userMsg, "routing_failed");
   }
   const obj = parseRoutingJson(raw);
-  if (!obj || !Array.isArray(obj.agents)) return { agents: [], reason: "parse_failed" };
+  if (!obj || !Array.isArray(obj.agents)) return inferRoutingFromText(userMsg, "parse_failed");
   obj.agents = obj.agents.filter(a => VALID_AGENTS.includes(a)).slice(0, 4);
+  if (!obj.task_type) obj.task_type = inferRoutingFromText(userMsg).task_type;
   return obj;
+}
+
+function inferRoutingFromText(userMsg = "", reason = "heuristic") {
+  const text = userMsg.toLowerCase();
+  if (/ppt|pptx|演示|幻灯片|slide|一页纸/.test(text)) {
+    return { task_type: "generate_pptx", agents: ["market", "finance", "tech", "risk"], tools: ["generate_pptx"], reason };
+  }
+  if (/word|docx|文档|报告|memo|备忘录/.test(text)) {
+    return { task_type: "generate_docx", agents: ["market", "finance", "tech", "risk"], tools: ["generate_docx"], reason };
+  }
+  if (/excel|xlsx|表格|模型|清单/.test(text)) {
+    return { task_type: "generate_xlsx", agents: ["finance", "risk"], tools: ["generate_xlsx"], reason };
+  }
+  if (/附件|材料|文件|分析.*(docx|xlsx|pdf|pptx|csv)/.test(text)) {
+    return { task_type: "analyze_file", agents: ["market", "finance", "tech", "risk"], tools: [], reason };
+  }
+  return { task_type: "answer", agents: [], tools: [], reason };
 }
 
 function parseRoutingJson(raw) {
@@ -201,28 +319,85 @@ function formatHistory(history, max) {
 
 // ── 专家并行调用 ───────────────────────────────────────────
 
-// 市场/风险专家对宏观新数据敏感，启用 web_search；财务/技术走普通模式
-const SEARCH_ENABLED_AGENTS = new Set(["market", "risk"]);
+// 由 registry 声明哪些专家可使用 MiniMax 内置 web_search。
+const SEARCH_ENABLED_AGENTS = getSearchEnabledAgents();
 
-async function runExpert(agentName, projectCtx, history, userMsg) {
-  const sys = buildWorkspaceExpertPrompt(agentName);
-  const userPrompt = `# 项目上下文\n${projectCtx}\n\n# 最近对话\n${formatHistory(history, 6)}\n\n# 用户当前问题\n${userMsg}`;
-  if (SEARCH_ENABLED_AGENTS.has(agentName)) {
-    try {
-      const { text } = await callLLMWithSearch(sys, userPrompt, { maxTokens: 1500 });
-      return { agent: agentName, content: text.trim() };
-    } catch (err) {
-      console.warn(`[Workspace] ${agentName} web_search 失败，降级:`, err.message);
-    }
-  }
-  const text = await callLLM(sys, userPrompt, 1500);
-  return { agent: agentName, content: text.trim() };
+function stripModelToolCalls(text = "") {
+  return text
+    .replace(/<tool_call>[\s\S]*?<\/tool_call>/gi, "")
+    .replace(/<minimax:tool_call>[\s\S]*?<\/minimax:tool_call>/gi, "")
+    .replace(/<TOOL_CALL>[\s\S]*?<\/TOOL_CALL>/g, "")
+    .replace(/```(?:json)?\s*\[[\s\S]*?tool[\s\S]*?\]\s*```/gi, "")
+    .trim();
 }
 
-async function runExpertsParallel(agents, projectCtx, history, userMsg, onExpertDone) {
+function leakedToolCall(text = "") {
+  return /<tool_call>|<\/tool_call>|<minimax:tool_call>|tool\s*=>|web_search|TOOL_CALL|实时搜索工具|检索最新|我来搜索|我将搜索|让我搜索/i.test(text);
+}
+
+async function runExpert(agentName, projectCtx, history, userMsg, opts = {}) {
+  const sys = buildWorkspaceExpertPrompt(agentName);
+  const runId = opts.runId || uuid();
+  createWorkingMemory(runId, opts.taskId || "unknown", agentName, userMsg.slice(0, 600));
+  const memoryPack = await queryMemory({
+    userId: opts.userId,
+    taskId: opts.taskId,
+    agentName,
+    taskType: opts.taskType,
+    userMessage: userMsg,
+    intent: opts.taskType,
+  });
+  const memoryContext = formatMemoryPack(memoryPack);
+  let searchContext = "";
+  if (SEARCH_ENABLED_AGENTS.has(agentName)) {
+    try {
+      const queries = buildSearchQueries(agentName, userMsg, projectCtx);
+      const results = await runWebSearch(queries);
+      searchContext = formatSearchContext(results);
+    } catch (err) {
+      console.warn(`[Workspace] ${agentName} server web_search 失败，降级:`, err.message);
+    }
+  }
+
+  const userPrompt = [
+    `# 项目上下文`,
+    projectCtx,
+    "",
+    memoryContext,
+    searchContext ? `\n${searchContext}` : "",
+    "",
+    `# 最近对话`,
+    formatHistory(history, 6),
+    "",
+    `# 用户当前问题`,
+    userMsg,
+  ].join("\n");
+
+  let text = await callLLM(sys, userPrompt, 1500);
+  if (leakedToolCall(text)) {
+    console.warn(`[Workspace] ${agentName} 输出了工具调用文本，重试最终回答`);
+    text = await callLLM(
+      `${sys}\n\n重要：服务端已经完成必要检索。不要输出“实时搜索工具”“我来检索”“web_search”、XML、JSON 工具调用语法；直接给最终分析结论。`,
+      userPrompt,
+      1500
+    );
+  }
+  const content = stripModelToolCalls(text);
+  appendWorkingFinding(runId, agentName, content.slice(0, 300));
+  keeper.processAgentOutput({
+    taskId: opts.taskId,
+    userId: opts.userId,
+    agentName,
+    content,
+    taskType: opts.taskType,
+  }).catch((err) => console.warn(`[Keeper] ${agentName} 记忆提炼失败:`, err.message));
+  return { agent: agentName, content, memory_used: memoryPack };
+}
+
+async function runExpertsParallel(agents, projectCtx, history, userMsg, onExpertDone, opts = {}) {
   const tasks = agents.map(async (a) => {
     try {
-      const out = await runExpert(a, projectCtx, history, userMsg);
+      const out = await runExpert(a, projectCtx, history, userMsg, opts);
       onExpertDone?.(out);
       return out;
     } catch (err) {
@@ -236,7 +411,7 @@ async function runExpertsParallel(agents, projectCtx, history, userMsg, onExpert
 
 // ── Host 流式汇总 ──────────────────────────────────────────
 
-async function streamHostSummary({ projectCtx, history, userMsg, expertOutputs, onDelta, signal }) {
+async function streamHostSummary({ projectCtx, history, userMsg, expertOutputs, onDelta, signal, memoryPack }) {
   const expertBlock = expertOutputs.length > 0
     ? expertOutputs.map(e => `## ${e.agent} 专家意见\n${e.content}`).join("\n\n")
     : "（无专家协助，直接回答）";
@@ -244,6 +419,8 @@ async function streamHostSummary({ projectCtx, history, userMsg, expertOutputs, 
   const userPrompt = [
     `# 项目上下文`,
     projectCtx,
+    "",
+    memoryPack ? formatMemoryPack(memoryPack) : "",
     "",
     `# 最近对话`,
     formatHistory(history, 8),
@@ -285,20 +462,203 @@ function stripToolCalls(content) {
   return content.replace(/<TOOL_CALL>[\s\S]*?<\/TOOL_CALL>/g, "").trim();
 }
 
+function taskTypeToTool(taskType) {
+  if (taskType === "generate_pptx") return "generate_pptx";
+  if (taskType === "generate_docx") return "generate_docx";
+  if (taskType === "generate_xlsx") return "generate_xlsx";
+  return null;
+}
+
+function isOnePagePptRequest(userMsg = "") {
+  return /一\s*页|1\s*页|one\s*page|single\s*page/i.test(userMsg);
+}
+
+function compactLines(text = "", limit = 7) {
+  const banned = /^(已为您生成|页码|内容|封面|备注|输出要求|工具调用|TOOL_CALL|项目投资亮点|投资亮点分析|综合研判|核心判断|各专家|一、|二、|三、|四、|五、|---+|\|?\s*页码\s*\|)/i;
+  const lines = text
+    .replace(/\*\*/g, "")
+    .replace(/^>\s*/gm, "")
+    .split(/\n+/)
+    .map((line) => line.replace(/^[-*#\d.\s|]+/, "").replace(/\|/g, " ").trim())
+    .filter((line) => (
+      line &&
+      line.length <= 120 &&
+      !banned.test(line) &&
+      !/^(请|你是|用户|根据用户|我的理解是|这页|本页|要求|需要).*?(生成|输出|写成|追加|调用|PPT)/i.test(line)
+    ));
+  return [...new Set(lines)].slice(0, limit);
+}
+
+function firstUsefulLine(text = "", fallback = "") {
+  return compactLines(text, 1)[0] || fallback;
+}
+
+function agentContent(expertOutputs, agentName) {
+  return expertOutputs.find((e) => e.agent === agentName)?.content || "";
+}
+
+function buildPptSlides({ userMsg, title, cleanContent, expertOutputs }) {
+  const sourceText = `${cleanContent}\n${expertOutputs.map((e) => `${e.agent}: ${e.content}`).join("\n")}`;
+  const onePage = isOnePagePptRequest(userMsg);
+  const market = agentContent(expertOutputs, "market");
+  const finance = agentContent(expertOutputs, "finance");
+  const tech = agentContent(expertOutputs, "tech");
+  const risk = agentContent(expertOutputs, "risk");
+
+  if (onePage) {
+    const expertBullets = [
+      firstUsefulLine(market, ""),
+      firstUsefulLine(tech, ""),
+      firstUsefulLine(finance, ""),
+      firstUsefulLine(risk, ""),
+    ].filter(Boolean);
+    const bullets = expertBullets.length >= 4
+      ? expertBullets
+      : [...expertBullets, ...compactLines(sourceText, 8)];
+    const fallback = ["赛道机会明确，但商业化验证仍需补强", "技术路线具备潜力，需验证量产与客户定点", "财务模型和估值锚点仍待核实", "建议以关键里程碑和风险条款保护投资安全"];
+    const uniqueBullets = [...new Set(bullets)].slice(0, 6);
+    return [{ title, bullets: uniqueBullets.length ? uniqueBullets : fallback }];
+  }
+
+  const conclusionBullets = compactLines(cleanContent, 5);
+  return [
+    { title: "投资结论", bullets: conclusionBullets.length ? conclusionBullets : compactLines(sourceText, 5) },
+    { title: "市场与竞争", bullets: compactLines(market || sourceText, 5) },
+    { title: "技术与产品", bullets: compactLines(tech || sourceText, 5) },
+    { title: "财务与估值", bullets: compactLines(finance || sourceText, 5) },
+    { title: "风险与尽调重点", bullets: compactLines(risk || sourceText, 5) },
+  ].filter((slide) => slide.bullets.length > 0);
+}
+
+function isPromptLikePptArgs(args = {}) {
+  const text = JSON.stringify(args).slice(0, 8000);
+  return /TOOL_CALL|argShape|输出格式|工具调用|生成一份|请生成|你是.*?AI|用户要求|根据用户指令|slides\s*数组|不要写页码|必须且只能/i.test(text);
+}
+
+function inferTitle(userMsg = "", fallback = "投委会简报") {
+  const quoted = userMsg.match(/[《"]([^》"]{4,40})[》"]/);
+  if (quoted) return quoted[1];
+  if (/ppt|PPT|演示|一页纸|one\s*page/i.test(userMsg)) return "一页纸投资简报";
+  if (/word|docx|文档|报告|memo|备忘录/i.test(userMsg)) return "投资分析备忘录";
+  if (/excel|xlsx|表格|模型/i.test(userMsg)) return "投研分析表";
+  return fallback;
+}
+
+function buildFallbackToolCall({ routing, userMsg, cleanContent, expertOutputs }) {
+  const tool = taskTypeToTool(routing?.task_type);
+  if (!tool) return null;
+
+  const title = inferTitle(userMsg);
+
+  if (tool === "generate_pptx") {
+    const onePage = isOnePagePptRequest(userMsg);
+    return {
+      tool,
+      args: {
+        title,
+        subtitle: onePage ? "One Page" : "Workspace 生成",
+        slides: buildPptSlides({ userMsg, title, cleanContent, expertOutputs }),
+      },
+    };
+  }
+
+  if (tool === "generate_docx") {
+    return {
+      tool,
+      args: {
+        title,
+        sections: [
+          { heading: "综合结论", paragraphs: [cleanContent || "见以下专家分析。"] },
+          ...expertOutputs.map((e) => ({
+            heading: `${e.agent} 专家意见`,
+            bullets: compactLines(e.content, 8),
+          })),
+        ],
+      },
+    };
+  }
+
+  if (tool === "generate_xlsx") {
+    return {
+      tool,
+      args: {
+        title,
+        sheets: [{
+          name: "分析要点",
+          headers: ["模块", "要点"],
+          rows: expertOutputs.flatMap((e) => compactLines(e.content, 6).map((line) => [e.agent, line])).slice(0, 40),
+        }],
+      },
+    };
+  }
+
+  return null;
+}
+
+function normalizeToolCalls(calls, { routing, userMsg, cleanContent, expertOutputs }) {
+  const normalized = Array.isArray(calls) ? [...calls] : [];
+  const requestedTool = taskTypeToTool(routing?.task_type);
+  if (!requestedTool) return normalized;
+
+  const idx = normalized.findIndex((c) => c.tool === requestedTool);
+  if (idx < 0) {
+    const fallback = buildFallbackToolCall({ routing, userMsg, cleanContent, expertOutputs });
+    return fallback ? [fallback] : normalized;
+  }
+
+  if (
+    requestedTool === "generate_pptx" &&
+    (isOnePagePptRequest(userMsg) || isPromptLikePptArgs(normalized[idx]?.args))
+  ) {
+    const fallback = buildFallbackToolCall({ routing, userMsg, cleanContent, expertOutputs });
+    if (fallback) normalized[idx] = fallback;
+  }
+  return normalized;
+}
+
 /**
- * 执行 generate_pptx 工具：调用 doc-service /generate/pptx，
+ * 执行生成文档工具：调用 doc-service /generate/*，
  * 把返回的二进制保存到本地 artifacts 目录，并写入 workspace_artifacts。
  */
-async function executeGeneratePptx({ args, conversationId, messageId }) {
+async function executeDocumentTool({ tool, args, conversationId, messageId }) {
   if (!config.docServiceUrl) throw new Error("doc-service 未配置");
-  const slides = Array.isArray(args?.slides) ? args.slides : [];
-  const title = args?.title || "投委会简报";
-  if (slides.length === 0) throw new Error("slides 为空");
+  const toolDef = assertToolAllowed(tool, "host");
 
-  const resp = await fetch(`${config.docServiceUrl}/generate/pptx`, {
+  const bodyBuilders = {
+    generate_pptx: {
+      summary: (body) => `${body.slides.length} 页 PPT：${body.title}`,
+      buildBody: () => {
+        const slides = Array.isArray(args?.slides) ? args.slides : [];
+        if (slides.length === 0) throw new Error("slides 为空");
+        return { title: args?.title || toolDef.defaultTitle, subtitle: args?.subtitle || undefined, slides };
+      },
+    },
+    generate_docx: {
+      summary: (body) => `${body.sections.length} 节 Word：${body.title}`,
+      buildBody: () => {
+        const sections = Array.isArray(args?.sections) ? args.sections : [];
+        if (sections.length === 0) throw new Error("sections 为空");
+        return { title: args?.title || toolDef.defaultTitle, subtitle: args?.subtitle || undefined, sections };
+      },
+    },
+    generate_xlsx: {
+      summary: (body) => `${body.sheets.length} 个工作表：${body.title}`,
+      buildBody: () => {
+        const sheets = Array.isArray(args?.sheets) ? args.sheets : [];
+        if (sheets.length === 0) throw new Error("sheets 为空");
+        return { title: args?.title || toolDef.defaultTitle, sheets };
+      },
+    },
+  };
+
+  const builder = bodyBuilders[tool];
+  if (!builder) throw new Error(`工具尚未实现: ${tool}`);
+  const body = builder.buildBody();
+
+  const resp = await fetch(`${config.docServiceUrl}${toolDef.endpoint}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ title, slides }),
+    body: JSON.stringify(body),
   });
   if (!resp.ok) {
     const t = await resp.text();
@@ -308,20 +668,20 @@ async function executeGeneratePptx({ args, conversationId, messageId }) {
 
   const convDir = path.join(ARTIFACTS_ROOT, conversationId);
   if (!fs.existsSync(convDir)) fs.mkdirSync(convDir, { recursive: true });
-  const safeTitle = title.replace(/[\\/:*?"<>|]+/g, "_").slice(0, 40);
-  const filename = `${safeTitle}-${Date.now()}.pptx`;
+  const safeTitle = (body.title || toolDef.defaultTitle).replace(/[\\/:*?"<>|]+/g, "_").slice(0, 40);
+  const filename = `${safeTitle}-${Date.now()}.${toolDef.extension}`;
   const fullPath = path.join(convDir, filename);
   fs.writeFileSync(fullPath, buf);
 
   return insertArtifact({
     conversationId,
     messageId,
-    kind: "generated_pptx",
+    kind: toolDef.artifactKind,
     filename,
     storagePath: fullPath,
-    mimeType: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    mimeType: toolDef.mimeType,
     sizeBytes: buf.length,
-    summary: `${slides.length} 页 PPT：${title}`,
+    summary: builder.summary(body),
   });
 }
 
@@ -329,11 +689,11 @@ async function executeToolCalls(calls, { conversationId, messageId }) {
   const results = [];
   for (const c of calls) {
     try {
-      if (c.tool === "generate_pptx") {
-        const art = await executeGeneratePptx({ args: c.args || {}, conversationId, messageId });
+      if (c.tool) {
+        const art = await executeDocumentTool({ tool: c.tool, args: c.args || {}, conversationId, messageId });
         results.push({ tool: c.tool, artifact: art });
       } else {
-        results.push({ tool: c.tool, error: "未知工具" });
+        results.push({ tool: null, error: "工具名为空" });
       }
     } catch (err) {
       results.push({ tool: c.tool, error: err.message });
@@ -359,6 +719,24 @@ async function summarizeUploadedText(text, filename) {
   }
 }
 
+async function processUploadMemory({ taskId, userId, filename, summary }) {
+  return keeper.processUploadSummary({ taskId, userId, filename, summary });
+}
+
+async function processHostMemory({ taskId, userId, content, taskType }) {
+  return keeper.processAgentOutput({
+    taskId,
+    userId,
+    agentName: "host",
+    content,
+    taskType,
+  });
+}
+
+function processSkillCandidate(args) {
+  return keeper.processSkillCandidate(args);
+}
+
 module.exports = {
   VALID_AGENTS,
   createOrGetConversation,
@@ -366,14 +744,24 @@ module.exports = {
   listMessages,
   listArtifacts,
   getArtifact,
+  deleteArtifact,
   insertArtifact,
+  saveArtifactExtractedText,
+  clearConversation,
   buildProjectContext,
   runHostRouting,
   runExpertsParallel,
   streamHostSummary,
   parseToolCalls,
   stripToolCalls,
+  normalizeToolCalls,
   executeToolCalls,
   summarizeUploadedText,
+  processUploadMemory,
+  processHostMemory,
+  processSkillCandidate,
+  runWorkspaceMemoryGc,
+  queryMemory,
+  listWorkspaceCapabilities,
   ARTIFACTS_ROOT,
 };

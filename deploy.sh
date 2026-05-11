@@ -75,13 +75,6 @@ setup_env() {
   sed -i "s|JWT_SECRET=.*|JWT_SECRET=${JWT}|" .env
   info "JWT Secret 已自动生成"
 
-  # Serper API Key (可选)
-  echo ""
-  read -p "请输入 Serper API Key (可选，回车跳过): " SERPER_KEY
-  if [ -n "$SERPER_KEY" ]; then
-    sed -i "s|SERPER_API_KEY=.*|SERPER_API_KEY=${SERPER_KEY}|" .env
-  fi
-
   # 管理员账号
   echo ""
   read -p "管理员用户名 (默认 admin): " ADMIN_USER

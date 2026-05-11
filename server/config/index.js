@@ -41,17 +41,19 @@ const config = {
 
   // MiniMax LLM
   minimaxApiKey: process.env.MINIMAX_API_KEY || "",
-  minimaxModel: process.env.MINIMAX_MODEL || "MiniMax-M2.5",
-
-  // Serper (web search)
-  serperApiKey: process.env.SERPER_API_KEY || "",
+  minimaxModel: process.env.MINIMAX_MODEL || "MiniMax-M2.7",
+  minimaxCodePlanKey: process.env.MINIMAX_CODE_PLAN_KEY || process.env.MINIMAX_CODING_API_KEY || "",
+  minimaxApiHost: process.env.MINIMAX_API_HOST || "https://api.minimax.io",
+  minimaxSearchRegion: process.env.MINIMAX_SEARCH_REGION || "",
 
   // 企查查 Agent（企业追踪数据源）
   qccApiKey: process.env.QCC_API_KEY || "",
   qccEnabled: !!process.env.QCC_API_KEY,
 
-  // Document extraction service
-  docServiceUrl: process.env.DOC_SERVICE_URL || "",
+  // Document extraction / generation service
+  docServiceUrl:
+    process.env.DOC_SERVICE_URL ||
+    ((process.env.NODE_ENV || "development") === "development" ? "http://localhost:8001" : ""),
 
   // Object Storage (OSS/S3)
   ossEndpoint: process.env.OSS_ENDPOINT || "",

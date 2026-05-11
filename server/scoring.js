@@ -137,7 +137,7 @@ function calculateDimension4_Team(teamData) {
   // 兼容旧接口：如果传入的是数字，按旧逻辑处理
   if (typeof teamData === "number" || teamData === null || teamData === undefined) {
     const rawExp = (teamData === null || teamData === undefined) ? NaN : Number(teamData);
-    const expVal = isNaN(rawExp) ? 3 : Math.max(0, rawExp);
+    const expVal = isNaN(rawExp) ? 5 : Math.max(0, rawExp);
     const expScore = Math.min(10, 2.5 * Math.log(expVal + 1));
     return clampScore(expScore * 10);
   }
@@ -151,15 +151,15 @@ function calculateDimension4_Team(teamData) {
     experienceScore = rawTeamExp;
   } else {
     const rawExp = Number(data.Founder_Exp_Years);
-    const expVal = isNaN(rawExp) ? 3 : Math.max(0, rawExp);
+    const expVal = isNaN(rawExp) ? 5 : Math.max(0, rawExp);
     experienceScore = Math.min(10, 2.5 * Math.log(expVal + 1));
   }
 
-  // 子因子提取（LLM 输出 1-10，缺失默认 5）
-  const domainMatch = normalizeInput(data.Team_Domain_Match_Score, 5, 1, 10);
-  const completeness = normalizeInput(data.Team_Completeness_Score, 5, 1, 10);
-  const trackRecord = normalizeInput(data.Team_Track_Record_Score, 5, 1, 10);
-  const education = normalizeInput(data.Team_Education_Score, 5, 1, 10);
+  // 子因子提取（LLM 输出 1-10，缺失默认 6——能写进BP说明团队至少中等偏上）
+  const domainMatch = normalizeInput(data.Team_Domain_Match_Score, 6, 1, 10);
+  const completeness = normalizeInput(data.Team_Completeness_Score, 6, 1, 10);
+  const trackRecord = normalizeInput(data.Team_Track_Record_Score, 6, 1, 10);
+  const education = normalizeInput(data.Team_Education_Score, 6, 1, 10);
 
   // 加权计算（每个因子 1-10，加权后 1-10，再 ×10 映射到 0-100）
   const weighted =
@@ -183,15 +183,15 @@ function calculateDimension4_Team(teamData) {
  *   只有可被证伪或有明确夸大证据的声明才拉低分数。
  *
  * verdict 映射规则（满分10）:
- *   诚实 / 保守低估  → 10  （正面信号）
- *   存疑             →  6  （无罪推定，刚好及格）
- *   夸大             →  3  （有证据的负面信号）
- *   信息不对称       →  2  （故意隐瞒）
- *   严重夸大         →  1  （严重负面）
- *   证伪             →  0  （声明明显错误）
+ *   诚实 / 保守低估  → 10    （正面信号）
+ *   存疑             →  7.5  （无罪推定，中性偏上——这是 LLM 的知识盲区，不是项目的问题）
+ *   夸大             →  3    （有证据的负面信号）
+ *   信息不对称       →  2    （故意隐瞒）
+ *   严重夸大         →  1    （严重负面）
+ *   证伪             →  0    （声明明显错误）
  *
  * 公式: S5 = round(所有声明得分的平均值 × 10)
- * 无数据兜底: 60（刚好及格，不误杀）
+ * 无数据兜底: 70（中性偏上，不误杀——没有声明可核查不代表不诚信）
  *
  * @param {Array} claimVerdicts - Agent B 输出的声明核查结果数组
  * @returns {number} 0-100 的整数得分
@@ -199,7 +199,7 @@ function calculateDimension4_Team(teamData) {
 const VERDICT_SCORE_MAP = {
   "诚实": 10,
   "保守低估": 10,
-  "存疑": 6,
+  "存疑": 7.5,
   "夸大": 3,
   "信息不对称": 2,
   "严重夸大": 1,
@@ -208,7 +208,7 @@ const VERDICT_SCORE_MAP = {
 
 function calculateDimension5_Integrity(claimVerdicts) {
   if (!Array.isArray(claimVerdicts) || claimVerdicts.length === 0) {
-    return 60; // 无数据 → 刚好及格，不惩罚
+    return 70; // 无数据 → 中性偏上，没有声明可核查不代表不诚信
   }
 
   const total = claimVerdicts.reduce((sum, v) => {
@@ -230,14 +230,18 @@ function calculateTotalScore(S1, S2, S3, S4, S5) {
   const s2 = Number(S2) || 0;
   const s3 = Number(S3) || 0;
   const s4 = Number(S4) || 0;
-  const s5 = Number(S5) || 60; // 无数据默认刚好及格
+  const s5 = Number(S5) || 70; // 无数据默认中性偏上
   return clampScore((s1 + s2 + s3 + s4 + s5) / 5);
 }
 
 /**
  * 纯分数评级 A/B/C/D
  *
- * A ≥ 85 | B ≥ 70 | C ≥ 60 | D < 60
+ * A ≥ 80 | B ≥ 65 | C ≥ 50 | D < 50
+ *
+ * v4.1 调整：旧阈值 (A≥85) 导致现实中几乎没有项目能进入 Fast Track，
+ * 不符合 VC 实际工作流。新阈值让优秀项目能进 A 级，同时 D 级下限降至 50，
+ * 让评级分布更合理。
  *
  * @param {number} totalScore - 总分 (0-100)
  * @returns {{ grade, label, action, color }}
@@ -245,21 +249,21 @@ function calculateTotalScore(S1, S2, S3, S4, S5) {
 function getGrade(totalScore) {
   const score = Number(totalScore) || 0;
 
-  if (score >= 85) {
+  if (score >= 80) {
     return {
       grade: "A",
       label: "强烈推荐投资 (Fast Track)",
       action: "立刻推进：建议 24 小时内约见创始人，同步启动业务尽调（客户访谈、竞品验证）和财务尽调（审计底稿、银行流水），并行开始估值建模。优先关注收入确认方式与客户集中度。",
       color: "#10b981",
     };
-  } else if (score >= 70) {
+  } else if (score >= 65) {
     return {
       grade: "B",
       label: "谨慎推荐 (Proceed with DD)",
       action: "安排创始人面谈，重点考察团队对行业周期的认知深度与战略定力。要求提供近 12 个月的月度财务明细，验证单位经济模型（LTV/CAC、毛利率、回款周期），同步启动竞品客户交叉验证。",
       color: "#3b82f6",
     };
-  } else if (score >= 60) {
+  } else if (score >= 50) {
     return {
       grade: "C",
       label: "观望跟踪 (Keep In View)",

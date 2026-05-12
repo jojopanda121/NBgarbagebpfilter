@@ -239,17 +239,20 @@ function recoverStaleTasks() {
   }
 }
 
-// 在模块加载（即进程启动）时立即执行一次恢复
-recoverStaleTasks();
+// 在模块加载（即进程启动）时立即执行一次恢复；测试环境避免触发 DB mock 与额外日志。
+if (process.env.NODE_ENV !== "test") {
+  recoverStaleTasks();
+}
 // ──────────────────────────────────────────────────────────────
 
 // 定期清理：内存中超过 1 小时的旧任务
-setInterval(() => {
+const cleanupTimer = setInterval(() => {
   const cutoff = Date.now() - 3_600_000;
   for (const [id, t] of memoryTasks) {
     const createdAt = new Date(t.created_at).getTime();
     if (createdAt < cutoff) memoryTasks.delete(id);
   }
 }, 600_000);
+if (typeof cleanupTimer.unref === "function") cleanupTimer.unref();
 
 module.exports = { createTask, updateTask, getTask, getTasksByUser };

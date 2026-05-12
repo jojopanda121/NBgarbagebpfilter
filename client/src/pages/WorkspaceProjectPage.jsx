@@ -6,9 +6,12 @@ import BPVersionDiff from "../components/Workspace/BPVersionDiff";
 import ProjectTimeline from "../components/Workspace/ProjectTimeline";
 import ProjectNotesPanel from "../components/Workspace/ProjectNotesPanel";
 import WorkspaceTab from "../components/Workspace/WorkspaceTab";
+import SkillsPanel from "../components/Workspace/SkillsPanel";
+import ProjectChat from "../components/Workspace/ProjectChat";
 
 const TABS = [
   { key: "overview", label: "概览" },
+  { key: "chat", label: "项目对话" },
   { key: "workspace", label: "AI 工作区" },
   { key: "versions", label: "BP 历史" },
   { key: "reports", label: "Agent 报告" },
@@ -186,14 +189,20 @@ export default function WorkspaceProjectPage() {
         })}
       </nav>
 
-      <main>
-        {activeTab === "overview" && <OverviewTab project={project} />}
-        {activeTab === "workspace" && <WorkspaceChatTab project={project} />}
-        {activeTab === "versions" && <BPVersionDiff project={project} />}
-        {activeTab === "reports" && <ReportsTab project={project} />}
-        {activeTab === "files" && <FilesTab project={project} />}
-        {activeTab === "notes" && <ProjectNotesPanel project={project} onChange={refresh} />}
-        {activeTab === "timeline" && <ProjectTimeline project={project} />}
+      <main className="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-6">
+        <div className="min-w-0">
+          {activeTab === "overview" && <OverviewTab project={project} />}
+          {activeTab === "chat" && <ProjectChat project={project} />}
+          {activeTab === "workspace" && <WorkspaceChatTab project={project} />}
+          {activeTab === "versions" && <BPVersionDiff project={project} />}
+          {activeTab === "reports" && <ReportsTab project={project} />}
+          {activeTab === "files" && <FilesTab project={project} />}
+          {activeTab === "notes" && <ProjectNotesPanel project={project} onChange={refresh} />}
+          {activeTab === "timeline" && <ProjectTimeline project={project} />}
+        </div>
+        <aside className="lg:sticky lg:top-4 self-start">
+          <SkillsPanel project={project} onArtifact={refresh} />
+        </aside>
       </main>
     </div>
   );

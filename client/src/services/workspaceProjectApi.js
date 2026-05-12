@@ -61,6 +61,26 @@ export const workspaceProjectApi = {
   migrateLegacy() {
     return api.post(`${BASE}/migrate-legacy`, {});
   },
+
+  // 合并建议
+  listMergeSuggestions() {
+    return api.get(`${BASE}/merge-suggestions`);
+  },
+  acceptMergeSuggestion(id) {
+    return api.post(`${BASE}/merge-suggestions/${id}/accept`, {});
+  },
+  dismissMergeSuggestion(id) {
+    return api.post(`${BASE}/merge-suggestions/${id}/dismiss`, {});
+  },
+
+  // 项目级聊天(项目页用)
+  getConversationMessages(projectId) {
+    return api.get(`${BASE}/${projectId}/conversation/messages`);
+  },
+  // 注意:发送消息走 SSE,见 services/workspaceStream.js,这里不暴露 post 包装
+  conversationStreamPath(projectId) {
+    return `${BASE}/${projectId}/conversation/messages`;
+  },
 };
 
 export default workspaceProjectApi;

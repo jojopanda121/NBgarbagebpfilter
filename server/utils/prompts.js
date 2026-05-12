@@ -411,7 +411,6 @@ const DIMENSION_ANALYSIS_PROMPT = `你是一位资深投资分析师。请基于
 
 const {
   renderAgentCatalog,
-  renderToolInstructions,
   renderAgentCapabilityBlock,
 } = require("./workspaceRegistry");
 

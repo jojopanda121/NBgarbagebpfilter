@@ -35,16 +35,6 @@ cd client && npm start
 编辑 `.env` 文件中的 `MINIMAX_API_KEY` / `ANTHROPIC_API_KEY` 字段，
 并在 `server/services/llmService.js` 中选择对应的客户端。
 
-## Claude Design 交付包
-
-`origin/implement/landing-page` 分支包含 Claude Design 导出的落地页交付素材：
-
-- `chats/`：设计沟通记录
-- `project/`：HTML/CSS/JS 原型、React 参考组件、Logo 和截图素材
-- `project/Landing Page.html`：主要落地页原型
-
-这些文件保留为设计参考，生产代码仍以仓库根目录下的 `client/`、`server/` 等目录为准。
-
 ## 项目结构
 
 ```
@@ -63,8 +53,6 @@ NBgarbagebpfilter/
 │   └── index.js          # 服务器入口
 ├── doc-service/          # Python FastAPI 文档提取微服务
 ├── scripts/              # 本地辅助脚本（PDF/DOCX 提取）
-├── chats/                # Claude Design 交付沟通记录
-├── project/              # Claude Design 原型和参考素材
 ├── data/                 # SQLite 数据库文件（自动创建，已 gitignore）
 ├── logs/                 # 运行日志（已 gitignore）
 ├── docker-compose.yml    # Docker 编排
@@ -97,4 +85,4 @@ docker exec -it bp-filter-app sh
 node scripts/set-admin.js your_username
 ```
 
-详细说明见 [腾讯云部署指南.md](腾讯云部署指南.md)
+详细说明见 [DEPLOY.md](DEPLOY.md)

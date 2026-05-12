@@ -22,6 +22,7 @@ const PlatformStatsPage = lazy(() => import("./pages/PlatformStatsPage"));
 const TrackingDashboardPage = lazy(() => import("./pages/TrackingDashboardPage"));
 const WorkspaceProjectListPage = lazy(() => import("./pages/WorkspaceProjectListPage"));
 const WorkspaceProjectPage = lazy(() => import("./pages/WorkspaceProjectPage"));
+const PublicTeaserPage = lazy(() => import("./pages/PublicTeaserPage"));
 
 // 加载中组件
 function LoadingFallback() {
@@ -81,6 +82,9 @@ export default function App() {
 
               {/* 项目详情页（三 Tab：报告 + 尽调 + 备注） */}
               <Route path="/project/:taskId" element={<ProjectPage />} />
+
+              {/* 公开 Teaser 查看页（密码保护） */}
+              <Route path="/teaser/:token" element={<PublicTeaserPage />} />
 
               {/* ── 核心区 (Protected Zone) - 需要登录 ── */}
               <Route

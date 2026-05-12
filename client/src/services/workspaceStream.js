@@ -1,8 +1,8 @@
 // ============================================================
 // client/src/services/workspaceStream.js
 //
-// SSE 客户端：基于 fetch + ReadableStream 解析 text/event-stream。
-// 用 fetch 而不是 EventSource，因为后者不支持 POST 和 Authorization 头。
+// SSE 客户端:基于 fetch + ReadableStream 解析 text/event-stream。
+// 用 fetch 而不是 EventSource,因为后者不支持 POST 和 Authorization 头。
 // ============================================================
 
 import useAuthStore from "../store/useAuthStore";
@@ -18,6 +18,15 @@ import { API_BASE } from "../constants";
  * @returns {Promise<void>}
  */
 export async function streamChatMessage(taskId, content, onEvent, signal, file = null) {
+  return _streamSse(`/api/workspace/${taskId}/messages`, content, onEvent, signal, file);
+}
+
+/** 项目级聊天(workspace project),共享 SSE 解析 */
+export async function streamProjectChatMessage(projectId, content, onEvent, signal) {
+  return _streamSse(`/api/workspace-projects/${projectId}/conversation/messages`, content, onEvent, signal);
+}
+
+async function _streamSse(urlPath, content, onEvent, signal, file = null) {
   const token = useAuthStore.getState().token;
   const headers = {};
   if (token) headers["Authorization"] = `Bearer ${token}`;
@@ -31,7 +40,7 @@ export async function streamChatMessage(taskId, content, onEvent, signal, file =
     body = JSON.stringify({ content });
   }
 
-  const resp = await fetch(`${API_BASE}/api/workspace/${taskId}/messages`, {
+  const resp = await fetch(`${API_BASE}${urlPath}`, {
     method: "POST",
     headers,
     body,
@@ -57,7 +66,6 @@ export async function streamChatMessage(taskId, content, onEvent, signal, file =
     if (done) break;
     buffer += decoder.decode(value, { stream: true });
 
-    // 按 SSE 分隔（连续两个换行）
     let idx;
     while ((idx = buffer.indexOf("\n\n")) >= 0) {
       const chunk = buffer.slice(0, idx);

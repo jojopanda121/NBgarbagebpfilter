@@ -24,6 +24,84 @@ const REQUIRED_KPIS = 4;
 const REQUIRED_DRIVERS = 3;
 const PLACEHOLDER = "暂无";
 
+// ── 行业 × 阶段 自适应模板（onepager 路由） ──
+// 命中规则：按 keywords 在 industry 字符串中做大小写不敏感的 includes 匹配，
+// 首个命中即用；都不命中走 default。
+const INDUSTRY_TEMPLATES = {
+  saas: {
+    name: "SaaS / 软件",
+    keywords: ["saas", "软件", "paas", "中间件", "数据库"],
+    kpi_labels:   ["TAM", "ARR", "NDR", "毛利率"],
+    driver_types: ["政策", "技术", "需求"],
+    highlights_focus:
+      "团队商业化能力 / 产品-市场契合度（已验证客户）/ 单位经济（CAC、LTV、毛利）/ 续费 & 扩张（NDR）",
+  },
+  hardtech: {
+    name: "硬科技 / 半导体 / 新能源",
+    keywords: ["半导体", "芯片", "硬科技", "新能源", "电池", "光伏", "汽车", "材料", "机器人", "航空"],
+    kpi_labels:   ["TAM", "TRL", "量产时点", "客户验证"],
+    driver_types: ["政策", "技术", "需求"],
+    highlights_focus:
+      "团队工程能力 / 技术原创性 & 专利护城河 / 客户导入与量产节奏 / 政策与国产替代窗口",
+  },
+  consumer: {
+    name: "消费 / 品牌 / 零售",
+    keywords: ["消费", "品牌", "零售", "餐饮", "服饰", "美妆", "酒水", "食品"],
+    kpi_labels:   ["TAM", "复购率", "客单价", "渠道占比"],
+    driver_types: ["政策", "技术", "需求"],
+    highlights_focus:
+      "创始团队渠道资源 / 品牌资产与复购 / 客单价与门店模型 / 渠道扩张与流量结构",
+  },
+  medical: {
+    name: "医疗 / 生物 / 器械",
+    keywords: ["医疗", "生物", "医药", "创新药", "药物", "制药", "器械", "诊断", "疫苗", "细胞", "基因", "肿瘤", "medical", "biotech", "pharma"],
+    kpi_labels:   ["TAM", "临床阶段", "IND-NDA", "医保身位"],
+    driver_types: ["政策", "技术", "需求"],
+    highlights_focus:
+      "学术 / 临床团队 / 管线进度与里程碑 / 同类竞品对照（FIC/BIC）/ 医保 & 集采身位",
+  },
+  fintech: {
+    name: "金融科技 / 数据",
+    keywords: ["金融", "支付", "保险", "信贷", "fintech", "数据服务", "风控"],
+    kpi_labels:   ["TAM", "AUM/GMV", "Take Rate", "坏账率"],
+    driver_types: ["政策", "技术", "需求"],
+    highlights_focus:
+      "合规牌照 & 风控团队 / 资产质量与坏账 / 客户机构集中度 / 监管周期顺逆风",
+  },
+  default: {
+    name: "通用",
+    keywords: [],
+    kpi_labels:   ["TAM", "CAGR", "渗透率", "增量空间"],
+    driver_types: ["政策", "技术", "需求"],
+    highlights_focus:
+      "团队 / 产品技术壁垒（已验证部分）/ 商业验证（已落地客户/收入）/ 市场时机或政策",
+  },
+};
+
+function pickIndustryTemplate(industryStr) {
+  const s = String(industryStr || "").toLowerCase();
+  for (const [k, t] of Object.entries(INDUSTRY_TEMPLATES)) {
+    if (k === "default") continue;
+    if (t.keywords.some(kw => s.includes(kw.toLowerCase()))) return { key: k, ...t };
+  }
+  return { key: "default", ...INDUSTRY_TEMPLATES.default };
+}
+
+// 阶段桶：早期 / 成长 / 后期，用于影响 highlights 取舍
+const STAGE_BUCKETS = {
+  early:  { label: "早期（天使 / 种子 / Pre-A）",  weights: { team: "高", tech: "高", commercial: "低", market: "中" } },
+  growth: { label: "成长（A / B）",               weights: { team: "中", tech: "中", commercial: "高", market: "高" } },
+  late:   { label: "后期（C / Pre-IPO）",         weights: { team: "中", tech: "中", commercial: "高", market: "高" } },
+};
+
+function pickStageBucket(stageStr) {
+  const s = String(stageStr || "");
+  if (/天使|种子|seed|angel|pre[-_ ]?a/i.test(s)) return { key: "early", ...STAGE_BUCKETS.early };
+  if (/(^|[^a-z])a[轮 ]|(^|[^a-z])b[轮 ]|A轮|B轮/.test(s)) return { key: "growth", ...STAGE_BUCKETS.growth };
+  if (/c[轮 ]|c\+|d[轮 ]|pre[-_ ]?ipo|c轮|c\+/i.test(s)) return { key: "late", ...STAGE_BUCKETS.late };
+  return { key: "early", ...STAGE_BUCKETS.early }; // 未知时按一级市场默认偏早期
+}
+
 // ── 工具：把 multi-agent 产出压缩成 LLM 输入 ──
 
 function pickDimensionScores(verdict) {
@@ -59,7 +137,21 @@ function buildLLMInput(task, result, userOverrides) {
   const e = result.extracted_data || {};
   const v = result.verdict || {};
 
+  // 行业 / 阶段 模板路由（一级市场专属）
+  const stageRaw = e.stage || e.Funding_Round || e.funding_round || (userOverrides && userOverrides.funding_round) || "";
+  const industryRaw = e.industry || e.Industry || "";
+  const tmpl = pickIndustryTemplate(industryRaw);
+  const stageBucket = pickStageBucket(stageRaw);
+
   const ctx = {
+    template_hint: {
+      industry_template: tmpl.name,
+      kpi_labels: tmpl.kpi_labels,            // 必须按此顺序填 4 个 KPI label
+      driver_types: tmpl.driver_types,        // 必须按此顺序填 3 个 driver type
+      highlights_focus: tmpl.highlights_focus,
+      stage_bucket: stageBucket.label,
+      stage_weights: stageBucket.weights,     // 影响 highlights 分布的权重提示
+    },
     company_name: e.company_name || task.title || "（未知）",
     archive_no: task.archive_number || "",
     extracted_data: {
@@ -107,8 +199,9 @@ function pad(arr, n, makeEmpty) {
   return out;
 }
 
-function normalizeOnePager(raw, fallbackName) {
+function normalizeOnePager(raw, fallbackName, template) {
   const json = raw && typeof raw === "object" ? raw : {};
+  const tmpl = template || INDUSTRY_TEMPLATES.default;
 
   const company_name = (json.company_name || fallbackName || PLACEHOLDER).toString();
   const headline = (json.headline || PLACEHOLDER).toString();
@@ -126,21 +219,22 @@ function normalizeOnePager(raw, fallbackName) {
   };
 
   const market = json.market_opportunity || {};
-  const defaultLabels = ["TAM", "CAGR", "渗透率", "增量空间"];
-  const defaultDriverTypes = ["政策", "技术", "需求"];
+  const defaultLabels = tmpl.kpi_labels;
+  const defaultDriverTypes = tmpl.driver_types;
   const market_opportunity = {
+    // 强制 KPI label 走模板：模型若返回不一致的 label，按位覆盖回模板的 label，保留 value
     kpis: pad(market.kpis, REQUIRED_KPIS, (i) => ({
       label: defaultLabels[i] || `KPI${i + 1}`,
       value: PLACEHOLDER,
     })).map((k, i) => ({
-      label: (k?.label || defaultLabels[i] || `KPI${i + 1}`).toString(),
+      label: (defaultLabels[i] || k?.label || `KPI${i + 1}`).toString(),
       value: (k?.value || PLACEHOLDER).toString(),
     })),
     drivers: pad(market.drivers, REQUIRED_DRIVERS, (i) => ({
       type: defaultDriverTypes[i] || `驱动${i + 1}`,
       text: PLACEHOLDER,
     })).map((d, i) => ({
-      type: (d?.type || defaultDriverTypes[i] || `驱动${i + 1}`).toString(),
+      type: (defaultDriverTypes[i] || d?.type || `驱动${i + 1}`).toString(),
       text: (d?.text || PLACEHOLDER).toString(),
     })),
     competition: (market.competition || PLACEHOLDER).toString(),
@@ -212,6 +306,11 @@ async function getOrGenerateOnePager(taskId, userOverrides = null, forceRegenera
   if (!result?.verdict) throw new Error("报告数据不完整，无法生成一页 PPT");
 
   const fallbackName = result?.extracted_data?.company_name || row.title || "（未知）";
+  const e = result.extracted_data || {};
+  const tmpl = pickIndustryTemplate(e.industry || e.Industry);
+  const stageBucket = pickStageBucket(
+    e.stage || e.Funding_Round || e.funding_round || (userOverrides && userOverrides.funding_round)
+  );
   const llmInput = buildLLMInput(row, result, userOverrides);
 
   // 调 LLM（启用 web_search）
@@ -229,11 +328,12 @@ async function getOrGenerateOnePager(taskId, userOverrides = null, forceRegenera
     throw new Error("一页 PPT 生成失败：模型输出无法解析");
   }
 
-  const normalized = normalizeOnePager(parsed, fallbackName);
+  const normalized = normalizeOnePager(parsed, fallbackName, tmpl);
   const cache = {
     json: normalized,
     generated_at: new Date().toISOString(),
     search_used: !!searchUsed,
+    template: { industry_key: tmpl.key, industry: tmpl.name, stage_key: stageBucket.key, stage: stageBucket.label },
   };
 
   db.prepare("UPDATE tasks SET onepager_cache = ? WHERE id = ?")
@@ -457,4 +557,5 @@ module.exports = {
   regenerateOnePager,
   renderOnePagerPptx,
   buildPptxFilename,
+  normalizeOnePager,
 };

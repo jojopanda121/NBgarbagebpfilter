@@ -102,8 +102,12 @@ function _nextVersionNumber(projectId) {
 }
 
 /**
- * 上传完成后：自动创建或挂载到现有项目，并写入版本快照。
- * @returns {{ projectId, versionNumber, isNew, confidence, matchScore }}
+ * 上传完成后:按 confidence 走三档策略 — 见 projectMatchService.
+ *   - auto_merge(≥0.92):静默挂到现有项目
+ *   - suggest(0.5~0.92):新建项目 + 记一条 merge_suggestion(pending),让用户事后决定
+ *   - create_new(<0.5):新建项目,什么都不记
+ *
+ * @returns {{ projectId, versionNumber, isNew, confidence, matchScore, suggestionId? }}
  */
 function createOrAttachProject({
   userId,
@@ -114,13 +118,14 @@ function createOrAttachProject({
   const db = getDb();
   const meta = _extractProjectMeta(agentOutputs);
 
-  const { matched, confidence, score } = matchService.findMatchingProject(
+  const { matched, confidence, score, signals } = matchService.findMatchingProject(
     userId,
     { projectName: meta.projectName, founders: meta.founders }
   );
 
   let projectId;
   let isNew = false;
+  let suggestionId = null;
 
   if (confidence === "auto_merge" && matched) {
     projectId = matched.id;
@@ -174,6 +179,27 @@ function createOrAttachProject({
         taskId || null
       );
     projectId = result.lastInsertRowid;
+
+    // suggest 档:记录待确认的合并建议 — 不静默合并,用户可在项目列表页一键接受/驳回
+    if (confidence === "suggest" && matched) {
+      const insRes = db.prepare(
+        `INSERT INTO project_merge_suggestions
+           (user_id, new_project_id, candidate_project_id, match_score, match_signals)
+         VALUES (?, ?, ?, ?, ?)`
+      ).run(
+        userId, projectId, matched.id, score,
+        signals ? JSON.stringify(signals) : null
+      );
+      suggestionId = insRes.lastInsertRowid;
+      // 在新项目时间线里记一条,让用户在项目页直接看到
+      addTimelineEntry({
+        projectId,
+        userId,
+        entryType: "merge_suggested",
+        content: `系统检测到与已有项目 "${matched.name}" 高度相似(${(score * 100).toFixed(0)}%),已挂在新项目下;请在项目列表确认是否合并。`,
+        metadata: { candidate_project_id: matched.id, match_score: score, signals },
+      });
+    }
   }
 
   const versionNumber = _nextVersionNumber(projectId);
@@ -225,7 +251,101 @@ function createOrAttachProject({
     score,
   });
 
-  return { projectId, versionNumber, isNew, confidence, matchScore: score };
+  return { projectId, versionNumber, isNew, confidence, matchScore: score, suggestionId };
+}
+
+// ── 合并建议 CRUD ─────────────────────────────────────────
+
+function listPendingMergeSuggestions(userId) {
+  const db = getDb();
+  return db.prepare(
+    `SELECT s.id, s.new_project_id, s.candidate_project_id, s.match_score, s.match_signals,
+            s.created_at,
+            np.name AS new_project_name,
+            cp.name AS candidate_project_name,
+            cp.industry AS candidate_industry,
+            cp.stage AS candidate_stage
+       FROM project_merge_suggestions s
+       JOIN projects np ON np.id = s.new_project_id
+       JOIN projects cp ON cp.id = s.candidate_project_id
+      WHERE s.user_id = ? AND s.status = 'pending'
+      ORDER BY s.created_at DESC`
+  ).all(userId).map((r) => ({
+    ...r,
+    match_signals: _safeJsonParse(r.match_signals, null),
+  }));
+}
+
+/**
+ * 接受合并建议:把"新项目"的所有版本/笔记/task/对话挪到"候选项目"下,然后软删除新项目。
+ * 全程在事务里,失败回滚。
+ */
+function acceptMergeSuggestion(userId, suggestionId) {
+  const db = getDb();
+  const sugg = db.prepare(
+    `SELECT * FROM project_merge_suggestions WHERE id = ? AND user_id = ? AND status = 'pending'`
+  ).get(suggestionId, userId);
+  if (!sugg) throw new Error("建议不存在或已处理");
+
+  const newProj = db.prepare(`SELECT * FROM projects WHERE id = ? AND user_id = ?`).get(sugg.new_project_id, userId);
+  const candidate = db.prepare(`SELECT * FROM projects WHERE id = ? AND user_id = ?`).get(sugg.candidate_project_id, userId);
+  if (!newProj || !candidate) throw new Error("项目已不存在,无法合并");
+
+  const tx = db.transaction(() => {
+    // 把新项目下的版本号在候选项目里续编
+    const maxV = db.prepare(`SELECT COALESCE(MAX(version_number),0) AS v FROM project_versions WHERE project_id = ?`).get(candidate.id).v;
+    const versions = db.prepare(`SELECT id, version_number FROM project_versions WHERE project_id = ?`).all(newProj.id);
+    let next = maxV;
+    for (const v of versions) {
+      next++;
+      db.prepare(`UPDATE project_versions SET project_id = ?, version_number = ? WHERE id = ?`).run(candidate.id, next, v.id);
+    }
+    // 关联的 tasks 也改回 candidate
+    db.prepare(`UPDATE tasks SET workspace_project_id = ? WHERE workspace_project_id = ?`).run(candidate.id, newProj.id);
+    // 笔记 / 时间线
+    db.prepare(`UPDATE project_notes SET project_id = ? WHERE project_id = ?`).run(candidate.id, newProj.id);
+    // 对话也挪过去
+    db.prepare(`UPDATE workspace_conversations SET project_id = ? WHERE project_id = ?`).run(candidate.id, newProj.id);
+    // skill_runs 也跟过去
+    try { db.prepare(`UPDATE skill_runs SET project_id = ? WHERE project_id = ?`).run(candidate.id, newProj.id); } catch (_) {}
+    // teaser shares
+    try { db.prepare(`UPDATE teaser_shares SET project_id = ? WHERE project_id = ?`).run(candidate.id, newProj.id); } catch (_) {}
+    // 用 newProj 的最新评分/任务覆盖 candidate(因为合并意味着 newProj 是更新一版)
+    db.prepare(
+      `UPDATE projects
+         SET latest_score = COALESCE(?, latest_score),
+             latest_run_id = COALESCE(?, latest_run_id),
+             latest_task_id = COALESCE(?, latest_task_id),
+             updated_at = datetime('now')
+       WHERE id = ? AND user_id = ?`
+    ).run(newProj.latest_score, newProj.latest_run_id, newProj.latest_task_id, candidate.id, userId);
+    // 软删除新项目
+    db.prepare(`UPDATE projects SET is_archived = 1, updated_at = datetime('now') WHERE id = ?`).run(newProj.id);
+    // 关闭建议
+    db.prepare(`UPDATE project_merge_suggestions SET status='accepted', resolved_at=datetime('now'), resolved_by=? WHERE id = ?`).run(userId, suggestionId);
+    // 在 candidate 时间线写一条
+    addTimelineEntry({
+      projectId: candidate.id,
+      userId,
+      entryType: "project_merged",
+      content: `合并自 "${newProj.name}"(评分 ${newProj.latest_score ?? "—"},${versions.length} 版 BP)`,
+      metadata: { merged_from: newProj.id, suggestion_id: suggestionId, match_score: sugg.match_score },
+    });
+  });
+  tx();
+
+  return { mergedInto: candidate.id, archivedProjectId: newProj.id };
+}
+
+function dismissMergeSuggestion(userId, suggestionId) {
+  const db = getDb();
+  const r = db.prepare(
+    `UPDATE project_merge_suggestions
+        SET status='dismissed', resolved_at=datetime('now'), resolved_by=?
+      WHERE id = ? AND user_id = ? AND status = 'pending'`
+  ).run(userId, suggestionId, userId);
+  if (r.changes === 0) throw new Error("建议不存在或已处理");
+  return { ok: true };
 }
 
 function listByUser(userId, opts = {}) {
@@ -381,5 +501,8 @@ module.exports = {
   updateBasic,
   addNote,
   addTimelineEntry,
+  listPendingMergeSuggestions,
+  acceptMergeSuggestion,
+  dismissMergeSuggestion,
   _extractProjectMeta, // exported for tests
 };

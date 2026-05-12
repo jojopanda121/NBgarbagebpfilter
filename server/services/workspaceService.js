@@ -28,6 +28,7 @@ const {
   assertToolAllowed,
   listWorkspaceCapabilities,
 } = require("../utils/workspaceRegistry");
+const { normalizeOnePager } = require("./pptService");
 
 const ARTIFACTS_ROOT = path.join(__dirname, "..", "..", "data", "workspace_artifacts");
 if (!fs.existsSync(ARTIFACTS_ROOT)) fs.mkdirSync(ARTIFACTS_ROOT, { recursive: true });
@@ -40,6 +41,28 @@ function uuid() { return crypto.randomBytes(16).toString("hex"); }
 
 function createOrGetConversation(taskId, userId) {
   const db = getDb();
+
+  const taskRow = db.prepare(
+    "SELECT id, workspace_project_id, workspace_version_number FROM tasks WHERE id = ?"
+  ).get(taskId);
+  const projectId = taskRow?.workspace_project_id || null;
+
+  if (projectId) {
+    const existing = db.prepare(
+      `SELECT * FROM workspace_conversations
+       WHERE project_id = ? AND user_id = ?
+       ORDER BY created_at ASC LIMIT 1`
+    ).get(projectId, userId);
+    if (existing) return existing;
+
+    const id = uuid();
+    db.prepare(
+      `INSERT INTO workspace_conversations (id, task_id, user_id, project_id, title)
+       VALUES (?, ?, ?, ?, '默认会话')`
+    ).run(id, taskId, userId, projectId);
+    return db.prepare("SELECT * FROM workspace_conversations WHERE id = ?").get(id);
+  }
+
   const existing = db.prepare(
     "SELECT * FROM workspace_conversations WHERE task_id = ? AND user_id = ? ORDER BY created_at ASC LIMIT 1"
   ).get(taskId, userId);
@@ -53,9 +76,47 @@ function createOrGetConversation(taskId, userId) {
   return db.prepare("SELECT * FROM workspace_conversations WHERE id = ?").get(id);
 }
 
+function createOrGetConversationByProject(projectId, userId) {
+  const db = getDb();
+  const existing = db.prepare(
+    `SELECT * FROM workspace_conversations
+     WHERE project_id = ? AND user_id = ?
+     ORDER BY created_at ASC LIMIT 1`
+  ).get(projectId, userId);
+  if (existing) return existing;
+
+  const proj = db.prepare(
+    "SELECT id, user_id, latest_task_id FROM projects WHERE id = ? AND user_id = ?"
+  ).get(projectId, userId);
+  if (!proj) throw new Error("项目不存在或无权访问");
+
+  const id = uuid();
+  db.prepare(
+    `INSERT INTO workspace_conversations (id, task_id, user_id, project_id, title)
+     VALUES (?, ?, ?, ?, '默认会话')`
+  ).run(id, proj.latest_task_id || null, userId, projectId);
+  return db.prepare("SELECT * FROM workspace_conversations WHERE id = ?").get(id);
+}
+
 function appendMessage(conversationId, role, agentName, content, metadata) {
   const db = getDb();
   const id = uuid();
+  const enrichedMeta = { ...(metadata || {}) };
+
+  if (enrichedMeta.version_number == null) {
+    try {
+      const conv = db.prepare(
+        "SELECT project_id FROM workspace_conversations WHERE id = ?"
+      ).get(conversationId);
+      if (conv?.project_id) {
+        const v = db.prepare(
+          "SELECT MAX(version_number) AS v FROM project_versions WHERE project_id = ?"
+        ).get(conv.project_id);
+        if (v?.v != null) enrichedMeta.version_number = v.v;
+      }
+    } catch (_) { /* old databases may not have project version tables */ }
+  }
+
   db.prepare(
     `INSERT INTO workspace_messages (id, conversation_id, role, agent_name, content, metadata)
      VALUES (?, ?, ?, ?, ?, ?)`
@@ -65,7 +126,7 @@ function appendMessage(conversationId, role, agentName, content, metadata) {
     role,
     agentName || null,
     content,
-    metadata ? JSON.stringify(metadata) : null
+    Object.keys(enrichedMeta).length ? JSON.stringify(enrichedMeta) : null
   );
   db.prepare("UPDATE workspace_conversations SET updated_at = datetime('now') WHERE id = ?")
     .run(conversationId);
@@ -123,6 +184,16 @@ function listArtifacts(conversationId) {
 function getArtifact(artifactId) {
   const db = getDb();
   return db.prepare("SELECT * FROM workspace_artifacts WHERE id = ?").get(artifactId);
+}
+
+function getArtifactForUser(artifactId, userId) {
+  const db = getDb();
+  return db.prepare(
+    `SELECT a.*
+     FROM workspace_artifacts a
+     JOIN workspace_conversations c ON c.id = a.conversation_id
+     WHERE a.id = ? AND c.user_id = ?`
+  ).get(artifactId, userId);
 }
 
 function removeArtifactFiles(artifact) {
@@ -402,6 +473,10 @@ async function runHostRouting(projectCtx, history, userMsg) {
 
 function inferRoutingFromText(userMsg = "", reason = "heuristic") {
   const text = userMsg.toLowerCase();
+  // one-pager 必须先匹配，否则会被下面的通用 PPT 规则吃掉
+  if (isOnePagerRequest(userMsg)) {
+    return { task_type: "generate_onepager", agents: ["market", "finance", "tech", "risk"], tools: ["generate_onepager"], reason };
+  }
   if (/ppt|pptx|演示|幻灯片|slide|一页纸/.test(text)) {
     return { task_type: "generate_pptx", agents: ["market", "finance", "tech", "risk"], tools: ["generate_pptx"], reason };
   }
@@ -560,8 +635,112 @@ async function runExpertsParallel(agents, projectCtx, history, userMsg, onExpert
 
 const HOST_TOOL_SCHEMAS = [
   {
+    name: "generate_onepager",
+    description: "生成【单页】投资亮点速览 PPT（pitch 视角，恰好 1 页）。当用户提到\"投资亮点 / 一页纸 / 单页 / one-pager / 速览 / pitch\"时**必须**调用此工具，禁止用 generate_pptx 凑一个 slides 数组只有 1 项的伪一页 PPT。highlights 恰好 4 条、risks 恰好 2 条、KPI 恰好 4 条、drivers 恰好 3 条、products 恰好 3 条。叙事正面，禁止评级 / 不建议结论 / 红旗 / D级 / ★ 星标。",
+    input_schema: {
+      type: "object",
+      properties: {
+        company_name: { type: "string", description: "公司名" },
+        headline: { type: "string", description: "一句话标语（红底标语，<= 30 字）" },
+        company_overview: {
+          type: "object",
+          properties: {
+            summary: { type: "string", description: "公司一句话描述（<= 120 字）" },
+            products: {
+              type: "array",
+              description: "3 条核心产品",
+              items: {
+                type: "object",
+                properties: {
+                  name: { type: "string" },
+                  desc: { type: "string" },
+                },
+                required: ["name", "desc"],
+              },
+            },
+          },
+          required: ["summary", "products"],
+        },
+        market_opportunity: {
+          type: "object",
+          properties: {
+            kpis: {
+              type: "array",
+              description: "恰好 4 条 KPI（TAM / CAGR / 渗透率 / 增量空间）",
+              items: {
+                type: "object",
+                properties: {
+                  label: { type: "string" },
+                  value: { type: "string" },
+                },
+                required: ["label", "value"],
+              },
+            },
+            drivers: {
+              type: "array",
+              description: "恰好 3 条增长驱动（政策 / 技术 / 需求）",
+              items: {
+                type: "object",
+                properties: {
+                  type: { type: "string" },
+                  text: { type: "string" },
+                },
+                required: ["type", "text"],
+              },
+            },
+            competition: { type: "string", description: "竞争格局一句话" },
+          },
+          required: ["kpis", "drivers", "competition"],
+        },
+        highlights: {
+          type: "array",
+          description: "恰好 4 条投资亮点（全部正面叙事）",
+          items: {
+            type: "object",
+            properties: {
+              title: { type: "string", description: "亮点小标题，名词短语，禁带星标/打分修饰" },
+              desc: { type: "string", description: "一两句话支撑，正面叙事" },
+            },
+            required: ["title", "desc"],
+          },
+        },
+        risks: {
+          type: "array",
+          description: "恰好 2 条风险（简洁中立，不写'不建议投资'结论）",
+          items: {
+            type: "object",
+            properties: {
+              title: { type: "string" },
+              desc: { type: "string" },
+            },
+            required: ["title", "desc"],
+          },
+        },
+        footer: {
+          type: "object",
+          properties: {
+            founded: { type: "string", description: "成立年份" },
+            team_size: { type: "string", description: "团队规模" },
+            funding_total: { type: "string", description: "累计融资" },
+            ai_grade: { type: "string", description: "AI 评级文字（可为空字符串）" },
+          },
+          required: ["founded", "team_size", "funding_total", "ai_grade"],
+        },
+      },
+      required: [
+        "company_name",
+        "headline",
+        "company_overview",
+        "market_opportunity",
+        "highlights",
+        "risks",
+        "footer",
+      ],
+    },
+  },
+  {
     name: "generate_pptx",
-    description: "生成 PPT 文件（投委会演示、路演材料、项目简报）。slides 数组每项是一页，title 是页标题，bullets 是要点。",
+    description: "生成【多页】PPT 文件（投委会演示、路演材料、项目简报）。slides 数组每项是一页。如果用户要的是【单页投资亮点 / 一页纸 / one-pager / 速览】，请改用 generate_onepager，禁止用本工具凑一个只有 1 项的 slides 数组。",
     input_schema: {
       type: "object",
       properties: {
@@ -670,7 +849,9 @@ async function runHostAgentic({
     "",
     `# 你的任务`,
     `1. 先在 thinking 块里**真实地推理**：你最被什么打动 / 被什么动摇？专家意见之间有没有矛盾？最后凝结成什么 thesis？`,
-    `2. 如果用户要生成文件，先在 thinking 里规划好结构，再调用对应工具（generate_pptx / generate_docx / generate_xlsx），args 必须是合法 JSON。`,
+    `2. 如果用户要生成文件，先在 thinking 里规划好结构，再调用对应工具（generate_onepager / generate_pptx / generate_docx / generate_xlsx），args 必须是合法 JSON。`,
+    `2a. 关键规则：用户说"投资亮点 / 一页纸 / 单页 PPT / one-pager / 速览"时，**必须**用 generate_onepager（恰好 1 页 pitch 视角），禁止用 generate_pptx 凑 1 页伪 onepager。`,
+    `2b. generate_onepager 强约束：highlights 恰 4 条全部正面叙事；risks 恰 2 条中立陈述（不写"不建议投资"结论）；KPI 恰 4 条；drivers 恰 3 条；products 恰 3 条。叙事禁出现：D级、不建议、风险红旗、★ 星标、可信度打分等审查口吻。`,
     `3. 工具返回 tool_result 后，写最终答复给用户：第一人称投资判断，不复述上下文，不复读专家原话。`,
     `4. 如果只是问答（不要生成文件），跳过工具，直接写答复。`,
   ].join("\n");
@@ -741,6 +922,25 @@ async function runHostAgentic({
   };
 }
 
+async function streamHostSummary({ projectCtx, history, userMsg, expertOutputs, onDelta, signal }) {
+  let emitted = "";
+  const result = await runHostAgentic({
+    projectCtx,
+    history,
+    userMsg,
+    expertOutputs,
+    signal,
+    onEvent: (ev) => {
+      if (ev.type === "text_delta" && ev.text) {
+        emitted += ev.text;
+        onDelta?.(ev.text);
+      }
+    },
+  });
+  if (!emitted && result.text) onDelta?.(result.text);
+  return result.text;
+}
+
 // ── 工具调用解析 ───────────────────────────────────────────
 
 function parseToolCalls(content) {
@@ -750,7 +950,7 @@ function parseToolCalls(content) {
   while ((m = re.exec(content)) !== null) {
     try {
       const parsed = JSON.parse(m[1].trim());
-      if (parsed && parsed.tool) calls.push(parsed);
+      if (parsed && (parsed.tool || parsed.id)) calls.push(parsed);
     } catch (err) {
       console.warn("[Workspace] tool_call JSON 解析失败:", err.message);
     }
@@ -763,14 +963,24 @@ function stripToolCalls(content) {
 }
 
 function taskTypeToTool(taskType) {
+  if (taskType === "generate_onepager") return "generate_onepager";
   if (taskType === "generate_pptx") return "generate_pptx";
   if (taskType === "generate_docx") return "generate_docx";
   if (taskType === "generate_xlsx") return "generate_xlsx";
   return null;
 }
 
+// "一页纸 / 投资亮点 / 速览" 这类硬性要求单页 pitch 的措辞 → 走 onepager 工具
+function isOnePagerRequest(userMsg = "") {
+  if (!userMsg) return false;
+  return (
+    /投资亮点|亮点单页|单\s*页\s*(PPT|ppt|演示|材料)?|一\s*页\s*(纸|PPT|ppt|材料|速览)?|1\s*页\s*(PPT|ppt)?|one[-\s]?pager|speed\s*read|速览|pitch\s*deck/i.test(userMsg)
+  );
+}
+
+// 兼容原 isOnePagePptRequest 调用点（构造 slides 时的旧 hint）
 function isOnePagePptRequest(userMsg = "") {
-  return /一\s*页|1\s*页|one\s*page|single\s*page/i.test(userMsg);
+  return isOnePagerRequest(userMsg);
 }
 
 function compactLines(text = "", limit = 7) {
@@ -830,6 +1040,52 @@ function buildPptSlides({ userMsg, title, cleanContent, expertOutputs }) {
   ].filter((slide) => slide.bullets.length > 0);
 }
 
+// 从用户消息里嗅探公司名（"《...》" / "公司名为..." / "做...的投资亮点"）
+function inferCompanyNameFromMsg(userMsg = "") {
+  if (!userMsg) return "";
+  // 允许引号内含空格，但不含换行
+  const quoted = userMsg.match(/[《"]([^》"\n]{2,30})[》"]/);
+  if (quoted) return quoted[1].trim();
+  const m1 = userMsg.match(/(?:做|生成|为|关于|项目)\s*([^，。,.\n《》"]{2,20}?)(?:的|项目)?\s*(?:投资亮点|一页纸|单页|one[-\s]?pager|速览)/i);
+  if (m1) return m1[1].trim();
+  return "";
+}
+
+// 兜底构造一份 OnePagerPayload。normalizeOnePager 会把缺失字段填 "暂无"。
+function buildFallbackOnepagerArgs({ userMsg, cleanContent, expertOutputs }) {
+  const market = agentContent(expertOutputs, "market");
+  const finance = agentContent(expertOutputs, "finance");
+  const tech = agentContent(expertOutputs, "tech");
+  const risk = agentContent(expertOutputs, "risk");
+  const companyName = inferCompanyNameFromMsg(userMsg) || "（未知公司）";
+  const headline = firstUsefulLine(cleanContent || market || tech, "投资亮点速览");
+
+  return {
+    company_name: companyName,
+    headline,
+    company_overview: {
+      summary: firstUsefulLine(cleanContent || tech, ""),
+      products: [],
+    },
+    market_opportunity: {
+      kpis: [],
+      drivers: [],
+      competition: firstUsefulLine(market, ""),
+    },
+    highlights: [
+      { title: "市场机会", desc: firstUsefulLine(market, "") },
+      { title: "技术与产品", desc: firstUsefulLine(tech, "") },
+      { title: "财务与估值", desc: firstUsefulLine(finance, "") },
+      { title: "团队与执行", desc: firstUsefulLine(cleanContent, "") },
+    ],
+    risks: [
+      { title: "尽调重点", desc: firstUsefulLine(risk, "") },
+      { title: "关键里程碑", desc: "" },
+    ],
+    footer: { founded: "", team_size: "", funding_total: "", ai_grade: "" },
+  };
+}
+
 function isPromptLikePptArgs(args = {}) {
   const text = JSON.stringify(args).slice(0, 8000);
   return /TOOL_CALL|argShape|输出格式|工具调用|生成一份|请生成|你是.*?AI|用户要求|根据用户指令|slides\s*数组|不要写页码|必须且只能/i.test(text);
@@ -838,17 +1094,28 @@ function isPromptLikePptArgs(args = {}) {
 function inferTitle(userMsg = "", fallback = "投委会简报") {
   const quoted = userMsg.match(/[《"]([^》"]{4,40})[》"]/);
   if (quoted) return quoted[1];
-  if (/ppt|PPT|演示|一页纸|one\s*page/i.test(userMsg)) return "一页纸投资简报";
+  if (isOnePagerRequest(userMsg)) return "投资要点速览";
+  if (/ppt|PPT|演示|幻灯片|slide/i.test(userMsg)) return "投委会演示";
   if (/word|docx|文档|报告|memo|备忘录/i.test(userMsg)) return "投资分析备忘录";
   if (/excel|xlsx|表格|模型/i.test(userMsg)) return "投研分析表";
   return fallback;
 }
 
 function buildFallbackToolCall({ routing, userMsg, cleanContent, expertOutputs }) {
-  const tool = taskTypeToTool(routing?.task_type);
+  // isOnePagerRequest 优先级最高：路由层若没识别到（如 LLM routing 失败），
+  // 在这里再兜一次，保证用户说"一页纸/投资亮点"时不会落到多页 generate_pptx。
+  const onePager = isOnePagerRequest(userMsg);
+  const tool = onePager ? "generate_onepager" : taskTypeToTool(routing?.task_type);
   if (!tool) return null;
 
   const title = inferTitle(userMsg);
+
+  if (tool === "generate_onepager") {
+    return {
+      tool,
+      args: buildFallbackOnepagerArgs({ userMsg, cleanContent, expertOutputs }),
+    };
+  }
 
   if (tool === "generate_pptx") {
     const onePage = isOnePagePptRequest(userMsg);
@@ -925,6 +1192,14 @@ async function executeDocumentTool({ tool, args, conversationId, messageId }) {
   const toolDef = assertToolAllowed(tool, "host");
 
   const bodyBuilders = {
+    generate_onepager: {
+      summary: (body) => `一页投资亮点：${body.company_name || body.headline || toolDef.defaultTitle}`,
+      buildBody: () => {
+        // 用 pptService.normalizeOnePager 兜底所有缺失字段（4 highlights / 2 risks / 4 KPIs / 3 drivers / 3 products）
+        const normalized = normalizeOnePager(args || {}, args?.company_name || toolDef.defaultTitle);
+        return normalized;
+      },
+    },
     generate_pptx: {
       summary: (body) => `${body.slides.length} 页 PPT：${body.title}`,
       buildBody: () => {
@@ -985,18 +1260,51 @@ async function executeDocumentTool({ tool, args, conversationId, messageId }) {
   });
 }
 
-async function executeToolCalls(calls, { conversationId, messageId }) {
+async function executeToolCalls(calls, { conversationId, messageId, projectId, userId }) {
   const results = [];
+  let skills = null;
+  try {
+    skills = require("../skills");
+    skills.init();
+  } catch (err) {
+    console.warn("[Workspace] skill registry 不可用，回退文档工具:", err.message);
+  }
+
   for (const c of calls) {
+    const skillId = c.id || c.tool;
     try {
-      if (c.tool) {
-        const art = await executeDocumentTool({ tool: c.tool, args: c.args || {}, conversationId, messageId });
-        results.push({ tool: c.tool, artifact: art });
-      } else {
+      if (!skillId) {
         results.push({ tool: null, error: "工具名为空" });
+        continue;
       }
+
+      if (["generate_onepager", "generate_pptx", "generate_docx", "generate_xlsx"].includes(skillId)) {
+        const art = await executeDocumentTool({ tool: skillId, args: c.args || {}, conversationId, messageId });
+        results.push({ tool: skillId, artifact: art });
+        continue;
+      }
+
+      const skill = skills?.registry?.get?.(skillId);
+      if (skill) {
+        let project = null;
+        if (projectId && userId) {
+          project = getDb().prepare("SELECT * FROM projects WHERE id = ? AND user_id = ?").get(projectId, userId);
+        }
+        const out = await skills.registry.execute({
+          skillId,
+          params: c.args || {},
+          project,
+          userId,
+          ctx: { conversationId, messageId },
+        });
+        if (out.ok) results.push({ tool: skillId, runId: out.runId, artifact: out.artifact });
+        else results.push({ tool: skillId, error: out.error });
+        continue;
+      }
+
+      results.push({ tool: skillId, error: `未知工具或 skill: ${skillId}` });
     } catch (err) {
-      results.push({ tool: c.tool, error: err.message });
+      results.push({ tool: skillId, error: err.message });
     }
   }
   return results;
@@ -1040,10 +1348,12 @@ function processSkillCandidate(args) {
 module.exports = {
   VALID_AGENTS,
   createOrGetConversation,
+  createOrGetConversationByProject,
   appendMessage,
   listMessages,
   listArtifacts,
   getArtifact,
+  getArtifactForUser,
   deleteArtifact,
   insertArtifact,
   saveArtifactExtractedText,
@@ -1052,11 +1362,18 @@ module.exports = {
   runHostRouting,
   runExpertsParallel,
   runHostAgentic,
+  streamHostSummary,
   executeDocumentTool,
   parseToolCalls,
   stripToolCalls,
   normalizeToolCalls,
   executeToolCalls,
+  inferRoutingFromText,
+  taskTypeToTool,
+  isOnePagerRequest,
+  buildFallbackToolCall,
+  buildFallbackOnepagerArgs,
+  HOST_TOOL_SCHEMAS,
   summarizeUploadedText,
   processUploadMemory,
   processHostMemory,

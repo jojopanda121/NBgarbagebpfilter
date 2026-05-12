@@ -161,7 +161,7 @@ export default function LandingPage() {
 
       {/* NAV */}
       <nav className="lp-nav">
-        <a href="#" className="lp-nav-logo">
+        <a href="/" className="lp-nav-logo">
           <div className="lp-nav-mark">
             <LogoE size={32} />
           </div>
@@ -654,19 +654,19 @@ export default function LandingPage() {
           <div className="lp-footer-col">
             <h4>公司</h4>
             <ul>
-              <li><a href="#">关于我们</a></li>
-              <li><a href="#">隐私政策</a></li>
-              <li><a href="#">服务条款</a></li>
-              <li><a href="#">联系我们</a></li>
+              <li><a href="#features">关于我们</a></li>
+              <li><a href="#pricing">隐私政策</a></li>
+              <li><a href="#pricing">服务条款</a></li>
+              <li><a href="mailto:hello@garbagebpfilter.cn">联系我们</a></li>
             </ul>
           </div>
           <div className="lp-footer-col">
             <h4>资源</h4>
             <ul>
-              <li><a href="#">演示报告</a></li>
-              <li><a href="#">使用文档</a></li>
-              <li><a href="#">更新日志</a></li>
-              <li><a href="#">排行榜</a></li>
+              <li><a href="/demo">演示报告</a></li>
+              <li><a href="#pipeline">使用文档</a></li>
+              <li><a href="#features">更新日志</a></li>
+              <li><a href="/app/leaderboard">排行榜</a></li>
             </ul>
           </div>
         </div>

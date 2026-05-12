@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from "react";
+import useAuthStore from "../store/useAuthStore";
+import { API_BASE } from "../constants";
 
 const AGENT_NAMES = [
   "project_summary",
@@ -26,7 +28,7 @@ export function useAgentRunStream(runId) {
   const [agents, setAgents] = useState(INITIAL_AGENTS);
   const [finished, setFinished] = useState(false);
   const [connected, setConnected] = useState(false);
-  const esRef = useRef(null);
+  const abortRef = useRef(null);
 
   const reset = useCallback(() => {
     setAgents(INITIAL_AGENTS);
@@ -39,41 +41,72 @@ export function useAgentRunStream(runId) {
 
     reset();
 
-    const es = new EventSource(`/api/agents/run/${runId}/stream`, { withCredentials: true });
-    esRef.current = es;
+    let cancelled = false;
+    const ac = new AbortController();
+    abortRef.current = ac;
 
-    es.onopen = () => setConnected(true);
+    async function connect() {
+      const token = useAuthStore.getState().token;
+      const resp = await fetch(`${API_BASE}/api/agents/run/${runId}/stream`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        signal: ac.signal,
+      });
+      if (!resp.ok) throw new Error(`SSE failed (${resp.status})`);
+      if (!resp.body) throw new Error("SSE stream unavailable");
+      if (!cancelled) setConnected(true);
 
-    es.onmessage = (evt) => {
-      let data;
-      try { data = JSON.parse(evt.data); } catch { return; }
+      const reader = resp.body.getReader();
+      const decoder = new TextDecoder("utf-8");
+      let buffer = "";
 
-      if (data.type === "agent_update") {
-        const { agent, status, userOutput, error } = data;
-        if (!AGENT_NAMES.includes(agent)) return;
-        setAgents((prev) => ({
-          ...prev,
-          [agent]: { status, userOutput: userOutput ?? prev[agent]?.userOutput ?? null, error: error ?? null },
-        }));
-      } else if (data.type === "run_finished") {
-        setFinished(true);
-        es.close();
+      while (!cancelled) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+
+        let idx;
+        while ((idx = buffer.indexOf("\n\n")) >= 0) {
+          const chunk = buffer.slice(0, idx);
+          buffer = buffer.slice(idx + 2);
+          const data = parseSseData(chunk);
+          if (!data) continue;
+
+          if (data.type === "agent_update") {
+            const { agent, status, userOutput, error } = data;
+            if (!AGENT_NAMES.includes(agent)) continue;
+            setAgents((prev) => ({
+              ...prev,
+              [agent]: { status, userOutput: userOutput ?? prev[agent]?.userOutput ?? null, error: error ?? null },
+            }));
+          } else if (data.type === "run_finished") {
+            setFinished(true);
+            ac.abort();
+            return;
+          }
+        }
       }
-    };
+    }
 
-    es.onerror = () => {
+    connect().catch((err) => {
+      if (cancelled || err.name === "AbortError") return;
       setConnected(false);
-      // Don't close — browser will auto-reconnect unless we do
-      // If run is already finished, close to avoid reconnect loop
-      if (finished) es.close();
-    };
+    });
 
     return () => {
-      es.close();
-      esRef.current = null;
+      cancelled = true;
+      ac.abort();
+      abortRef.current = null;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [runId]);
+  }, [runId, reset]);
 
   return { agents, finished, connected };
+}
+
+function parseSseData(chunk) {
+  const dataLines = chunk
+    .split("\n")
+    .filter((line) => line.startsWith("data:"))
+    .map((line) => line.slice(5).trim());
+  if (!dataLines.length) return null;
+  try { return JSON.parse(dataLines.join("\n")); } catch { return null; }
 }

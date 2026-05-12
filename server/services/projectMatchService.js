@@ -1,11 +1,13 @@
 // ============================================================
 // server/services/projectMatchService.js
-// 项目自动匹配：基于 Agent 输出的项目名 + 创始人姓名做模糊匹配
+// 项目自动匹配:基于 Agent 输出的项目名 + 创始人姓名做模糊匹配
 //
-// 阈值（保守，宁可 ask_user 不要乱合并）：
-//   score >= 0.75 → auto_merge
-//   0.5 <= score < 0.75 → ask_user
+// 阈值(收紧后,只对"几乎肯定是同一个项目"的情形做静默合并):
+//   score >= 0.92 → auto_merge      (项目名 + 创始人都几乎完全一致)
+//   0.5 <= score < 0.92 → suggest   (建新项目 + 记一条 merge_suggestion 让用户决定)
 //   score < 0.5 → create_new
+//
+// 之前的 0.75 阈值会造成 "同赛道同名前缀" 被错误合并,体感是莫名其妙多/少了项目。
 // ============================================================
 
 const { getDb } = require("../db");
@@ -71,6 +73,7 @@ function findMatchingProject(userId, extracted) {
 
   let best = null;
   let bestScore = 0;
+  let bestSignals = null;
 
   for (const p of projects) {
     const nameSim = similarity(p.name, targetName);
@@ -81,7 +84,7 @@ function findMatchingProject(userId, extracted) {
       founderList = [];
     }
     const founderSim = maxFounderSimilarity(founderList, targetFounders);
-    // 项目名权重 0.6，创始人权重 0.4；缺创始人时仅看名字
+    // 项目名权重 0.6,创始人权重 0.4;缺创始人时仅看名字
     const score =
       founderList.length && targetFounders.length
         ? nameSim * 0.6 + founderSim * 0.4
@@ -89,15 +92,16 @@ function findMatchingProject(userId, extracted) {
     if (score > bestScore) {
       bestScore = score;
       best = p;
+      bestSignals = { name_sim: nameSim, founder_sim: founderSim, founder_count: founderList.length };
     }
   }
 
   let confidence;
-  if (bestScore >= 0.75) confidence = "auto_merge";
-  else if (bestScore >= 0.5) confidence = "ask_user";
+  if (bestScore >= 0.92) confidence = "auto_merge";
+  else if (bestScore >= 0.5) confidence = "suggest";
   else confidence = "create_new";
 
-  return { matched: best, confidence, score: bestScore };
+  return { matched: best, confidence, score: bestScore, signals: bestSignals };
 }
 
 module.exports = {

@@ -128,6 +128,8 @@ app.use("/api/stats", statsRoutes);
 app.use("/api/workspace", workspaceRoutes);
 app.use("/api/agents", agentsRoutes);
 app.use("/api/workspace-projects", require("./routes/workspaceProjects"));
+app.use("/api/skills", require("./routes/skills"));
+app.use("/api/teaser", require("./routes/teaser"));
 
 // ── 健康检查（含 DB 探活）──
 app.get("/api/health", (_req, res) => {

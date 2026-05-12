@@ -94,6 +94,14 @@ export default function OnePagerModal({ taskId, onClose }) {
                 已联网检索增强
               </span>
             )}
+            {data?.template?.industry && (
+              <span
+                className="ml-1 text-[11px] px-1.5 py-0.5 rounded bg-[#EEF1F7] text-[#4B5A72] border border-[#D8DCE8]"
+                title="一页纸已按该行业 / 阶段模板生成"
+              >
+                {data.template.industry} · {data.template.stage}
+              </span>
+            )}
           </div>
           <div className="flex items-center gap-2">
             <button

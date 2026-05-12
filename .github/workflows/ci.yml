@@ -44,6 +44,9 @@ jobs:
       - name: Lint server (ESLint)
         run: cd server && npx eslint . --ext .js --max-warnings 0
 
+      - name: Test server
+        run: cd server && npm test -- --runInBand
+
       - name: Build client
         run: cd client && npm run build
 

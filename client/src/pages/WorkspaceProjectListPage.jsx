@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { useWorkspaceProjectList } from "../hooks/useWorkspaceProject";
 import workspaceProjectApi from "../services/workspaceProjectApi";
 import ProjectCard from "../components/Workspace/ProjectCard";
+import MergeSuggestionBanner from "../components/Workspace/MergeSuggestionBanner";
 
 const STATUS_OPTIONS = [
   { value: "", label: "全部" },
@@ -52,6 +53,8 @@ export default function WorkspaceProjectListPage() {
           {migrating ? "整理中..." : "一键整理历史 BP"}
         </button>
       </header>
+
+      <MergeSuggestionBanner onChange={refresh} />
 
       <div className="flex flex-wrap gap-1 mb-6">
         {STATUS_OPTIONS.map((opt) => {

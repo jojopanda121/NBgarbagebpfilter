@@ -7,6 +7,8 @@
 const Anthropic = require("@anthropic-ai/sdk").default;
 const config = require("../config");
 const { runWebSearch, formatSearchContext } = require("./webSearchService");
+const { extractJson } = require("../utils/jsonParser");
+const jsonSchema = require("../utils/jsonSchema");
 
 function resolveAnthropicBaseURL() {
   const host = (config.minimaxApiHost || "https://api.minimax.io").replace(/\/+$/, "");
@@ -689,11 +691,92 @@ async function callLLMAgentic(opts) {
   };
 }
 
+// ============================================================
+// callLLMJson — 让 Anthropic 兼容模型按 JSON Schema 输出
+// ============================================================
+
+class LLMJsonValidationError extends Error {
+  constructor(message, { errors, raw } = {}) {
+    super(message);
+    this.name = "LLMJsonValidationError";
+    this.validationErrors = errors || [];
+    this.lastRaw = raw || "";
+  }
+}
+
+const JSON_CONTRACT_PREFIX = `【输出契约】
+你必须只输出一个 JSON 对象，严格匹配下面的 JSON Schema。
+- 不要任何前后缀解释、不要 markdown、不要 \`\`\`json 包裹
+- 字段顺序无所谓，但所有 required 字段必须存在，类型必须匹配
+- 字符串字段无可用信息时填 "暂无"；数值字段无信息填 null；数组无信息填 []
+- 不允许出现 schema 之外的字段（若 additionalProperties=false）
+
+【JSON Schema】
+`;
+
+function buildJsonSystemPrompt(originalSystem, schema) {
+  return `${originalSystem}\n\n${JSON_CONTRACT_PREFIX}${jsonSchema.stringifyForPrompt(schema)}`;
+}
+
+async function callLLMJson(systemPrompt, userContent, schema, opts = {}) {
+  const { maxTokens = 8192, maxRepairs = 2, useSearch = false } = opts;
+  const sysWithContract = buildJsonSystemPrompt(systemPrompt, schema);
+
+  let lastRaw = "";
+  let lastErrors = [];
+  let repairs = 0;
+  let searchUsed = false;
+  let conversation = userContent;
+
+  for (let attempt = 0; attempt <= maxRepairs; attempt++) {
+    let raw;
+    if (useSearch) {
+      const r = await callLLMWithSearch(sysWithContract, conversation, { maxTokens });
+      raw = r.text;
+      searchUsed = searchUsed || r.searchUsed;
+    } else {
+      raw = await callLLM(sysWithContract, conversation, maxTokens);
+    }
+    lastRaw = raw;
+
+    const parsed = extractJson(raw);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      const { valid, errors } = jsonSchema.validate(parsed, schema);
+      if (valid) return { data: parsed, raw, repairs, searchUsed };
+      lastErrors = errors;
+    } else {
+      lastErrors = [{ path: "$", message: "无法从输出中提取合法 JSON 对象" }];
+    }
+
+    if (attempt === maxRepairs) break;
+    repairs++;
+    console.warn(`[LLM/JSON] 第 ${attempt + 1} 次输出未通过 schema，反馈错误重试`);
+    conversation = [
+      "你上一次的输出未通过 JSON Schema 校验，请基于以下错误修正后重新输出。",
+      "【你的上次输出（节选）】",
+      lastRaw.length > 2000 ? `${lastRaw.slice(0, 2000)}...(已截断)` : lastRaw,
+      "",
+      "【校验错误】",
+      jsonSchema.formatErrors(lastErrors),
+      "",
+      "【原始任务】",
+      userContent,
+    ].join("\n");
+  }
+
+  throw new LLMJsonValidationError(
+    `LLM 输出在 ${maxRepairs + 1} 次尝试后仍未通过 schema 校验`,
+    { errors: lastErrors, raw: lastRaw }
+  );
+}
+
 module.exports = {
   callLLM,
   callLLMWithThinking,
   callLLMChat,
   callLLMWithSearch,
   callLLMAgentic,
+  callLLMJson,
+  LLMJsonValidationError,
   getModelName,
 };

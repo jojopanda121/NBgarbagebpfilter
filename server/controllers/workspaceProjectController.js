@@ -97,6 +97,40 @@ async function migrateLegacy(req, res) {
   }
 }
 
+// GET /api/workspace-projects/merge-suggestions — 待确认的项目合并建议
+async function listMergeSuggestions(req, res) {
+  try {
+    const items = workspaceProjectService.listPendingMergeSuggestions(req.user.id);
+    res.json({ suggestions: items });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+}
+
+// POST /api/workspace-projects/merge-suggestions/:id/accept
+async function acceptMergeSuggestion(req, res) {
+  const id = parseInt(req.params.id, 10);
+  if (Number.isNaN(id)) return res.status(400).json({ error: "无效的建议 ID" });
+  try {
+    const r = workspaceProjectService.acceptMergeSuggestion(req.user.id, id);
+    res.json({ success: true, ...r });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+}
+
+// POST /api/workspace-projects/merge-suggestions/:id/dismiss
+async function dismissMergeSuggestion(req, res) {
+  const id = parseInt(req.params.id, 10);
+  if (Number.isNaN(id)) return res.status(400).json({ error: "无效的建议 ID" });
+  try {
+    workspaceProjectService.dismissMergeSuggestion(req.user.id, id);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+}
+
 module.exports = {
   list,
   getOne,
@@ -105,4 +139,7 @@ module.exports = {
   diff,
   addNote,
   migrateLegacy,
+  listMergeSuggestions,
+  acceptMergeSuggestion,
+  dismissMergeSuggestion,
 };

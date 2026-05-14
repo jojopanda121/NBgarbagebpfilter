@@ -566,7 +566,7 @@ def _build_onepager(payload: OnePagerPayload) -> bytes:
     from pptx.util import Inches, Pt, Emu
     from pptx.dml.color import RGBColor
     from pptx.enum.shapes import MSO_SHAPE
-    from pptx.enum.text import MSO_ANCHOR
+    from pptx.enum.text import MSO_ANCHOR, PP_ALIGN
 
     # 配色（贴近原图）
     BG = RGBColor(0xFA, 0xF7, 0xF2)         # 米白底
@@ -652,7 +652,7 @@ def _build_onepager(payload: OnePagerPayload) -> bytes:
         payload.headline, size=16, bold=True, color=RGBColor(0xFF, 0xFF, 0xFF),
         anchor_top=False
     )
-    headline_box.text_frame.paragraphs[0].alignment = 0  # left
+    headline_box.text_frame.paragraphs[0].alignment = PP_ALIGN.LEFT
 
     # ── 左：公司概况 ────────────────────────────────────────
     LEFT_X = Inches(0.55)
@@ -714,13 +714,13 @@ def _build_onepager(payload: OnePagerPayload) -> bytes:
             x, market_top + Inches(0.05), kpi_w, Inches(0.28),
             kpi.label, size=10, bold=True, color=GRAY, anchor_top=False
         )
-        lp.alignment = 1  # center
+        lp.alignment = PP_ALIGN.CENTER
         # 值
         val_box, _, vp = add_text(
             x, market_top + Inches(0.30), kpi_w, Inches(0.40),
             kpi.value, size=13, bold=True, color=RED_LABEL, anchor_top=False
         )
-        vp.alignment = 1  # center
+        vp.alignment = PP_ALIGN.CENTER
 
     # 驱动力 3 条
     drv_top = market_top + Inches(0.85)

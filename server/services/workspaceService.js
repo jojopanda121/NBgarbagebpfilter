@@ -29,6 +29,7 @@ const {
   listWorkspaceCapabilities,
 } = require("../utils/workspaceRegistry");
 const { normalizeOnePager } = require("./pptService");
+const { extractJson } = require("../utils/jsonParser");
 
 const ARTIFACTS_ROOT = path.join(__dirname, "..", "..", "data", "workspace_artifacts");
 if (!fs.existsSync(ARTIFACTS_ROOT)) fs.mkdirSync(ARTIFACTS_ROOT, { recursive: true });
@@ -876,21 +877,76 @@ async function runHostAgentic({
     }
   };
 
-  const result = await callLLMAgentic({
-    system: WORKSPACE_HOST_SYSTEM_PROMPT,
-    messages: [{ role: "user", content: userPrompt }],
-    tools: HOST_TOOL_SCHEMAS,
-    toolRunner,
-    thinkingBudget: 5000,
-    maxTokens: 6000,
-    maxToolRounds: 4,
-    signal,
-    onEvent: (ev) => {
-      if (ev.type === "thinking_delta") thinking += ev.text;
-      if (ev.type === "text_delta") text += ev.text;
-      onEvent(ev);
-    },
-  });
+  let result;
+  try {
+    result = await callLLMAgentic({
+      system: WORKSPACE_HOST_SYSTEM_PROMPT,
+      messages: [{ role: "user", content: userPrompt }],
+      tools: HOST_TOOL_SCHEMAS,
+      toolRunner,
+      thinkingBudget: 5000,
+      maxTokens: 6000,
+      maxToolRounds: 4,
+      signal,
+      onEvent: (ev) => {
+        if (ev.type === "thinking_delta") thinking += ev.text;
+        if (ev.type === "text_delta") text += ev.text;
+        onEvent(ev);
+      },
+    });
+  } catch (err) {
+    const msg = err?.message || "";
+    const jsonSyntax = /Expected ',' or '}' after property value|Unexpected token|JSON|position \d+/i.test(msg);
+    const fallback = jsonSyntax
+      ? buildFallbackToolCall({
+        routing: inferRoutingFromText(userMsg),
+        userMsg,
+        cleanContent: text,
+        expertOutputs,
+      })
+      : null;
+    if (!fallback) throw err;
+
+    const toolId = `fallback-${Date.now()}`;
+    console.warn("[Workspace] host 工具 JSON 解析失败，已降级为 fallback 工具调用:", msg);
+    if (typeof hostToolRunner !== "function") {
+      result = {
+        text: `<TOOL_CALL>${JSON.stringify(fallback)}</TOOL_CALL>`,
+        used_thinking: false,
+        used_tools: false,
+        used_stream: false,
+      };
+    } else {
+      onEvent({ type: "tool_use_start", id: toolId, name: fallback.tool });
+      onEvent({ type: "tool_use", id: toolId, name: fallback.tool, input: fallback.args });
+      try {
+        const r = await hostToolRunner(fallback.tool, fallback.args || {});
+        if (r?.artifact) artifacts.push(r.artifact);
+        onEvent({
+          type: "tool_result",
+          id: toolId,
+          name: fallback.tool,
+          result: r?.summary || "已生成",
+          error: false,
+        });
+        result = {
+          text: text || "已按当前项目材料生成文件。",
+          used_thinking: false,
+          used_tools: false,
+          used_stream: false,
+        };
+      } catch (toolErr) {
+        onEvent({
+          type: "tool_result",
+          id: toolId,
+          name: fallback.tool,
+          result: toolErr.message,
+          error: true,
+        });
+        throw toolErr;
+      }
+    }
+  }
 
   // 没开 tools 的降级路径：从 text 里抓 <TOOL_CALL>
   if (!result.used_tools) {
@@ -949,7 +1005,8 @@ function parseToolCalls(content) {
   let m;
   while ((m = re.exec(content)) !== null) {
     try {
-      const parsed = JSON.parse(m[1].trim());
+      const raw = m[1].trim();
+      const parsed = extractJson(raw) || JSON.parse(raw);
       if (parsed && (parsed.tool || parsed.id)) calls.push(parsed);
     } catch (err) {
       console.warn("[Workspace] tool_call JSON 解析失败:", err.message);

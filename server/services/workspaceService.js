@@ -1335,7 +1335,27 @@ async function executeToolCalls(calls, { conversationId, messageId, projectId, u
         continue;
       }
 
-      if (["generate_onepager", "generate_pptx", "generate_docx", "generate_xlsx"].includes(skillId)) {
+      // ── PPT 硬规则 guard ──
+      // generate_pptx 是"自由幻灯片"老路径,版式由 LLM 即兴决定,产物质量不稳定.
+      // 我们已把所有受支持的 PPT 用途收编到 skill catalog (pptxTemplate 标记).
+      // host agent 的 system prompt 已禁止它,这里物理拦截,防止 LLM 漏网.
+      if (skillId === "generate_pptx") {
+        const tmplList = skills?.registry?.listPptxTemplates?.() || [];
+        const tmplLines = tmplList.length
+          ? tmplList.map((t) => `- ${t.id}: ${t.title} — ${t.useCase}`).join("\n")
+          : "(当前没有任何 PPT 模板注册)";
+        results.push({
+          tool: skillId,
+          error:
+            "PPT 自由生成 (generate_pptx) 已禁用 —— 它的版式不可控,会输出乱排版.\n" +
+            "请改用 PPT 模板 catalog 里的具体 skill (按 id 调用):\n" +
+            tmplLines +
+            "\n如果 catalog 里没有匹配场景,请告知用户描述需求,工程团队会按 harness 范式新增一个模板.",
+        });
+        continue;
+      }
+
+      if (["generate_onepager", "generate_docx", "generate_xlsx"].includes(skillId)) {
         const art = await executeDocumentTool({ tool: skillId, args: c.args || {}, conversationId, messageId });
         results.push({ tool: skillId, artifact: art });
         continue;

@@ -7,6 +7,8 @@ const registry = require("./registry");
 
 const builtins = [
   require("./onepagerPptx"),
+  require("./investmentSnapshot"),
+  require("./projectBrief"),
   require("./ddQuestions"),
   require("./icMemo"),
   require("./riskRegister"),

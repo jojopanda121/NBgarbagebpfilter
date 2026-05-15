@@ -61,7 +61,32 @@ function list() {
     inputSchema: s.inputSchema,
     outputArtifactKind: s.outputArtifactKind || null,
     permissions: s.permissions,
+    pptxTemplate: s.pptxTemplate || null,
   }));
+}
+
+/**
+ * 列出所有 pptxTemplate 标记的 skill —— 供 host prompt 动态展示 catalog。
+ *
+ * pptxTemplate 元数据形状（约定，非强制）：
+ *   {
+ *     useCase: "一句话适用场景（让 LLM 路由用）",
+ *     pageCount: 1 | "1-N" | "exactly N",
+ *     argsHint:  "<TOOL_CALL>{...}</TOOL_CALL> 形如",  // 可选,registry 默认按 inputSchema 推
+ *   }
+ */
+function listPptxTemplates() {
+  return [..._registry.values()]
+    .filter((s) => s.pptxTemplate && s.outputArtifactKind === "pptx")
+    .map((s) => ({
+      id: s.id,
+      title: s.title,
+      description: s.description,
+      pageCount: s.pptxTemplate.pageCount || null,
+      useCase: s.pptxTemplate.useCase || s.description || "",
+      inputSchema: s.inputSchema,
+      argsHint: s.pptxTemplate.argsHint || null,
+    }));
 }
 
 /**
@@ -125,4 +150,4 @@ async function execute({ skillId, params = {}, project = null, userId, ctx = {} 
   }
 }
 
-module.exports = { register, get, list, execute };
+module.exports = { register, get, list, listPptxTemplates, execute };

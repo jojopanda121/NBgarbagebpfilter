@@ -25,9 +25,10 @@ function useCanvasBackground(canvasRef) {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
-    let W, H, nodes, animId;
+    let W, H, nodes, packets, animId;
     const NAVY = "13,33,69";
     const BLUE = "27,79,216";
+    const GOLD = "201,168,76";
 
     function resize() {
       W = canvas.width = window.innerWidth;
@@ -43,6 +44,21 @@ function useCanvasBackground(canvasRef) {
         r: Math.random() * 1.8 + 0.6,
         pulse: Math.random() * Math.PI * 2,
       }));
+    }
+
+    function spawnPacket() {
+      const edge = Math.floor(Math.random() * 4);
+      let x, y, vx, vy;
+      const speed = Math.random() * 0.6 + 0.4;
+      if (edge === 0)      { x = 0; y = Math.random() * H; vx = speed;  vy = (Math.random() - 0.5) * 0.2; }
+      else if (edge === 1) { x = W; y = Math.random() * H; vx = -speed; vy = (Math.random() - 0.5) * 0.2; }
+      else if (edge === 2) { x = Math.random() * W; y = 0; vx = (Math.random() - 0.5) * 0.2; vy = speed; }
+      else                 { x = Math.random() * W; y = H; vx = (Math.random() - 0.5) * 0.2; vy = -speed; }
+      return { x, y, vx, vy, life: 0, ttl: 600 + Math.random() * 400, gold: Math.random() < 0.18 };
+    }
+
+    function makePackets(n) {
+      return Array.from({ length: n }, () => spawnPacket());
     }
 
     function draw(t) {
@@ -94,6 +110,29 @@ function useCanvasBackground(canvasRef) {
         ctx.fill();
       });
 
+      // Data packets (traveling pulses w/ trail)
+      packets.forEach((p, idx) => {
+        p.x += p.vx; p.y += p.vy; p.life += 1;
+        const trailLen = 38;
+        const c = p.gold ? GOLD : BLUE;
+        for (let k = 0; k < trailLen; k++) {
+          const a = (1 - k / trailLen) * 0.32;
+          const tx = p.x - p.vx * k * 1.2;
+          const ty = p.y - p.vy * k * 1.2;
+          ctx.beginPath();
+          ctx.arc(tx, ty, 1.4 * (1 - k / trailLen), 0, Math.PI * 2);
+          ctx.fillStyle = `rgba(${c},${a})`;
+          ctx.fill();
+        }
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 2.4, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(${c},0.85)`;
+        ctx.fill();
+        if (p.x < -50 || p.x > W + 50 || p.y < -50 || p.y > H + 50 || p.life > p.ttl) {
+          packets[idx] = spawnPacket();
+        }
+      });
+
       const lineCount = 6;
       for (let i = 0; i < lineCount; i++) {
         const y = ((t * 0.018 + i / lineCount) % 1) * H;
@@ -111,6 +150,7 @@ function useCanvasBackground(canvasRef) {
     function init() {
       resize();
       nodes = makeNodes(55);
+      packets = makePackets(8);
       cancelAnimationFrame(animId);
       animId = requestAnimationFrame(draw);
     }
@@ -118,6 +158,7 @@ function useCanvasBackground(canvasRef) {
     function onResize() {
       resize();
       nodes = makeNodes(55);
+      packets = makePackets(8);
     }
 
     window.addEventListener("resize", onResize);
@@ -156,8 +197,14 @@ export default function LandingPage() {
   useScrollReveal();
 
   return (
-    <>
+    <div className="lp-root">
       <canvas ref={canvasRef} id="bg-canvas" />
+      <div className="lp-bg-grid" />
+      <div className="lp-bg-orbs">
+        <div className="lp-bg-orb o1" />
+        <div className="lp-bg-orb o2" />
+        <div className="lp-bg-orb o3" />
+      </div>
 
       {/* NAV */}
       <nav className="lp-nav">
@@ -170,6 +217,7 @@ export default function LandingPage() {
         <div className="lp-nav-links">
           <a href="#features">核心功能</a>
           <a href="#dimensions">评分体系</a>
+          <a href="#workspace">多 Agent 工作区</a>
           <a href="#pipeline">投资流程</a>
           <a href="#pricing">定价</a>
         </div>
@@ -463,6 +511,175 @@ export default function LandingPage() {
         </div>
       </div>
 
+      {/* MULTI-AGENT WORKSPACE */}
+      <div className="lp-ws-section" id="workspace">
+        <div className="lp-ws-header">
+          <div>
+            <div className="lp-sec-tag">多 Agent 工作区 · Multi-Agent Workspace</div>
+            <h2 className="lp-ws-h2">
+              一个投资人，<br />
+              一支<em>六人专家团</em>，<span className="gold">7×24</span> 待命
+            </h2>
+          </div>
+          <p className="lp-ws-lead">
+            过去，组建一支覆盖市场、财务、竞品、风险、人才、政策的投研团队，至少需要一支基金 6 个月的 HR 周期。<br />
+            现在，注册即拥有。<strong style={{ color: "var(--text)" }}>每一位 Agent 都被训练成该领域的资深分析师</strong>——不是泛用 ChatBot，而是带着方法论与提问框架的同事。
+          </p>
+        </div>
+
+        <div className="lp-ws-grid lp-reveal">
+          {/* LEFT: AGENT ROSTER */}
+          <div className="lp-agent-roster">
+            {[
+              {
+                avaCls: "lp-ava-mkt", avaText: "市", name: "市场分析师", role: "Market · TAM/SAM/SOM",
+                desc: "替你拆解赛道真实规模、增速与拐点信号，不采信 BP 自报数据，主动检索行业一手报告交叉验证。",
+                skills: ["TAM 拆解", "CAGR", "渗透率曲线"],
+              },
+              {
+                avaCls: "lp-ava-fin", avaText: "财", name: "财务建模师", role: "Finance · Unit Economics",
+                desc: "CAC / LTV / Payback / Burn Rate 一把抓，DCF、可比公司、近期一二级交易，估值合理性当场验算。",
+                skills: ["单位经济", "估值模型", "现金流"],
+              },
+              {
+                avaCls: "lp-ava-cmp", avaText: "竞", name: "竞品研究员", role: "Competition · Landscape",
+                desc: "行业 Top 10 横向对比、定位地图、护城河拆解。一秒告诉你「这家凭什么活下来，又凭什么跑出来」。",
+                skills: ["定位地图", "护城河", "差异化"],
+              },
+              {
+                avaCls: "lp-ava-risk", avaText: "险", name: "风险评估师", role: "Risk · Red Team",
+                desc: "站在「不投」的角度反向论证：政策风险、技术替代、执行偏差、客户集中度，把投委会的犀利提问提前预演。",
+                skills: ["红队推演", "压力测试", "退出风险"],
+              },
+              {
+                avaCls: "lp-ava-team", avaText: "人", name: "团队背调员", role: "People · Founder DD",
+                desc: "创始人履历核实、过往项目战绩、团队结构合理性。Reference Check 问题清单一键生成，照着问即可。",
+                skills: ["履历核实", "Ref Check", "团队匹配"],
+              },
+              {
+                avaCls: "lp-ava-pol", avaText: "策", name: "政策研究员", role: "Policy · Regulation",
+                desc: "紧跟产业政策、地方补贴、监管动向。「这个赛道的政策红利还能吃几年？」一句话给你答案与依据。",
+                skills: ["国家政策", "补贴拆解", "监管追踪"],
+              },
+            ].map((a) => (
+              <div className="lp-agent-card" key={a.name}>
+                <div className="lp-agent-head">
+                  <div className={`lp-agent-ava ${a.avaCls}`}>{a.avaText}</div>
+                  <div className="lp-agent-meta">
+                    <div className="lp-agent-name">{a.name}</div>
+                    <div className="lp-agent-role">{a.role}</div>
+                  </div>
+                </div>
+                <div className="lp-agent-desc">{a.desc}</div>
+                <div className="lp-agent-skills">
+                  {a.skills.map((s) => (
+                    <span className="lp-skill-chip" key={s}>{s}</span>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* RIGHT: LIVE CHAT PREVIEW */}
+          <div className="lp-ws-preview">
+            <div className="lp-ws-prev-chrome">
+              <div className="lp-chrome-dot" style={{ background: "#FF5F57" }} />
+              <div className="lp-chrome-dot" style={{ background: "#FEBC2E" }} />
+              <div className="lp-chrome-dot" style={{ background: "#28C840" }} />
+              <span className="lp-chrome-label">工作区 · 某智能制造 SaaS · 实时对话</span>
+            </div>
+            <div className="lp-ws-tabs">
+              <div className="lp-ws-tab"><span className="dot" />分析报告</div>
+              <div className="lp-ws-tab active"><span className="dot" />工作区</div>
+              <div className="lp-ws-tab"><span className="dot" />尽调问卷</div>
+              <div className="lp-ws-tab"><span className="dot" />IMemo</div>
+            </div>
+            <div className="lp-ws-body">
+              <div className="lp-msg user">
+                <div className="lp-msg-ava" style={{ background: "var(--text)" }}>我</div>
+                <div className="lp-msg-body">
+                  <div className="lp-msg-meta">
+                    <span className="lp-msg-name">投资人</span>
+                    <span className="lp-msg-role">12:04</span>
+                  </div>
+                  <div className="lp-msg-text">这家 BP 自称 TAM 5,000 亿，请帮我交叉验证下，再算一下他们 ARR 跑到 1 亿对应的渗透率。</div>
+                </div>
+              </div>
+
+              <div className="lp-msg">
+                <div className="lp-msg-ava lp-ava-mkt">市</div>
+                <div className="lp-msg-body">
+                  <div className="lp-msg-meta">
+                    <span className="lp-msg-name">市场分析师</span>
+                    <span className="lp-msg-role">已检索 14 份报告</span>
+                  </div>
+                  <div className="lp-msg-text">
+                    已交叉信通院、IDC、灼识 3 份报告：<span className="lp-hl">真实细分 TAM 约 200 亿</span>，CAGR 18%。BP 把上游设备市场一起算进来了，存在显著夸大。
+                  </div>
+                  <div className="lp-msg-callout">建议在 IMemo 中以「细分 SaaS 软件市场 ≈ 200 亿」为基准重述</div>
+                </div>
+              </div>
+
+              <div className="lp-msg">
+                <div className="lp-msg-ava lp-ava-fin">财</div>
+                <div className="lp-msg-body">
+                  <div className="lp-msg-meta">
+                    <span className="lp-msg-name">财务建模师</span>
+                    <span className="lp-msg-role">已建模</span>
+                  </div>
+                  <div className="lp-msg-text">
+                    ARR 1 亿对应 <span className="lp-hl">0.5% 渗透率</span>。同赛道头部 Yuanfudao Cloud 当前渗透 1.2%，目标在合理射程内。CAC ¥48k / LTV ¥210k，Payback 14 个月——健康。
+                  </div>
+                </div>
+              </div>
+
+              <div className="lp-msg">
+                <div className="lp-msg-ava lp-ava-risk">险</div>
+                <div className="lp-msg-body">
+                  <div className="lp-msg-meta">
+                    <span className="lp-msg-name">风险评估师</span>
+                    <span className="lp-msg-role">红队视角</span>
+                  </div>
+                  <div className="lp-msg-text">两点反向意见：①前 3 大客户占收入 62%，集中度过高；②专利尚未授权，被竞品规避路径明确。建议尽调重点核查。</div>
+                </div>
+              </div>
+            </div>
+            <div className="lp-ws-typing">
+              <span>竞品研究员正在分析定位地图</span>
+              <span className="lp-typing-dots"><span /><span /><span /></span>
+            </div>
+            <div className="lp-ws-input">
+              <div className="lp-ws-input-box">@团队背调员 帮我查一下创始人之前在阿里的 P 序…</div>
+              <div className="lp-ws-input-send">↑</div>
+            </div>
+          </div>
+        </div>
+
+        {/* BENEFITS STRIP */}
+        <div className="lp-ws-benefits lp-reveal">
+          {[
+            {
+              num: "/ 01 · 协同", h: "多视角同时落桌，决策不再单线程",
+              d: "同一份 BP，6 位专家在你眼前各抒己见。每个 Agent 都能 @ 召唤、互相引用、共享上下文——投委会的真实辩论提前 7 天发生。",
+            },
+            {
+              num: "/ 02 · 私域", h: "为每个项目建独立工作区，记忆永不丢失",
+              d: "所有对话、附件、链接、纪要按项目隔离存档，无缝衔接 Pipeline 状态。三个月后回看，Agent 依然记得你当初的判断与质疑。",
+            },
+            {
+              num: "/ 03 · 复利", h: "从「单打独斗」到「持续积累的认知资产」",
+              d: "Agent 在每个项目中学习你的偏好与判断风格，越用越懂你。半年后，它推送的 Insight 已经按你的标准筛过一轮。",
+            },
+          ].map((b) => (
+            <div key={b.num}>
+              <div className="lp-ws-bn-num">{b.num}</div>
+              <div className="lp-ws-bn-h">{b.h}</div>
+              <div className="lp-ws-bn-d">{b.d}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
       {/* PIPELINE */}
       <div className="lp-section" id="pipeline">
         <div className="lp-section-inner">
@@ -679,6 +896,6 @@ export default function LandingPage() {
           </div>
         </div>
       </footer>
-    </>
+    </div>
   );
 }

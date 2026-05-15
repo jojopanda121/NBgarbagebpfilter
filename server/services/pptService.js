@@ -16,6 +16,7 @@ const { extractJson } = require("../utils/jsonParser");
 const { ONEPAGER_EXTRACTION_PROMPT } = require("../utils/prompts");
 const config = require("../config");
 const logger = require("../utils/logger");
+const { COLOR, FONT } = require("./brandTokens");
 
 const REQUIRED_HIGHLIGHTS = 4;
 const REQUIRED_RISKS = 2;
@@ -382,16 +383,18 @@ function renderOnePagerPptxLocal(j) {
   pptx.defineLayout({ name: "WIDE_169", width: 13.333, height: 7.5 });
   pptx.layout = "WIDE_169";
 
-  const FONT = "Microsoft YaHei";
-  const BG = "FAF7F2";
-  const GOLD = "8B6F3F";
-  const GOLD_LINE = "C9A96E";
-  const RED = "A8292A";
-  const RED_LABEL = "C23B3B";
-  const BLACK = "1A1A1A";
-  const GRAY = "555555";
-  const LIGHT = "F1E9DB";
-  const GRAY_BG = "EEEAE2";
+  // 颜色 / 字体一律走 brandTokens, 与网页 :root 同源
+  const FONT_FACE = FONT.cnSans;     // 正文 (PingFang SC, 回退到 DM Sans for latin)
+  const BG = COLOR.bg;               // 页底浅灰
+  const TITLE_FG = COLOR.navy;       // 标题色 (深海军蓝)
+  const RULE = COLOR.accent;         // 标题下细线 (品牌蓝)
+  const BANNER = COLOR.navy;         // 主横幅 (深海军蓝)
+  const LABEL_FG = COLOR.accent;     // 板块标签 + 内联强调 (品牌蓝)
+  const BLACK = COLOR.ink;           // 主文字
+  const GRAY = COLOR.mid;            // 次级文字 (页脚 / KPI 标签)
+  const LIGHT = COLOR.bg3;           // 板块标签胶囊底 (浅蓝灰)
+  const RISK_BG = COLOR.redBg;       // 风险板块底 (语义浅红)
+  const RISK_FG = COLOR.red;         // 风险板块文字 (语义红)
 
   const slide = pptx.addSlide();
   slide.background = { color: BG };
@@ -399,22 +402,22 @@ function renderOnePagerPptxLocal(j) {
   // 标题
   slide.addText(`投资要点速览——${j.company_name || "（未知）"}`, {
     x: 0.55, y: 0.32, w: 12.2, h: 0.6,
-    fontFace: FONT, fontSize: 26, bold: true, color: GOLD,
+    fontFace: FONT_FACE, fontSize: 26, bold: true, color: TITLE_FG,
   });
   // 金线
   slide.addShape(pptx.ShapeType.rect, {
     x: 0.55, y: 0.95, w: 12.2, h: 0.025,
-    fill: { color: GOLD_LINE }, line: { type: "none" },
+    fill: { color: RULE }, line: { type: "none" },
   });
 
   // 红底标语
   slide.addShape(pptx.ShapeType.rect, {
     x: 0.55, y: 1.10, w: 12.2, h: 0.55,
-    fill: { color: RED }, line: { type: "none" },
+    fill: { color: BANNER }, line: { type: "none" },
   });
   slide.addText(j.headline || "暂无", {
     x: 0.7, y: 1.10, w: 11.9, h: 0.55,
-    fontFace: FONT, fontSize: 16, bold: true, color: "FFFFFF",
+    fontFace: FONT_FACE, fontSize: 16, bold: true, color: "FFFFFF",
     valign: "middle", align: "left",
   });
 
@@ -425,7 +428,7 @@ function renderOnePagerPptxLocal(j) {
     });
     slide.addText(text, {
       x: x + 0.1, y, w: w - 0.2, h: 0.34,
-      fontFace: FONT, fontSize: 14, bold: true, color: RED_LABEL, valign: "middle",
+      fontFace: FONT_FACE, fontSize: 14, bold: true, color: LABEL_FG, valign: "middle",
     });
   };
 
@@ -436,19 +439,19 @@ function renderOnePagerPptxLocal(j) {
   const ov = j.company_overview || {};
   slide.addText(ov.summary || "暂无", {
     x: LX, y: ovTop, w: LW, h: 1.2,
-    fontFace: FONT, fontSize: 11, color: BLACK,
-    line: { color: GOLD_LINE, width: 0.5 }, fill: { color: BG },
+    fontFace: FONT_FACE, fontSize: 11, color: BLACK,
+    line: { color: RULE, width: 0.5 }, fill: { color: BG },
     margin: 6, valign: "top",
   });
   const products = (ov.products || []).slice(0, 3);
   const pH = (ovH - 1.25) / Math.max(products.length, 1);
   products.forEach((p, i) => {
     slide.addText([
-      { text: `${p.name || "暂无"}：`, options: { bold: true, color: RED_LABEL } },
+      { text: `${p.name || "暂无"}：`, options: { bold: true, color: LABEL_FG } },
       { text: p.desc || "暂无", options: { color: BLACK } },
     ], {
       x: LX, y: ovTop + 1.25 + pH * i, w: LW, h: pH,
-      fontFace: FONT, fontSize: 11, valign: "top", margin: 4,
+      fontFace: FONT_FACE, fontSize: 11, valign: "top", margin: 4,
     });
   });
 
@@ -463,30 +466,30 @@ function renderOnePagerPptxLocal(j) {
     const x = RX + kW * i;
     slide.addText(k.label || "", {
       x, y: mTop + 0.05, w: kW, h: 0.28,
-      fontFace: FONT, fontSize: 10, bold: true, color: GRAY, align: "center", valign: "middle",
+      fontFace: FONT_FACE, fontSize: 10, bold: true, color: GRAY, align: "center", valign: "middle",
     });
     slide.addText(k.value || "暂无", {
       x, y: mTop + 0.30, w: kW, h: 0.40,
-      fontFace: FONT, fontSize: 13, bold: true, color: RED_LABEL, align: "center", valign: "middle",
+      fontFace: FONT_FACE, fontSize: 13, bold: true, color: LABEL_FG, align: "center", valign: "middle",
     });
   });
   const drvs = (m.drivers || []).slice(0, 3);
   const drvTop = mTop + 0.85, drvH = 0.45;
   drvs.forEach((d, i) => {
     slide.addText([
-      { text: `〔${d.type || ""}〕 `, options: { bold: true, color: RED_LABEL } },
+      { text: `〔${d.type || ""}〕 `, options: { bold: true, color: LABEL_FG } },
       { text: d.text || "暂无", options: { color: BLACK } },
     ], {
       x: RX + 0.1, y: drvTop + drvH * i, w: RW - 0.2, h: drvH,
-      fontFace: FONT, fontSize: 10, valign: "top", margin: 2,
+      fontFace: FONT_FACE, fontSize: 10, valign: "top", margin: 2,
     });
   });
   slide.addText([
-    { text: "〔竞争格局〕 ", options: { bold: true, color: RED_LABEL } },
+    { text: "〔竞争格局〕 ", options: { bold: true, color: LABEL_FG } },
     { text: m.competition || "暂无", options: { color: BLACK } },
   ], {
     x: RX + 0.1, y: drvTop + drvH * 3 + 0.05, w: RW - 0.2, h: 0.55,
-    fontFace: FONT, fontSize: 10, valign: "top", margin: 2,
+    fontFace: FONT_FACE, fontSize: 10, valign: "top", margin: 2,
   });
 
   // 投资亮点 4 条 2x2
@@ -501,23 +504,23 @@ function renderOnePagerPptxLocal(j) {
     const y = cellsTop + cellH * row;
     slide.addText(`· ${h.title || "暂无"}`, {
       x, y, w: cellW, h: 0.35,
-      fontFace: FONT, fontSize: 12, bold: true, color: RED_LABEL, valign: "middle",
+      fontFace: FONT_FACE, fontSize: 12, bold: true, color: LABEL_FG, valign: "middle",
     });
     slide.addText(h.desc || "暂无", {
       x: x + 0.18, y: y + 0.32, w: cellW - 0.18, h: cellH - 0.32,
-      fontFace: FONT, fontSize: 10, color: BLACK, valign: "top",
+      fontFace: FONT_FACE, fontSize: 10, color: BLACK, valign: "top",
     });
   });
 
-  // 风险灰底
+  // 风险板块 (语义红浅底 + 语义红文字)
   const RISK_TOP = 6.78, RISK_H = 0.55;
   slide.addShape(pptx.ShapeType.rect, {
     x: LX, y: RISK_TOP, w: 12.2, h: RISK_H,
-    fill: { color: GRAY_BG }, line: { type: "none" },
+    fill: { color: RISK_BG }, line: { type: "none" },
   });
   slide.addText("投资风险", {
     x: LX + 0.1, y: RISK_TOP, w: 1.2, h: RISK_H,
-    fontFace: FONT, fontSize: 12, bold: true, color: RED_LABEL, valign: "middle",
+    fontFace: FONT_FACE, fontSize: 12, bold: true, color: RISK_FG, valign: "middle",
   });
   const risks = (j.risks || []).slice(0, 2);
   const rAreaX = LX + 1.35;
@@ -525,11 +528,11 @@ function renderOnePagerPptxLocal(j) {
   const rW = rAreaW / Math.max(risks.length, 1);
   risks.forEach((r, i) => {
     slide.addText([
-      { text: `${r.title || "暂无"}： `, options: { bold: true, color: RED_LABEL } },
+      { text: `${r.title || "暂无"}： `, options: { bold: true, color: RISK_FG } },
       { text: r.desc || "暂无", options: { color: BLACK } },
     ], {
       x: rAreaX + rW * i, y: RISK_TOP, w: rW, h: RISK_H,
-      fontFace: FONT, fontSize: 10, valign: "middle", margin: 4,
+      fontFace: FONT_FACE, fontSize: 10, valign: "middle", margin: 4,
     });
   });
 
@@ -538,7 +541,7 @@ function renderOnePagerPptxLocal(j) {
   const footText = `成立年份 ${f.founded || "暂无"}　·　团队规模 ${f.team_size || "暂无"}　·　累计融资 ${f.funding_total || "暂无"}　·　${f.ai_grade || "暂无"}`;
   slide.addText(footText, {
     x: LX, y: 7.05, w: 12.2, h: 0.35,
-    fontFace: FONT, fontSize: 9, color: GRAY, valign: "middle",
+    fontFace: FONT_FACE, fontSize: 9, color: GRAY, valign: "middle",
   });
 
   return pptx.write({ outputType: "nodebuffer" });

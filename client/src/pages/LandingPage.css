@@ -1,8 +1,77 @@
 /* ── LANDING PAGE STYLES ─────────────────────────────────── */
 
+/* Scope refreshed palette to landing page only — do not affect app shell */
+.lp-root {
+  --navy:    #0A1F3D;
+  --navy2:   #122D5A;
+  --accent:  #1749C9;
+  --accent2: #2E63E8;
+  --gold:    #8C5C00;
+  --bg:      #F4F6FB;
+  --bg2:     #FFFFFF;
+  --bg3:     #E9EDF6;
+  --bg4:     #DDE3F0;
+  --border:  #CBD1E0;
+  --border2: #A8B0C8;
+  --text:    #0C1A30;
+  --mid:     #2D3D54;
+  --dim:     #526078;
+  --muted:   #7A8CA0;
+  --green:   #0F6B30;
+  --grn-bg:  #EDFBF2;
+  --amber:   #92480A;
+  --amb-bg:  #FFF7ED;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 15px;
+  line-height: 1.65;
+}
+
 #bg-canvas {
   position: fixed; inset: 0; z-index: 0;
   pointer-events: none;
+}
+
+/* Floating orbs (above canvas, below content) */
+.lp-bg-orbs {
+  position: fixed; inset: 0; z-index: 0;
+  pointer-events: none; overflow: hidden;
+}
+.lp-bg-orb {
+  position: absolute; border-radius: 50%;
+  filter: blur(60px); opacity: .55;
+  animation: lpOrbDrift 28s ease-in-out infinite;
+}
+.lp-bg-orb.o1 {
+  width: 520px; height: 520px; top: -120px; left: 10%;
+  background: radial-gradient(circle, rgba(46,99,232,.22), transparent 65%);
+  animation-duration: 32s;
+}
+.lp-bg-orb.o2 {
+  width: 640px; height: 640px; top: 35%; right: -180px;
+  background: radial-gradient(circle, rgba(23,73,201,.18), transparent 65%);
+  animation-duration: 38s; animation-delay: -8s;
+}
+.lp-bg-orb.o3 {
+  width: 460px; height: 460px; bottom: -120px; left: 38%;
+  background: radial-gradient(circle, rgba(140,92,0,.10), transparent 65%);
+  animation-duration: 44s; animation-delay: -14s;
+}
+@keyframes lpOrbDrift {
+  0%,100% { transform: translate(0,0) scale(1); }
+  33%     { transform: translate(60px,-40px) scale(1.06); }
+  66%     { transform: translate(-50px,30px) scale(.96); }
+}
+
+/* Faint grid wash */
+.lp-bg-grid {
+  position: fixed; inset: 0; z-index: 0; pointer-events: none;
+  background-image:
+    linear-gradient(to right, rgba(13,33,69,.035) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(13,33,69,.035) 1px, transparent 1px);
+  background-size: 56px 56px;
+  mask-image: radial-gradient(ellipse at 50% 30%, #000 0%, transparent 80%);
+  -webkit-mask-image: radial-gradient(ellipse at 50% 30%, #000 0%, transparent 80%);
 }
 
 /* ── NAV ──────────────────────────────────────── */
@@ -469,3 +538,191 @@
   color: var(--text); margin-bottom: 6px;
 }
 .lp-why-desc { font-size: 13px; color: var(--mid); line-height: 1.65; }
+
+/* ── MULTI-AGENT WORKSPACE ───────────────────── */
+.lp-ws-section { position: relative; z-index: 1; padding: 100px 48px; overflow: hidden; }
+.lp-ws-section::before {
+  content: ''; position: absolute; inset: 0;
+  background:
+    radial-gradient(ellipse 800px 500px at 15% 20%, rgba(23,73,201,.06), transparent 70%),
+    radial-gradient(ellipse 600px 400px at 85% 80%, rgba(13,33,69,.05), transparent 70%);
+  pointer-events: none;
+}
+.lp-ws-header {
+  display: grid; grid-template-columns: 1fr auto;
+  gap: 60px; align-items: end; margin-bottom: 56px;
+  max-width: 1280px; margin-left: auto; margin-right: auto;
+  position: relative; z-index: 1;
+}
+.lp-ws-h2 {
+  font-family: var(--serif); font-size: clamp(28px, 2.9vw, 44px);
+  font-weight: 700; line-height: 1.18; color: var(--text);
+  max-width: 640px;
+}
+.lp-ws-h2 em { font-style: normal; color: var(--accent); }
+.lp-ws-h2 .gold { color: var(--gold); }
+.lp-ws-lead {
+  font-size: 14.5px; color: var(--mid); line-height: 1.75;
+  max-width: 360px; padding-bottom: 6px;
+}
+.lp-ws-grid {
+  display: grid; grid-template-columns: 1.05fr 1fr;
+  gap: 32px; max-width: 1280px; margin: 0 auto;
+  align-items: start; position: relative; z-index: 1;
+}
+.lp-agent-roster {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+  align-content: start;
+}
+.lp-agent-card {
+  background: var(--bg2); border: 1px solid var(--border);
+  border-radius: 4px; padding: 22px 22px 20px;
+  position: relative; transition: all .22s;
+  overflow: hidden;
+}
+.lp-agent-card::after {
+  content: ''; position: absolute; left: 0; top: 0; bottom: 0;
+  width: 3px; background: var(--accent);
+  transform: scaleY(0); transform-origin: top;
+  transition: transform .25s;
+}
+.lp-agent-card:hover {
+  border-color: var(--accent);
+  box-shadow: 0 8px 28px rgba(13,33,69,.08);
+  transform: translateY(-2px);
+}
+.lp-agent-card:hover::after { transform: scaleY(1); }
+.lp-agent-head { display: flex; align-items: center; gap: 11px; margin-bottom: 12px; }
+.lp-agent-ava {
+  width: 36px; height: 36px; border-radius: 6px;
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--mono); font-size: 13px; font-weight: 700;
+  color: #fff; flex-shrink: 0; letter-spacing: -.02em;
+  position: relative;
+}
+.lp-agent-ava::before {
+  content: ''; position: absolute; inset: -3px; border-radius: 8px;
+  border: 1px solid currentColor; opacity: .18;
+}
+.lp-ava-mkt  { background: linear-gradient(135deg, #1749C9, #2E63E8); }
+.lp-ava-fin  { background: linear-gradient(135deg, #0F6B30, #15A04A); }
+.lp-ava-cmp  { background: linear-gradient(135deg, #8C5C00, #C9A84C); }
+.lp-ava-risk { background: linear-gradient(135deg, #B91C1C, #DC3838); }
+.lp-ava-team { background: linear-gradient(135deg, #4F46E5, #7C7AF0); }
+.lp-ava-pol  { background: linear-gradient(135deg, #0C5780, #1789C0); }
+.lp-agent-meta { flex: 1; min-width: 0; }
+.lp-agent-name {
+  font-family: var(--serif); font-size: 14.5px; font-weight: 700;
+  color: var(--text); line-height: 1.2; margin-bottom: 3px;
+}
+.lp-agent-role {
+  font-family: var(--mono); font-size: 9.5px; letter-spacing: .1em;
+  color: var(--dim); text-transform: uppercase; font-weight: 600;
+}
+.lp-agent-desc {
+  font-size: 12.5px; color: var(--mid); line-height: 1.65; margin-bottom: 12px;
+}
+.lp-agent-skills { display: flex; flex-wrap: wrap; gap: 4px; }
+.lp-skill-chip {
+  font-family: var(--mono); font-size: 9.5px; letter-spacing: .03em;
+  color: var(--dim); background: var(--bg3);
+  border: 1px solid var(--border); padding: 2px 7px; border-radius: 2px;
+  font-weight: 600;
+}
+
+/* Right: workspace chat preview */
+.lp-ws-preview {
+  background: var(--bg2); border: 1px solid var(--border);
+  border-radius: 6px; overflow: hidden;
+  box-shadow: 0 18px 60px rgba(13,33,69,.12), 0 2px 8px rgba(13,33,69,.05);
+  display: flex; flex-direction: column;
+  position: sticky; top: 84px;
+}
+.lp-ws-prev-chrome {
+  background: var(--navy); padding: 11px 16px;
+  display: flex; align-items: center; gap: 7px;
+}
+.lp-ws-prev-chrome .lp-chrome-label { color: rgba(255,255,255,.7); }
+.lp-ws-tabs {
+  display: flex; gap: 0; background: var(--bg);
+  border-bottom: 1px solid var(--border); padding: 0 12px;
+}
+.lp-ws-tab {
+  font-family: var(--mono); font-size: 10px; letter-spacing: .06em;
+  padding: 10px 12px; color: var(--dim);
+  border-bottom: 2px solid transparent; margin-bottom: -1px;
+  display: flex; align-items: center; gap: 6px;
+}
+.lp-ws-tab .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.lp-ws-tab.active { color: var(--accent); border-color: var(--accent); }
+.lp-ws-body {
+  padding: 18px 20px; display: flex; flex-direction: column; gap: 14px;
+}
+.lp-msg { display: flex; gap: 11px; align-items: flex-start; }
+.lp-msg-ava {
+  width: 30px; height: 30px; border-radius: 5px;
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--mono); font-size: 11px; font-weight: 700;
+  color: #fff; flex-shrink: 0;
+}
+.lp-msg-body { flex: 1; min-width: 0; }
+.lp-msg-meta { display: flex; align-items: baseline; gap: 8px; margin-bottom: 4px; }
+.lp-msg-name { font-family: var(--serif); font-size: 12.5px; font-weight: 700; color: var(--text); }
+.lp-msg-role { font-family: var(--mono); font-size: 9.5px; letter-spacing: .05em; color: var(--dim); }
+.lp-msg-text { font-size: 13px; color: var(--text); line-height: 1.6; }
+.lp-msg-text .lp-hl { background: rgba(201,168,76,.22); padding: 1px 4px; border-radius: 2px; font-weight: 600; }
+.lp-msg-callout {
+  margin-top: 8px; padding: 9px 12px;
+  background: var(--bg); border: 1px solid var(--border);
+  border-left: 3px solid var(--accent); border-radius: 0 3px 3px 0;
+  font-size: 11.5px; color: var(--mid); line-height: 1.55;
+  font-family: var(--mono);
+}
+.lp-ws-typing {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 14px; background: var(--bg);
+  border-top: 1px solid var(--border);
+  font-family: var(--mono); font-size: 11px; color: var(--dim);
+}
+.lp-typing-dots { display: inline-flex; gap: 3px; }
+.lp-typing-dots span {
+  width: 5px; height: 5px; border-radius: 50%; background: var(--accent);
+  animation: lpTypingPulse 1.2s ease-in-out infinite;
+}
+.lp-typing-dots span:nth-child(2) { animation-delay: .2s; }
+.lp-typing-dots span:nth-child(3) { animation-delay: .4s; }
+@keyframes lpTypingPulse {
+  0%,60%,100% { opacity: .3; transform: translateY(0); }
+  30% { opacity: 1; transform: translateY(-3px); }
+}
+.lp-ws-input {
+  padding: 12px 14px; border-top: 1px solid var(--border);
+  display: flex; align-items: center; gap: 10px; background: var(--bg2);
+}
+.lp-ws-input-box {
+  flex: 1; background: var(--bg); border: 1px solid var(--border);
+  border-radius: 4px; padding: 8px 12px;
+  font-size: 12.5px; color: var(--dim);
+}
+.lp-ws-input-send {
+  width: 32px; height: 32px; border-radius: 4px;
+  background: var(--accent); color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--mono); font-size: 13px; font-weight: 700;
+}
+
+.lp-ws-benefits {
+  display: grid; grid-template-columns: repeat(3, 1fr);
+  gap: 24px; max-width: 1280px; margin: 56px auto 0;
+  padding-top: 40px; border-top: 1px solid var(--border);
+  position: relative; z-index: 1;
+}
+.lp-ws-bn-num {
+  font-family: var(--mono); font-size: 11px; color: var(--accent);
+  letter-spacing: .13em; font-weight: 700; margin-bottom: 8px;
+}
+.lp-ws-bn-h {
+  font-family: var(--serif); font-size: 17px; font-weight: 700;
+  color: var(--text); margin-bottom: 8px; line-height: 1.3;
+}
+.lp-ws-bn-d { font-size: 13px; color: var(--mid); line-height: 1.7; }

@@ -536,48 +536,56 @@ class OnePagerPayload(BaseModel):
 
 
 def _set_cn_font(run, size_pt: int, bold: bool = False, color=None,
-                 family: str = "Microsoft YaHei"):
-    """设置中文友好字体（同时设置 latin / eastAsia typeface）"""
+                 family: str = None):
+    """设置中文友好字体 (同时设置 latin / eastAsia typeface).
+
+    family 默认走 brand_tokens.FONT_CN_SANS, 与网页 :root 同源.
+    """
     from pptx.util import Pt
     from lxml import etree
+    from brand_tokens import FONT_CN_SANS, FONT_EN
+    if family is None:
+        family = FONT_CN_SANS
     run.font.size = Pt(size_pt)
     run.font.bold = bold
-    run.font.name = family
+    run.font.name = FONT_EN  # latin 走 DM Sans
     if color is not None:
         run.font.color.rgb = color
-    # 强制东亚字体（python-pptx 默认只设 latin），保证 Mac/WPS 也能渲染
+    # 强制 east-asian / latin / cs typeface, 保证 Mac/Win/WPS 渲染一致
     rPr = run._r.get_or_add_rPr()
-    for tag in ("ea", "cs"):
-        existing = rPr.find(f"{{http://schemas.openxmlformats.org/drawingml/2006/main}}{tag}")
+    main_ns = "{http://schemas.openxmlformats.org/drawingml/2006/main}"
+    for tag, typeface in (("ea", family), ("cs", family), ("latin", FONT_EN)):
+        existing = rPr.find(f"{main_ns}{tag}")
         if existing is not None:
             rPr.remove(existing)
-        el = etree.SubElement(
-            rPr, f"{{http://schemas.openxmlformats.org/drawingml/2006/main}}{tag}"
-        )
-        el.set("typeface", family)
+        el = etree.SubElement(rPr, f"{main_ns}{tag}")
+        el.set("typeface", typeface)
 
 
 def _build_onepager(payload: OnePagerPayload) -> bytes:
-    """渲染一页"投资要点速览"PPT。
-    版式严格还原原图：米白底 + 金棕标题 + 红底标语 + 双栏（公司概况 / 市场机会）
-    + 投资亮点 4 条 + 投资风险 2 条 + 页脚小条。
+    """渲染一页"投资要点速览"PPT.
+
+    版式锁定: navy 横幅 + 品牌蓝细线 + 双栏 (公司概况 / 市场机会)
+    + 投资亮点 4 条 + 投资风险 2 条 + 页脚小条.
+    颜色 / 字体一律走 brand_tokens, 与网页 :root 同源.
     """
     from pptx import Presentation
-    from pptx.util import Inches, Pt, Emu
-    from pptx.dml.color import RGBColor
+    from pptx.util import Inches, Pt
     from pptx.enum.shapes import MSO_SHAPE
     from pptx.enum.text import MSO_ANCHOR, PP_ALIGN
 
-    # 配色（贴近原图）
-    BG = RGBColor(0xFA, 0xF7, 0xF2)         # 米白底
-    GOLD = RGBColor(0x8B, 0x6F, 0x3F)       # 金棕（标题色）
-    GOLD_LINE = RGBColor(0xC9, 0xA9, 0x6E)  # 金棕分隔线
-    RED = RGBColor(0xA8, 0x29, 0x2A)        # 标语红底
-    RED_LABEL = RGBColor(0xC2, 0x3B, 0x3B)  # 板块红色标签 / 红色小标题
-    BLACK = RGBColor(0x1A, 0x1A, 0x1A)
-    GRAY = RGBColor(0x55, 0x55, 0x55)
-    LIGHT = RGBColor(0xF1, 0xE9, 0xDB)      # 板块浅米黄底
-    GRAY_BG = RGBColor(0xEE, 0xEA, 0xE2)    # 风险板块灰底
+    from brand_tokens import COLOR
+
+    # 语义映射 (统一品牌色, 不再使用砖红/米黄)
+    BG = COLOR["bg"]            # 页底浅灰
+    BRAND = COLOR["accent"]     # 品牌蓝, 标题色 / 分隔线
+    BANNER = COLOR["navy"]      # 主横幅 (深海军蓝)
+    LABEL_FG = COLOR["accent"]  # 板块标签文字
+    BLACK = COLOR["ink"]
+    GRAY = COLOR["mid"]
+    LIGHT = COLOR["bg3"]        # 板块浅蓝灰底
+    GRAY_BG = COLOR["red_bg"]   # 风险板块走语义红浅底
+    RISK_FG = COLOR["red"]      # 风险板块文字
 
     prs = Presentation()
     prs.slide_width = Inches(13.333)
@@ -632,24 +640,24 @@ def _build_onepager(payload: OnePagerPayload) -> bytes:
         return rect
 
     def add_section_label(left, top, width, text):
-        """红色板块小标签（'公司概况' / '市场机会与行业速览' / '投资亮点' / '投资风险'）"""
+        """板块小标签 (浅蓝灰胶囊 + 品牌蓝文字, 与网页 status pill 同款)."""
         add_filled_rect(left, top, width, Inches(0.34), LIGHT)
         add_text(left, top, width, Inches(0.34), text,
-                 size=14, bold=True, color=RED_LABEL, anchor_top=False)
+                 size=14, bold=True, color=LABEL_FG, anchor_top=False)
 
     paint_bg()
 
-    # ── 顶部标题 + 金线 ──────────────────────────────────────
+    # ── 顶部标题 + 品牌蓝细线 ───────────────────────────────
     title_text = f"投资要点速览——{payload.company_name}"
     add_text(Inches(0.55), Inches(0.32), Inches(12.2), Inches(0.6),
-             title_text, size=26, bold=True, color=GOLD)
-    add_filled_rect(Inches(0.55), Inches(0.95), Inches(12.2), Inches(0.025), GOLD_LINE)
+             title_text, size=26, bold=True, color=COLOR["navy"])
+    add_filled_rect(Inches(0.55), Inches(0.95), Inches(12.2), Inches(0.025), BRAND)
 
-    # ── 红底标语条 ──────────────────────────────────────────
-    add_filled_rect(Inches(0.55), Inches(1.10), Inches(12.2), Inches(0.55), RED)
+    # ── navy 横幅 (论点带) ──────────────────────────────────
+    add_filled_rect(Inches(0.55), Inches(1.10), Inches(12.2), Inches(0.55), BANNER)
     headline_box, _, _ = add_text(
         Inches(0.55), Inches(1.10), Inches(12.2), Inches(0.55),
-        payload.headline, size=16, bold=True, color=RGBColor(0xFF, 0xFF, 0xFF),
+        payload.headline, size=16, bold=True, color=COLOR["white"],
         anchor_top=False
     )
     headline_box.text_frame.paragraphs[0].alignment = PP_ALIGN.LEFT
@@ -671,7 +679,7 @@ def _build_onepager(payload: OnePagerPayload) -> bytes:
         payload.company_overview.summary, size=11, color=BLACK,
         line_spacing=1.25
     )
-    summary_box.line.color.rgb = GOLD_LINE
+    summary_box.line.color.rgb = COLOR["border"]
     summary_box.line.width = Pt(0.5)
 
     # 产品/业务条目
@@ -690,7 +698,7 @@ def _build_onepager(payload: OnePagerPayload) -> bytes:
         para.line_spacing = 1.2
         r1 = para.add_run()
         r1.text = f"{prod.name}："
-        _set_cn_font(r1, 11, bold=True, color=RED_LABEL)
+        _set_cn_font(r1, 11, bold=True, color=LABEL_FG)
         r2 = para.add_run()
         r2.text = prod.desc
         _set_cn_font(r2, 11, color=BLACK)
@@ -718,7 +726,7 @@ def _build_onepager(payload: OnePagerPayload) -> bytes:
         # 值
         val_box, _, vp = add_text(
             x, market_top + Inches(0.30), kpi_w, Inches(0.40),
-            kpi.value, size=13, bold=True, color=RED_LABEL, anchor_top=False
+            kpi.value, size=13, bold=True, color=LABEL_FG, anchor_top=False
         )
         vp.alignment = PP_ALIGN.CENTER
 
@@ -739,7 +747,7 @@ def _build_onepager(payload: OnePagerPayload) -> bytes:
         p.line_spacing = 1.15
         r1 = p.add_run()
         r1.text = f"〔{drv.type}〕 "
-        _set_cn_font(r1, 10, bold=True, color=RED_LABEL)
+        _set_cn_font(r1, 10, bold=True, color=LABEL_FG)
         r2 = p.add_run()
         r2.text = drv.text
         _set_cn_font(r2, 10, color=BLACK)
@@ -757,7 +765,7 @@ def _build_onepager(payload: OnePagerPayload) -> bytes:
     cp.line_spacing = 1.15
     cr1 = cp.add_run()
     cr1.text = "〔竞争格局〕 "
-    _set_cn_font(cr1, 10, bold=True, color=RED_LABEL)
+    _set_cn_font(cr1, 10, bold=True, color=LABEL_FG)
     cr2 = cp.add_run()
     cr2.text = payload.market_opportunity.competition
     _set_cn_font(cr2, 10, color=BLACK)
@@ -776,7 +784,7 @@ def _build_onepager(payload: OnePagerPayload) -> bytes:
         y = cells_top + cell_h * row
         # 标题
         add_text(x, y, cell_w, Inches(0.35),
-                 f"· {hl.title}", size=12, bold=True, color=RED_LABEL,
+                 f"· {hl.title}", size=12, bold=True, color=LABEL_FG,
                  anchor_top=False)
         # 描述
         add_text(x + Inches(0.18), y + Inches(0.32), cell_w - Inches(0.18),
@@ -789,7 +797,7 @@ def _build_onepager(payload: OnePagerPayload) -> bytes:
     add_filled_rect(LEFT_X, RISK_TOP, Inches(12.2), RISK_H, GRAY_BG)
     # 标签
     add_text(LEFT_X + Inches(0.1), RISK_TOP, Inches(1.2), RISK_H,
-             "投资风险", size=12, bold=True, color=RED_LABEL, anchor_top=False)
+             "投资风险", size=12, bold=True, color=RISK_FG, anchor_top=False)
     risks = payload.risks[:2]
     risk_area_x = LEFT_X + Inches(1.35)
     risk_area_w = Inches(12.2) - Inches(1.35)
@@ -807,7 +815,7 @@ def _build_onepager(payload: OnePagerPayload) -> bytes:
         p.line_spacing = 1.15
         r1 = p.add_run()
         r1.text = f"{rk.title}： "
-        _set_cn_font(r1, 10, bold=True, color=RED_LABEL)
+        _set_cn_font(r1, 10, bold=True, color=RISK_FG)
         r2 = p.add_run()
         r2.text = rk.desc
         _set_cn_font(r2, 10, color=BLACK)
@@ -838,6 +846,64 @@ async def generate_onepager(payload: OnePagerPayload):
         io.BytesIO(data),
         media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
         headers={"Content-Disposition": "attachment; filename=onepager.pptx"},
+    )
+
+
+@app.post("/generate/project_brief")
+async def generate_project_brief(payload: dict):
+    """
+    项目简报 3 页 deck.
+    Body: 严格符合 server/services/project_brief/content_schema.json 的对象.
+    版式锁在 project_brief_render.py 中.
+    """
+    import project_brief_render as pb
+    buf = io.BytesIO()
+    tmp_path = tempfile.NamedTemporaryFile(suffix=".pptx", delete=False).name
+    try:
+        pb.render(payload, tmp_path)
+        with open(tmp_path, "rb") as f:
+            buf.write(f.read())
+    except KeyError as e:
+        raise HTTPException(status_code=400, detail=f"内容缺失字段: {e}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"项目简报渲染失败: {e}")
+    finally:
+        try: os.remove(tmp_path)
+        except Exception: pass
+    buf.seek(0)
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        headers={"Content-Disposition": "attachment; filename=project_brief.pptx"},
+    )
+
+
+@app.post("/generate/investment_snapshot")
+async def generate_investment_snapshot(payload: dict):
+    """
+    一页纸投决速览 · 砖红 A4 横版。
+    Body: 严格符合 server/services/investment_snapshot/content_schema.json 的对象。
+    版式锁在 investment_snapshot_render.py 中，本端点不做任何样式判断。
+    """
+    import investment_snapshot_render as snap
+    buf = io.BytesIO()
+    tmp_path = tempfile.NamedTemporaryFile(suffix=".pptx", delete=False).name
+    try:
+        snap.render(payload, tmp_path)
+        with open(tmp_path, "rb") as f:
+            buf.write(f.read())
+    except KeyError as e:
+        raise HTTPException(status_code=400, detail=f"内容缺失字段: {e}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"投决速览渲染失败: {e}")
+    finally:
+        try: os.remove(tmp_path)
+        except Exception: pass
+    buf.seek(0)
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        headers={"Content-Disposition": "attachment; filename=investment_snapshot.pptx"},
     )
 
 

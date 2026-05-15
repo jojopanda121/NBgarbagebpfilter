@@ -1,0 +1,173 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "项目简报 3 页 deck · 内容合约 (PE/VC 版)",
+  "description": "一级市场 (PE/VC) 视角的 3 页项目简报. 模块刚性, 内容动态. 所有版式由 doc-service/project_brief_render.py 锁定.",
+  "type": "object",
+  "required": [
+    "company_full_name",
+    "tagline",
+    "metadata",
+    "dealroom_meta",
+    "overview",
+    "highlights",
+    "risks",
+    "team",
+    "financials_compact",
+    "valuation_view"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "company_full_name": {
+      "type": "string",
+      "description": "公司全称, 出现在封面主标题",
+      "minLength": 4,
+      "maxLength": 40
+    },
+    "tagline": {
+      "type": "string",
+      "description": "一句话中性定位 (navy 横幅白字), 不是 thesis. 例: 'AI 存储独立厂商, 服务百家 500 强'.",
+      "minLength": 8,
+      "maxLength": 40
+    },
+    "metadata": {
+      "type": "object",
+      "required": ["industry", "stage", "location"],
+      "additionalProperties": false,
+      "properties": {
+        "industry": { "type": "string", "minLength": 2, "maxLength": 16 },
+        "stage":    { "type": "string", "minLength": 2, "maxLength": 12 },
+        "location": { "type": "string", "minLength": 2, "maxLength": 16 }
+      }
+    },
+    "dealroom_meta": {
+      "type": "object",
+      "description": "交易撮合信息 (封面副信息条), 一级市场专属. 任一字段无值写 '未披露'.",
+      "required": ["round_size", "pre_valuation", "lead_investor_status"],
+      "additionalProperties": false,
+      "properties": {
+        "round_size": {
+          "type": "string",
+          "description": "本轮拟融资额. 如 '3.0 亿人民币'.",
+          "minLength": 2,
+          "maxLength": 16
+        },
+        "pre_valuation": {
+          "type": "string",
+          "description": "Pre-money 估值. 如 '15-20 亿人民币'. 严禁推算, 未披露写 '未披露'.",
+          "minLength": 2,
+          "maxLength": 18
+        },
+        "lead_investor_status": {
+          "type": "string",
+          "description": "领投状态. 如 '红杉确认领投' / '寻领投中' / '老股东等比例跟投'.",
+          "minLength": 2,
+          "maxLength": 22
+        }
+      }
+    },
+    "overview": {
+      "type": "string",
+      "description": "项目概况段落, 80-200 字, 覆盖: 是什么 / 谁在做 / 现在到了哪一步. 不要复述 highlights 内容.",
+      "minLength": 60,
+      "maxLength": 220
+    },
+    "highlights": {
+      "type": "array",
+      "description": "投资亮点恰好 4 条 (2x2 网格刚性约束). 每条 desc 含 '事实+对标+意义' 三段.",
+      "minItems": 4,
+      "maxItems": 4,
+      "items": {
+        "type": "object",
+        "required": ["label", "desc"],
+        "additionalProperties": false,
+        "properties": {
+          "label": { "type": "string", "minLength": 4, "maxLength": 18 },
+          "desc":  { "type": "string", "minLength": 40, "maxLength": 140 }
+        }
+      }
+    },
+    "risks": {
+      "type": "array",
+      "description": "投资风险恰好 3 条. 每条需指出风险源 + 潜在影响.",
+      "minItems": 3,
+      "maxItems": 3,
+      "items": {
+        "type": "object",
+        "required": ["label", "desc"],
+        "additionalProperties": false,
+        "properties": {
+          "label": { "type": "string", "minLength": 2, "maxLength": 16 },
+          "desc":  { "type": "string", "minLength": 24, "maxLength": 110 }
+        }
+      }
+    },
+    "team": {
+      "type": "array",
+      "description": "核心团队 2-3 人 (创始人 / 关键高管). bio 含前公司 + 核心成就 + 学历, 一句话.",
+      "minItems": 2,
+      "maxItems": 3,
+      "items": {
+        "type": "object",
+        "required": ["name", "role", "bio"],
+        "additionalProperties": false,
+        "properties": {
+          "name": { "type": "string", "minLength": 2, "maxLength": 10 },
+          "role": { "type": "string", "minLength": 2, "maxLength": 18 },
+          "bio":  { "type": "string", "minLength": 20, "maxLength": 90 }
+        }
+      }
+    },
+    "financials_compact": {
+      "type": "object",
+      "description": "3 期 × 3 指标紧凑财务表. columns 是 3 个期间 (e.g. ['2023','2024','2025 Q1-Q3']); rows 恰好 3 行, 顺序: 营收 / 增速 / 毛利率.",
+      "required": ["columns", "rows"],
+      "additionalProperties": false,
+      "properties": {
+        "columns": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "items": { "type": "string", "minLength": 2, "maxLength": 14 }
+        },
+        "rows": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "items": {
+            "type": "array",
+            "description": "[指标名, 期1值, 期2值, 期3值]",
+            "minItems": 4,
+            "maxItems": 4,
+            "items": { "type": "string", "minLength": 1, "maxLength": 16 }
+          }
+        }
+      }
+    },
+    "valuation_view": {
+      "type": "object",
+      "description": "估值视角: 可比锚 + 建议区间 + 推导逻辑. 一级市场决策的核心一段.",
+      "required": ["comp_anchor", "recommended_range", "rationale"],
+      "additionalProperties": false,
+      "properties": {
+        "comp_anchor": {
+          "type": "string",
+          "description": "对标交易 / 可比公司, 含倍数. 如 '对标纯石科技 2024 B+ 轮 12x ARR'.",
+          "minLength": 8,
+          "maxLength": 60
+        },
+        "recommended_range": {
+          "type": "string",
+          "description": "建议估值区间, 含币种. 如 '15-20 亿人民币 Pre-money'. 未达成内部共识时写 '待 IC 讨论'.",
+          "minLength": 4,
+          "maxLength": 24
+        },
+        "rationale": {
+          "type": "string",
+          "description": "估值推导一句话, 含 1 个数字或可比项.",
+          "minLength": 30,
+          "maxLength": 150
+        }
+      }
+    }
+  }
+}

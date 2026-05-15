@@ -3,7 +3,7 @@
 // ============================================================
 
 const { Router } = require("express");
-const rateLimit = require("express-rate-limit");
+const { rateLimit, ipKeyGenerator } = require("express-rate-limit");
 const { requireAuth } = require("../middleware/auth");
 const { getDb } = require("../db");
 const skills = require("../skills");
@@ -19,7 +19,9 @@ const skillRunLimiter = rateLimit({
   max: 30,
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req) => `${req.user?.id || req.ip}`,
+  keyGenerator: (req) => (
+    req.user?.id ? `u:${req.user.id}` : `ip:${ipKeyGenerator(req.ip)}`
+  ),
   message: { error: "请求过于频繁,请稍后重试" },
 });
 

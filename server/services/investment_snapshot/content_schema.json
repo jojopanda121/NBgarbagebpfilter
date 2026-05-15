@@ -1,0 +1,152 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "投资要点速览 一页纸 内容合约 (PE/VC 版)",
+  "description": "一级市场 (PE/VC) 视角的投资速览, 模块刚性, 内容动态. 所有版式由 doc-service/investment_snapshot_render.py 锁定, Agent 不要尝试控制样式.",
+  "type": "object",
+  "required": [
+    "company_full_name",
+    "stage_tag",
+    "thesis",
+    "company_overview",
+    "pe_snapshot",
+    "cap_and_traction",
+    "highlights",
+    "risks"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "company_full_name": {
+      "type": "string",
+      "description": "公司全称, 出现在主标题",
+      "minLength": 4,
+      "maxLength": 40
+    },
+    "stage_tag": {
+      "type": "string",
+      "description": "融资阶段短标签 (主标题右侧胶囊), 如 'B+ 轮' / 'Pre-IPO' / '战略融资'. 材料未提供时写 '阶段待定'.",
+      "minLength": 2,
+      "maxLength": 12
+    },
+    "thesis": {
+      "type": "string",
+      "description": "一句话投资主张 (navy 横幅白字), ≤35 字, 独立成句, 句号收尾.",
+      "minLength": 8,
+      "maxLength": 40
+    },
+    "company_overview": {
+      "type": "object",
+      "required": ["summary"],
+      "additionalProperties": false,
+      "properties": {
+        "summary": {
+          "type": "string",
+          "description": "公司概况段落, 100-180 字, 3-4 句, 覆盖: 是什么 / 卡位 / 当期关键变化. 不要复述 highlights 内容.",
+          "minLength": 60,
+          "maxLength": 220
+        }
+      }
+    },
+    "pe_snapshot": {
+      "type": "object",
+      "description": "本轮交易快照 (右上 4 KPI 格), 一级市场决策的 4 个核心字段.",
+      "required": ["stage", "round_size", "pre_valuation", "lead_terms"],
+      "additionalProperties": false,
+      "properties": {
+        "stage": {
+          "type": "string",
+          "description": "本轮阶段, 与 stage_tag 一致. 如 'B+ 轮'.",
+          "minLength": 2,
+          "maxLength": 12
+        },
+        "round_size": {
+          "type": "string",
+          "description": "本轮拟融资额, 含单位. 如 '3.0 亿人民币'. 未披露写 '未披露'.",
+          "minLength": 2,
+          "maxLength": 16
+        },
+        "pre_valuation": {
+          "type": "string",
+          "description": "Pre-money 估值. 如 '15-20 亿人民币'. 严禁根据 ARR×倍数自行推算, 未披露写 '未披露'.",
+          "minLength": 2,
+          "maxLength": 18
+        },
+        "lead_terms": {
+          "type": "string",
+          "description": "领投/老股东跟投/关键条款摘要. 如 '红杉领投, 高瓴跟投, 含赎回'. 未披露写 '未披露'.",
+          "minLength": 2,
+          "maxLength": 28
+        }
+      }
+    },
+    "cap_and_traction": {
+      "type": "object",
+      "description": "资本结构 + 业务牵引: 投资人/股东 + 关键牵引指标. 替代二级市场 8 行损益表.",
+      "required": ["shareholders", "traction"],
+      "additionalProperties": false,
+      "properties": {
+        "shareholders": {
+          "type": "array",
+          "description": "主要股东/历史投资人, 2-4 行. 持股比例 1 位小数, 未披露写 '未披露'.",
+          "minItems": 2,
+          "maxItems": 4,
+          "items": {
+            "type": "object",
+            "required": ["name", "pct"],
+            "additionalProperties": false,
+            "properties": {
+              "name": { "type": "string", "minLength": 2, "maxLength": 18 },
+              "pct":  { "type": "string", "minLength": 1, "maxLength": 10 }
+            }
+          }
+        },
+        "traction": {
+          "type": "array",
+          "description": "关键牵引指标恰好 3 条 (ARR / GMV / 客户数 / 毛利率 / NRR 任选 3). 每条含 metric, value, note (note 含 YoY 或对标).",
+          "minItems": 3,
+          "maxItems": 3,
+          "items": {
+            "type": "object",
+            "required": ["metric", "value", "note"],
+            "additionalProperties": false,
+            "properties": {
+              "metric": { "type": "string", "minLength": 2, "maxLength": 10 },
+              "value":  { "type": "string", "minLength": 1, "maxLength": 14 },
+              "note":   { "type": "string", "minLength": 2, "maxLength": 28 }
+            }
+          }
+        }
+      }
+    },
+    "highlights": {
+      "type": "array",
+      "description": "投资亮点恰好 4 条 (版式刚性). 每条 desc 必须含 '事实+对标+意义' 三段.",
+      "minItems": 4,
+      "maxItems": 4,
+      "items": {
+        "type": "object",
+        "required": ["label", "desc"],
+        "additionalProperties": false,
+        "properties": {
+          "label": { "type": "string", "minLength": 4, "maxLength": 22 },
+          "desc":  { "type": "string", "minLength": 50, "maxLength": 200 }
+        }
+      }
+    },
+    "risks": {
+      "type": "array",
+      "description": "投资风险恰好 2 条. 每条必须含缓解措施 (mitigant), 否则视为风险评估缺失.",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": {
+        "type": "object",
+        "required": ["label", "desc", "mitigant"],
+        "additionalProperties": false,
+        "properties": {
+          "label":    { "type": "string", "minLength": 4, "maxLength": 18 },
+          "desc":     { "type": "string", "minLength": 24, "maxLength": 130 },
+          "mitigant": { "type": "string", "minLength": 12, "maxLength": 80, "description": "缓解措施/兜底机制, render 自动以 '缓解: ' 前缀拼接." }
+        }
+      }
+    }
+  }
+}

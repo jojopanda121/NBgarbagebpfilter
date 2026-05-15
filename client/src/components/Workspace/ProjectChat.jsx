@@ -150,13 +150,21 @@ function Bubble({ m }) {
     );
   }
   if (m.role === "system") {
+    const art = m.metadata?.artifact;
     return (
       <div className="text-xs text-[#8E9BB0] italic">
         {m.content}
-        {m.metadata?.artifact && (
-          <div className="text-[#0F1C36] mt-1">
-            {m.metadata.artifact.kind === "pptx" && (
-              <span>📎 {m.metadata.artifact.filename}</span>
+        {art && art.kind === "pptx" && (
+          <div className="text-[#0F1C36] mt-1 not-italic">
+            {art.bufferBase64 ? (
+              <button
+                onClick={() => downloadBase64(art.bufferBase64, art.filename, art.mimeType)}
+                className="inline-flex items-center gap-1 px-2 py-1 rounded bg-emerald-600 text-white text-xs hover:bg-emerald-700"
+              >
+                📎 下载 {art.filename}
+              </button>
+            ) : (
+              <span>📎 {art.filename}</span>
             )}
           </div>
         )}
@@ -187,6 +195,21 @@ function Bubble({ m }) {
       </div>
     </div>
   );
+}
+
+function downloadBase64(base64, filename, mimeType) {
+  const bin = atob(base64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  const blob = new Blob([bytes], { type: mimeType || "application/octet-stream" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename || "download.pptx";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
 
 function PhaseLine({ phase }) {

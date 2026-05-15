@@ -20,6 +20,14 @@ module.exports = {
   description: "基于已完成的 BP 分析,生成一页可发给 LP/投委会的投资要点速览(.pptx)",
   category: "report",
   outputArtifactKind: "pptx",
+  pptxTemplate: {
+    useCase:
+      "1 页 16:9 米白底投资亮点 PPT(pitch deck 风格,带 KPI 卡 + 4 亮点 + 2 风险 + 页脚). " +
+      "适合: 项目已跑完 BP 多 agent 分析,要做对 LP/投委会的正面 pitch 速览. " +
+      "依赖 project.latest_task_id,没有跑过 BP 分析的项目不能用.",
+    pageCount: "exactly 1",
+    argsHint: '<TOOL_CALL>{"id":"onepager_pptx","args":{}}</TOOL_CALL>',
+  },
   inputSchema: {
     type: "object",
     properties: {

@@ -351,6 +351,59 @@ async function regenerateOnePager(taskId, userOverrides = null) {
 }
 
 /**
+ * 直接基于用户提供的文本材料抽取 onepager JSON.
+ * 不依赖 latest_task_id, 不写 DB 缓存. 用于 OnePager 的 "materials" 双模式.
+ *
+ * @param {string} materials       公司原始材料 (BP / 招股书 / 调研笔记原文)
+ * @param {object} [opts]
+ * @param {string} [opts.companyHint]   公司名提示, 写入 LLM 输入起首
+ * @param {object} [opts.userOverrides] 同 getOrGenerateOnePager 的人工微调字段
+ * @returns {Promise<{ json: object, generated_at: string, search_used: boolean }>}
+ */
+async function generateOnePagerFromMaterials(materials, opts = {}) {
+  const { companyHint = "", userOverrides = null } = opts;
+  if (!materials || typeof materials !== "string" || materials.trim().length < 20) {
+    throw new Error("公司材料不足, 至少 20 字");
+  }
+
+  // 用 industry/stage 模板兜底 (无 task 时只能走 default)
+  const tmpl = pickIndustryTemplate("");
+  const stageBucket = pickStageBucket(userOverrides?.funding_round || "");
+
+  // 组装 LLM 输入: 模拟 buildLLMInput 的格式, 但用纯文本材料代替 task row.
+  const parts = [];
+  if (companyHint) parts.push(`【目标公司】${companyHint}`);
+  if (userOverrides && Object.keys(userOverrides).length > 0) {
+    parts.push(`【人工微调字段】${JSON.stringify(userOverrides, null, 2)}`);
+  }
+  parts.push("【公司原始材料】", materials);
+  const llmInput = parts.join("\n\n");
+
+  const { text, searchUsed } = await callLLMWithSearch(
+    ONEPAGER_EXTRACTION_PROMPT,
+    llmInput,
+    { maxTokens: 4096 }
+  );
+
+  let parsed;
+  try {
+    parsed = extractJson(text);
+  } catch (e) {
+    logger.error("[onepager-materials] LLM 输出解析失败:", e.message, "原文前 400:", text.slice(0, 400));
+    throw new Error("一页 PPT 生成失败：模型输出无法解析");
+  }
+
+  const fallbackName = companyHint || parsed?.company_name || "（未知）";
+  const normalized = normalizeOnePager(parsed, fallbackName, tmpl);
+  return {
+    json: normalized,
+    generated_at: new Date().toISOString(),
+    search_used: !!searchUsed,
+    template: { industry_key: tmpl.key, industry: tmpl.name, stage_key: stageBucket.key, stage: stageBucket.label },
+  };
+}
+
+/**
  * 渲染 .pptx：优先调 doc-service /generate/onepager；不可用时降级为 Node 本地 pptxgenjs 渲染。
  * 这样在 PM2 等未起 doc-service 的部署下也能下载 PPT。
  * @returns {Promise<Buffer>}
@@ -558,6 +611,7 @@ function buildPptxFilename(companyName) {
 module.exports = {
   getOrGenerateOnePager,
   regenerateOnePager,
+  generateOnePagerFromMaterials,
   renderOnePagerPptx,
   buildPptxFilename,
   normalizeOnePager,

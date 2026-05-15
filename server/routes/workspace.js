@@ -207,6 +207,9 @@ router.post("/:taskId/messages", requireAuth, upload.single("file"), async (req,
     res.write(`data: ${JSON.stringify(data)}\n\n`);
     return true;
   };
+  const heartbeatTimer = setInterval(() => {
+    sendEvent("heartbeat", { t: Date.now() });
+  }, 15000);
 
   // 客户端断开监听
   const ac = new AbortController();
@@ -321,16 +324,19 @@ router.post("/:taskId/messages", requireAuth, upload.single("file"), async (req,
       intent: routing.task_type,
     });
 
-    // toolRunner：真执行 doc-service 工具，artifact 入库 + 推前端
+    // toolRunner：执行 MiniMax 搜索 / 模板 skill / 文档工具，artifact 入库 + 推前端
     const hostToolRunner = async (toolName, input) => {
-      const artifact = await ws.executeDocumentTool({
+      const r = await ws.executeWorkspaceTool({
         tool: toolName,
         args: input || {},
         conversationId: conv.id,
         messageId: hostMsgId,
+        projectId: conv.project_id || own.task.workspace_project_id || null,
+        userId,
+        taskId,
       });
-      sendEvent("artifact", artifact);
-      return { artifact, summary: artifact.summary || `已生成 ${artifact.filename}` };
+      if (r.artifact) sendEvent("artifact", r.artifact);
+      return r;
     };
 
     let hostResult;
@@ -406,6 +412,7 @@ router.post("/:taskId/messages", requireAuth, upload.single("file"), async (req,
       });
     }
 
+    completed = true;
     sendEvent("done", { ok: true });
   } catch (err) {
     if (ac.signal.aborted || err?.message === "客户端取消") {
@@ -421,6 +428,7 @@ router.post("/:taskId/messages", requireAuth, upload.single("file"), async (req,
     sendEvent("error", { message: msg });
   } finally {
     completed = true;
+    clearInterval(heartbeatTimer);
     req.removeListener("aborted", abortIfOpen);
     res.removeListener("close", abortIfOpen);
     if (req.file?.path) {

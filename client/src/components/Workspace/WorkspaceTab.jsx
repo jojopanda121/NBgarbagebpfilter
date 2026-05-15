@@ -21,13 +21,17 @@ import { streamChatMessage } from "../../services/workspaceStream";
 
 const AGENT_META = {
   host:    { label: "主持人",   icon: MessageSquare, color: "text-blue-700",   ring: "ring-blue-300",   bg: "bg-blue-50" },
+  market_deal: { label: "市场/交易", icon: TrendingUp, color: "text-emerald-700", ring: "ring-emerald-300", bg: "bg-emerald-50" },
+  finance_valuation: { label: "财务/估值", icon: DollarSign, color: "text-amber-700", ring: "ring-amber-300", bg: "bg-amber-50" },
+  product_team_risk: { label: "产品/团队/风险", icon: Shield, color: "text-rose-700", ring: "ring-rose-300", bg: "bg-rose-50" },
+  // legacy aliases for old conversation history
   market:  { label: "市场",     icon: TrendingUp,    color: "text-emerald-700",ring: "ring-emerald-300",bg: "bg-emerald-50" },
   finance: { label: "财务",     icon: DollarSign,    color: "text-amber-700",  ring: "ring-amber-300",  bg: "bg-amber-50" },
   tech:    { label: "技术",     icon: Cpu,           color: "text-cyan-700",   ring: "ring-cyan-300",   bg: "bg-cyan-50" },
   risk:    { label: "风险",     icon: Shield,        color: "text-rose-700",   ring: "ring-rose-300",   bg: "bg-rose-50" },
 };
 
-const ALL_AGENTS = ["host", "market", "finance", "tech", "risk"];
+const ALL_AGENTS = ["host", "market_deal", "finance_valuation", "product_team_risk"];
 
 const ARTIFACT_KIND_LABEL = {
   generated_pptx: "AI 生成 PPT",
@@ -37,6 +41,11 @@ const ARTIFACT_KIND_LABEL = {
 };
 
 const TOOL_LABEL = {
+  web_search: "联网检索",
+  onepager_pptx: "一页投资亮点",
+  investment_snapshot: "投决速览",
+  project_brief: "项目简报",
+  generate_onepager: "生成一页纸",
   generate_pptx: "生成 PPT",
   generate_docx: "生成 Word",
   generate_xlsx: "生成 Excel",
@@ -861,6 +870,18 @@ function ToolEventChip({ t }) {
 
 function describeToolInput(name, input) {
   if (!input || typeof input !== "object") return "";
+  if (name === "web_search") {
+    return input.query || (Array.isArray(input.queries) ? input.queries.join(" · ") : "");
+  }
+  if (name === "generate_onepager") {
+    return input.company_name || input.headline || "投资要点速览";
+  }
+  if (name === "onepager_pptx") {
+    return input.regenerate ? "重新生成投资亮点单页" : "投资亮点单页";
+  }
+  if (name === "investment_snapshot" || name === "project_brief") {
+    return input.company_hint || (input.materials ? "基于补充材料" : "基于项目上下文");
+  }
   if (name === "generate_pptx") {
     const slides = Array.isArray(input.slides) ? input.slides.length : 0;
     return `${input.title || "(无标题)"} · ${slides} 页`;
@@ -994,7 +1015,7 @@ function CapabilityCard({ capabilities, open, onToggle }) {
                 </div>
               </div>
               <div>
-                <div className="text-[11px] font-medium text-[#0F1C36] mb-1.5">可生成的产物</div>
+                <div className="text-[11px] font-medium text-[#0F1C36] mb-1.5">可调用工具</div>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
                   {(capabilities.tools || []).filter((t) => t.callableByModel).map((t) => (
                     <div key={t.name} className="border border-[#EEF1F7] rounded-lg p-2.5">
@@ -1021,14 +1042,16 @@ function CapabilityCard({ capabilities, open, onToggle }) {
 }
 
 const TRIGGER_HINTS = {
-  market:  ["这个赛道 TAM 多大？", "竞品格局怎么样？", "政策端有什么催化？"],
-  finance: ["估值合理吗？", "单位经济模型怎么算？", "ARR multiple 锚点是多少？"],
-  tech:    ["TRL 处在什么阶段？", "技术壁垒能撑多久？", "技术尽调要追问什么？"],
-  risk:    ["有哪些重大红旗？", "BP 哪些声明被夸大了？", "应该加哪些条款保护？"],
+  market_deal: ["这个赛道 TAM 多大？", "竞品格局怎么样？", "本轮估值和融资结构怎么看？"],
+  finance_valuation: ["估值合理吗？", "单位经济模型怎么算？", "应该要哪些条款保护？"],
+  product_team_risk: ["技术壁垒能撑多久？", "创始团队有什么风险？", "有哪些重大红旗？"],
 };
 
 const TOOL_TRIGGER_HINTS = {
-  generate_pptx: "生成一份投委会一页 PPT",
+  web_search: "联网检索这个赛道最新政策",
+  onepager_pptx: "生成一份投资亮点一页纸",
+  investment_snapshot: "生成一页纸投决速览",
+  project_brief: "生成 3 页项目简报",
   generate_docx: "生成一份尽调备忘录 Word",
   generate_xlsx: "生成一份风险台账 Excel",
 };

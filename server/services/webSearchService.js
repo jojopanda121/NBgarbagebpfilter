@@ -22,10 +22,10 @@ function buildSearchQueries(agentName, userMsg = "", projectCtx = "") {
   const base = [company, industry].filter(Boolean).join(" ");
   const msg = userMsg.replace(/# 本轮用户随消息上传的附件[\s\S]*/g, "").slice(0, 160);
 
-  if (agentName === "risk") {
+  if (agentName === "product_team_risk" || agentName === "risk") {
     return [
       `${base || msg} 监管 风险 处罚 诉讼`,
-      `${base || msg} 负面 新闻 合规`,
+      `${base || msg} 创始人 负面 新闻 合规`,
     ].map(cleanQuery).filter(Boolean);
   }
 
@@ -54,6 +54,10 @@ function resolveMinimaxSearchEndpoint() {
 }
 
 function normalizeMinimaxResults(data) {
+  const baseResp = data?.base_resp;
+  if (baseResp && baseResp.status_code != null && baseResp.status_code !== 0) {
+    throw new Error(`MiniMax Search API 错误 ${baseResp.status_code}: ${baseResp.status_msg || "unknown"}`);
+  }
   const organic = Array.isArray(data?.organic)
     ? data.organic
     : Array.isArray(data?.results)
@@ -83,15 +87,15 @@ async function searchWithMinimax(query, count = 5) {
   let resp = await fetch(endpoint, {
     method: "POST",
     headers,
-    body: JSON.stringify({ query, count }),
+    body: JSON.stringify({ q: query }),
   });
-  // Some MiniMax Coding Plan-compatible tools use "q"; retry once for
+  // Some MiniMax Coding Plan-compatible tools accept "query"; retry once for
   // compatibility without introducing a second provider.
   if (resp.status === 400 || resp.status === 422) {
     resp = await fetch(endpoint, {
       method: "POST",
       headers,
-      body: JSON.stringify({ q: query, count }),
+      body: JSON.stringify({ query, count }),
     });
   }
   if (!resp.ok) {

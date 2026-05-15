@@ -80,7 +80,7 @@
     },
     "cap_and_traction": {
       "type": "object",
-      "description": "资本结构 + 业务牵引: 投资人/股东 + 关键牵引指标. 替代二级市场 8 行损益表.",
+      "description": "资本结构 + 业务牵引: 投资人/股东 + 关键牵引指标. 一级市场项目速览的核心信息块.",
       "required": ["shareholders", "traction"],
       "additionalProperties": false,
       "properties": {

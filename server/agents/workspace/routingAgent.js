@@ -5,7 +5,7 @@
 // ============================================================
 
 const PROMPT = require("../prompts/workspaceRouting.prompt");
-const VALID_AGENTS = ["market", "finance", "tech", "risk"];
+const VALID_AGENTS = ["market_deal", "finance_valuation", "product_team_risk"];
 
 const ROUTING_SCHEMA = {
   type: "object",

@@ -26,26 +26,29 @@ describe("isOnePagerRequest", () => {
 });
 
 describe("inferRoutingFromText", () => {
-  test("'投资亮点' 路由到 generate_onepager（不被通用 PPT 规则吃掉）", () => {
+  test("'投资亮点' 路由到 onepager_pptx 模板（不被通用 PPT 规则吃掉）", () => {
     const r = ws.inferRoutingFromText("生成一份投资亮点 PPT");
-    expect(r.task_type).toBe("generate_onepager");
-    expect(r.tools).toContain("generate_onepager");
+    expect(r.task_type).toBe("generate_pptx_template");
+    expect(r.tools).toContain("onepager_pptx");
   });
 
-  test("'一页纸' 路由到 generate_onepager", () => {
+  test("'一页纸' 路由到 investment_snapshot 模板", () => {
     const r = ws.inferRoutingFromText("帮我做一页纸 PPT");
-    expect(r.task_type).toBe("generate_onepager");
+    expect(r.task_type).toBe("generate_pptx_template");
+    expect(r.tools).toContain("investment_snapshot");
   });
 
   test("'one-pager' 英文也识别", () => {
     const r = ws.inferRoutingFromText("Make me a one-pager deck");
-    expect(r.task_type).toBe("generate_onepager");
+    expect(r.task_type).toBe("generate_pptx_template");
+    expect(r.tools).toContain("investment_snapshot");
   });
 
-  test("'投委会演示 PPT' 仍走多页 generate_pptx（回归）", () => {
+  test("'投委会演示 PPT' 走 PPT 模板任务，不走自由 generate_pptx", () => {
     // 注：原路由顺序里"材料/附件"会先匹配到 analyze_file，因此用明确的 PPT 关键词
     const r = ws.inferRoutingFromText("做一份投委会演示 PPT");
-    expect(r.task_type).toBe("generate_pptx");
+    expect(r.task_type).toBe("generate_pptx_template");
+    expect(r.tools).toEqual([]);
   });
 
   test("纯问答路由到 answer", () => {
@@ -60,11 +63,11 @@ describe("inferRoutingFromText", () => {
 });
 
 describe("taskTypeToTool", () => {
-  test("generate_onepager → generate_onepager", () => {
-    expect(ws.taskTypeToTool("generate_onepager")).toBe("generate_onepager");
+  test("legacy generate_onepager → onepager_pptx", () => {
+    expect(ws.taskTypeToTool("generate_onepager")).toBe("onepager_pptx");
   });
-  test("generate_pptx 保持", () => {
-    expect(ws.taskTypeToTool("generate_pptx")).toBe("generate_pptx");
+  test("legacy generate_pptx → project_brief", () => {
+    expect(ws.taskTypeToTool("generate_pptx")).toBe("project_brief");
   });
   test("未知任务 → null", () => {
     expect(ws.taskTypeToTool("answer")).toBeNull();
@@ -72,53 +75,59 @@ describe("taskTypeToTool", () => {
 });
 
 describe("HOST_TOOL_SCHEMAS", () => {
-  test("包含 generate_onepager，且排在 generate_pptx 之前", () => {
-    const names = ws.HOST_TOOL_SCHEMAS.map((s) => s.name);
-    expect(names).toContain("generate_onepager");
-    expect(names).toContain("generate_pptx");
-    expect(names.indexOf("generate_onepager")).toBeLessThan(names.indexOf("generate_pptx"));
-  });
-
-  test("generate_onepager schema 要求 4 大字段且 description 含'禁止'", () => {
-    const op = ws.HOST_TOOL_SCHEMAS.find((s) => s.name === "generate_onepager");
+  test("包含 web_search，供主持人执行联网检索", () => {
+    const op = ws.HOST_TOOL_SCHEMAS.find((s) => s.name === "web_search");
     expect(op).toBeTruthy();
-    expect(op.description).toMatch(/单页|1 页/);
-    expect(op.description).toMatch(/禁止|禁用|不要/);
-    expect(op.input_schema.required).toEqual(
-      expect.arrayContaining([
-        "company_name",
-        "headline",
-        "company_overview",
-        "market_opportunity",
-        "highlights",
-        "risks",
-        "footer",
-      ])
-    );
+    expect(op.description).toMatch(/联网|检索|MiniMax/);
+    expect(op.input_schema.required).toContain("query");
   });
 
-  test("generate_pptx description 明确把单页场景排出去（防止 LLM 误用）", () => {
-    const pp = ws.HOST_TOOL_SCHEMAS.find((s) => s.name === "generate_pptx");
-    expect(pp.description).toMatch(/多页|generate_onepager|禁止|不要用/);
+  test("包含 PPT 模板工具，不包含自由 generate_pptx", () => {
+    const names = ws.HOST_TOOL_SCHEMAS.map((s) => s.name);
+    expect(names).toContain("onepager_pptx");
+    expect(names).toContain("investment_snapshot");
+    expect(names).toContain("project_brief");
+    expect(names).not.toContain("generate_pptx");
+  });
+
+  test("onepager_pptx schema 只接受模板参数，不接受 slides", () => {
+    const op = ws.HOST_TOOL_SCHEMAS.find((s) => s.name === "onepager_pptx");
+    expect(op).toBeTruthy();
+    expect(op.description).toMatch(/1 页|模板/);
+    expect(op.description).toMatch(/严禁传 slides/);
+    expect(op.input_schema.properties).toHaveProperty("user_overrides");
+    expect(op.input_schema.properties).not.toHaveProperty("slides");
+  });
+
+  test("project_brief description 明确走模板视觉", () => {
+    const pp = ws.HOST_TOOL_SCHEMAS.find((s) => s.name === "project_brief");
+    expect(pp.description).toMatch(/3 页|模板|视觉/);
+    expect(pp.description).toMatch(/严禁传 slides/);
   });
 });
 
-describe("workspaceRegistry.generate_onepager 登记", () => {
-  test("TOOL_REGISTRY 有 generate_onepager 且 host 可调", () => {
-    const def = reg.TOOL_REGISTRY.generate_onepager;
+describe("workspaceRegistry PPT 模板工具登记", () => {
+  test("web_search 登记为 host 可调工具", () => {
+    const def = reg.TOOL_REGISTRY.web_search;
+    expect(def.callableByModel).toBe(true);
+    expect(def.allowedCallers).toContain("host");
+    expect(() => reg.assertToolAllowed("web_search", "host")).not.toThrow();
+  });
+
+  test("TOOL_REGISTRY 有 onepager_pptx 且 host 可调", () => {
+    const def = reg.TOOL_REGISTRY.onepager_pptx;
     expect(def).toBeTruthy();
     expect(def.callableByModel).toBe(true);
     expect(def.allowedCallers).toContain("host");
-    expect(def.endpoint).toBe("/generate/onepager");
-    expect(def.extension).toBe("pptx");
+    expect(def.executor).toBe("skill_template");
   });
 
-  test("assertToolAllowed(generate_onepager, host) 通过", () => {
-    expect(() => reg.assertToolAllowed("generate_onepager", "host")).not.toThrow();
+  test("assertToolAllowed(onepager_pptx, host) 通过", () => {
+    expect(() => reg.assertToolAllowed("onepager_pptx", "host")).not.toThrow();
   });
 
   test("非 host 调用方被拒绝", () => {
-    expect(() => reg.assertToolAllowed("generate_onepager", "market")).toThrow(/不允许/);
+    expect(() => reg.assertToolAllowed("onepager_pptx", "market_deal")).toThrow(/不允许/);
   });
 });
 
@@ -159,7 +168,7 @@ describe("buildFallbackOnepagerArgs", () => {
 });
 
 describe("buildFallbackToolCall: 安全网", () => {
-  test("用户说'一页纸'但 routing 退化为 generate_pptx 时，依然兜回 generate_onepager", () => {
+  test("用户说'一页纸'但 routing 退化为 generate_pptx 时，依然兜回模板", () => {
     const call = ws.buildFallbackToolCall({
       routing: { task_type: "generate_pptx" }, // 模拟 routing LLM 失败
       userMsg: "做一份投资亮点一页纸",
@@ -167,24 +176,24 @@ describe("buildFallbackToolCall: 安全网", () => {
       expertOutputs: [],
     });
     expect(call).toBeTruthy();
-    expect(call.tool).toBe("generate_onepager");
-    expect(call.args.highlights).toHaveLength(4);
+    expect(call.tool).toBe("onepager_pptx");
+    expect(call.args).toEqual({});
   });
 
-  test("用户要正常多页 PPT 时不被改写", () => {
+  test("用户要正常多页 PPT 时也不走自由 slides", () => {
     const call = ws.buildFallbackToolCall({
       routing: { task_type: "generate_pptx" },
       userMsg: "做一份投委会 5 页演示材料",
       cleanContent: "",
       expertOutputs: [{ agent: "market", content: "市场分析" }],
     });
-    expect(call.tool).toBe("generate_pptx");
-    expect(Array.isArray(call.args.slides)).toBe(true);
+    expect(call.tool).toBe("project_brief");
+    expect(call.args).not.toHaveProperty("slides");
   });
 });
 
 describe("normalizeToolCalls: 路由 onepager 但 LLM 给了 generate_pptx", () => {
-  test("LLM 错调 generate_pptx，会被替换为 generate_onepager", () => {
+  test("LLM 错调 generate_pptx，会被替换为 onepager_pptx", () => {
     const calls = [
       {
         tool: "generate_pptx",
@@ -198,10 +207,10 @@ describe("normalizeToolCalls: 路由 onepager 但 LLM 给了 generate_pptx", () 
       expertOutputs: [],
     });
     expect(normalized).toHaveLength(1);
-    expect(normalized[0].tool).toBe("generate_onepager");
+    expect(normalized[0].tool).toBe("onepager_pptx");
   });
 
-  test("LLM 正确调用 generate_onepager 时原样保留", () => {
+  test("LLM 旧调用 generate_onepager 时升级为 onepager_pptx", () => {
     const goodArgs = {
       company_name: "X",
       headline: "Y",
@@ -224,7 +233,6 @@ describe("normalizeToolCalls: 路由 onepager 但 LLM 给了 generate_pptx", () 
       expertOutputs: [],
     });
     expect(normalized).toHaveLength(1);
-    expect(normalized[0].tool).toBe("generate_onepager");
-    expect(normalized[0].args).toBe(goodArgs);
+    expect(normalized[0].tool).toBe("onepager_pptx");
   });
 });

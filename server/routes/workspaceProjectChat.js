@@ -124,11 +124,20 @@ router.post("/:projectId/conversation/messages", requireAuth, async (req, res) =
   res.setHeader("X-Accel-Buffering", "no");
   res.flushHeaders?.();
   const sendEvent = (event, data) => {
+    if (res.destroyed || res.writableEnded) return false;
     res.write(`event: ${event}\n`);
     res.write(`data: ${JSON.stringify(data)}\n\n`);
+    return true;
   };
+  const heartbeatTimer = setInterval(() => {
+    sendEvent("heartbeat", { t: Date.now() });
+  }, 15000);
   const ac = new AbortController();
-  req.on("close", () => ac.abort());
+  let completed = false;
+  const abortIfOpen = () => {
+    if (!completed) ac.abort();
+  };
+  req.on("close", abortIfOpen);
 
   try {
     const conv = ws.createOrGetConversationByProject(projectId, userId);
@@ -162,11 +171,25 @@ router.post("/:projectId/conversation/messages", requireAuth, async (req, res) =
     sendEvent("host_start", { id: hostMsgId });
 
     let fullText = "";
+    const hostToolRunner = async (toolName, input) => {
+      const r = await ws.executeWorkspaceTool({
+        tool: toolName,
+        args: input || {},
+        conversationId: conv.id,
+        messageId: hostMsgId,
+        projectId: project.id,
+        userId,
+        taskId: project.latest_task_id || null,
+      });
+      if (r.artifact) sendEvent("artifact", r.artifact);
+      return r;
+    };
     await ws.streamHostSummary({
       projectCtx,
       history: ws.listMessages(conv.id, 30),
       userMsg,
       expertOutputs,
+      hostToolRunner,
       signal: ac.signal,
       onDelta: (delta) => {
         fullText += delta;
@@ -201,8 +224,13 @@ router.post("/:projectId/conversation/messages", requireAuth, async (req, res) =
       }
     }
 
+    completed = true;
     sendEvent("done", { ok: true });
   } catch (err) {
+    if (ac.signal.aborted || err?.message === "客户端取消") {
+      console.warn("[ProjChat] SSE 连接已取消");
+      return;
+    }
     console.error("[ProjChat] SSE 错误:", err);
     let msg = err.message || "服务器错误";
     if (err?.status === 401 || err?.status === 403 || /认证失败|MINIMAX_API_KEY/.test(msg)) {
@@ -210,7 +238,10 @@ router.post("/:projectId/conversation/messages", requireAuth, async (req, res) =
     }
     sendEvent("error", { message: msg });
   } finally {
-    res.end();
+    completed = true;
+    clearInterval(heartbeatTimer);
+    req.removeListener("close", abortIfOpen);
+    if (!res.destroyed && !res.writableEnded) res.end();
   }
 });
 

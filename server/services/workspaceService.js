@@ -28,7 +28,6 @@ const {
   assertToolAllowed,
   listWorkspaceCapabilities,
 } = require("../utils/workspaceRegistry");
-const { normalizeOnePager } = require("./pptService");
 const { extractJson } = require("../utils/jsonParser");
 
 const ARTIFACTS_ROOT = path.join(__dirname, "..", "..", "data", "workspace_artifacts");
@@ -476,19 +475,21 @@ function inferRoutingFromText(userMsg = "", reason = "heuristic") {
   const text = userMsg.toLowerCase();
   // one-pager 必须先匹配，否则会被下面的通用 PPT 规则吃掉
   if (isOnePagerRequest(userMsg)) {
-    return { task_type: "generate_onepager", agents: ["market", "finance", "tech", "risk"], tools: ["generate_onepager"], reason };
+    const tool = /投资亮点|pitch\s*deck/i.test(userMsg) ? "onepager_pptx" : "investment_snapshot";
+    return { task_type: "generate_pptx_template", agents: ["market_deal", "finance_valuation", "product_team_risk"], tools: [tool], reason };
   }
   if (/ppt|pptx|演示|幻灯片|slide|一页纸/.test(text)) {
-    return { task_type: "generate_pptx", agents: ["market", "finance", "tech", "risk"], tools: ["generate_pptx"], reason };
+    const tool = /项目简报|brief|3\s*页|三\s*页|立项/i.test(userMsg) ? "project_brief" : null;
+    return { task_type: "generate_pptx_template", agents: ["market_deal", "finance_valuation", "product_team_risk"], tools: tool ? [tool] : [], reason };
   }
   if (/word|docx|文档|报告|memo|备忘录/.test(text)) {
-    return { task_type: "generate_docx", agents: ["market", "finance", "tech", "risk"], tools: ["generate_docx"], reason };
+    return { task_type: "generate_docx", agents: ["market_deal", "finance_valuation", "product_team_risk"], tools: ["generate_docx"], reason };
   }
   if (/excel|xlsx|表格|模型|清单/.test(text)) {
-    return { task_type: "generate_xlsx", agents: ["finance", "risk"], tools: ["generate_xlsx"], reason };
+    return { task_type: "generate_xlsx", agents: ["finance_valuation", "product_team_risk"], tools: ["generate_xlsx"], reason };
   }
   if (/附件|材料|文件|分析.*(docx|xlsx|pdf|pptx|csv)/.test(text)) {
-    return { task_type: "analyze_file", agents: ["market", "finance", "tech", "risk"], tools: [], reason };
+    return { task_type: "analyze_file", agents: ["market_deal", "finance_valuation", "product_team_risk"], tools: [], reason };
   }
   return { task_type: "answer", agents: [], tools: [], reason };
 }
@@ -510,7 +511,7 @@ function formatHistory(history, max) {
 
 // ── 专家并行调用 ───────────────────────────────────────────
 
-// 由 registry 声明哪些专家可使用 MiniMax 内置 web_search。
+// 由 registry 声明哪些专家可使用服务端 MiniMax web_search 预检索。
 const SEARCH_ENABLED_AGENTS = getSearchEnabledAgents();
 
 function stripModelToolCalls(text = "") {
@@ -566,8 +567,8 @@ async function runExpert(agentName, projectCtx, history, userMsg, opts = {}) {
     userMsg,
     "",
     `# 你的任务`,
-    `先在 thinking 块里**真实地推理**：你最关注哪 2-3 个证据？产生了什么疑虑？最后怎么权衡得出结论？`,
-    `再写最终回答 200-400 字，第一人称表达。不要复述项目上下文原文。`,
+    `先在 thinking 块里**真实地推理**：筛选 2-4 个关键证据，完成必要的口径校准/冲突检查，再判断哪些信息应交给 Host 做最终投决。`,
+    `再写最终回答 250-550 字，专业结论先行。不要复述项目上下文原文，不要替 Host 下最终投决。`,
   ].join("\n");
 
   let thinkingBuf = "";
@@ -636,131 +637,63 @@ async function runExpertsParallel(agents, projectCtx, history, userMsg, onExpert
 
 const HOST_TOOL_SCHEMAS = [
   {
-    name: "generate_onepager",
-    description: "生成【单页】投资亮点速览 PPT（pitch 视角，恰好 1 页）。当用户提到\"投资亮点 / 一页纸 / 单页 / one-pager / 速览 / pitch\"时**必须**调用此工具，禁止用 generate_pptx 凑一个 slides 数组只有 1 项的伪一页 PPT。highlights 恰好 4 条、risks 恰好 2 条、KPI 恰好 4 条、drivers 恰好 3 条、products 恰好 3 条。叙事正面，禁止评级 / 不建议结论 / 红旗 / D级 / ★ 星标。",
+    name: "web_search",
+    description: "联网检索公开信息。用户要求联网/搜索/检索/最新信息, 或需要近期市场、政策、竞品、监管、诉讼、负面新闻时使用。返回 MiniMax Coding Plan web_search 的结构化搜索结果。",
     input_schema: {
       type: "object",
       properties: {
-        company_name: { type: "string", description: "公司名" },
-        headline: { type: "string", description: "一句话标语（红底标语，<= 30 字）" },
-        company_overview: {
-          type: "object",
-          properties: {
-            summary: { type: "string", description: "公司一句话描述（<= 120 字）" },
-            products: {
-              type: "array",
-              description: "3 条核心产品",
-              items: {
-                type: "object",
-                properties: {
-                  name: { type: "string" },
-                  desc: { type: "string" },
-                },
-                required: ["name", "desc"],
-              },
-            },
-          },
-          required: ["summary", "products"],
-        },
-        market_opportunity: {
-          type: "object",
-          properties: {
-            kpis: {
-              type: "array",
-              description: "恰好 4 条 KPI（TAM / CAGR / 渗透率 / 增量空间）",
-              items: {
-                type: "object",
-                properties: {
-                  label: { type: "string" },
-                  value: { type: "string" },
-                },
-                required: ["label", "value"],
-              },
-            },
-            drivers: {
-              type: "array",
-              description: "恰好 3 条增长驱动（政策 / 技术 / 需求）",
-              items: {
-                type: "object",
-                properties: {
-                  type: { type: "string" },
-                  text: { type: "string" },
-                },
-                required: ["type", "text"],
-              },
-            },
-            competition: { type: "string", description: "竞争格局一句话" },
-          },
-          required: ["kpis", "drivers", "competition"],
-        },
-        highlights: {
+        query: { type: "string", description: "搜索查询词，建议 3-8 个关键词，包含公司/行业/主题。" },
+        queries: {
           type: "array",
-          description: "恰好 4 条投资亮点（全部正面叙事）",
-          items: {
-            type: "object",
-            properties: {
-              title: { type: "string", description: "亮点小标题，名词短语，禁带星标/打分修饰" },
-              desc: { type: "string", description: "一两句话支撑，正面叙事" },
-            },
-            required: ["title", "desc"],
-          },
-        },
-        risks: {
-          type: "array",
-          description: "恰好 2 条风险（简洁中立，不写'不建议投资'结论）",
-          items: {
-            type: "object",
-            properties: {
-              title: { type: "string" },
-              desc: { type: "string" },
-            },
-            required: ["title", "desc"],
-          },
-        },
-        footer: {
-          type: "object",
-          properties: {
-            founded: { type: "string", description: "成立年份" },
-            team_size: { type: "string", description: "团队规模" },
-            funding_total: { type: "string", description: "累计融资" },
-            ai_grade: { type: "string", description: "AI 评级文字（可为空字符串）" },
-          },
-          required: ["founded", "team_size", "funding_total", "ai_grade"],
+          items: { type: "string" },
+          description: "可选的多个查询词。优先使用 query；需要覆盖市场/政策/负面等角度时使用 queries。",
         },
       },
-      required: [
-        "company_name",
-        "headline",
-        "company_overview",
-        "market_opportunity",
-        "highlights",
-        "risks",
-        "footer",
-      ],
+      required: ["query"],
     },
   },
   {
-    name: "generate_pptx",
-    description: "生成【多页】PPT 文件（投委会演示、路演材料、项目简报）。slides 数组每项是一页。如果用户要的是【单页投资亮点 / 一页纸 / one-pager / 速览】，请改用 generate_onepager，禁止用本工具凑一个只有 1 项的 slides 数组。",
+    name: "onepager_pptx",
+    description:
+      "调用模板 skill 生成【1 页】投资亮点 PPT（pitch 视角）。" +
+      "默认基于项目已落库的 BP 分析结果生成 (强耦合, 保证跨公司一致). " +
+      "用户显式说 '基于这段材料 / 给一段 BP' 时, 传 source_mode='materials' + materials 走临时材料模式. " +
+      "视觉、字号、坐标由模板锁定; 严禁传 slides、颜色、字体、坐标。",
     input_schema: {
       type: "object",
       properties: {
-        title: { type: "string", description: "PPT 标题" },
-        subtitle: { type: "string", description: "副标题（可选）" },
-        slides: {
-          type: "array",
-          items: {
-            type: "object",
-            properties: {
-              title: { type: "string", description: "页标题" },
-              bullets: { type: "array", items: { type: "string" }, description: "要点 3-6 条" },
-              notes: { type: "string", description: "演讲备注（可选）" },
-            },
-            required: ["title", "bullets"],
-          },
+        source_mode: {
+          type: "string",
+          enum: ["bp_analysis", "materials"],
+          description: "默认 bp_analysis (用已落库 BP 分析). materials 时必须同时传 materials 字段.",
         },
+        materials: { type: "string", description: "source_mode='materials' 时必填, 公司原始材料文本 (>=200 字)." },
+        company_hint: { type: "string", description: "可选, 公司名提示, 仅 materials 模式生效." },
+        user_overrides: { type: "object", description: "可选，人工微调字段，如轮次/估值/重点客户。", additionalProperties: true },
+        regenerate: { type: "boolean", description: "true 时清缓存重新生成 (仅 bp_analysis 模式生效)." },
       },
-      required: ["title", "slides"],
+    },
+  },
+  {
+    name: "investment_snapshot",
+    description: "调用模板 skill 生成【1 页】A4 横版投决速览 PPT。适合投决速览、一页纸、one-pager、把任意材料浓缩成 1 页。视觉、字号、坐标由模板锁定；严禁传 slides、颜色、字体、坐标。",
+    input_schema: {
+      type: "object",
+      properties: {
+        materials: { type: "string", description: "可选，公司原始材料；留空则用 workspace 项目上下文。" },
+        company_hint: { type: "string", description: "可选，公司名提示。" },
+      },
+    },
+  },
+  {
+    name: "project_brief",
+    description: "调用模板 skill 生成【3 页】项目简报 PPT（封面 / 概况+亮点 / 团队+财务+估值）。适合内部立项、IC 前置 brief、项目快速介绍。视觉、字号、坐标由模板锁定；严禁传 slides、颜色、字体、坐标。",
+    input_schema: {
+      type: "object",
+      properties: {
+        materials: { type: "string", description: "可选，公司原始材料；留空则用 workspace 项目上下文。" },
+        company_hint: { type: "string", description: "可选，公司名提示。" },
+      },
     },
   },
   {
@@ -845,31 +778,45 @@ async function runHostAgentic({
     `# 用户当前消息`,
     userMsg,
     "",
-    `# 各专家本轮意见（你的素材，不要逐条复读）`,
+    `# 各专家本轮意见（你的审计素材，不要逐条复读）`,
     expertBlock,
     "",
     `# 你的任务`,
-    `1. 先在 thinking 块里**真实地推理**：你最被什么打动 / 被什么动摇？专家意见之间有没有矛盾？最后凝结成什么 thesis？`,
-    `2. 如果用户要生成文件，先在 thinking 里规划好结构，再调用对应工具（generate_onepager / generate_pptx / generate_docx / generate_xlsx），args 必须是合法 JSON。`,
-    `2a. 关键规则：用户说"投资亮点 / 一页纸 / 单页 PPT / one-pager / 速览"时，**必须**用 generate_onepager（恰好 1 页 pitch 视角），禁止用 generate_pptx 凑 1 页伪 onepager。`,
-    `2b. generate_onepager 强约束：highlights 恰 4 条全部正面叙事；risks 恰 2 条中立陈述（不写"不建议投资"结论）；KPI 恰 4 条；drivers 恰 3 条；products 恰 3 条。叙事禁出现：D级、不建议、风险红旗、★ 星标、可信度打分等审查口吻。`,
-    `3. 工具返回 tool_result 后，写最终答复给用户：第一人称投资判断，不复述上下文，不复读专家原话。`,
-    `4. 如果只是问答（不要生成文件），跳过工具，直接写答复。`,
+    `1. 先在 thinking 块里**真实地推理**：先做市场-财务-产品逻辑闭环检查，再审计专家意见之间的矛盾，最后凝结成 IC Memo 级 thesis 与 Verdict。`,
+    `2. 如果用户要生成文件，先在 thinking 里判断文件类型和模板匹配，再调用对应工具（onepager_pptx / investment_snapshot / project_brief / generate_docx / generate_xlsx），args 必须是合法 JSON。`,
+    `2a. PPT 硬规则：任何 PPT 都必须走模板 skill。可用模板只有 onepager_pptx（1 页投资亮点 pitch）、investment_snapshot（1 页 A4 投决速览）、project_brief（3 页项目简报）。严禁输出 slides 数组，严禁调用 generate_pptx，严禁传颜色/字号/坐标/字体。`,
+    `2b. 如果用户要 5 页、10 页、路演完整 deck、竞品地图等当前没有模板的 PPT，不要硬凑；直接说明当前模板库只支持上述模板，并建议按 harness 范式新增对应模板。`,
+    `3. 工具返回 tool_result 后，写最终答复给用户：投资备忘录口吻，不复述上下文，不复读专家原话，必须给出核心矛盾、决策结论和杀手级问题。`,
+    `4. 如果只是普通问答且不需要联网/最新信息，跳过工具直接写答复；如果用户要求搜索或问题依赖近期外部信息，最多调用一次 web_search，拿到 tool_result 后必须直接综合成最终答复，不要继续搜索。`,
   ].join("\n");
 
   const artifacts = [];
   let thinking = "";
   let text = "";
+  let toolResultContext = "";
+  let webSearchUsed = false;
 
   const toolRunner = async (name, input) => {
     if (typeof hostToolRunner !== "function") {
       return `工具暂不可用：缺少 hostToolRunner`;
     }
     try {
+      if (name === "web_search") {
+        if (webSearchUsed) {
+          return "本轮已经完成过联网检索。请基于已有 tool_result 直接给用户最终答复，不要继续搜索。";
+        }
+        webSearchUsed = true;
+      }
       const r = await hostToolRunner(name, input);
       if (r?.artifact) {
         artifacts.push(r.artifact);
         return r.summary || `已生成 ${r.artifact.filename}`;
+      }
+      if (typeof r?.context === "string" && r.context.trim()) {
+        return r.context;
+      }
+      if (Array.isArray(r?.results)) {
+        return JSON.stringify({ summary: r.summary || "工具执行完成", results: r.results }, null, 2);
       }
       return r?.summary || "工具执行完成";
     } catch (e) {
@@ -886,11 +833,17 @@ async function runHostAgentic({
       toolRunner,
       thinkingBudget: 5000,
       maxTokens: 6000,
-      maxToolRounds: 4,
+      // 文件生成类请求在工具成功后不再强制追加一轮 LLM 总结，避免 PPT 已生成但 SSE
+      // 长时间静默导致前端显示 network error。搜索类问题仍保留第二轮综合。
+      maxToolRounds: isFileGenerationRequest(userMsg) ? 1 : 2,
       signal,
       onEvent: (ev) => {
         if (ev.type === "thinking_delta") thinking += ev.text;
         if (ev.type === "text_delta") text += ev.text;
+        if (ev.type === "tool_result") {
+          const resultText = typeof ev.result === "string" ? ev.result : JSON.stringify(ev.result || {});
+          toolResultContext += `\n\n## ${ev.name || "tool"}\n${resultText.slice(0, 6000)}`;
+        }
         onEvent(ev);
       },
     });
@@ -948,6 +901,46 @@ async function runHostAgentic({
     }
   }
 
+  if (artifacts.length > 0) {
+    const completionText = buildArtifactCompletionText(artifacts);
+    const cleanExisting = stripModelToolCalls(stripToolCalls(text)).trim();
+    if (!cleanExisting) {
+      text = completionText;
+      onEvent({ type: "text_delta", text: completionText });
+    } else if (!cleanExisting.includes(artifacts[0]?.filename || completionText)) {
+      text = `${cleanExisting}\n\n${completionText}`;
+      onEvent({ type: "text_delta", text: `\n\n${completionText}` });
+    } else {
+      text = cleanExisting;
+    }
+  }
+
+  if (!text.trim() && toolResultContext.trim()) {
+    console.warn("[Workspace] host 工具调用后未产出正文，启动无工具综合兜底");
+    const fallbackUser = [
+      "# 项目上下文",
+      projectCtx,
+      "",
+      "# 用户当前消息",
+      userMsg,
+      "",
+      "# 专家意见",
+      expertBlock,
+      "",
+      "# 工具结果",
+      toolResultContext,
+      "",
+      "请基于上述工具结果和项目上下文，直接给用户一段中文最终答复。不要再调用工具，不要输出 thinking，不要解释工具过程；如果检索结果相关性不足，要明确说明并给出可执行的下一步检索/尽调建议。",
+    ].join("\n");
+    const fallbackText = await callLLM(
+      `${WORKSPACE_HOST_SYSTEM_PROMPT}\n\n你现在处于工具调用后的最终综合阶段：只能输出给用户看的正文，严禁继续搜索或输出工具调用。`,
+      fallbackUser,
+      1800
+    );
+    text = stripModelToolCalls(fallbackText || "").trim();
+    if (text) onEvent({ type: "text_delta", text });
+  }
+
   // 没开 tools 的降级路径：从 text 里抓 <TOOL_CALL>
   if (!result.used_tools) {
     const parsed = parseToolCalls(text);
@@ -978,7 +971,7 @@ async function runHostAgentic({
   };
 }
 
-async function streamHostSummary({ projectCtx, history, userMsg, expertOutputs, onDelta, signal }) {
+async function streamHostSummary({ projectCtx, history, userMsg, expertOutputs, onDelta, signal, hostToolRunner, onEvent }) {
   let emitted = "";
   const result = await runHostAgentic({
     projectCtx,
@@ -986,11 +979,13 @@ async function streamHostSummary({ projectCtx, history, userMsg, expertOutputs, 
     userMsg,
     expertOutputs,
     signal,
+    hostToolRunner,
     onEvent: (ev) => {
       if (ev.type === "text_delta" && ev.text) {
         emitted += ev.text;
         onDelta?.(ev.text);
       }
+      onEvent?.(ev);
     },
   });
   if (!emitted && result.text) onDelta?.(result.text);
@@ -1020,8 +1015,9 @@ function stripToolCalls(content) {
 }
 
 function taskTypeToTool(taskType) {
-  if (taskType === "generate_onepager") return "generate_onepager";
-  if (taskType === "generate_pptx") return "generate_pptx";
+  if (taskType === "generate_onepager") return "onepager_pptx"; // legacy alias
+  if (taskType === "generate_pptx") return "project_brief"; // legacy alias; free PPT is disabled
+  if (taskType === "generate_pptx_template") return "project_brief";
   if (taskType === "generate_docx") return "generate_docx";
   if (taskType === "generate_xlsx") return "generate_xlsx";
   return null;
@@ -1033,6 +1029,20 @@ function isOnePagerRequest(userMsg = "") {
   return (
     /投资亮点|亮点单页|单\s*页\s*(PPT|ppt|演示|材料)?|一\s*页\s*(纸|PPT|ppt|材料|速览)?|1\s*页\s*(PPT|ppt)?|one[-\s]?pager|speed\s*read|速览|pitch\s*deck/i.test(userMsg)
   );
+}
+
+function isFileGenerationRequest(userMsg = "") {
+  const text = String(userMsg || "");
+  return (
+    isOnePagerRequest(text) ||
+    /ppt|pptx|演示|幻灯片|slide|项目简报|brief|word|docx|文档|报告|memo|备忘录|excel|xlsx|表格|模型|清单/i.test(text)
+  );
+}
+
+function buildArtifactCompletionText(artifacts = []) {
+  const first = artifacts[0] || {};
+  const filename = first.filename || "文件";
+  return `已生成 ${filename}，可以在右侧“AI 生成产出”里下载。`;
 }
 
 // 兼容原 isOnePagePptRequest 调用点（构造 slides 时的旧 hint）
@@ -1061,40 +1071,22 @@ function firstUsefulLine(text = "", fallback = "") {
 }
 
 function agentContent(expertOutputs, agentName) {
-  return expertOutputs.find((e) => e.agent === agentName)?.content || "";
+  const aliases = {
+    market: ["market", "market_deal"],
+    finance: ["finance", "finance_valuation"],
+    tech: ["tech", "product_team_risk"],
+    risk: ["risk", "product_team_risk"],
+  };
+  const names = aliases[agentName] || [agentName];
+  return expertOutputs.find((e) => names.includes(e.agent))?.content || "";
 }
 
-function buildPptSlides({ userMsg, title, cleanContent, expertOutputs }) {
-  const sourceText = `${cleanContent}\n${expertOutputs.map((e) => `${e.agent}: ${e.content}`).join("\n")}`;
-  const onePage = isOnePagePptRequest(userMsg);
-  const market = agentContent(expertOutputs, "market");
-  const finance = agentContent(expertOutputs, "finance");
-  const tech = agentContent(expertOutputs, "tech");
-  const risk = agentContent(expertOutputs, "risk");
-
-  if (onePage) {
-    const expertBullets = [
-      firstUsefulLine(market, ""),
-      firstUsefulLine(tech, ""),
-      firstUsefulLine(finance, ""),
-      firstUsefulLine(risk, ""),
-    ].filter(Boolean);
-    const bullets = expertBullets.length >= 4
-      ? expertBullets
-      : [...expertBullets, ...compactLines(sourceText, 8)];
-    const fallback = ["赛道机会明确，但商业化验证仍需补强", "技术路线具备潜力，需验证量产与客户定点", "财务模型和估值锚点仍待核实", "建议以关键里程碑和风险条款保护投资安全"];
-    const uniqueBullets = [...new Set(bullets)].slice(0, 6);
-    return [{ title, bullets: uniqueBullets.length ? uniqueBullets : fallback }];
-  }
-
-  const conclusionBullets = compactLines(cleanContent, 5);
+function collectMaterialsForTemplate({ userMsg, cleanContent, expertOutputs }) {
   return [
-    { title: "投资结论", bullets: conclusionBullets.length ? conclusionBullets : compactLines(sourceText, 5) },
-    { title: "市场与竞争", bullets: compactLines(market || sourceText, 5) },
-    { title: "技术与产品", bullets: compactLines(tech || sourceText, 5) },
-    { title: "财务与估值", bullets: compactLines(finance || sourceText, 5) },
-    { title: "风险与尽调重点", bullets: compactLines(risk || sourceText, 5) },
-  ].filter((slide) => slide.bullets.length > 0);
+    userMsg ? `【用户要求】\n${userMsg}` : "",
+    cleanContent ? `【Host 初步判断】\n${cleanContent}` : "",
+    expertOutputs.length ? `【专家意见】\n${expertOutputs.map((e) => `## ${e.agent}\n${e.content}`).join("\n\n")}` : "",
+  ].filter(Boolean).join("\n\n").slice(0, 16000);
 }
 
 // 从用户消息里嗅探公司名（"《...》" / "公司名为..." / "做...的投资亮点"）
@@ -1108,7 +1100,7 @@ function inferCompanyNameFromMsg(userMsg = "") {
   return "";
 }
 
-// 兜底构造一份 OnePagerPayload。normalizeOnePager 会把缺失字段填 "暂无"。
+// 兼容旧单测/旧调用的兜底 OnePagerPayload 构造；新 PPT 生成路径走 onepager_pptx skill。
 function buildFallbackOnepagerArgs({ userMsg, cleanContent, expertOutputs }) {
   const market = agentContent(expertOutputs, "market");
   const finance = agentContent(expertOutputs, "finance");
@@ -1162,28 +1154,30 @@ function buildFallbackToolCall({ routing, userMsg, cleanContent, expertOutputs }
   // isOnePagerRequest 优先级最高：路由层若没识别到（如 LLM routing 失败），
   // 在这里再兜一次，保证用户说"一页纸/投资亮点"时不会落到多页 generate_pptx。
   const onePager = isOnePagerRequest(userMsg);
-  const tool = onePager ? "generate_onepager" : taskTypeToTool(routing?.task_type);
+  const routedTool = Array.isArray(routing?.tools) && routing.tools.length ? routing.tools[0] : null;
+  const tool = onePager
+    ? (/投资亮点|pitch\s*deck/i.test(userMsg) ? "onepager_pptx" : "investment_snapshot")
+    : (routedTool || taskTypeToTool(routing?.task_type));
   if (!tool) return null;
 
   const title = inferTitle(userMsg);
 
-  if (tool === "generate_onepager") {
+  if (tool === "onepager_pptx") {
+    return { tool, args: {} };
+  }
+
+  if (tool === "investment_snapshot" || tool === "project_brief") {
     return {
       tool,
-      args: buildFallbackOnepagerArgs({ userMsg, cleanContent, expertOutputs }),
+      args: {
+        materials: collectMaterialsForTemplate({ userMsg, cleanContent, expertOutputs }),
+        company_hint: inferCompanyNameFromMsg(userMsg) || undefined,
+      },
     };
   }
 
   if (tool === "generate_pptx") {
-    const onePage = isOnePagePptRequest(userMsg);
-    return {
-      tool,
-      args: {
-        title,
-        subtitle: onePage ? "One Page" : "Workspace 生成",
-        slides: buildPptSlides({ userMsg, title, cleanContent, expertOutputs }),
-      },
-    };
+    return { tool: "project_brief", args: { materials: collectMaterialsForTemplate({ userMsg, cleanContent, expertOutputs }) } };
   }
 
   if (tool === "generate_docx") {
@@ -1221,23 +1215,120 @@ function buildFallbackToolCall({ routing, userMsg, cleanContent, expertOutputs }
 
 function normalizeToolCalls(calls, { routing, userMsg, cleanContent, expertOutputs }) {
   const normalized = Array.isArray(calls) ? [...calls] : [];
-  const requestedTool = taskTypeToTool(routing?.task_type);
+  let requestedTool = Array.isArray(routing?.tools) && routing.tools.length
+    ? routing.tools[0]
+    : taskTypeToTool(routing?.task_type);
+  if (requestedTool === "generate_onepager") requestedTool = "onepager_pptx";
+  if (requestedTool === "generate_pptx") requestedTool = isOnePagerRequest(userMsg) ? "onepager_pptx" : "project_brief";
   if (!requestedTool) return normalized;
 
-  const idx = normalized.findIndex((c) => c.tool === requestedTool);
+  for (const c of normalized) {
+    const id = c.tool || c.id;
+    if (id === "generate_onepager") c.tool = "onepager_pptx";
+    if (id === "generate_pptx") c.tool = isOnePagerRequest(userMsg) ? "onepager_pptx" : "project_brief";
+  }
+
+  const idx = normalized.findIndex((c) => (c.tool || c.id) === requestedTool);
   if (idx < 0) {
     const fallback = buildFallbackToolCall({ routing, userMsg, cleanContent, expertOutputs });
     return fallback ? [fallback] : normalized;
   }
 
   if (
-    requestedTool === "generate_pptx" &&
-    (isOnePagePptRequest(userMsg) || isPromptLikePptArgs(normalized[idx]?.args))
+    ["project_brief", "investment_snapshot", "onepager_pptx"].includes(requestedTool) &&
+    isPromptLikePptArgs(normalized[idx]?.args)
   ) {
     const fallback = buildFallbackToolCall({ routing, userMsg, cleanContent, expertOutputs });
     if (fallback) normalized[idx] = fallback;
   }
   return normalized;
+}
+
+async function executeWebSearchTool(input = {}) {
+  assertToolAllowed("web_search", "host");
+  const queries = Array.isArray(input.queries) && input.queries.length
+    ? input.queries
+    : [input.query || input.q || ""];
+  const startedAt = Date.now();
+  console.info("[Workspace/WebSearch] start", { queries });
+  const results = await runWebSearch(queries);
+  console.info("[Workspace/WebSearch] done", { count: results.length, durationMs: Date.now() - startedAt });
+  const context = formatSearchContext(results);
+  return {
+    summary: results.length ? `联网检索完成：${results.length} 条结果` : "联网检索未取得可用结果",
+    results,
+    context,
+  };
+}
+
+function getWorkspaceToolProject({ projectId, userId, taskId }) {
+  const db = getDb();
+  if (projectId && userId) {
+    const p = db.prepare("SELECT * FROM projects WHERE id = ? AND user_id = ?").get(projectId, userId);
+    if (p) return p;
+  }
+  if (taskId) {
+    const task = db.prepare("SELECT id, title, workspace_project_id FROM tasks WHERE id = ?").get(taskId);
+    if (task?.workspace_project_id && userId) {
+      const p = db.prepare("SELECT * FROM projects WHERE id = ? AND user_id = ?").get(task.workspace_project_id, userId);
+      if (p) return p;
+    }
+    return {
+      id: null,
+      name: task?.title || "",
+      latest_task_id: taskId,
+    };
+  }
+  return null;
+}
+
+function artifactRowFromSkillArtifact(artifact) {
+  const id = artifact?.workspaceArtifactId || artifact?.workspace_artifact_id || artifact?.id;
+  if (!id) return null;
+  try {
+    return getArtifact(id);
+  } catch (_) {
+    return null;
+  }
+}
+
+async function executeWorkspaceTool({ tool, args, conversationId, messageId, projectId, userId, taskId }) {
+  if (tool === "web_search") return executeWebSearchTool(args || {});
+  const toolDef = assertToolAllowed(tool, "host");
+
+  if (toolDef.executor === "doc_service") {
+    const artifact = await executeDocumentTool({ tool, args: args || {}, conversationId, messageId });
+    return { artifact, summary: artifact.summary || `已生成 ${artifact.filename}` };
+  }
+
+  if (toolDef.executor === "skill_template") {
+    let skills = null;
+    try {
+      skills = require("../skills");
+      skills.init();
+    } catch (err) {
+      throw new Error(`skill registry 不可用: ${err.message}`);
+    }
+    const skill = skills.registry.get(tool);
+    if (!skill) throw new Error(`模板 skill 未注册: ${tool}`);
+    const project = getWorkspaceToolProject({ projectId, userId, taskId });
+    const out = await skills.registry.execute({
+      skillId: tool,
+      params: args || {},
+      project,
+      userId,
+      ctx: { conversationId, messageId },
+    });
+    if (!out.ok) throw new Error(out.error || `${tool} 执行失败`);
+    const artifact = artifactRowFromSkillArtifact(out.artifact) || out.artifact;
+    return {
+      artifact,
+      summary: artifact?.summary || out.artifact?.summary || `${tool} 已生成`,
+      skillRunId: out.runId,
+    };
+  }
+
+  throw new Error(`工具尚未实现: ${tool}`);
 }
 
 /**
@@ -1249,22 +1340,6 @@ async function executeDocumentTool({ tool, args, conversationId, messageId }) {
   const toolDef = assertToolAllowed(tool, "host");
 
   const bodyBuilders = {
-    generate_onepager: {
-      summary: (body) => `一页投资亮点：${body.company_name || body.headline || toolDef.defaultTitle}`,
-      buildBody: () => {
-        // 用 pptService.normalizeOnePager 兜底所有缺失字段（4 highlights / 2 risks / 4 KPIs / 3 drivers / 3 products）
-        const normalized = normalizeOnePager(args || {}, args?.company_name || toolDef.defaultTitle);
-        return normalized;
-      },
-    },
-    generate_pptx: {
-      summary: (body) => `${body.slides.length} 页 PPT：${body.title}`,
-      buildBody: () => {
-        const slides = Array.isArray(args?.slides) ? args.slides : [];
-        if (slides.length === 0) throw new Error("slides 为空");
-        return { title: args?.title || toolDef.defaultTitle, subtitle: args?.subtitle || undefined, slides };
-      },
-    },
     generate_docx: {
       summary: (body) => `${body.sections.length} 节 Word：${body.title}`,
       buildBody: () => {
@@ -1327,18 +1402,30 @@ async function executeToolCalls(calls, { conversationId, messageId, projectId, u
     console.warn("[Workspace] skill registry 不可用，回退文档工具:", err.message);
   }
 
-  for (const c of calls) {
-    const skillId = c.id || c.tool;
+  // ── 道闸: validateToolCalls (paipai 风格守卫) ──
+  // 单轮 1 个工具调用、skill_id 必在 catalog、PPT 模板严禁版式字段、legacy alias 归一.
+  // 不通过的整条变 error 入 results 不阻断其他成功调用.
+  const { validateToolCalls } = require("../agents/workspace/hostAgent");
+  const validation = validateToolCalls(calls);
+  for (const e of validation.errors) {
+    results.push({ tool: e.tool || null, error: `[host_tool_guard] ${e.reason}` });
+  }
+  const acceptedCalls = validation.accepted;
+
+  for (const c of acceptedCalls) {
+    // validateToolCalls 已经把 legacy alias 归一并写到 .tool/.id;
+    // 这里再做一次保险防御.
+    let skillId = c.id || c.tool;
     try {
       if (!skillId) {
         results.push({ tool: null, error: "工具名为空" });
         continue;
       }
+      if (skillId === "generate_onepager") skillId = "onepager_pptx";
 
       // ── PPT 硬规则 guard ──
       // generate_pptx 是"自由幻灯片"老路径,版式由 LLM 即兴决定,产物质量不稳定.
-      // 我们已把所有受支持的 PPT 用途收编到 skill catalog (pptxTemplate 标记).
-      // host agent 的 system prompt 已禁止它,这里物理拦截,防止 LLM 漏网.
+      // validateToolCalls 已经把它列为 legacy null alias 拒掉了, 这里是 belt-and-suspenders.
       if (skillId === "generate_pptx") {
         const tmplList = skills?.registry?.listPptxTemplates?.() || [];
         const tmplLines = tmplList.length
@@ -1355,9 +1442,16 @@ async function executeToolCalls(calls, { conversationId, messageId, projectId, u
         continue;
       }
 
-      if (["generate_onepager", "generate_docx", "generate_xlsx"].includes(skillId)) {
-        const art = await executeDocumentTool({ tool: skillId, args: c.args || {}, conversationId, messageId });
-        results.push({ tool: skillId, artifact: art });
+      if (["onepager_pptx", "investment_snapshot", "project_brief", "generate_docx", "generate_xlsx"].includes(skillId)) {
+        const r = await executeWorkspaceTool({
+          tool: skillId,
+          args: c.args || {},
+          conversationId,
+          messageId,
+          projectId,
+          userId,
+        });
+        results.push({ tool: skillId, artifact: r.artifact });
         continue;
       }
 
@@ -1440,6 +1534,8 @@ module.exports = {
   runExpertsParallel,
   runHostAgentic,
   streamHostSummary,
+  executeWebSearchTool,
+  executeWorkspaceTool,
   executeDocumentTool,
   parseToolCalls,
   stripToolCalls,

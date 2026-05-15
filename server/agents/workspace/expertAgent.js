@@ -1,12 +1,12 @@
 // ============================================================
-// ExpertAgent — 4 类专家(market / finance / tech / risk)的统一类
-// market 和 risk 走 web_search,其余走普通 LLM。
+// ExpertAgent — 3 类专家的统一类；Host 是第 4 个角色。
+// market_deal 和 product_team_risk 走 web_search, finance_valuation 走普通 LLM。
 // ============================================================
 
 const { ChatAgent } = require("../chatAgent");
 const EXPERT_PROMPTS = require("../prompts/workspaceExperts.prompt");
 
-const SEARCH_ENABLED = new Set(["market", "risk"]);
+const SEARCH_ENABLED = new Set(["market_deal", "product_team_risk"]);
 
 function _formatHistory(history, max = 6) {
   return history.slice(-max).map((m) => {
@@ -17,7 +17,7 @@ function _formatHistory(history, max = 6) {
 
 class ExpertAgent extends ChatAgent {
   /**
-   * @param {"market"|"finance"|"tech"|"risk"} agentName
+   * @param {"market_deal"|"finance_valuation"|"product_team_risk"} agentName
    */
   constructor(agentName) {
     const prompt = EXPERT_PROMPTS[agentName];

@@ -5,38 +5,43 @@
 // 模型只能“请求”这些工具；真正执行仍由后端校验后完成。
 // ============================================================
 
+const HOST_DEFINITION = {
+  name: "host",
+  label: "投资负责人",
+  role: "Investment Lead / Host",
+  description: "拆解任务、制定执行计划、调度专家和 MiniMax 工具、选择模板产物，并把专家意见收敛成投不投、什么条件投、下一步怎么做。",
+  skills: ["task_decomposition", "expert_orchestration", "template_selection", "investment_synthesis"],
+  tools: ["web_search", "onepager_pptx", "investment_snapshot", "project_brief", "generate_docx", "generate_xlsx"],
+  searchEnabled: false,
+};
+
 const AGENT_REGISTRY = {
-  market: {
-    label: "市场/赛道",
-    role: "Market Agent",
-    description: "TAM/SAM/SOM、CAGR、渗透率、政策驱动、竞品格局、客户画像、GTM、渠道效率、市场时点。",
-    skills: ["market_sizing", "competitive_mapping", "policy_scan", "gtm_diagnosis"],
-    tools: ["web_search"],
-    searchEnabled: true,
-  },
-  finance: {
-    label: "财务/估值",
-    role: "Finance Agent",
-    description: "收入质量、毛利率、现金流、单位经济、回款周期、ARR/MRR、财务预测、估值倍数、融资金额合理性。",
-    skills: ["financial_model_review", "valuation_benchmark", "unit_economics", "scenario_analysis"],
-    tools: ["extract_document"],
-    searchEnabled: false,
-  },
-  tech: {
-    label: "技术/产品",
-    role: "Tech Agent",
-    description: "TRL、技术壁垒、产品成熟度、架构可行性、研发路线、专利/论文/开源依赖、交付复杂度。",
-    skills: ["trl_assessment", "product_due_diligence", "technical_moat_review", "delivery_risk_review"],
-    tools: ["extract_document"],
-    searchEnabled: false,
-  },
-  risk: {
-    label: "风险/合规",
-    role: "Risk Agent",
-    description: "监管、法律、供应链、创始人背景、夸大陈述、信息不对称、客户集中、数据安全、造假信号。",
-    skills: ["red_flag_scan", "claim_verification", "regulatory_scan", "fraud_signal_review"],
+  market_deal: {
+    label: "市场/交易",
+    role: "Market & Deal Agent",
+    description: "TAM/SAM/SOM、政策、竞品格局、GTM、客户预算、本轮融资信息、Pre-money、融资额、领投状态、cap table、data room 缺口。",
+    skills: ["market_sizing", "competitive_mapping", "policy_scan", "deal_intake", "data_room_gap"],
     tools: ["web_search", "extract_document"],
     searchEnabled: true,
+    mustNot: "不做 term sheet 最终条款建议，不替代财务模型，不输出投决结论。",
+  },
+  finance_valuation: {
+    label: "财务/估值",
+    role: "Finance & Valuation Agent",
+    description: "收入质量、ARR/MRR、毛利、CAC/LTV、burn、runway、回款周期、预测可信度、估值区间、稀释比例、ownership target、条款保护。",
+    skills: ["financial_model_review", "valuation_benchmark", "unit_economics", "scenario_analysis", "term_sheet_review"],
+    tools: ["extract_document"],
+    searchEnabled: false,
+    mustNot: "不编造可比交易或估值倍数；缺数据时必须标待核实。",
+  },
+  product_team_risk: {
+    label: "产品/团队/风险",
+    role: "Product, Team & Risk Agent",
+    description: "TRL、技术壁垒、产品成熟度、交付风险、创始人履历、关键岗位缺口、背调问题、监管、诉讼、夸大声明、客户集中、合规风险。",
+    skills: ["product_due_diligence", "technical_moat_review", "founder_review", "red_flag_scan", "regulatory_scan"],
+    tools: ["web_search", "extract_document"],
+    searchEnabled: true,
+    mustNot: "不因为 BP 话术夸张就复读卖点；团队和风险判断必须落到可验证尽调动作。",
   },
 };
 
@@ -44,46 +49,50 @@ const TOOL_REGISTRY = {
   web_search: {
     label: "公开信息检索",
     category: "research",
-    executor: "llm_builtin",
-    callableByModel: false,
-    allowedCallers: ["market", "risk"],
-    description: "由 MiniMax M2 内置 web_search 支持，用于市场、政策、竞品、监管、负面信息核验。",
+    executor: "minimax_coding_plan",
+    callableByModel: true,
+    allowedCallers: ["host", "market_deal", "product_team_risk"],
+    description: "通过 MiniMax Token Plan / Coding Plan web_search 执行公开网络检索，用于最新市场、政策、竞品、监管、负面新闻核验。",
   },
   extract_document: {
     label: "文档解析",
     category: "document",
     executor: "upload_pipeline",
     callableByModel: false,
-    allowedCallers: ["market", "finance", "tech", "risk", "host"],
+    allowedCallers: ["market_deal", "finance_valuation", "product_team_risk", "host"],
     description: "上传 PDF/PPTX/DOCX/XLSX/CSV/TXT/MD 后由后端提取摘要并注入项目上下文。",
   },
-  generate_pptx: {
-    label: "生成多页 PPT",
+  onepager_pptx: {
+    label: "一页投资亮点 PPT",
     category: "artifact",
-    executor: "doc_service",
+    executor: "skill_template",
     callableByModel: true,
     allowedCallers: ["host"],
-    endpoint: "/generate/pptx",
-    extension: "pptx",
-    artifactKind: "generated_pptx",
-    mimeType: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-    defaultTitle: "投委会简报",
-    argShape: '{"title":"...","subtitle":"...","slides":[{"title":"...","bullets":["..."],"notes":"..."}]}',
-    description: "生成【多页】投委会演示、路演材料、项目简报。如果用户要的是【单页投资亮点 / 一页纸 / one-pager / 速览】，禁止使用此工具，必须用 generate_onepager。",
+    argShape:
+      '默认: {"source_mode":"bp_analysis"} | ' +
+      '即时材料: {"source_mode":"materials","materials":"<原文>","company_hint":"<公司全称>"}',
+    description:
+      "调用模板 skill 生成 1 页 16:9 投资亮点 PPT。" +
+      "默认 (bp_analysis) 基于项目已落库 BP 多 Agent 分析, 保证跨公司一致; " +
+      "用户明确说 '基于这段材料' 时切到 materials 模式. 视觉和版式由模板锁定.",
   },
-  generate_onepager: {
-    label: "生成单页投资亮点速览",
+  investment_snapshot: {
+    label: "一页纸投决速览",
     category: "artifact",
-    executor: "doc_service",
+    executor: "skill_template",
     callableByModel: true,
     allowedCallers: ["host"],
-    endpoint: "/generate/onepager",
-    extension: "pptx",
-    artifactKind: "generated_pptx",
-    mimeType: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-    defaultTitle: "投资要点速览",
-    argShape: '{"company_name":"...","headline":"...","company_overview":{"summary":"...","products":[{"name":"...","desc":"..."}]},"market_opportunity":{"kpis":[{"label":"...","value":"..."}],"drivers":[{"type":"...","text":"..."}],"competition":"..."},"highlights":[{"title":"...","desc":"..."}],"risks":[{"title":"...","desc":"..."}],"footer":{"founded":"...","team_size":"...","funding_total":"...","ai_grade":"..."}}',
-    description: "生成【单页】投资亮点速览 PPT（pitch 视角，恰好 1 页）。当用户提到\"投资亮点 / 一页纸 / 单页 / one-pager / 速览 / pitch\"时必须使用此工具。schema 固定：4 条 highlights + 2 条 risks + 4 条 KPI + 3 条 drivers + 3 个产品。叙事正面，禁止评级 / 不建议结论 / 风险红旗 / ★ 星标修饰。",
+    argShape: '{"materials":"<可选，公司原始材料；留空则用项目上下文>","company_hint":"<可选，公司全称>"}',
+    description: "调用模板 skill 生成 1 页 A4 横版投决速览。适合投决/速览/one-pager，视觉和版式由 Python 渲染器锁定。",
+  },
+  project_brief: {
+    label: "项目简报 3 页 deck",
+    category: "artifact",
+    executor: "skill_template",
+    callableByModel: true,
+    allowedCallers: ["host"],
+    argShape: '{"materials":"<可选，公司原始材料；留空则用项目上下文>","company_hint":"<可选，公司全称>"}',
+    description: "调用模板 skill 生成 3 页项目简报 deck（封面 / 概况+亮点 / 团队+财务+估值）。视觉和版式由 Python 渲染器锁定。",
   },
   generate_docx: {
     label: "生成 Word",
@@ -153,7 +162,7 @@ function assertToolAllowed(toolName, caller = "host") {
 
 function renderAgentCatalog() {
   return Object.entries(AGENT_REGISTRY)
-    .map(([name, def]) => `- "${name}" ${def.label}：${def.description}`)
+    .map(([name, def]) => `- "${name}" ${def.label}：${def.description} 边界：${def.mustNot || "只回答本专业范围。"}`)
     .join("\n");
 }
 
@@ -178,13 +187,16 @@ function renderAgentCapabilityBlock(agentName) {
     `擅长：${def.description}`,
     `可用 skills：${def.skills.join("、")}`,
     `可用 tools：${tools.join("、") || "无直接工具"}`,
+    def.mustNot ? `禁区：${def.mustNot}` : null,
     `边界：你不能直接生成文件；如需产物，由 Host 汇总后调用文档生成工具。`,
-  ].join("\n");
+  ].filter(Boolean).join("\n");
 }
 
 function listWorkspaceCapabilities() {
   return {
-    agents: Object.entries(AGENT_REGISTRY).map(([name, def]) => ({
+    agents: [
+      HOST_DEFINITION,
+      ...Object.entries(AGENT_REGISTRY).map(([name, def]) => ({
       name,
       label: def.label,
       role: def.role,
@@ -192,7 +204,9 @@ function listWorkspaceCapabilities() {
       skills: def.skills,
       tools: def.tools,
       searchEnabled: def.searchEnabled,
+      mustNot: def.mustNot || "",
     })),
+    ],
     tools: Object.entries(TOOL_REGISTRY).map(([name, def]) => ({
       name,
       label: def.label,
@@ -205,6 +219,7 @@ function listWorkspaceCapabilities() {
 }
 
 module.exports = {
+  HOST_DEFINITION,
   AGENT_REGISTRY,
   TOOL_REGISTRY,
   getAgentNames,

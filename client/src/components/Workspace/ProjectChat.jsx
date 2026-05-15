@@ -174,6 +174,9 @@ function Bubble({ m }) {
   // agent
   const agentLabel = ({
     host: "主持人",
+    market_deal: "市场/交易专家",
+    finance_valuation: "财务/估值专家",
+    product_team_risk: "产品/团队/风险专家",
     market: "市场专家",
     finance: "财务专家",
     tech: "技术专家",

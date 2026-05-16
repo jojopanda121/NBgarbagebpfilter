@@ -6,6 +6,8 @@
 import React, { useEffect, useRef, useState, useCallback } from "react";
 import workspaceProjectApi from "../../services/workspaceProjectApi";
 import { streamProjectChatMessage } from "../../services/workspaceStream";
+import useAuthStore from "../../store/useAuthStore";
+import { API_BASE } from "../../constants";
 
 export default function ProjectChat({ project }) {
   const [messages, setMessages] = useState([]);
@@ -38,8 +40,9 @@ export default function ProjectChat({ project }) {
     const ac = new AbortController();
     abortRef.current = ac;
 
-    let pendingHostId = null;
-    let pendingHostText = "";
+    const updateMsg = (id, mapper) => {
+      setMessages((m) => m.map((x) => (x.id === id ? mapper(x) : x)));
+    };
 
     try {
       await streamProjectChatMessage(project.id, input.trim(), (event, data) => {
@@ -48,17 +51,69 @@ export default function ProjectChat({ project }) {
           setInput("");
         } else if (event === "phase") {
           setPhase(data.phase);
-        } else if (event === "expert") {
-          setMessages((m) => [...m, { id: data.id, role: "agent", agent_name: data.agent, content: data.content, error: data.error }]);
+        } else if (event === "expert" || event === "expert_done") {
+          // 主持人侧合并 expert: 同一 id 上后到 expert_done 不再追加新 bubble
+          setMessages((m) => {
+            if (m.some((x) => x.id === data.id)) return m;
+            return [...m, { id: data.id, role: "agent", agent_name: data.agent, content: data.content, error: data.error }];
+          });
         } else if (event === "host_start") {
-          pendingHostId = data.id;
-          pendingHostText = "";
-          setMessages((m) => [...m, { id: pendingHostId, role: "agent", agent_name: "host", content: "" }]);
+          setMessages((m) => [...m, {
+            id: data.id,
+            role: "agent",
+            agent_name: "host",
+            content: "",
+            _streaming: true,
+            metadata: { run_id: data.run_id, thinking: "", tool_events: [] },
+          }]);
+        } else if (event === "host_thinking_delta") {
+          updateMsg(data.id, (msg) => ({
+            ...msg,
+            metadata: { ...(msg.metadata || {}), thinking: (msg.metadata?.thinking || "") + (data.delta || "") },
+          }));
+        } else if (event === "host_text_delta") {
+          updateMsg(data.id, (msg) => ({ ...msg, content: (msg.content || "") + (data.delta || "") }));
         } else if (event === "token") {
-          pendingHostText += data.delta || "";
-          setMessages((m) => m.map((x) => x.id === pendingHostId ? { ...x, content: pendingHostText } : x));
+          // 旧客户端兼容: host_text_delta 已处理, token 不再追加避免重复
+        } else if (event === "host_tool_use_start") {
+          updateMsg(data.id, (msg) => ({
+            ...msg,
+            metadata: {
+              ...(msg.metadata || {}),
+              tool_events: [
+                ...((msg.metadata && msg.metadata.tool_events) || []),
+                { tool_id: data.tool_id, name: data.name, phase: "started" },
+              ],
+            },
+          }));
+        } else if (event === "host_tool_use") {
+          updateMsg(data.id, (msg) => ({
+            ...msg,
+            metadata: {
+              ...(msg.metadata || {}),
+              tool_events: ((msg.metadata && msg.metadata.tool_events) || []).map((t) =>
+                t.tool_id === data.tool_id ? { ...t, input: data.input, phase: "calling" } : t
+              ),
+            },
+          }));
+        } else if (event === "host_tool_result") {
+          updateMsg(data.id, (msg) => ({
+            ...msg,
+            metadata: {
+              ...(msg.metadata || {}),
+              tool_events: ((msg.metadata && msg.metadata.tool_events) || []).map((t) =>
+                t.tool_id === data.tool_id
+                  ? { ...t, result: data.result, error: !!data.error, phase: data.error ? "error" : "done" }
+                  : t
+              ),
+            },
+          }));
         } else if (event === "host_done") {
-          setMessages((m) => m.map((x) => x.id === data.id ? { ...x, content: data.content } : x));
+          updateMsg(data.id, (msg) => ({
+            ...msg,
+            content: data.content || msg.content,
+            _streaming: false,
+          }));
         } else if (event === "artifact") {
           setMessages((m) => [...m, {
             id: `art-${Date.now()}`,
@@ -93,7 +148,7 @@ export default function ProjectChat({ project }) {
             和投委会主持人聊聊这个项目 — 它会按需调度市场/财务/技术/风险专家,并能调用所有 skill 直接生成产物。
           </div>
         )}
-        {messages.map((m) => <Bubble key={m.id} m={m} />)}
+        {messages.map((m) => <Bubble key={m.id} m={m} projectId={project.id} />)}
         {streaming && phase && <PhaseLine phase={phase} />}
         <div ref={tailRef} />
       </div>
@@ -107,7 +162,7 @@ export default function ProjectChat({ project }) {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey && !streaming) {
+            if (e.key === "Enter" && !e.shiftKey && !streaming && !e.nativeEvent.isComposing) {
               e.preventDefault();
               handleSend(e);
             }
@@ -139,7 +194,7 @@ export default function ProjectChat({ project }) {
   );
 }
 
-function Bubble({ m }) {
+function Bubble({ m, projectId }) {
   if (m.role === "user") {
     return (
       <div className="flex justify-end">
@@ -154,17 +209,24 @@ function Bubble({ m }) {
     return (
       <div className="text-xs text-[#8E9BB0] italic">
         {m.content}
-        {art && art.kind === "pptx" && (
+        {art && (
           <div className="text-[#0F1C36] mt-1 not-italic">
             {art.bufferBase64 ? (
               <button
                 onClick={() => downloadBase64(art.bufferBase64, art.filename, art.mimeType)}
                 className="inline-flex items-center gap-1 px-2 py-1 rounded bg-emerald-600 text-white text-xs hover:bg-emerald-700"
               >
-                📎 下载 {art.filename}
+                下载 {art.filename}
+              </button>
+            ) : art.id ? (
+              <button
+                onClick={() => downloadArtifact(projectId, art)}
+                className="inline-flex items-center gap-1 px-2 py-1 rounded bg-emerald-600 text-white text-xs hover:bg-emerald-700"
+              >
+                下载 {art.filename}
               </button>
             ) : (
-              <span>📎 {art.filename}</span>
+              <span>{art.filename}</span>
             )}
           </div>
         )}
@@ -195,6 +257,23 @@ function Bubble({ m }) {
         m.error ? "bg-rose-50 text-rose-700" : "bg-[#F6F7FA] text-[#0F1C36]",
       ].join(" ")}>
         {m.content}
+        {Array.isArray(m.metadata?.tool_events) && m.metadata.tool_events.length > 0 && (
+          <div className="mt-2 pt-2 border-t border-[#E4E8F0] flex flex-wrap gap-1.5">
+            {m.metadata.tool_events.map((t, i) => {
+              const cls = t.phase === "done"
+                ? "bg-emerald-50 text-emerald-700"
+                : t.phase === "error"
+                  ? "bg-rose-50 text-rose-700"
+                  : "bg-[#EEF1F7] text-[#4B5A72]";
+              const label = t.phase === "done" ? `${t.name} ✓` : t.phase === "error" ? `${t.name} ✗` : `${t.name}…`;
+              return (
+                <span key={`${t.tool_id}-${i}`} className={`px-1.5 py-0.5 rounded text-[11px] ${cls}`}>
+                  {label}
+                </span>
+              );
+            })}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -213,6 +292,28 @@ function downloadBase64(base64, filename, mimeType) {
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
+}
+
+function downloadArtifact(projectId, artifact) {
+  const token = useAuthStore.getState().token;
+  fetch(`${API_BASE}/api/workspace-projects/${projectId}/conversation/artifacts/${artifact.id}/download`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  })
+    .then((resp) => {
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      return resp.blob();
+    })
+    .then((blob) => {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = artifact.filename || "artifact";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    })
+    .catch((err) => alert(`下载失败: ${err.message}`));
 }
 
 function PhaseLine({ phase }) {

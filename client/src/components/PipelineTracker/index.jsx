@@ -88,10 +88,10 @@ const PipelineTracker = memo(function PipelineTracker() {
 
       {/* ── 后台分析提示 ── */}
       <div className="flex items-start gap-2.5 p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl">
-        <Info className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
-        <p className="text-xs text-amber-300 leading-relaxed">
+        <Info className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+        <p className="text-xs text-[#4B5A72] leading-relaxed">
           您可以关闭此页面，分析将在后台自动继续。完成后，请在
-          <strong className="text-amber-200 mx-1">历史报告</strong>
+          <strong className="text-[#1B4FD8] font-semibold underline decoration-[#1B4FD8]/40 underline-offset-2 mx-1">历史报告</strong>
           中查看结果。
         </p>
       </div>

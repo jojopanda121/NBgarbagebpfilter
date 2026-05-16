@@ -200,22 +200,87 @@ function pad(arr, n, makeEmpty) {
   return out;
 }
 
+function clampText(value, maxChars, fallback = PLACEHOLDER) {
+  const s = (value == null ? "" : String(value)).replace(/\s+/g, " ").trim();
+  if (!s) return fallback;
+  return s.length > maxChars ? `${s.slice(0, Math.max(0, maxChars - 1))}…` : s;
+}
+
+function clampOnePagerForRender(raw) {
+  const j = raw && typeof raw === "object" ? raw : {};
+  const overview = j.company_overview || {};
+  const market = j.market_opportunity || {};
+  const footer = j.footer || {};
+
+  return {
+    company_name: clampText(j.company_name, 28),
+    headline: clampText(j.headline, 36),
+    company_overview: {
+      summary: clampText(overview.summary, 88),
+      products: pad(overview.products, REQUIRED_PRODUCTS, () => ({
+        name: PLACEHOLDER,
+        desc: PLACEHOLDER,
+      })).map((p) => ({
+        name: clampText(p?.name, 10),
+        desc: clampText(p?.desc, 28),
+      })),
+    },
+    market_opportunity: {
+      kpis: pad(market.kpis, REQUIRED_KPIS, () => ({
+        label: PLACEHOLDER,
+        value: PLACEHOLDER,
+      })).map((k) => ({
+        label: clampText(k?.label, 8),
+        value: clampText(k?.value, 12),
+      })),
+      drivers: pad(market.drivers, REQUIRED_DRIVERS, () => ({
+        type: PLACEHOLDER,
+        text: PLACEHOLDER,
+      })).map((d) => ({
+        type: clampText(d?.type, 6),
+        text: clampText(d?.text, 34),
+      })),
+      competition: clampText(market.competition, 50),
+    },
+    highlights: pad(j.highlights, REQUIRED_HIGHLIGHTS, () => ({
+      title: PLACEHOLDER,
+      desc: PLACEHOLDER,
+    })).map((h) => ({
+      title: clampText(h?.title, 10),
+      desc: clampText(h?.desc, 32),
+    })),
+    risks: pad(j.risks, REQUIRED_RISKS, () => ({
+      title: PLACEHOLDER,
+      desc: PLACEHOLDER,
+    })).map((r) => ({
+      title: clampText(r?.title, 8),
+      desc: clampText(r?.desc, 30),
+    })),
+    footer: {
+      founded: clampText(footer.founded, 12),
+      team_size: clampText(footer.team_size, 12),
+      funding_total: clampText(footer.funding_total, 14),
+      ai_grade: clampText(footer.ai_grade, 18),
+    },
+  };
+}
+
 function normalizeOnePager(raw, fallbackName, template) {
   const json = raw && typeof raw === "object" ? raw : {};
   const tmpl = template || INDUSTRY_TEMPLATES.default;
 
-  const company_name = (json.company_name || fallbackName || PLACEHOLDER).toString();
-  const headline = (json.headline || PLACEHOLDER).toString();
+  const company_name = clampText(json.company_name || fallbackName, 28);
+  const headline = clampText(json.headline, 36);
 
   const overview = json.company_overview || {};
   const company_overview = {
-    summary: (overview.summary || PLACEHOLDER).toString(),
+    summary: clampText(overview.summary, 88),
     products: pad(overview.products, REQUIRED_PRODUCTS, () => ({
       name: PLACEHOLDER,
       desc: PLACEHOLDER,
     })).map(p => ({
-      name: (p?.name || PLACEHOLDER).toString(),
-      desc: (p?.desc || PLACEHOLDER).toString(),
+      name: clampText(p?.name, 10),
+      desc: clampText(p?.desc, 28),
     })),
   };
 
@@ -228,41 +293,41 @@ function normalizeOnePager(raw, fallbackName, template) {
       label: defaultLabels[i] || `KPI${i + 1}`,
       value: PLACEHOLDER,
     })).map((k, i) => ({
-      label: (defaultLabels[i] || k?.label || `KPI${i + 1}`).toString(),
-      value: (k?.value || PLACEHOLDER).toString(),
+      label: clampText(defaultLabels[i] || k?.label || `KPI${i + 1}`, 8),
+      value: clampText(k?.value, 12),
     })),
     drivers: pad(market.drivers, REQUIRED_DRIVERS, (i) => ({
       type: defaultDriverTypes[i] || `驱动${i + 1}`,
       text: PLACEHOLDER,
     })).map((d, i) => ({
-      type: (defaultDriverTypes[i] || d?.type || `驱动${i + 1}`).toString(),
-      text: (d?.text || PLACEHOLDER).toString(),
+      type: clampText(defaultDriverTypes[i] || d?.type || `驱动${i + 1}`, 6),
+      text: clampText(d?.text, 34),
     })),
-    competition: (market.competition || PLACEHOLDER).toString(),
+    competition: clampText(market.competition, 50),
   };
 
   const highlights = pad(json.highlights, REQUIRED_HIGHLIGHTS, () => ({
     title: PLACEHOLDER,
     desc: PLACEHOLDER,
   })).map(h => ({
-    title: (h?.title || PLACEHOLDER).toString(),
-    desc: (h?.desc || PLACEHOLDER).toString(),
+    title: clampText(h?.title, 10),
+    desc: clampText(h?.desc, 32),
   }));
 
   const risks = pad(json.risks, REQUIRED_RISKS, () => ({
     title: PLACEHOLDER,
     desc: PLACEHOLDER,
   })).map(r => ({
-    title: (r?.title || PLACEHOLDER).toString(),
-    desc: (r?.desc || PLACEHOLDER).toString(),
+    title: clampText(r?.title, 8),
+    desc: clampText(r?.desc, 30),
   }));
 
   const f = json.footer || {};
   const footer = {
-    founded: (f.founded || PLACEHOLDER).toString(),
-    team_size: (f.team_size || PLACEHOLDER).toString(),
-    funding_total: (f.funding_total || PLACEHOLDER).toString(),
-    ai_grade: (f.ai_grade || PLACEHOLDER).toString(),
+    founded: clampText(f.founded, 12),
+    team_size: clampText(f.team_size, 12),
+    funding_total: clampText(f.funding_total, 14),
+    ai_grade: clampText(f.ai_grade, 18),
   };
 
   return {
@@ -357,18 +422,32 @@ async function regenerateOnePager(taskId, userOverrides = null) {
  * @param {string} materials       公司原始材料 (BP / 招股书 / 调研笔记原文)
  * @param {object} [opts]
  * @param {string} [opts.companyHint]   公司名提示, 写入 LLM 输入起首
+ * @param {string} [opts.industryHint]  行业提示 (优先于 userOverrides.industry / 默认模板)
+ * @param {string} [opts.stageHint]     轮次提示 (优先于 userOverrides.funding_round / 默认 bucket)
  * @param {object} [opts.userOverrides] 同 getOrGenerateOnePager 的人工微调字段
- * @returns {Promise<{ json: object, generated_at: string, search_used: boolean }>}
+ * @returns {Promise<{ json: object, generated_at: string, search_used: boolean, template: object }>}
  */
 async function generateOnePagerFromMaterials(materials, opts = {}) {
-  const { companyHint = "", userOverrides = null } = opts;
+  const {
+    companyHint = "",
+    industryHint = "",
+    stageHint = "",
+    userOverrides = null,
+  } = opts;
   if (!materials || typeof materials !== "string" || materials.trim().length < 20) {
     throw new Error("公司材料不足, 至少 20 字");
   }
 
-  // 用 industry/stage 模板兜底 (无 task 时只能走 default)
-  const tmpl = pickIndustryTemplate("");
-  const stageBucket = pickStageBucket(userOverrides?.funding_round || "");
+  // 推断行业 / 轮次:
+  //   1) 显式 hint 优先 (调用方应从 project.industry / project.stage 传入)
+  //   2) userOverrides 兜底 (用户在 args 里写过)
+  //   3) 都没有 → 默认模板
+  // 注: 这里不走"LLM 先猜一次"的兜底, 避免多一次推断成本; 调用方 (onepagerPptx.js)
+  //     在 project.industry 缺失时已传空 hint, 仍可被 KPI 模板默认值兜底.
+  const industryRaw = industryHint || userOverrides?.industry || "";
+  const stageRaw = stageHint || userOverrides?.funding_round || "";
+  const tmpl = pickIndustryTemplate(industryRaw);
+  const stageBucket = pickStageBucket(stageRaw);
 
   // 组装 LLM 输入: 模拟 buildLLMInput 的格式, 但用纯文本材料代替 task row.
   const parts = [];
@@ -409,12 +488,13 @@ async function generateOnePagerFromMaterials(materials, opts = {}) {
  * @returns {Promise<Buffer>}
  */
 async function renderOnePagerPptx(onepagerJson) {
+  const renderJson = clampOnePagerForRender(onepagerJson);
   if (config.docServiceUrl) {
     try {
       const resp = await fetch(`${config.docServiceUrl}/generate/onepager`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(onepagerJson),
+        body: JSON.stringify(renderJson),
       });
       if (resp.ok) return Buffer.from(await resp.arrayBuffer());
       const t = await resp.text().catch(() => "");
@@ -423,7 +503,7 @@ async function renderOnePagerPptx(onepagerJson) {
       logger.warn("[onepager] doc-service 不可达，降级为本地 pptxgenjs:", e.message);
     }
   }
-  return renderOnePagerPptxLocal(onepagerJson);
+  return renderOnePagerPptxLocal(renderJson);
 }
 
 /**
@@ -453,9 +533,10 @@ function renderOnePagerPptxLocal(j) {
   slide.background = { color: BG };
 
   // 标题
+  const titleFontSize = String(j.company_name || "").length > 22 ? 20 : 24;
   slide.addText(`投资要点速览——${j.company_name || "（未知）"}`, {
     x: 0.55, y: 0.32, w: 12.2, h: 0.6,
-    fontFace: FONT_FACE, fontSize: 26, bold: true, color: TITLE_FG,
+    fontFace: FONT_FACE, fontSize: titleFontSize, bold: true, color: TITLE_FG,
   });
   // 金线
   slide.addShape(pptx.ShapeType.rect, {
@@ -470,7 +551,7 @@ function renderOnePagerPptxLocal(j) {
   });
   slide.addText(j.headline || "暂无", {
     x: 0.7, y: 1.10, w: 11.9, h: 0.55,
-    fontFace: FONT_FACE, fontSize: 16, bold: true, color: "FFFFFF",
+    fontFace: FONT_FACE, fontSize: 15, bold: true, color: "FFFFFF",
     valign: "middle", align: "left",
   });
 
@@ -486,32 +567,32 @@ function renderOnePagerPptxLocal(j) {
   };
 
   // 左：公司概况
-  const LX = 0.55, LW = 5.9, BLOCK_TOP = 1.85;
+  const LX = 0.55, LW = 5.9, BLOCK_TOP = 1.78;
   sectionLabel(LX, BLOCK_TOP, LW, "公司概况");
-  const ovTop = 2.22, ovH = 2.85;
+  const ovTop = 2.14, ovH = 2.25;
   const ov = j.company_overview || {};
   slide.addText(ov.summary || "暂无", {
-    x: LX, y: ovTop, w: LW, h: 1.2,
-    fontFace: FONT_FACE, fontSize: 11, color: BLACK,
+    x: LX, y: ovTop, w: LW, h: 0.92,
+    fontFace: FONT_FACE, fontSize: 9, color: BLACK,
     line: { color: RULE, width: 0.5 }, fill: { color: BG },
     margin: 6, valign: "top",
   });
   const products = (ov.products || []).slice(0, 3);
-  const pH = (ovH - 1.25) / Math.max(products.length, 1);
+  const pH = (ovH - 0.98) / Math.max(products.length, 1);
   products.forEach((p, i) => {
     slide.addText([
       { text: `${p.name || "暂无"}：`, options: { bold: true, color: LABEL_FG } },
       { text: p.desc || "暂无", options: { color: BLACK } },
     ], {
-      x: LX, y: ovTop + 1.25 + pH * i, w: LW, h: pH,
-      fontFace: FONT_FACE, fontSize: 11, valign: "top", margin: 4,
+      x: LX, y: ovTop + 0.98 + pH * i, w: LW, h: pH,
+      fontFace: FONT_FACE, fontSize: 9, valign: "top", margin: 4,
     });
   });
 
   // 右：市场机会
   const RX = 6.65, RW = 6.10;
   sectionLabel(RX, BLOCK_TOP, RW, "市场机会与行业速览");
-  const mTop = 2.22;
+  const mTop = 2.14;
   const m = j.market_opportunity || {};
   const kpis = (m.kpis || []).slice(0, 4);
   const kW = RW / 4;
@@ -519,22 +600,22 @@ function renderOnePagerPptxLocal(j) {
     const x = RX + kW * i;
     slide.addText(k.label || "", {
       x, y: mTop + 0.05, w: kW, h: 0.28,
-      fontFace: FONT_FACE, fontSize: 10, bold: true, color: GRAY, align: "center", valign: "middle",
+      fontFace: FONT_FACE, fontSize: 8, bold: true, color: GRAY, align: "center", valign: "middle",
     });
-    slide.addText(k.value || "暂无", {
+  slide.addText(k.value || "暂无", {
       x, y: mTop + 0.30, w: kW, h: 0.40,
-      fontFace: FONT_FACE, fontSize: 13, bold: true, color: LABEL_FG, align: "center", valign: "middle",
+      fontFace: FONT_FACE, fontSize: 8, bold: true, color: LABEL_FG, align: "center", valign: "middle",
     });
   });
   const drvs = (m.drivers || []).slice(0, 3);
-  const drvTop = mTop + 0.85, drvH = 0.45;
+  const drvTop = mTop + 0.78, drvH = 0.38;
   drvs.forEach((d, i) => {
     slide.addText([
       { text: `〔${d.type || ""}〕 `, options: { bold: true, color: LABEL_FG } },
       { text: d.text || "暂无", options: { color: BLACK } },
     ], {
       x: RX + 0.1, y: drvTop + drvH * i, w: RW - 0.2, h: drvH,
-      fontFace: FONT_FACE, fontSize: 10, valign: "top", margin: 2,
+      fontFace: FONT_FACE, fontSize: 9, valign: "top", margin: 2,
     });
   });
   slide.addText([
@@ -542,31 +623,31 @@ function renderOnePagerPptxLocal(j) {
     { text: m.competition || "暂无", options: { color: BLACK } },
   ], {
     x: RX + 0.1, y: drvTop + drvH * 3 + 0.05, w: RW - 0.2, h: 0.55,
-    fontFace: FONT_FACE, fontSize: 10, valign: "top", margin: 2,
+    fontFace: FONT_FACE, fontSize: 9, valign: "top", margin: 2,
   });
 
   // 投资亮点 4 条 2x2
-  const HL_TOP = 5.18;
+  const HL_TOP = 4.55;
   sectionLabel(LX, HL_TOP, 12.2, "投资亮点");
   const cellsTop = HL_TOP + 0.40;
   const cellW = (12.2 - 0.30) / 2;
-  const cellH = (1.55 - 0.40) / 2;
+  const cellH = (1.45 - 0.40) / 2;
   (j.highlights || []).slice(0, 4).forEach((h, i) => {
     const col = i % 2, row = Math.floor(i / 2);
     const x = LX + (cellW + 0.30) * col;
     const y = cellsTop + cellH * row;
     slide.addText(`· ${h.title || "暂无"}`, {
       x, y, w: cellW, h: 0.35,
-      fontFace: FONT_FACE, fontSize: 12, bold: true, color: LABEL_FG, valign: "middle",
+      fontFace: FONT_FACE, fontSize: 10, bold: true, color: LABEL_FG, valign: "middle",
     });
     slide.addText(h.desc || "暂无", {
       x: x + 0.18, y: y + 0.32, w: cellW - 0.18, h: cellH - 0.32,
-      fontFace: FONT_FACE, fontSize: 10, color: BLACK, valign: "top",
+      fontFace: FONT_FACE, fontSize: 8, color: BLACK, valign: "top",
     });
   });
 
   // 风险板块 (语义红浅底 + 语义红文字)
-  const RISK_TOP = 6.78, RISK_H = 0.55;
+  const RISK_TOP = 6.18, RISK_H = 0.70;
   slide.addShape(pptx.ShapeType.rect, {
     x: LX, y: RISK_TOP, w: 12.2, h: RISK_H,
     fill: { color: RISK_BG }, line: { type: "none" },
@@ -585,7 +666,7 @@ function renderOnePagerPptxLocal(j) {
       { text: r.desc || "暂无", options: { color: BLACK } },
     ], {
       x: rAreaX + rW * i, y: RISK_TOP, w: rW, h: RISK_H,
-      fontFace: FONT_FACE, fontSize: 10, valign: "middle", margin: 4,
+      fontFace: FONT_FACE, fontSize: 8, valign: "middle", margin: 4,
     });
   });
 
@@ -593,7 +674,7 @@ function renderOnePagerPptxLocal(j) {
   const f = j.footer || {};
   const footText = `成立年份 ${f.founded || "暂无"}　·　团队规模 ${f.team_size || "暂无"}　·　累计融资 ${f.funding_total || "暂无"}　·　${f.ai_grade || "暂无"}`;
   slide.addText(footText, {
-    x: LX, y: 7.05, w: 12.2, h: 0.35,
+    x: LX, y: 7.02, w: 12.2, h: 0.35,
     fontFace: FONT_FACE, fontSize: 9, color: GRAY, valign: "middle",
   });
 
@@ -615,4 +696,5 @@ module.exports = {
   renderOnePagerPptx,
   buildPptxFilename,
   normalizeOnePager,
+  clampOnePagerForRender,
 };

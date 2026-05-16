@@ -217,6 +217,14 @@ const server = app.listen(PORT, () => {
   console.log(`  通信模式: 异步任务轮询\n`);
 });
 
+// ── 定时清理过期 workspace artifacts ──
+const { runWorkspaceMemoryGc } = require("./services/workspaceService");
+setTimeout(() => { try { runWorkspaceMemoryGc(); } catch (e) { console.error("[Cleanup]", e.message); } }, 60_000);
+setInterval(() => {
+  try { const r = runWorkspaceMemoryGc(); if (r.artifactsDeleted) console.log(`[Cleanup] 清理 ${r.artifactsDeleted} 个过期文件`); }
+  catch (e) { console.error("[Cleanup]", e.message); }
+}, 24 * 60 * 60 * 1000);
+
 const HTTP_TIMEOUT = 2 * 60 * 1000;
 server.timeout = HTTP_TIMEOUT;
 server.requestTimeout = HTTP_TIMEOUT;

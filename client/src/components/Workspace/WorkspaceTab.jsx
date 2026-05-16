@@ -12,7 +12,7 @@ import {
   Send, Paperclip, Loader2, AlertCircle, Download,
   TrendingUp, DollarSign, Cpu, Shield, MessageSquare, FileBox,
   CheckCircle2, X, Trash2, ChevronDown, ChevronRight, Sparkles, Info,
-  Brain, Wrench, FileText,
+  Brain, Wrench, FileText, Presentation, ClipboardList, Table2,
 } from "lucide-react";
 import api from "../../services/api";
 import useAuthStore from "../../store/useAuthStore";
@@ -33,6 +33,34 @@ const AGENT_META = {
 
 const ALL_AGENTS = ["host", "market_deal", "finance_valuation", "product_team_risk"];
 
+const QUICK_OUTPUT_ACTIONS = [
+  {
+    label: "一页亮点 PPT",
+    icon: Presentation,
+    prompt: "请基于当前项目分析结果和我上传的所有材料，生成一份投资亮点一页 PPT。必须调用 onepager_pptx 模板 skill，内容要克制、可溯源，不要堆字。",
+  },
+  {
+    label: "投决速览",
+    icon: FileText,
+    prompt: "请基于当前项目分析结果和我上传的所有材料，生成一份投委会一页纸投决速览。必须调用 investment_snapshot 模板 skill，文字精简，避免版面拥挤。",
+  },
+  {
+    label: "尽调清单 Excel",
+    icon: Table2,
+    prompt: "请基于当前项目分析结果和我上传的所有材料，生成一份尽调问题清单 Excel。必须调用 dd_checklist_xlsx 工具。",
+  },
+  {
+    label: "投决材料",
+    icon: ClipboardList,
+    prompt: "请基于当前项目分析结果和我上传的所有材料，生成一份 16 页投决材料 PPT。必须调用 investment_deck_pptx 模板 skill，按投资概要、尽调概况、公司、行业、业务技术、财务、估值、风险建议组织。",
+  },
+  {
+    label: "项目简报",
+    icon: ClipboardList,
+    prompt: "请基于当前项目分析结果和我上传的所有材料，生成一份 3 页项目简报 PPT。必须调用 project_brief 模板 skill。",
+  },
+];
+
 const ARTIFACT_KIND_LABEL = {
   generated_pptx: "AI 生成 PPT",
   generated_docx: "AI 生成 Word",
@@ -45,6 +73,7 @@ const TOOL_LABEL = {
   onepager_pptx: "一页投资亮点",
   investment_snapshot: "投决速览",
   project_brief: "项目简报",
+  investment_deck_pptx: "投决材料",
   generate_onepager: "生成一页纸",
   generate_pptx: "生成 PPT",
   generate_docx: "生成 Word",
@@ -72,7 +101,7 @@ export default function WorkspaceTab({ taskId }) {
   const [streaming, setStreaming] = useState(false);
   const [currentRunId, setCurrentRunId] = useState(null);
   const [input, setInput]         = useState("");
-  const [pendingFile, setPendingFile] = useState(null);
+  const [pendingFiles, setPendingFiles] = useState([]);
   const [capabilities, setCapabilities] = useState(null);
   const [capOpen, setCapOpen] = useState(false);
 
@@ -128,12 +157,12 @@ export default function WorkspaceTab({ taskId }) {
     setMessages((m) => m.map((msg) => (msg.id === id ? updater(msg) : msg)));
   };
 
-  const handleSend = async () => {
-    const text = input.trim();
-    const fileToSend = pendingFile;
-    if ((!text && !fileToSend) || streaming) return;
+  const handleSend = async (overrideText = null) => {
+    const text = (typeof overrideText === "string" ? overrideText : input).trim();
+    const filesToSend = [...pendingFiles];
+    if ((!text && filesToSend.length === 0) || streaming) return;
     setInput("");
-    setPendingFile(null);
+    setPendingFiles([]);
     if (fileInputRef.current) fileInputRef.current.value = "";
     setStreaming(true);
     setPhase("routing");
@@ -144,7 +173,16 @@ export default function WorkspaceTab({ taskId }) {
     abortRef.current = ac;
 
     try {
-      await streamChatMessage(taskId, text, (event, data) => {
+      if (filesToSend.length > 0) {
+        await Promise.all(filesToSend.map(async (file) => {
+          const fd = new FormData();
+          fd.append("file", file);
+          const r = await api.upload(`/api/workspace/${taskId}/upload`, fd);
+          if (r.artifact) setArtifacts(a => [r.artifact, ...a]);
+        }));
+      }
+      const msgText = text || (filesToSend.length > 0 ? "请分析已上传的材料" : "");
+      await streamChatMessage(taskId, msgText, (event, data) => {
         switch (event) {
           case "user_message":
             setMessages(m => [...m, {
@@ -296,14 +334,14 @@ export default function WorkspaceTab({ taskId }) {
             break;
           default: break;
         }
-      }, ac.signal, fileToSend);
+      }, ac.signal, null);
     } catch (err) {
       if (err.name !== "AbortError") {
         setMessages(m => [...m, {
           id: `err-${Date.now()}`, role: "system", agent_name: null,
           content: `请求失败：${err.message}`, created_at: new Date().toISOString(),
         }]);
-        if (fileToSend) setPendingFile(fileToSend);
+        if (filesToSend.length > 0) setPendingFiles(filesToSend);
       }
     } finally {
       setStreaming(false);
@@ -315,6 +353,7 @@ export default function WorkspaceTab({ taskId }) {
   };
 
   const handleStop = () => abortRef.current?.abort();
+  const handleQuickOutput = (prompt) => handleSend(prompt);
 
   const doClear = async (scope, label) => {
     if (streaming) return;
@@ -328,7 +367,7 @@ export default function WorkspaceTab({ taskId }) {
         setPhase("idle");
       } else if (scope === "uploads") {
         setArtifacts(items => items.filter((a) => a.kind !== "upload"));
-        setPendingFile(null);
+        setPendingFiles([]);
         if (fileInputRef.current) fileInputRef.current.value = "";
       } else if (scope === "outputs") {
         setArtifacts(items => items.filter((a) => !(a.kind || "").startsWith("generated_")));
@@ -339,8 +378,9 @@ export default function WorkspaceTab({ taskId }) {
   };
 
   const handleFile = (e) => {
-    const f = e.target.files?.[0];
-    if (f) setPendingFile(f);
+    const files = Array.from(e.target.files || []);
+    if (files.length > 0) setPendingFiles(prev => [...prev, ...files].slice(0, 10));
+    if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
   const downloadArtifact = (art) => {
@@ -410,6 +450,11 @@ export default function WorkspaceTab({ taskId }) {
               </div>
             );
           })}
+          <QuickOutputActions
+            actions={QUICK_OUTPUT_ACTIONS}
+            disabled={streaming}
+            onRun={handleQuickOutput}
+          />
         </aside>
 
         <section className="col-span-12 lg:col-span-7 flex min-h-0 flex-col bg-white border border-[#EEF1F7] rounded-xl overflow-hidden">
@@ -454,6 +499,7 @@ export default function WorkspaceTab({ taskId }) {
                 ref={fileInputRef}
                 type="file"
                 accept=".pdf,.pptx,.docx,.xlsx,.csv,.txt,.md"
+                multiple
                 onChange={handleFile}
                 className="hidden"
               />
@@ -469,7 +515,7 @@ export default function WorkspaceTab({ taskId }) {
                 value={input}
                 onChange={e => setInput(e.target.value)}
                 onKeyDown={e => {
-                  if (e.key === "Enter" && !e.shiftKey) {
+                  if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
                     e.preventDefault();
                     handleSend();
                   }
@@ -489,8 +535,8 @@ export default function WorkspaceTab({ taskId }) {
                 </button>
               ) : (
                 <button
-                  onClick={handleSend}
-                  disabled={!input.trim() && !pendingFile}
+                  onClick={() => handleSend()}
+                  disabled={!input.trim() && pendingFiles.length === 0}
                   className="px-3 py-2 bg-[#1B4FD8] hover:bg-[#163069] disabled:bg-[#E5E9F4] disabled:text-[#8E9BB0] text-white rounded-lg flex items-center gap-1.5"
                 >
                   <Send className="w-4 h-4" />
@@ -498,22 +544,23 @@ export default function WorkspaceTab({ taskId }) {
                 </button>
               )}
             </div>
-            {pendingFile && (
-              <div className="mt-2 inline-flex max-w-full items-center gap-2 rounded-lg border border-[#BFC5D6] bg-white px-2.5 py-1.5 text-xs text-[#0F1C36]">
-                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                <span className="truncate">{pendingFile.name}</span>
-                <span className="text-[#5B677A] shrink-0">{bytes(pendingFile.size)}</span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setPendingFile(null);
-                    if (fileInputRef.current) fileInputRef.current.value = "";
-                  }}
-                  className="p-0.5 text-[#5B677A] hover:text-[#0F1C36]"
-                  title="移除附件"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
+            {pendingFiles.length > 0 && (
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {pendingFiles.map((f, i) => (
+                  <div key={`${f.name}-${i}`} className="inline-flex max-w-[220px] items-center gap-1.5 rounded-lg border border-[#BFC5D6] bg-white px-2 py-1 text-xs text-[#0F1C36]">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                    <span className="truncate">{f.name}</span>
+                    <span className="text-[#5B677A] shrink-0">{bytes(f.size)}</span>
+                    <button
+                      type="button"
+                      onClick={() => setPendingFiles(prev => prev.filter((_, idx) => idx !== i))}
+                      className="p-0.5 text-[#5B677A] hover:text-[#0F1C36]"
+                      title="移除"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ))}
               </div>
             )}
             {phase !== "idle" && (
@@ -550,6 +597,32 @@ export default function WorkspaceTab({ taskId }) {
             onClearAll={() => doClear("outputs", "清空所有 AI 生成产出")}
           />
         </aside>
+      </div>
+    </div>
+  );
+}
+
+function QuickOutputActions({ actions, disabled, onRun }) {
+  return (
+    <div className="pt-3 mt-3 border-t border-[#EEF1F7]">
+      <h3 className="text-xs font-medium text-[#4B5A72] uppercase tracking-wider mb-2">常用产出</h3>
+      <div className="space-y-1.5">
+        {actions.map((action) => {
+          const Icon = action.icon;
+          return (
+            <button
+              key={action.label}
+              type="button"
+              onClick={() => onRun(action.prompt)}
+              disabled={disabled}
+              title={action.label}
+              className="w-full flex items-center gap-2 rounded-lg border border-[#D8DCE8] bg-white px-3 py-2 text-left text-sm text-[#0F1C36] transition-colors hover:border-[#1B4FD8] hover:text-[#1B4FD8] disabled:opacity-45 disabled:hover:border-[#D8DCE8] disabled:hover:text-[#0F1C36]"
+            >
+              <Icon className="w-4 h-4 shrink-0" />
+              <span className="truncate">{action.label}</span>
+            </button>
+          );
+        })}
       </div>
     </div>
   );
@@ -1052,6 +1125,7 @@ const TOOL_TRIGGER_HINTS = {
   onepager_pptx: "生成一份投资亮点一页纸",
   investment_snapshot: "生成一页纸投决速览",
   project_brief: "生成 3 页项目简报",
+  investment_deck_pptx: "生成 16 页投决材料",
   generate_docx: "生成一份尽调备忘录 Word",
   generate_xlsx: "生成一份风险台账 Excel",
 };

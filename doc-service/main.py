@@ -572,7 +572,7 @@ def _build_onepager(payload: OnePagerPayload) -> bytes:
     from pptx import Presentation
     from pptx.util import Inches, Pt
     from pptx.enum.shapes import MSO_SHAPE
-    from pptx.enum.text import MSO_ANCHOR, PP_ALIGN
+    from pptx.enum.text import MSO_ANCHOR, PP_ALIGN, MSO_AUTO_SIZE
 
     from brand_tokens import COLOR
 
@@ -586,6 +586,12 @@ def _build_onepager(payload: OnePagerPayload) -> bytes:
     LIGHT = COLOR["bg3"]        # 板块浅蓝灰底
     GRAY_BG = COLOR["red_bg"]   # 风险板块走语义红浅底
     RISK_FG = COLOR["red"]      # 风险板块文字
+
+    def clip(value, max_chars, fallback="暂无"):
+        text = " ".join(str(value or "").split()).strip()
+        if not text:
+            return fallback
+        return text if len(text) <= max_chars else text[: max_chars - 1] + "…"
 
     prs = Presentation()
     prs.slide_width = Inches(13.333)
@@ -618,6 +624,7 @@ def _build_onepager(payload: OnePagerPayload) -> bytes:
         else:
             box.line.fill.background()
         tf = box.text_frame
+        tf.auto_size = MSO_AUTO_SIZE.NONE
         tf.word_wrap = True
         tf.margin_left = Inches(0.08)
         tf.margin_right = Inches(0.08)
@@ -648,16 +655,18 @@ def _build_onepager(payload: OnePagerPayload) -> bytes:
     paint_bg()
 
     # ── 顶部标题 + 品牌蓝细线 ───────────────────────────────
-    title_text = f"投资要点速览——{payload.company_name}"
+    company_name = clip(payload.company_name, 28)
+    title_text = f"投资要点速览——{company_name}"
+    title_size = 20 if len(company_name) > 22 else 24
     add_text(Inches(0.55), Inches(0.32), Inches(12.2), Inches(0.6),
-             title_text, size=26, bold=True, color=COLOR["navy"])
+             title_text, size=title_size, bold=True, color=COLOR["navy"])
     add_filled_rect(Inches(0.55), Inches(0.95), Inches(12.2), Inches(0.025), BRAND)
 
     # ── navy 横幅 (论点带) ──────────────────────────────────
     add_filled_rect(Inches(0.55), Inches(1.10), Inches(12.2), Inches(0.55), BANNER)
     headline_box, _, _ = add_text(
         Inches(0.55), Inches(1.10), Inches(12.2), Inches(0.55),
-        payload.headline, size=16, bold=True, color=COLOR["white"],
+        clip(payload.headline, 36), size=15, bold=True, color=COLOR["white"],
         anchor_top=False
     )
     headline_box.text_frame.paragraphs[0].alignment = PP_ALIGN.LEFT
@@ -665,51 +674,52 @@ def _build_onepager(payload: OnePagerPayload) -> bytes:
     # ── 左：公司概况 ────────────────────────────────────────
     LEFT_X = Inches(0.55)
     LEFT_W = Inches(5.9)
-    BLOCK_TOP = Inches(1.85)
+    BLOCK_TOP = Inches(1.78)
     add_section_label(LEFT_X, BLOCK_TOP, LEFT_W, "公司概况")
 
     # 公司概况框 + 内容（虚线感用浅边框模拟）
-    overview_top = Inches(2.22)
-    overview_h = Inches(2.85)
+    overview_top = Inches(2.14)
+    overview_h = Inches(2.25)
     add_filled_rect(LEFT_X, overview_top, LEFT_W, overview_h, BG)
 
     # 摘要段
     summary_box, summary_tf, _ = add_text(
-        LEFT_X, overview_top, LEFT_W, Inches(1.2),
-        payload.company_overview.summary, size=11, color=BLACK,
+        LEFT_X, overview_top, LEFT_W, Inches(0.92),
+        clip(payload.company_overview.summary, 88), size=9, color=BLACK,
         line_spacing=1.25
     )
     summary_box.line.color.rgb = COLOR["border"]
     summary_box.line.width = Pt(0.5)
 
     # 产品/业务条目
-    p_top = overview_top + Inches(1.25)
-    p_h = (overview_h - Inches(1.25)) // max(len(payload.company_overview.products), 1)
+    p_top = overview_top + Inches(0.98)
+    p_h = (overview_h - Inches(0.98)) // max(len(payload.company_overview.products), 1)
     for i, prod in enumerate(payload.company_overview.products[:3]):
         item_top = p_top + p_h * i
         item_box = s.shapes.add_textbox(LEFT_X, item_top, LEFT_W, p_h)
         item_box.line.fill.background()
         item_box.fill.background()
         tf = item_box.text_frame
+        tf.auto_size = MSO_AUTO_SIZE.NONE
         tf.word_wrap = True
         tf.margin_left = Inches(0.08)
         tf.margin_right = Inches(0.08)
         para = tf.paragraphs[0]
         para.line_spacing = 1.2
         r1 = para.add_run()
-        r1.text = f"{prod.name}："
-        _set_cn_font(r1, 11, bold=True, color=LABEL_FG)
+        r1.text = f"{clip(prod.name, 10)}："
+        _set_cn_font(r1, 9, bold=True, color=LABEL_FG)
         r2 = para.add_run()
-        r2.text = prod.desc
-        _set_cn_font(r2, 11, color=BLACK)
+        r2.text = clip(prod.desc, 28)
+        _set_cn_font(r2, 9, color=BLACK)
 
     # ── 右：市场机会与行业速览 ─────────────────────────────
     RIGHT_X = Inches(6.65)
     RIGHT_W = Inches(6.10)
     add_section_label(RIGHT_X, BLOCK_TOP, RIGHT_W, "市场机会与行业速览")
 
-    market_top = Inches(2.22)
-    market_h = Inches(2.85)
+    market_top = Inches(2.14)
+    market_h = Inches(2.25)
     add_filled_rect(RIGHT_X, market_top, RIGHT_W, market_h, BG)
 
     # KPI 行（4 列）
@@ -720,19 +730,19 @@ def _build_onepager(payload: OnePagerPayload) -> bytes:
         # 标签
         label_box, _, lp = add_text(
             x, market_top + Inches(0.05), kpi_w, Inches(0.28),
-            kpi.label, size=10, bold=True, color=GRAY, anchor_top=False
+            clip(kpi.label, 8), size=8, bold=True, color=GRAY, anchor_top=False
         )
         lp.alignment = PP_ALIGN.CENTER
         # 值
         val_box, _, vp = add_text(
             x, market_top + Inches(0.30), kpi_w, Inches(0.40),
-            kpi.value, size=13, bold=True, color=LABEL_FG, anchor_top=False
+            clip(kpi.value, 12), size=8, bold=True, color=LABEL_FG, anchor_top=False
         )
         vp.alignment = PP_ALIGN.CENTER
 
     # 驱动力 3 条
-    drv_top = market_top + Inches(0.85)
-    drv_h = Inches(0.45)
+    drv_top = market_top + Inches(0.78)
+    drv_h = Inches(0.38)
     for i, drv in enumerate(payload.market_opportunity.drivers[:3]):
         y = drv_top + drv_h * i
         box = s.shapes.add_textbox(RIGHT_X + Inches(0.1), y,
@@ -740,17 +750,18 @@ def _build_onepager(payload: OnePagerPayload) -> bytes:
         box.line.fill.background()
         box.fill.background()
         tf = box.text_frame
+        tf.auto_size = MSO_AUTO_SIZE.NONE
         tf.word_wrap = True
         tf.margin_left = Inches(0.05)
         tf.margin_right = Inches(0.05)
         p = tf.paragraphs[0]
         p.line_spacing = 1.15
         r1 = p.add_run()
-        r1.text = f"〔{drv.type}〕 "
-        _set_cn_font(r1, 10, bold=True, color=LABEL_FG)
+        r1.text = f"〔{clip(drv.type, 6)}〕 "
+        _set_cn_font(r1, 9, bold=True, color=LABEL_FG)
         r2 = p.add_run()
-        r2.text = drv.text
-        _set_cn_font(r2, 10, color=BLACK)
+        r2.text = clip(drv.text, 34)
+        _set_cn_font(r2, 9, color=BLACK)
 
     # 竞争格局
     comp_top = drv_top + drv_h * 3 + Inches(0.05)
@@ -759,20 +770,21 @@ def _build_onepager(payload: OnePagerPayload) -> bytes:
     comp_box.line.fill.background()
     comp_box.fill.background()
     ctf = comp_box.text_frame
+    ctf.auto_size = MSO_AUTO_SIZE.NONE
     ctf.word_wrap = True
     ctf.margin_left = Inches(0.05)
     cp = ctf.paragraphs[0]
     cp.line_spacing = 1.15
     cr1 = cp.add_run()
     cr1.text = "〔竞争格局〕 "
-    _set_cn_font(cr1, 10, bold=True, color=LABEL_FG)
+    _set_cn_font(cr1, 9, bold=True, color=LABEL_FG)
     cr2 = cp.add_run()
-    cr2.text = payload.market_opportunity.competition
-    _set_cn_font(cr2, 10, color=BLACK)
+    cr2.text = clip(payload.market_opportunity.competition, 50)
+    _set_cn_font(cr2, 9, color=BLACK)
 
     # ── 投资亮点（4 条，2x2 网格） ─────────────────────────
-    HL_TOP = Inches(5.18)
-    HL_H = Inches(1.55)
+    HL_TOP = Inches(4.55)
+    HL_H = Inches(1.45)
     add_section_label(LEFT_X, HL_TOP, Inches(12.2), "投资亮点")
     cells_top = HL_TOP + Inches(0.40)
     cell_w = (Inches(12.2) - Inches(0.30)) // 2
@@ -784,16 +796,16 @@ def _build_onepager(payload: OnePagerPayload) -> bytes:
         y = cells_top + cell_h * row
         # 标题
         add_text(x, y, cell_w, Inches(0.35),
-                 f"· {hl.title}", size=12, bold=True, color=LABEL_FG,
+                 f"· {clip(hl.title, 10)}", size=10, bold=True, color=LABEL_FG,
                  anchor_top=False)
         # 描述
         add_text(x + Inches(0.18), y + Inches(0.32), cell_w - Inches(0.18),
-                 cell_h - Inches(0.32), hl.desc, size=10, color=BLACK,
+                 cell_h - Inches(0.32), clip(hl.desc, 32), size=8, color=BLACK,
                  line_spacing=1.2)
 
     # ── 投资风险（灰底，2 条横排） ─────────────────────────
-    RISK_TOP = Inches(6.78)
-    RISK_H = Inches(0.55)
+    RISK_TOP = Inches(6.18)
+    RISK_H = Inches(0.70)
     add_filled_rect(LEFT_X, RISK_TOP, Inches(12.2), RISK_H, GRAY_BG)
     # 标签
     add_text(LEFT_X + Inches(0.1), RISK_TOP, Inches(1.2), RISK_H,
@@ -808,24 +820,25 @@ def _build_onepager(payload: OnePagerPayload) -> bytes:
         box.line.fill.background()
         box.fill.background()
         tf = box.text_frame
+        tf.auto_size = MSO_AUTO_SIZE.NONE
         tf.word_wrap = True
         tf.margin_left = Inches(0.05)
         tf.margin_right = Inches(0.10)
         p = tf.paragraphs[0]
         p.line_spacing = 1.15
         r1 = p.add_run()
-        r1.text = f"{rk.title}： "
-        _set_cn_font(r1, 10, bold=True, color=RISK_FG)
+        r1.text = f"{clip(rk.title, 8)}： "
+        _set_cn_font(r1, 8, bold=True, color=RISK_FG)
         r2 = p.add_run()
-        r2.text = rk.desc
-        _set_cn_font(r2, 10, color=BLACK)
+        r2.text = clip(rk.desc, 30)
+        _set_cn_font(r2, 8, color=BLACK)
 
     # ── 页脚小条 ────────────────────────────────────────────
-    FOOT_TOP = Inches(7.05)
+    FOOT_TOP = Inches(7.02)
     f = payload.footer
     foot_text = (
-        f"成立年份 {f.founded}　·　团队规模 {f.team_size}"
-        f"　·　累计融资 {f.funding_total}　·　{f.ai_grade}"
+        f"成立年份 {clip(f.founded, 12)}　·　团队规模 {clip(f.team_size, 12)}"
+        f"　·　累计融资 {clip(f.funding_total, 14)}　·　{clip(f.ai_grade, 18)}"
     )
     add_text(LEFT_X, FOOT_TOP, Inches(12.2), Inches(0.35),
              foot_text, size=9, color=GRAY, anchor_top=False)
@@ -875,6 +888,35 @@ async def generate_project_brief(payload: dict):
         buf,
         media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
         headers={"Content-Disposition": "attachment; filename=project_brief.pptx"},
+    )
+
+
+@app.post("/generate/investment_deck")
+async def generate_investment_deck(payload: dict):
+    """
+    可变页数投决材料 / 可研报告 / 尽调汇报 deck.
+    Body: 严格符合 server/services/investment_deck/content_schema.json 的对象.
+    版式锁在 investment_deck_render.py 中.
+    """
+    import investment_deck_render as deck
+    buf = io.BytesIO()
+    tmp_path = tempfile.NamedTemporaryFile(suffix=".pptx", delete=False).name
+    try:
+        deck.render(payload, tmp_path)
+        with open(tmp_path, "rb") as f:
+            buf.write(f.read())
+    except KeyError as e:
+        raise HTTPException(status_code=400, detail=f"内容缺失字段: {e}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"投决材料渲染失败: {e}")
+    finally:
+        try: os.remove(tmp_path)
+        except Exception: pass
+    buf.seek(0)
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        headers={"Content-Disposition": "attachment; filename=investment_deck.pptx"},
     )
 
 

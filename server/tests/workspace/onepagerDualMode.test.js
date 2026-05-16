@@ -58,6 +58,13 @@ describe("inputSchema · 双模式字段暴露", () => {
     expect(props.source_mode.enum).toEqual(["bp_analysis", "materials"]);
   });
 
+  test("inputSchema 含 industry_hint / stage_hint (materials 模式行业模板)", () => {
+    const props = skill.inputSchema.properties;
+    expect(Object.keys(props)).toEqual(expect.arrayContaining(["industry_hint", "stage_hint"]));
+    expect(props.industry_hint.type).toBe("string");
+    expect(props.stage_hint.type).toBe("string");
+  });
+
   test("pptxTemplate.argsHint 同时给出两种模式范例", () => {
     expect(skill.pptxTemplate.argsHint).toMatch(/bp_analysis/);
     expect(skill.pptxTemplate.argsHint).toMatch(/materials/);
@@ -150,6 +157,67 @@ describe("run() · materials 模式 (显式)", () => {
     );
     // 不应回退到 BP 模式
     expect(pptService.getOrGenerateOnePager).not.toHaveBeenCalled();
+  });
+
+  test("LLM 显式 industry_hint / stage_hint 透传给 generateOnePagerFromMaterials", async () => {
+    pptService.generateOnePagerFromMaterials.mockResolvedValueOnce(FAKE_CACHE);
+    await skill.run({
+      project: null,
+      params: {
+        source_mode: "materials",
+        materials: RICH_MATERIALS,
+        industry_hint: "医疗",
+        stage_hint: "Pre-B",
+      },
+      ctx: null,
+    });
+    expect(pptService.generateOnePagerFromMaterials).toHaveBeenCalledWith(
+      RICH_MATERIALS,
+      expect.objectContaining({ industryHint: "医疗", stageHint: "Pre-B" })
+    );
+  });
+
+  test("project.industry / project.stage 缺省兜底 hint (LLM 没传时)", async () => {
+    pptService.generateOnePagerFromMaterials.mockResolvedValueOnce(FAKE_CACHE);
+    await skill.run({
+      project: { industry: "硬科技", stage: "A 轮" },
+      params: { source_mode: "materials", materials: RICH_MATERIALS },
+      ctx: null,
+    });
+    expect(pptService.generateOnePagerFromMaterials).toHaveBeenCalledWith(
+      RICH_MATERIALS,
+      expect.objectContaining({ industryHint: "硬科技", stageHint: "A 轮" })
+    );
+  });
+
+  test("LLM 显式 hint 优先于 project metadata", async () => {
+    pptService.generateOnePagerFromMaterials.mockResolvedValueOnce(FAKE_CACHE);
+    await skill.run({
+      project: { industry: "硬科技", stage: "A 轮" },
+      params: {
+        source_mode: "materials",
+        materials: RICH_MATERIALS,
+        industry_hint: "医疗",
+      },
+      ctx: null,
+    });
+    expect(pptService.generateOnePagerFromMaterials).toHaveBeenCalledWith(
+      RICH_MATERIALS,
+      expect.objectContaining({ industryHint: "医疗", stageHint: "A 轮" })
+    );
+  });
+
+  test("无任何线索 → 传空 hint (调用方仍可被 KPI 默认模板兜底)", async () => {
+    pptService.generateOnePagerFromMaterials.mockResolvedValueOnce(FAKE_CACHE);
+    await skill.run({
+      project: null,
+      params: { source_mode: "materials", materials: RICH_MATERIALS },
+      ctx: null,
+    });
+    expect(pptService.generateOnePagerFromMaterials).toHaveBeenCalledWith(
+      RICH_MATERIALS,
+      expect.objectContaining({ industryHint: "", stageHint: "" })
+    );
   });
 });
 

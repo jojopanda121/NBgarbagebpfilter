@@ -27,7 +27,9 @@ const UploadSection = memo(function UploadSection() {
 
   const user = useAuthStore((s) => s.user);
   const navigate = useNavigate();
-  const emailBound = !!(user?.email);
+  const username = (user?.username || "").trim().toLowerCase();
+  const isTestAccount = username === "admin" || username === "test";
+  const canAnalyze = !!(user?.email) || isTestAccount;
 
   const { startAnalysis } = useAnalysisPipeline();
   const fileInputRef = useRef(null);
@@ -67,7 +69,7 @@ const UploadSection = memo(function UploadSection() {
   return (
     <div className="max-w-2xl mx-auto">
       {/* 未绑定邮箱提示 */}
-      {!emailBound && (
+      {!canAnalyze && (
         <div className="mb-6 p-5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-center">
           <Mail className="w-8 h-8 text-amber-400 mx-auto mb-2" />
           <p className="text-amber-300 font-medium mb-1">请先绑定邮箱后再使用分析功能</p>
@@ -150,11 +152,11 @@ const UploadSection = memo(function UploadSection() {
       {/* 分析按钮 */}
       <button
         onClick={startAnalysis}
-        disabled={!file || analyzing || !emailBound}
+        disabled={!file || analyzing || !canAnalyze}
         className={`
           mt-6 w-full py-4 rounded-xl text-lg font-semibold transition-all
           ${
-            file && !analyzing && emailBound
+            file && !analyzing && canAnalyze
               ? "bg-gradient-to-r from-red-500 to-orange-500 hover:from-red-600 hover:to-orange-600 text-[#0D2145] shadow-lg shadow-red-500/20"
               : "bg-[#EEF1F7] text-[#8E9BB0] cursor-not-allowed"
           }
@@ -165,7 +167,7 @@ const UploadSection = memo(function UploadSection() {
             <Loader2 className="w-5 h-5 animate-spin" />
             分析中...
           </span>
-        ) : !emailBound ? (
+        ) : !canAnalyze ? (
           "请先绑定邮箱"
         ) : (
           "开始辩证分析"

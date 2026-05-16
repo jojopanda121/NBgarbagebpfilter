@@ -8,6 +8,13 @@
 
 const { getDb } = require("../db");
 
+const CONTACT_BINDING_EXEMPT_USERNAMES = new Set(["admin", "test"]);
+
+function isContactBindingExempt(user) {
+  const username = String(user?.username || "").trim().toLowerCase();
+  return user?.role === "admin" || CONTACT_BINDING_EXEMPT_USERNAMES.has(username);
+}
+
 /**
  * 检查额度是否充足（不扣减）
  * 需要先经过 requireAuth 中间件
@@ -16,8 +23,8 @@ function checkQuota(req, res, next) {
   const db = getDb();
   const userId = req.user.id;
 
-  // 查询用户完整信息（含 role）
-  const user = db.prepare("SELECT email, contact_bound, role FROM users WHERE id = ?").get(userId);
+  // 查询用户完整信息（含 role / username）
+  const user = db.prepare("SELECT username, email, contact_bound, role FROM users WHERE id = ?").get(userId);
   if (!user) {
     return res.status(401).json({ error: "用户不存在" });
   }
@@ -28,7 +35,7 @@ function checkQuota(req, res, next) {
   }
 
   // 必须绑定邮箱才能使用分析功能
-  if (!user.email || !user.contact_bound) {
+  if (!isContactBindingExempt(user) && (!user.email || !user.contact_bound)) {
     return res.status(403).json({
       error: "请先绑定邮箱后再使用分析功能",
       code: 4031,
@@ -123,4 +130,4 @@ function refundQuota(userId, deductType = "free") {
   }
 }
 
-module.exports = { checkQuota, deductQuota, refundQuota };
+module.exports = { checkQuota, deductQuota, refundQuota, isContactBindingExempt };

@@ -1,0 +1,62 @@
+{
+  "deck_types": {
+    "investment_committee": {
+      "label": "投决报告 / IC Deck",
+      "default_pages": 16,
+      "page_range": [8, 30],
+      "logic_chain": "行业前景 -> 公司稀缺性 -> 财务验证 -> 估值回报 -> 风险可缓释",
+      "sections": [
+        { "id": "exec_summary", "label": "投资概要", "weight": 0.08, "min_pages": 1, "max_pages": 2 },
+        { "id": "diligence_scope", "label": "立项与尽调概况", "weight": 0.05, "min_pages": 1, "max_pages": 2 },
+        { "id": "company_profile", "label": "目标公司基本情况", "weight": 0.14, "min_pages": 1, "max_pages": 4 },
+        { "id": "market_analysis", "label": "行业与市场分析", "weight": 0.24, "min_pages": 2, "max_pages": 8 },
+        { "id": "business_tech", "label": "公司业务与技术分析", "weight": 0.20, "min_pages": 2, "max_pages": 6 },
+        { "id": "financial_analysis", "label": "财务分析", "weight": 0.13, "min_pages": 1, "max_pages": 4 },
+        { "id": "valuation_deal", "label": "投资方案与估值分析", "weight": 0.10, "min_pages": 1, "max_pages": 3 },
+        { "id": "risks_recommendation", "label": "风险提示与投资建议", "weight": 0.06, "min_pages": 1, "max_pages": 3 }
+      ]
+    },
+    "feasibility_study": {
+      "label": "可研报告",
+      "default_pages": 20,
+      "page_range": [10, 30],
+      "logic_chain": "需求背景 -> 技术路径 -> 商业可行性 -> 财务可行性 -> 风险与实施计划",
+      "sections": [
+        { "id": "exec_summary", "label": "项目概要", "weight": 0.08, "min_pages": 1, "max_pages": 2 },
+        { "id": "market_analysis", "label": "需求与市场可行性", "weight": 0.22, "min_pages": 2, "max_pages": 7 },
+        { "id": "business_tech", "label": "技术与业务方案", "weight": 0.28, "min_pages": 3, "max_pages": 8 },
+        { "id": "financial_analysis", "label": "财务可行性", "weight": 0.18, "min_pages": 2, "max_pages": 5 },
+        { "id": "valuation_deal", "label": "投资测算", "weight": 0.10, "min_pages": 1, "max_pages": 3 },
+        { "id": "risks_recommendation", "label": "风险与实施建议", "weight": 0.14, "min_pages": 2, "max_pages": 4 }
+      ]
+    },
+    "diligence_report": {
+      "label": "尽调汇报 Deck",
+      "default_pages": 18,
+      "page_range": [8, 30],
+      "logic_chain": "已验证事实 -> 待验证缺口 -> 关键风险 -> 交易影响 -> 下一步动作",
+      "sections": [
+        { "id": "exec_summary", "label": "尽调结论摘要", "weight": 0.10, "min_pages": 1, "max_pages": 2 },
+        { "id": "diligence_scope", "label": "尽调范围与资料清单", "weight": 0.12, "min_pages": 1, "max_pages": 3 },
+        { "id": "company_profile", "label": "公司与股权结构", "weight": 0.15, "min_pages": 1, "max_pages": 4 },
+        { "id": "market_analysis", "label": "商业尽调", "weight": 0.20, "min_pages": 2, "max_pages": 6 },
+        { "id": "business_tech", "label": "产品技术尽调", "weight": 0.18, "min_pages": 2, "max_pages": 5 },
+        { "id": "financial_analysis", "label": "财务尽调", "weight": 0.15, "min_pages": 1, "max_pages": 4 },
+        { "id": "risks_recommendation", "label": "风险、条款与行动建议", "weight": 0.10, "min_pages": 1, "max_pages": 3 }
+      ]
+    }
+  },
+  "page_count_presets": {
+    "short_8_12": ["exec_summary", "company_profile", "market_analysis", "business_tech", "financial_analysis", "valuation_deal", "risks_recommendation"],
+    "standard_13_20": ["exec_summary", "diligence_scope", "company_profile", "market_analysis", "business_tech", "financial_analysis", "valuation_deal", "risks_recommendation"],
+    "deep_21_30": ["exec_summary", "diligence_scope", "company_profile", "market_analysis", "business_tech", "financial_analysis", "valuation_deal", "risks_recommendation"]
+  },
+  "rules": [
+    "每页必须至少包含一种视觉结构: 四象限、双栏、流程、时间轴、矩阵、表格、图表或风险清单。",
+    "连续三页不得使用完全相同的 template。",
+    "所有数字必须来自材料; 没有来源时写未披露或待核实。",
+    "估值和财务预测必须列明假设; 不允许凭空补全年份、金额、客户名。",
+    "每个风险必须给出缓释动作或尽调动作。",
+    "视觉由代码模板控制; 模型不得输出颜色、坐标、字号、字体。"
+  ]
+}

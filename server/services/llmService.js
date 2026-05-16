@@ -456,6 +456,10 @@ function getModelName() {
 //   messages         array          [{ role, content }]
 //   tools            array          Anthropic 工具声明
 //   toolRunner       fn(name,input)=> string|Promise<string>
+//   toolBatchGuard   fn(toolUses) => {ok, errors}  本轮工具调用整批守卫.
+//                    返回 ok=false 时, 本轮所有 tool_use 都不会执行 toolRunner,
+//                    而是回灌 guard 错误作为 tool_result, 让模型下一轮收敛.
+//                    用于"单轮最多 N 个工具调用"等硬约束 — 必须在执行前预检.
 //   thinkingBudget   number         默认 4000，传 0 = 不开 thinking
 //   maxTokens        number         默认 6000
 //   maxToolRounds    number         默认 4
@@ -469,6 +473,7 @@ async function callLLMAgentic(opts) {
     messages,
     tools = [],
     toolRunner,
+    toolBatchGuard,
     thinkingBudget = 4000,
     maxTokens = 6000,
     maxToolRounds = 4,
@@ -655,27 +660,58 @@ async function callLLMAgentic(opts) {
     // 把这一轮 assistant 内容写入会话历史
     convo.push({ role: "assistant", content: assistantContent });
 
-    // 执行所有 tool_use，回灌 tool_result
-    const toolResults = [];
-    for (const tu of toolUses) {
-      if (signal?.aborted) throw new Error("客户端取消");
-      let resultText = "";
-      let isError = false;
+    // ── 整批守卫: 在执行任何 toolRunner 之前预检 ──
+    // 失败时本轮 toolUses 全部短路, 回灌 guard 错误让模型下轮重新规划.
+    // 用于"单轮最多 N 个工具调用"这类必须在执行前判定的硬约束.
+    let batchGuardErrors = null;
+    if (typeof toolBatchGuard === "function") {
       try {
-        const r = await toolRunner(tu.name, tu.input || {});
-        resultText = typeof r === "string" ? r : JSON.stringify(r || {});
-        safeEmit({ type: "tool_result", id: tu.id, name: tu.name, result: resultText, error: false });
+        const guardRes = toolBatchGuard(toolUses);
+        if (guardRes && guardRes.ok === false) {
+          batchGuardErrors = guardRes.errors || [{ reason: "tool_batch_guard 拒绝, 无 errors 详情" }];
+        }
       } catch (e) {
-        isError = true;
-        resultText = `工具调用失败：${e?.message || e}`;
-        safeEmit({ type: "tool_result", id: tu.id, name: tu.name, result: resultText, error: true });
+        batchGuardErrors = [{ reason: `tool_batch_guard 抛错: ${e?.message || e}` }];
       }
-      toolResults.push({
-        type: "tool_result",
-        tool_use_id: tu.id,
-        content: resultText,
-        is_error: isError,
-      });
+    }
+
+    const toolResults = [];
+    if (batchGuardErrors) {
+      const summary = batchGuardErrors
+        .map((e) => `[#${e.index ?? "?"} ${e.tool || "-"}] ${e.reason}`)
+        .join("; ");
+      const guardMessage = `[host_tool_guard] ${summary}`;
+      for (const tu of toolUses) {
+        safeEmit({ type: "tool_result", id: tu.id, name: tu.name, result: guardMessage, error: true });
+        toolResults.push({
+          type: "tool_result",
+          tool_use_id: tu.id,
+          content: guardMessage,
+          is_error: true,
+        });
+      }
+    } else {
+      // 执行所有 tool_use，回灌 tool_result
+      for (const tu of toolUses) {
+        if (signal?.aborted) throw new Error("客户端取消");
+        let resultText = "";
+        let isError = false;
+        try {
+          const r = await toolRunner(tu.name, tu.input || {});
+          resultText = typeof r === "string" ? r : JSON.stringify(r || {});
+          safeEmit({ type: "tool_result", id: tu.id, name: tu.name, result: resultText, error: false });
+        } catch (e) {
+          isError = true;
+          resultText = `工具调用失败：${e?.message || e}`;
+          safeEmit({ type: "tool_result", id: tu.id, name: tu.name, result: resultText, error: true });
+        }
+        toolResults.push({
+          type: "tool_result",
+          tool_use_id: tu.id,
+          content: resultText,
+          is_error: isError,
+        });
+      }
     }
     convo.push({ role: "user", content: toolResults });
   }

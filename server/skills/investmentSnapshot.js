@@ -112,6 +112,11 @@ module.exports = {
       const dir = path.join(ws.ARTIFACTS_ROOT, ctx.conversationId);
       if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
       const fullPath = path.join(dir, `${Date.now()}-${filename}`);
+      require("../services/workspaceUploadLimits").enforceWorkspaceOutputLimits({
+        userId: ctx.userId,
+        sizeBytes: buffer.length,
+        artifactRoot: ws.ARTIFACTS_ROOT,
+      });
       fs.writeFileSync(fullPath, buffer);
       artifactRow = ws.insertArtifact({
         conversationId: ctx.conversationId,
@@ -123,6 +128,7 @@ module.exports = {
           "application/vnd.openxmlformats-officedocument.presentationml.presentation",
         sizeBytes: buffer.length,
         summary: `一页纸投决速览 — ${json.company_full_name}`,
+        userId: ctx.userId,
       });
     }
 

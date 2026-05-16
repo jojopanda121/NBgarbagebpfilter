@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react";
-import { FileText, Download, RefreshCw, Loader2, Copy, CheckCircle, Presentation } from "lucide-react";
+import { FileText, Download, RefreshCw, Loader2, Copy, CheckCircle } from "lucide-react";
 import api from "../services/api";
-import OnePagerModal from "./OnePagerModal";
 
 export default function IMemoTab({ taskId }) {
   const [loading, setLoading] = useState(false);
@@ -9,7 +8,6 @@ export default function IMemoTab({ taskId }) {
   const [imemo, setImemo] = useState(null);
   const [error, setError] = useState(null);
   const [copied, setCopied] = useState(false);
-  const [showOnePager, setShowOnePager] = useState(false);
 
   const fetchIMemo = useCallback(async (regenerate = false) => {
     if (regenerate) setRegenerating(true);
@@ -106,14 +104,6 @@ export default function IMemoTab({ taskId }) {
             下载 .md
           </button>
           <button
-            onClick={() => setShowOnePager(true)}
-            className="px-3 py-1.5 text-sm bg-amber-600 hover:bg-amber-500 rounded-lg flex items-center gap-1.5 transition-colors text-white"
-            title="结合多 Agent 分析与公开资料生成一页投资亮点 PPT"
-          >
-            <Presentation className="w-4 h-4" />
-            生成一页亮点 PPT
-          </button>
-          <button
             onClick={() => fetchIMemo(true)}
             disabled={regenerating}
             className="px-3 py-1.5 text-sm bg-[#E5E9F4] hover:bg-slate-600 disabled:opacity-50 rounded-lg flex items-center gap-1.5 transition-colors"
@@ -126,10 +116,6 @@ export default function IMemoTab({ taskId }) {
           </button>
         </div>
       </div>
-
-      {showOnePager && (
-        <OnePagerModal taskId={taskId} onClose={() => setShowOnePager(false)} />
-      )}
 
       {/* Markdown 内容展示 */}
       <div className="bg-white border border-[#D8DCE8] rounded-xl p-6">

@@ -14,7 +14,7 @@ project_brief_render.py (PE/VC 版)
 3 页结构:
     P1 封面    company_full_name + tagline + metadata 3 chips + dealroom_meta 3 chips
     P2 概况+亮 overview + highlights × 4 (2x2)
-    P3 三件套  team × 2-3 + financials_compact 3x4 + valuation_view 卡
+    P3 三件套  team × 2-3 + financials_compact 3x4 + valuation_view + risks
 """
 
 import json
@@ -205,14 +205,18 @@ def _render_team_financials_valuation(prs, content):
         {"x": 0.96, "y": 4.00, "w": 9.77, "h": 1.45},
     )
 
-    # Row 3 估值视角 (底部 ~2")
+    # Row 3 估值视角 + 风险 (底部 ~2")
     _section_label(slide, {"x": 4.86, "y": 5.75, "w": 1.98, "h": 0.30},
                    "估值视角")
     add_rect(slide, {"x": 0.82, "y": 5.95, "w": 10.05, "h": 1.78},
              fill=COLOR["bg2"],
              line_color=COLOR["accent"], line_w_pt=HAIRLINE_PT)
     _draw_valuation_view(slide, content["valuation_view"],
-                         {"x": 0.96, "y": 6.05, "w": 9.77, "h": 1.58})
+                         {"x": 0.96, "y": 6.05, "w": 5.92, "h": 1.58})
+    add_rect(slide, {"x": 7.05, "y": 6.05, "w": 0.012, "h": 1.52},
+             fill=COLOR["border"])
+    _draw_risk_list(slide, content["risks"],
+                    {"x": 7.18, "y": 6.05, "w": 3.46, "h": 1.58})
 
     _add_page_footer(slide, 3, PAGE_TOTAL, content["company_full_name"])
 
@@ -336,6 +340,29 @@ def _draw_valuation_view(slide, vv, geom):
             size=SIZE["label_inline"], bold=True, color=COLOR["accent"])
     set_run(p.add_run(), vv["rationale"],
             size=SIZE["body"], color=COLOR["ink"])
+
+
+def _draw_risk_list(slide, risks, geom):
+    """紧凑风险列表: 只承载 3 条标签 + 缓释/影响句, 防止挤爆 P3."""
+    tf = add_text(slide,
+                  {"x": geom["x"], "y": geom["y"],
+                   "w": geom["w"], "h": 0.24}, margin=0.02)
+    set_run(add_para(tf, "l").add_run(), "核心风险",
+            size=SIZE["label_inline"], bold=True, color=COLOR["red"])
+
+    row_h = (geom["h"] - 0.28) / 3
+    for i, item in enumerate(risks[:3]):
+        y = geom["y"] + 0.30 + i * row_h
+        tf = add_text(slide,
+                      {"x": geom["x"], "y": y,
+                       "w": geom["w"], "h": row_h - 0.03},
+                      margin=0.02)
+        p = add_para(tf, "l", space_after_pt=1)
+        p.line_spacing = 1.05
+        set_run(p.add_run(), f"{item['label']}：",
+                size=SIZE["table"], bold=True, color=COLOR["red"])
+        set_run(p.add_run(), item["desc"],
+                size=SIZE["table"], color=COLOR["ink"])
 
 
 def render(content: dict, out_path: str):

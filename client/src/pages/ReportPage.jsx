@@ -1,11 +1,12 @@
 import React, { useEffect, useState } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
-import { Gavel, ArrowLeft, Loader2, Share2, Copy, CheckCircle, FolderOpen } from "lucide-react";
+import { ArrowLeft, Loader2, Share2, Copy, CheckCircle, FolderOpen } from "lucide-react";
 import api from "../services/api";
 import useAuthStore from "../store/useAuthStore";
 import VerdictCard from "../components/VerdictCard";
 import ScoreVisualizer from "../components/ScoreVisualizer";
 import DetailedReport from "../components/DetailedReport";
+import LogoE from "../components/LogoE";
 
 export default function ReportPage() {
   const { taskId, shareToken } = useParams();
@@ -137,9 +138,7 @@ export default function ReportPage() {
             className="flex items-center gap-2 cursor-pointer"
             onClick={() => navigate("/")}
           >
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-red-500 to-orange-500 flex items-center justify-center">
-              <Gavel className="w-5 h-5 text-[#0D2145]" />
-            </div>
+            <LogoE size={36} className="shrink-0" />
             <span className="text-lg font-bold">垃圾BP过滤机</span>
           </div>
 

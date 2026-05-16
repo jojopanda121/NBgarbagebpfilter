@@ -1,0 +1,135 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "可变页数投决材料 Deck · 内容合约",
+  "description": "8-30 页 PE/VC 投决/可研/尽调汇报 deck。模型只产结构化内容，不控制视觉。",
+  "type": "object",
+  "required": ["company_full_name", "deck_title", "deck_type", "target_pages", "logic_chain", "slides"],
+  "additionalProperties": false,
+  "properties": {
+    "company_full_name": { "type": "string", "minLength": 2, "maxLength": 40 },
+    "deck_title": { "type": "string", "minLength": 4, "maxLength": 40 },
+    "deck_type": {
+      "type": "string",
+      "enum": ["investment_committee", "feasibility_study", "diligence_report"]
+    },
+    "target_pages": { "type": "integer", "minimum": 8, "maximum": 30 },
+    "logic_chain": { "type": "string", "minLength": 20, "maxLength": 160 },
+    "slides": {
+      "type": "array",
+      "minItems": 8,
+      "maxItems": 30,
+      "items": {
+        "type": "object",
+        "required": ["page_no", "section_id", "section_title", "template", "title", "insight", "blocks", "source_note"],
+        "additionalProperties": false,
+        "properties": {
+          "page_no": { "type": "integer", "minimum": 1, "maximum": 30 },
+          "section_id": {
+            "type": "string",
+            "enum": [
+              "exec_summary",
+              "diligence_scope",
+              "company_profile",
+              "market_analysis",
+              "business_tech",
+              "financial_analysis",
+              "valuation_deal",
+              "risks_recommendation"
+            ]
+          },
+          "section_title": { "type": "string", "minLength": 2, "maxLength": 24 },
+          "template": {
+            "type": "string",
+            "enum": [
+              "section_divider",
+              "exec_summary_4q",
+              "two_column_evidence",
+              "market_size_chart",
+              "value_chain_map",
+              "competition_matrix",
+              "timeline",
+              "financial_table",
+              "valuation_sensitivity",
+              "risk_mitigation",
+              "next_steps"
+            ]
+          },
+          "title": { "type": "string", "minLength": 4, "maxLength": 42 },
+          "subtitle": { "type": "string", "maxLength": 80 },
+          "insight": {
+            "type": "string",
+            "description": "本页结论句。必须是投研判断，不是页面说明。",
+            "minLength": 12,
+            "maxLength": 120
+          },
+          "blocks": {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 6,
+            "items": {
+              "type": "object",
+              "required": ["label", "value", "text"],
+              "additionalProperties": false,
+              "properties": {
+                "label": { "type": "string", "minLength": 2, "maxLength": 18 },
+                "value": { "type": "string", "maxLength": 28 },
+                "text": { "type": "string", "minLength": 8, "maxLength": 96 }
+              }
+            }
+          },
+          "table": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["headers", "rows"],
+            "properties": {
+              "headers": {
+                "type": "array",
+                "minItems": 2,
+                "maxItems": 5,
+                "items": { "type": "string", "minLength": 1, "maxLength": 16 }
+              },
+              "rows": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 8,
+                "items": {
+                  "type": "array",
+                  "minItems": 2,
+                  "maxItems": 5,
+                  "items": { "type": "string", "maxLength": 36 }
+                }
+              }
+            }
+          },
+          "chart": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["kind", "labels", "values"],
+            "properties": {
+              "kind": { "type": "string", "enum": ["bar", "line", "donut", "heatmap", "matrix", "flow"] },
+              "labels": {
+                "type": "array",
+                "minItems": 2,
+                "maxItems": 6,
+                "items": { "type": "string", "minLength": 1, "maxLength": 18 }
+              },
+              "values": {
+                "type": "array",
+                "minItems": 2,
+                "maxItems": 6,
+                "items": { "type": "string", "maxLength": 24 }
+              },
+              "unit": { "type": "string", "maxLength": 12 }
+            }
+          },
+          "source_note": {
+            "type": "string",
+            "description": "数据来源或待核实说明。没有来源时写'来源: 材料未披露, 待核实'。",
+            "minLength": 4,
+            "maxLength": 80
+          }
+        }
+      }
+    }
+  }
+}

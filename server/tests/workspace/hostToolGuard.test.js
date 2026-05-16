@@ -13,10 +13,12 @@
 
 const {
   validateToolCalls,
+  validateNativeToolUses,
+  guardSingleToolCall,
   MAX_TOOL_CALLS_PER_TURN,
   PPT_TEMPLATE_IDS,
   PPT_BANNED_ARG_KEYS,
-} = require("../../agents/workspace/hostAgent");
+} = require("../../agents/workspace/hostToolGuard");
 
 describe("validateToolCalls · 单轮总量", () => {
   test("空数组 → ok=true, 无 errors", () => {
@@ -89,6 +91,13 @@ describe("validateToolCalls · skill_id 合法性", () => {
     expect(validateToolCalls([{ id: "generate_docx", args: { title: "x", sections: [] } }]).ok).toBe(true);
     expect(validateToolCalls([{ id: "generate_xlsx", args: { sheets: [] } }]).ok).toBe(true);
   });
+
+  test("组合 skill dd_checklist_xlsx → accepted, 不需要放宽单轮工具上限", () => {
+    const r = validateToolCalls([{ id: "dd_checklist_xlsx", args: { stage_context: "A 轮投决前" } }]);
+    expect(r.ok).toBe(true);
+    expect(r.accepted[0].id).toBe("dd_checklist_xlsx");
+    expect(MAX_TOOL_CALLS_PER_TURN).toBe(1);
+  });
 });
 
 describe("validateToolCalls · legacy alias", () => {
@@ -145,6 +154,22 @@ describe("validateToolCalls · PPT 模板版式字段拒绝", () => {
     expect(r.accepted).toHaveLength(1);
   });
 
+  test("investment_deck_pptx 只传材料/页数/报告类型 → accepted", () => {
+    const r = validateToolCalls([
+      {
+        id: "investment_deck_pptx",
+        args: {
+          materials: "公司财务数据、业务材料、行业分析摘要...",
+          company_hint: "星动纪元",
+          target_pages: 16,
+          deck_type: "investment_committee",
+        },
+      },
+    ]);
+    expect(r.ok).toBe(true);
+    expect(r.accepted).toHaveLength(1);
+  });
+
   test("非 PPT 模板的 generate_docx 即使传 title 也不拒 (docx 合法字段)", () => {
     const r = validateToolCalls([
       { id: "generate_docx", args: { title: "IC Memo", sections: [{ heading: "x" }] } },
@@ -163,6 +188,107 @@ describe("validateToolCalls · PPT 模板版式字段拒绝", () => {
     expect(PPT_TEMPLATE_IDS.has("onepager_pptx")).toBe(true);
     expect(PPT_TEMPLATE_IDS.has("investment_snapshot")).toBe(true);
     expect(PPT_TEMPLATE_IDS.has("project_brief")).toBe(true);
+    expect(PPT_TEMPLATE_IDS.has("investment_deck_pptx")).toBe(true);
+  });
+});
+
+describe("validateNativeToolUses · anthropic SDK 形状", () => {
+  test("单个 native tool_use, 合法 → accepted 保持原 shape (name/input)", () => {
+    const tu = [{ id: "tu_1", name: "onepager_pptx", input: { materials: "..." } }];
+    const r = validateNativeToolUses(tu);
+    expect(r.ok).toBe(true);
+    expect(r.accepted).toHaveLength(1);
+    expect(r.accepted[0]).toEqual(tu[0]);
+  });
+
+  test("两个 native tool_use → 整批驳回, accepted 为空 (即所有 tool_use 都不会被执行)", () => {
+    const tu = [
+      { id: "tu_1", name: "onepager_pptx", input: {} },
+      { id: "tu_2", name: "investment_snapshot", input: { materials: "..." } },
+    ];
+    const r = validateNativeToolUses(tu);
+    expect(r.ok).toBe(false);
+    expect(r.accepted).toEqual([]);
+    expect(r.errors[0].reason).toMatch(/单轮最多 1 个/);
+  });
+
+  test("native tool_use 给 PPT 模板传 slides → 整批 ok=false, accepted 不含该 call", () => {
+    const tu = [{ id: "tu_1", name: "onepager_pptx", input: { slides: [], color: "red" } }];
+    const r = validateNativeToolUses(tu);
+    expect(r.ok).toBe(false);
+    expect(r.accepted).toEqual([]);
+    expect(r.errors[0].reason).toMatch(/slides/);
+  });
+
+  test("legacy alias generate_onepager → accepted 项 name 改写成 onepager_pptx", () => {
+    const tu = [{ id: "tu_1", name: "generate_onepager", input: { materials: "..." } }];
+    const r = validateNativeToolUses(tu);
+    expect(r.ok).toBe(true);
+    expect(r.accepted[0].name).toBe("onepager_pptx");
+    expect(r.accepted[0].id).toBe("tu_1");
+    expect(r.accepted[0].input).toEqual({ materials: "..." });
+  });
+});
+
+describe("guardSingleToolCall · service 入口守卫", () => {
+  test("合法工具名 + 合法 args → ok=true", () => {
+    const r = guardSingleToolCall("onepager_pptx", { materials: "x" });
+    expect(r.ok).toBe(true);
+    expect(r.accepted).toHaveLength(1);
+  });
+
+  test("PPT 模板传 title → ok=false, reason 列出字段", () => {
+    const r = guardSingleToolCall("onepager_pptx", { title: "X" });
+    expect(r.ok).toBe(false);
+    expect(r.errors[0].reason).toMatch(/title/);
+  });
+
+  test("legacy generate_onepager → accepted 项 id 已归一为 onepager_pptx", () => {
+    const r = guardSingleToolCall("generate_onepager", { materials: "x" });
+    expect(r.ok).toBe(true);
+    expect(r.accepted[0].id).toBe("onepager_pptx");
+  });
+
+  test("generate_pptx → ok=false, 显式禁用", () => {
+    const r = guardSingleToolCall("generate_pptx", { slides: [] });
+    expect(r.ok).toBe(false);
+    expect(r.errors[0].reason).toMatch(/已禁用|版式不可控/);
+  });
+
+  test("不存在的工具名 → ok=false, 不在 catalog", () => {
+    const r = guardSingleToolCall("imaginary_tool", {});
+    expect(r.ok).toBe(false);
+    expect(r.errors[0].reason).toMatch(/不在 catalog/);
+  });
+});
+
+describe("executeWorkspaceTool 集成 · 入口 guard 拦截 native 路径", () => {
+  const ws = require("../../services/workspaceService");
+
+  test("native 路径 PPT 模板传 slides → executeWorkspaceTool 抛 host_tool_guard", async () => {
+    await expect(
+      ws.executeWorkspaceTool({
+        tool: "onepager_pptx",
+        args: { slides: [{ title: "x" }], materials: "..." },
+        conversationId: null,
+        messageId: null,
+        projectId: null,
+        userId: null,
+      })
+    ).rejects.toThrow(/host_tool_guard.*slides/);
+  });
+
+  test("native 路径 generate_pptx (legacy 禁用) → 抛 host_tool_guard", async () => {
+    await expect(
+      ws.executeWorkspaceTool({
+        tool: "generate_pptx",
+        args: { slides: [] },
+        conversationId: null,
+        messageId: null,
+        projectId: null,
+        userId: null,
+      })
+    ).rejects.toThrow(/host_tool_guard.*已禁用|host_tool_guard.*版式不可控/);
   });
 });
 

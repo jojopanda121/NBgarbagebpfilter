@@ -17,7 +17,7 @@ beforeAll(async () => {
 });
 
 describe("registry.listPptxTemplates() · catalog", () => {
-  test("两个 PPT 模板都在 catalog, 非 PPT skill 不在", () => {
+  test("PPT 模板都在 catalog, 非 PPT skill 不在", () => {
     const skills = require("../../skills");
     skills.init();
     const templates = skills.registry.listPptxTemplates();
@@ -26,6 +26,7 @@ describe("registry.listPptxTemplates() · catalog", () => {
     expect(ids).toContain("investment_snapshot");
     expect(ids).toContain("project_brief");
     expect(ids).toContain("onepager_pptx");
+    expect(ids).toContain("investment_deck_pptx");
     // 非 PPT skill 不应出现
     expect(ids).not.toContain("dd_questions");
     expect(ids).not.toContain("ic_memo");
@@ -60,6 +61,7 @@ describe("executeToolCalls · generate_pptx guard", () => {
     // 错误信息里要列出 catalog
     expect(r.error).toMatch(/investment_snapshot/);
     expect(r.error).toMatch(/project_brief/);
+    expect(r.error).toMatch(/investment_deck_pptx/);
   });
 });
 
@@ -161,6 +163,25 @@ describe("project_brief · skill 注册", () => {
     expect(found.inputSchema.properties.materials).toBeTruthy();
     expect(found.inputSchema.properties.company_hint).toBeTruthy();
     // 不暴露版式参数 ★
+    expect(found.inputSchema.properties.title).toBeUndefined();
+    expect(found.inputSchema.properties.color).toBeUndefined();
+    expect(found.inputSchema.properties.slides).toBeUndefined();
+    expect(found.inputSchema.properties.pageCount).toBeUndefined();
+  });
+});
+
+describe("investment_deck_pptx · skill 注册", () => {
+  test("出现在 catalog, inputSchema 只暴露内容字段和业务参数", () => {
+    const skills = require("../../skills");
+    skills.init();
+    const list = skills.registry.list();
+    const found = list.find((s) => s.id === "investment_deck_pptx");
+    expect(found).toBeTruthy();
+    expect(found.outputArtifactKind).toBe("pptx");
+    expect(found.inputSchema.properties.materials).toBeTruthy();
+    expect(found.inputSchema.properties.company_hint).toBeTruthy();
+    expect(found.inputSchema.properties.target_pages).toBeTruthy();
+    expect(found.inputSchema.properties.deck_type).toBeTruthy();
     expect(found.inputSchema.properties.title).toBeUndefined();
     expect(found.inputSchema.properties.color).toBeUndefined();
     expect(found.inputSchema.properties.slides).toBeUndefined();

@@ -503,6 +503,22 @@ const deleteSiteImage = async (req, res, next) => {
   }
 };
 
+const toggleVip = async (req, res, next) => {
+  try {
+    const userId = parseInt(req.params.id, 10);
+    if (!Number.isInteger(userId) || userId <= 0) return res.status(400).json({ error: "用户 ID 非法" });
+    const { is_vip, vip_expires_at } = req.body;
+    const db = require("../db").getDb();
+    const cols = db.prepare("PRAGMA table_info(users)").all();
+    if (!cols.some((c) => c.name === "is_vip")) return res.status(400).json({ error: "VIP 功能尚未启用（缺少数据库迁移）" });
+    db.prepare("UPDATE users SET is_vip = ?, vip_expires_at = ? WHERE id = ?")
+      .run(is_vip ? 1 : 0, vip_expires_at || null, userId);
+    res.json({ success: true });
+  } catch (err) {
+    next(err);
+  }
+};
+
 module.exports = {
   requireAdmin,
   getUsers,
@@ -530,4 +546,5 @@ module.exports = {
   updateSiteContent,
   uploadSiteImage,
   deleteSiteImage,
+  toggleVip,
 };

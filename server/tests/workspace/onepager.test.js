@@ -48,7 +48,7 @@ describe("inferRoutingFromText", () => {
     // 注：原路由顺序里"材料/附件"会先匹配到 analyze_file，因此用明确的 PPT 关键词
     const r = ws.inferRoutingFromText("做一份投委会演示 PPT");
     expect(r.task_type).toBe("generate_pptx_template");
-    expect(r.tools).toEqual([]);
+    expect(r.tools).toContain("investment_deck_pptx");
   });
 
   test("纯问答路由到 answer", () => {
@@ -69,6 +69,9 @@ describe("taskTypeToTool", () => {
   test("legacy generate_pptx → project_brief", () => {
     expect(ws.taskTypeToTool("generate_pptx")).toBe("project_brief");
   });
+  test("PPT template task 默认走可变页数投决材料模板", () => {
+    expect(ws.taskTypeToTool("generate_pptx_template")).toBe("investment_deck_pptx");
+  });
   test("未知任务 → null", () => {
     expect(ws.taskTypeToTool("answer")).toBeNull();
   });
@@ -87,6 +90,7 @@ describe("HOST_TOOL_SCHEMAS", () => {
     expect(names).toContain("onepager_pptx");
     expect(names).toContain("investment_snapshot");
     expect(names).toContain("project_brief");
+    expect(names).toContain("investment_deck_pptx");
     expect(names).not.toContain("generate_pptx");
   });
 
@@ -104,6 +108,15 @@ describe("HOST_TOOL_SCHEMAS", () => {
     expect(pp.description).toMatch(/3 页|模板|视觉/);
     expect(pp.description).toMatch(/严禁传 slides/);
   });
+
+  test("investment_deck_pptx 暴露页数和报告类型, 不接受 slides", () => {
+    const deck = ws.HOST_TOOL_SCHEMAS.find((s) => s.name === "investment_deck_pptx");
+    expect(deck).toBeTruthy();
+    expect(deck.description).toMatch(/8-30 页|投决|可研|尽调/);
+    expect(deck.input_schema.properties).toHaveProperty("target_pages");
+    expect(deck.input_schema.properties).toHaveProperty("deck_type");
+    expect(deck.input_schema.properties).not.toHaveProperty("slides");
+  });
 });
 
 describe("workspaceRegistry PPT 模板工具登记", () => {
@@ -116,6 +129,14 @@ describe("workspaceRegistry PPT 模板工具登记", () => {
 
   test("TOOL_REGISTRY 有 onepager_pptx 且 host 可调", () => {
     const def = reg.TOOL_REGISTRY.onepager_pptx;
+    expect(def).toBeTruthy();
+    expect(def.callableByModel).toBe(true);
+    expect(def.allowedCallers).toContain("host");
+    expect(def.executor).toBe("skill_template");
+  });
+
+  test("TOOL_REGISTRY 有 investment_deck_pptx 且 host 可调", () => {
+    const def = reg.TOOL_REGISTRY.investment_deck_pptx;
     expect(def).toBeTruthy();
     expect(def.callableByModel).toBe(true);
     expect(def.allowedCallers).toContain("host");
@@ -180,14 +201,16 @@ describe("buildFallbackToolCall: 安全网", () => {
     expect(call.args).toEqual({});
   });
 
-  test("用户要正常多页 PPT 时也不走自由 slides", () => {
+  test("用户要投委会多页 PPT 时走可变页数投决材料模板", () => {
     const call = ws.buildFallbackToolCall({
       routing: { task_type: "generate_pptx" },
       userMsg: "做一份投委会 5 页演示材料",
       cleanContent: "",
       expertOutputs: [{ agent: "market", content: "市场分析" }],
     });
-    expect(call.tool).toBe("project_brief");
+    expect(call.tool).toBe("investment_deck_pptx");
+    expect(call.args.target_pages).toBe(8);
+    expect(call.args.deck_type).toBe("investment_committee");
     expect(call.args).not.toHaveProperty("slides");
   });
 });

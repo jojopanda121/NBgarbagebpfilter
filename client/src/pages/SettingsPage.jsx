@@ -1157,6 +1157,14 @@ function TokenTab({ redeemToken, setRedeemToken, redeeming, handleRedeem, genera
         )}
       </div>
 
+      {/* VIP 会员 */}
+      <div className="bg-gradient-to-r from-amber-500/10 to-purple-500/10 border border-amber-500/30 rounded-xl p-6 text-center">
+        <div className="text-lg font-bold text-[#0D2145] mb-1">VIP 会员</div>
+        <div className="text-3xl font-bold text-amber-500 mb-2">¥99<span className="text-sm font-normal text-[#4B5A72]">/月</span></div>
+        <p className="text-sm text-[#4B5A72] mb-3">无限使用 Workspace 多 Agent 对话，上传材料永久保存</p>
+        <p className="text-xs text-[#8E9BB0]">开通请微信联系管理员 <span className="text-blue-400 font-medium">pe_ren</span></p>
+      </div>
+
       {/* 邀请好友得额度 */}
       <div className="bg-white border border-[#D8DCE8] rounded-xl p-6">
         <h3 className="text-lg font-bold mb-2 text-[#0D2145]">邀请好友得额度</h3>
@@ -1251,6 +1259,16 @@ function UsersTab({ users, total, page, setPage, search, setSearch, status, setS
     try {
       await api.post(`/api/admin/users/${userId}/ban`, { banned });
       setMessage({ type: "success", text: banned ? "已禁用用户" : "已启用用户" });
+      loadUsers();
+    } catch (err) {
+      setMessage({ type: "error", text: err.message });
+    }
+  };
+
+  const handleToggleVip = async (userId, currentVip) => {
+    try {
+      await api.post(`/api/admin/users/${userId}/vip`, { is_vip: !currentVip });
+      setMessage({ type: "success", text: currentVip ? "已取消 VIP" : "已设为 VIP" });
       loadUsers();
     } catch (err) {
       setMessage({ type: "error", text: err.message });
@@ -1365,7 +1383,10 @@ function UsersTab({ users, total, page, setPage, search, setSearch, status, setS
                 <td className="py-3 text-[#4B5A72]">{u.email || <span className="text-[#8E9BB0]">未绑定</span>}</td>
                 <td className="py-3">{u.total_quota || 0}</td>
                 <td className="py-3">{u.usage_count || 0}</td>
-                <td className="py-3"><span className={`px-2 py-0.5 rounded text-xs ${u.is_banned ? "bg-red-500/20 text-red-400" : "bg-green-500/20 text-green-400"}`}>{u.is_banned ? "已禁用" : "正常"}</span></td>
+                <td className="py-3">
+                  <span className={`px-2 py-0.5 rounded text-xs ${u.is_banned ? "bg-red-500/20 text-red-400" : "bg-green-500/20 text-green-400"}`}>{u.is_banned ? "已禁用" : "正常"}</span>
+                  {!!u.is_vip && <span className="ml-1 px-2 py-0.5 rounded text-xs bg-amber-500/20 text-amber-500">VIP</span>}
+                </td>
                 <td className="py-3 text-[#4B5A72] text-xs" title={u.last_login_at ? new Date(u.last_login_at).toLocaleString("zh-CN") : "从未登录"}>
                   <span className={!u.last_login_at ? "text-[#8E9BB0]" : ""}>{formatLastLogin(u.last_login_at)}</span>
                 </td>
@@ -1374,6 +1395,7 @@ function UsersTab({ users, total, page, setPage, search, setSearch, status, setS
                   <div className="flex gap-1">
                     <button onClick={() => setSelectedUser(u)} className="p-1 hover:bg-[#E5E9F4] rounded" title="查看详情"><Eye className="w-4 h-4" /></button>
                     <button onClick={() => handleBan(u.id, !u.is_banned)} className={`p-1 rounded text-xs ${u.is_banned ? "hover:bg-green-500/20 text-green-400" : "hover:bg-red-500/20 text-red-400"}`} title={u.is_banned ? "启用" : "禁用"}>{u.is_banned ? "启用" : "禁用"}</button>
+                    <button onClick={() => handleToggleVip(u.id, u.is_vip)} className={`p-1 rounded text-xs ${u.is_vip ? "hover:bg-amber-500/20 text-amber-500" : "hover:bg-purple-500/20 text-purple-400"}`} title={u.is_vip ? "取消VIP" : "设VIP"}>{u.is_vip ? "取消VIP" : "设VIP"}</button>
                     <button onClick={() => setShowDeleteConfirm(u)} className="p-1 hover:bg-red-500/20 text-red-400 rounded" title="删除"><Trash2 className="w-4 h-4" /></button>
                   </div>
                 </td>

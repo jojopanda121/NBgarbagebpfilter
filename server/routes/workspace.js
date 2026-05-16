@@ -6,69 +6,17 @@ const { Router } = require("express");
 const multer = require("multer");
 const os = require("os");
 const fs = require("fs");
-const path = require("path");
 const { requireAuth } = require("../middleware/auth");
 const { getDb } = require("../db");
 const { getTask } = require("../services/taskService");
-const { extractDocText } = require("../services/extractionService");
 const ws = require("../services/workspaceService");
+const { persistWorkspaceUpload } = require("../services/workspaceUploads");
+const { workspaceRateLimit } = require("../middleware/workspaceQuota");
+const { enforceWorkspaceUploadLimits } = require("../services/workspaceUploadLimits");
 
 const router = Router();
 const upload = multer({ dest: os.tmpdir(), limits: { fileSize: 50 * 1024 * 1024 } });
 
-function decodeUploadName(name = "") {
-  if (!name) return name;
-  // multer/busboy 在某些环境会把 UTF-8 文件名按 latin1 暴露，表现为 ä¸å¸...。
-  if (!/[\u00C0-\u00FF]/.test(name)) return name;
-  try {
-    const decoded = Buffer.from(name, "latin1").toString("utf8");
-    return decoded.includes("\uFFFD") ? name : decoded;
-  } catch {
-    return name;
-  }
-}
-
-async function persistWorkspaceUpload({ file, conversationId, taskId, userId }) {
-  if (!file) return { artifact: null, text: "", summary: "" };
-
-  const tmpPath = file.path;
-  const originalName = decodeUploadName(file.originalname);
-  const ext = (path.extname(originalName) || "").slice(1).toLowerCase();
-  const mode = ["pdf", "pptx", "docx", "xlsx", "csv"].includes(ext) ? ext : null;
-
-  let text = "";
-  if (mode) {
-    try { text = await extractDocText(tmpPath, mode); }
-    catch (err) { console.warn("[Workspace] 提取失败:", err.message); }
-  } else if (file.mimetype?.startsWith("text/")) {
-    text = fs.readFileSync(tmpPath, "utf-8");
-  }
-  const summary = text ? await ws.summarizeUploadedText(text, originalName) : "（无法提取文本，仅记录文件名）";
-
-  const convDir = path.join(ws.ARTIFACTS_ROOT, conversationId);
-  if (!fs.existsSync(convDir)) fs.mkdirSync(convDir, { recursive: true });
-  const safeName = originalName.replace(/[\\/:*?"<>|]+/g, "_");
-  const dest = path.join(convDir, `${Date.now()}-${safeName}`);
-  fs.copyFileSync(tmpPath, dest);
-  if (text) ws.saveArtifactExtractedText(dest, text);
-
-  const artifact = ws.insertArtifact({
-    conversationId,
-    kind: "upload",
-    filename: originalName,
-    storagePath: dest,
-    mimeType: file.mimetype,
-    sizeBytes: file.size,
-    summary,
-  });
-
-  if (taskId && userId && summary) {
-    ws.processUploadMemory({ taskId, userId, filename: originalName, summary })
-      .catch((err) => console.warn("[Workspace] 上传材料记忆提炼失败:", err.message));
-  }
-
-  return { artifact, text, summary };
-}
 
 /** 校验任务归属：只有 owner 或 admin 可访问 */
 function checkTaskOwnership(taskId, userId) {
@@ -145,12 +93,24 @@ router.post("/:taskId/upload", requireAuth, upload.single("file"), async (req, r
   if (own.error) return res.status(own.status).json({ error: own.error });
   if (!req.file) return res.status(400).json({ error: "未上传文件" });
 
+  try {
+    enforceWorkspaceUploadLimits({
+      userId: req.user.id,
+      fileSize: req.file.size || 0,
+      artifactRoot: ws.ARTIFACTS_ROOT,
+    });
+  } catch (err) {
+    if (req.file?.path) try { fs.unlinkSync(req.file.path); } catch {}
+    return res.status(err.status || 429).json({ error: err.message, code: err.code });
+  }
+
   const conv = ws.createOrGetConversation(taskId, req.user.id);
 
   try {
     const { artifact } = await persistWorkspaceUpload({
       file: req.file,
       conversationId: conv.id,
+      scope: "task",
       taskId,
       userId: req.user.id,
     });
@@ -184,7 +144,7 @@ router.delete("/:taskId/messages", requireAuth, (req, res) => {
 });
 
 // ── 发送消息（SSE 流式） ───────────────────────────────────
-router.post("/:taskId/messages", requireAuth, upload.single("file"), async (req, res) => {
+router.post("/:taskId/messages", requireAuth, workspaceRateLimit, upload.single("file"), async (req, res) => {
   const { taskId } = req.params;
   const userId = req.user.id;
   const own = checkTaskOwnership(taskId, userId);
@@ -228,6 +188,7 @@ router.post("/:taskId/messages", requireAuth, upload.single("file"), async (req,
       attached = await persistWorkspaceUpload({
         file: req.file,
         conversationId: conv.id,
+        scope: "task",
         taskId,
         userId,
       });
@@ -247,7 +208,7 @@ router.post("/:taskId/messages", requireAuth, upload.single("file"), async (req,
     });
     if (attached?.artifact) sendEvent("artifact", attached.artifact);
 
-    const projectCtx = ws.buildProjectContext(taskId, conv.id);
+    const projectCtx = ws.buildEnhancedProjectContext(taskId, conv.id, userMsg);
     const history = ws.listMessages(conv.id, 30).slice(0, -1); // 不含刚加入的 user 消息
     const attachmentPrompt = attached?.artifact ? [
       "",
@@ -310,107 +271,23 @@ router.post("/:taskId/messages", requireAuth, upload.single("file"), async (req,
       );
     }
 
-    // ── Step 3: host —— thinking + tools 真 agentic ───────
+    // ── Step 3: host —— thinking + tools 真 agentic (共享实现) ──
     sendEvent("phase", { phase: "host", run_id: runId });
-    const hostMsgId = require("crypto").randomBytes(16).toString("hex");
-    sendEvent("host_start", { id: hostMsgId, run_id: runId });
-
-    const hostMemoryPack = await ws.queryMemory({
-      userId,
+    await ws.runHostStreamingPhase({
+      conv: { ...conv, project_id: conv.project_id || own.task.workspace_project_id || null },
+      projectCtx,
+      history: ws.listMessages(conv.id, 30),
+      userMsg: effectiveUserMsg,
+      expertOutputs,
+      runId,
       taskId,
-      agentName: "host",
+      userId,
+      projectId: conv.project_id || own.task.workspace_project_id || null,
       taskType: routing.task_type,
-      userMessage: effectiveUserMsg,
-      intent: routing.task_type,
+      routing,
+      signal: ac.signal,
+      sendEvent,
     });
-
-    // toolRunner：执行 MiniMax 搜索 / 模板 skill / 文档工具，artifact 入库 + 推前端
-    const hostToolRunner = async (toolName, input) => {
-      const r = await ws.executeWorkspaceTool({
-        tool: toolName,
-        args: input || {},
-        conversationId: conv.id,
-        messageId: hostMsgId,
-        projectId: conv.project_id || own.task.workspace_project_id || null,
-        userId,
-        taskId,
-      });
-      if (r.artifact) sendEvent("artifact", r.artifact);
-      return r;
-    };
-
-    let hostResult;
-    try {
-      hostResult = await ws.runHostAgentic({
-        projectCtx,
-        history: ws.listMessages(conv.id, 30),
-        userMsg: effectiveUserMsg,
-        expertOutputs,
-        memoryPack: hostMemoryPack,
-        signal: ac.signal,
-        hostToolRunner,
-        onEvent: (ev) => {
-          if (ev.type === "thinking_delta") {
-            sendEvent("host_thinking_delta", { id: hostMsgId, run_id: runId, delta: ev.text });
-          } else if (ev.type === "text_delta") {
-            sendEvent("host_text_delta", { id: hostMsgId, run_id: runId, delta: ev.text });
-            // 兼容老客户端：同时发 token 事件
-            sendEvent("token", { id: hostMsgId, delta: ev.text });
-          } else if (ev.type === "tool_use_start") {
-            sendEvent("host_tool_use_start", { id: hostMsgId, run_id: runId, tool_id: ev.id, name: ev.name });
-          } else if (ev.type === "tool_use") {
-            sendEvent("host_tool_use", { id: hostMsgId, run_id: runId, tool_id: ev.id, name: ev.name, input: ev.input });
-          } else if (ev.type === "tool_result") {
-            sendEvent("host_tool_result", {
-              id: hostMsgId, run_id: runId, tool_id: ev.id, name: ev.name,
-              result: typeof ev.result === "string" ? ev.result.slice(0, 500) : ev.result,
-              error: !!ev.error,
-            });
-          }
-        },
-      });
-    } catch (err) {
-      throw err;
-    }
-
-    const cleanContent = (hostResult.text || "").trim();
-    const hostArtifacts = hostResult.artifacts || [];
-
-    // 持久化 host 消息
-    const db = getDb();
-    db.prepare(
-      `INSERT INTO workspace_messages (id, conversation_id, role, agent_name, content, metadata)
-       VALUES (?, ?, 'agent', 'host', ?, ?)`
-    ).run(
-      hostMsgId, conv.id, cleanContent,
-      JSON.stringify({
-        routing,
-        run_id: runId,
-        thinking: hostResult.thinking || "",
-        artifacts: hostArtifacts.map((a) => ({ id: a.id, filename: a.filename, kind: a.kind })),
-        used_thinking: hostResult.used_thinking,
-        used_tools: hostResult.used_tools,
-        used_stream: hostResult.used_stream,
-      })
-    );
-    db.prepare("UPDATE workspace_conversations SET updated_at = datetime('now') WHERE id = ?")
-      .run(conv.id);
-
-    sendEvent("host_done", { id: hostMsgId, content: cleanContent, run_id: runId });
-    ws.processHostMemory({
-      taskId, userId, content: cleanContent, taskType: routing.task_type,
-    }).catch((err) => console.warn("[Workspace] Host 记忆提炼失败:", err.message));
-
-    if (hostArtifacts.length > 0) {
-      ws.processSkillCandidate({
-        userId,
-        taskType: routing.task_type,
-        userMessage: effectiveUserMsg,
-        toolCalls: hostArtifacts.map((a) => ({ tool: a.kind?.replace(/^generated_/, "generate_") })),
-        artifactResults: hostArtifacts.map((a) => ({ artifact: a })),
-        runId,
-      });
-    }
 
     completed = true;
     sendEvent("done", { ok: true });

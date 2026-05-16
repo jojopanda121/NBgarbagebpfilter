@@ -1,0 +1,57 @@
+{
+  "section_divider": {
+    "label": "章节分隔页",
+    "best_for": ["章节开篇", "逻辑转折"],
+    "visual": "深色标题条 + 3 个关键问题"
+  },
+  "exec_summary_4q": {
+    "label": "投资概要四象限",
+    "best_for": ["投资概要", "核心 thesis"],
+    "visual": "2x2 卡片: 行业机会 / 公司优势 / 财务亮点 / 投资方案"
+  },
+  "two_column_evidence": {
+    "label": "双栏证据页",
+    "best_for": ["公司概况", "业务分析", "尽调发现"],
+    "visual": "左侧结论与要点, 右侧证据卡或表格"
+  },
+  "market_size_chart": {
+    "label": "市场规模与增长",
+    "best_for": ["TAM", "CAGR", "渗透率", "国产化率"],
+    "visual": "大数字 + 简化柱状/趋势图"
+  },
+  "value_chain_map": {
+    "label": "产业链全景",
+    "best_for": ["上中下游", "公司位置", "利润池"],
+    "visual": "三段式流程 + 目标公司高亮"
+  },
+  "competition_matrix": {
+    "label": "竞争矩阵",
+    "best_for": ["竞品对比", "稀缺性论证", "竞争定位"],
+    "visual": "对比矩阵 / 二维象限"
+  },
+  "timeline": {
+    "label": "发展历程 / 路线图",
+    "best_for": ["历史沿革", "产能计划", "产品路线图"],
+    "visual": "横向时间轴"
+  },
+  "financial_table": {
+    "label": "财务分析表",
+    "best_for": ["历史财务", "预测假设", "收入结构"],
+    "visual": "彩色表头 + 交替行色 + KPI 旁注"
+  },
+  "valuation_sensitivity": {
+    "label": "估值与敏感性",
+    "best_for": ["PE/PS/DCF", "IRR/MOC", "敏感性分析"],
+    "visual": "估值卡 + 简化热力图/情景表"
+  },
+  "risk_mitigation": {
+    "label": "风险与缓释",
+    "best_for": ["风险清单", "交易保护条款", "尽调动作"],
+    "visual": "风险-影响-缓释 三列表"
+  },
+  "next_steps": {
+    "label": "后续动作",
+    "best_for": ["访谈清单", "data room 缺口", "IC 决策动作"],
+    "visual": "行动清单 + 优先级"
+  }
+}

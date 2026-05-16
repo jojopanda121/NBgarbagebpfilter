@@ -69,6 +69,18 @@ module.exports = {
         description: "可选, 人工微调字段 (如最新轮次/估值/重点客户), 会覆盖抽取值. 两种模式都生效.",
         additionalProperties: true,
       },
+      industry_hint: {
+        type: "string",
+        description:
+          "可选, 行业提示 (仅 materials 模式生效). 用于选 KPI 模板 (医疗/硬科技/SaaS/...). " +
+          "若不传, 自动从 project.industry 兜底; 仍无则走默认模板.",
+      },
+      stage_hint: {
+        type: "string",
+        description:
+          "可选, 轮次提示 (仅 materials 模式生效, 如 'A 轮' / 'Pre-B'). " +
+          "若不传, 自动从 project.stage 或 user_overrides.funding_round 兜底.",
+      },
       regenerate: {
         type: "boolean",
         description: "true 时清缓存重新生成. 仅 bp_analysis 模式生效 (materials 模式本就不写缓存).",
@@ -109,10 +121,15 @@ module.exports = {
           error: `[materialPrecheck] ${pre.errors.join(" | ")}`,
         };
       }
+      // hint 来源优先级: LLM 显式参数 > project.industry/stage 兜底 > 空
+      const industryHint = params.industry_hint || project?.industry || "";
+      const stageHint = params.stage_hint || project?.stage || "";
       // 调 LLM 抽取 + normalize, 不写 task 缓存
       try {
         cache = await pptService.generateOnePagerFromMaterials(params.materials, {
           companyHint: params.company_hint || "",
+          industryHint,
+          stageHint,
           userOverrides: params.user_overrides || null,
         });
       } catch (err) {
@@ -149,6 +166,11 @@ module.exports = {
       const dir = path.join(ws.ARTIFACTS_ROOT, ctx.conversationId);
       if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
       const fullPath = path.join(dir, `${Date.now()}-${filename}`);
+      require("../services/workspaceUploadLimits").enforceWorkspaceOutputLimits({
+        userId: ctx.userId,
+        sizeBytes: pptxBuffer.length,
+        artifactRoot: ws.ARTIFACTS_ROOT,
+      });
       fs.writeFileSync(fullPath, pptxBuffer);
       artifactRow = ws.insertArtifact({
         conversationId: ctx.conversationId,
@@ -159,6 +181,7 @@ module.exports = {
         mimeType: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
         sizeBytes: pptxBuffer.length,
         summary: `一页投资亮点 PPT — ${companyName} (${mode})`,
+        userId: ctx.userId,
       });
     }
 

@@ -38,9 +38,11 @@ const getUsers = (options = {}) => {
 
   // 获取列表 - 使用条件列名和参数化查询
   const isBannedSelect = hasBanned ? "u.is_banned," : "0 as is_banned,";
+  const hasVip = tableInfo.some((col) => col.name === "is_vip");
+  const vipSelect = hasVip ? "u.is_vip, u.vip_expires_at," : "0 as is_vip, NULL as vip_expires_at,";
   const listQuery = `
     SELECT
-      u.id, u.username, u.email, u.phone, u.usage_count, ${isBannedSelect} ${lastLoginSelect} u.contact_bound, u.created_at, u.updated_at,
+      u.id, u.username, u.email, u.phone, u.usage_count, ${isBannedSelect} ${vipSelect} ${lastLoginSelect} u.contact_bound, u.created_at, u.updated_at,
       COALESCE(q.free_quota, 0) + COALESCE(q.paid_quota, 0) as total_quota,
       COALESCE(q.paid_quota, 0) as paid_quota
     FROM users u

@@ -36,6 +36,7 @@ router.get("/users/:id", adminController.requireAdmin, adminController.getUserBy
 router.post("/users/:id/ban", adminController.requireAdmin, adminController.banUser);
 router.delete("/users/:id", adminController.requireAdmin, adminController.deleteUser);
 router.post("/users/batch-delete", adminController.requireAdmin, adminController.deleteUsers);
+router.post("/users/:id/vip", adminController.requireAdmin, adminController.toggleVip);
 
 // 统计数据
 router.get("/stats", adminController.requireAdmin, adminController.getStats);

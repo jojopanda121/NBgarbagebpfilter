@@ -180,7 +180,7 @@ export function useAnalysisPipeline() {
         } catch {}
 
         break;
-      } else if (taskData.status === "error") {
+      } else if (taskData.status === "error" || taskData.status === "failed") {
         localStorage.removeItem(PENDING_TASK_KEY);
         throw new Error(taskData.error || "分析失败，请重试");
       }

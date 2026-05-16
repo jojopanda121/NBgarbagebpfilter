@@ -45,11 +45,19 @@ function runMemoryGc({ artifactRoot, artifactMaxAgeDays = 30 } = {}) {
   ).run().changes || 0;
 
   if (artifactRoot && fs.existsSync(artifactRoot)) {
-    const cutoff = Date.now() - artifactMaxAgeDays * 86400000;
-    const rows = db.prepare(
-      `SELECT id, storage_path FROM workspace_artifacts
-       WHERE created_at < datetime('now', ?)`
-    ).all(`-${artifactMaxAgeDays} days`);
+    const cols = db.prepare("PRAGMA table_info(workspace_artifacts)").all();
+    const hasExpires = cols.some((c) => c.name === "expires_at");
+
+    const rows = hasExpires
+      ? db.prepare(
+          `SELECT id, storage_path FROM workspace_artifacts
+           WHERE expires_at IS NOT NULL AND expires_at < datetime('now')`
+        ).all()
+      : db.prepare(
+          `SELECT id, storage_path FROM workspace_artifacts
+           WHERE created_at < datetime('now', ?)`
+        ).all(`-${artifactMaxAgeDays} days`);
+
     for (const row of rows) {
       try {
         if (row.storage_path && fs.existsSync(row.storage_path)) fs.unlinkSync(row.storage_path);
@@ -59,14 +67,12 @@ function runMemoryGc({ artifactRoot, artifactMaxAgeDays = 30 } = {}) {
       db.prepare("DELETE FROM workspace_artifacts WHERE id = ?").run(row.id);
       result.artifactsDeleted++;
     }
-    // Best effort cleanup empty artifact directories.
     try {
       for (const name of fs.readdirSync(artifactRoot)) {
         const full = path.join(artifactRoot, name);
         if (fs.statSync(full).isDirectory() && fs.readdirSync(full).length === 0) fs.rmdirSync(full);
       }
     } catch {}
-    void cutoff;
   }
 
   return result;

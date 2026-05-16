@@ -11,7 +11,7 @@ const HOST_DEFINITION = {
   role: "Investment Lead / Host",
   description: "拆解任务、制定执行计划、调度专家和 MiniMax 工具、选择模板产物，并把专家意见收敛成投不投、什么条件投、下一步怎么做。",
   skills: ["task_decomposition", "expert_orchestration", "template_selection", "investment_synthesis"],
-  tools: ["web_search", "onepager_pptx", "investment_snapshot", "project_brief", "generate_docx", "generate_xlsx"],
+  tools: ["web_search", "onepager_pptx", "investment_snapshot", "project_brief", "investment_deck_pptx", "generate_docx", "generate_xlsx", "dd_checklist_xlsx"],
   searchEnabled: false,
 };
 
@@ -94,6 +94,15 @@ const TOOL_REGISTRY = {
     argShape: '{"materials":"<可选，公司原始材料；留空则用项目上下文>","company_hint":"<可选，公司全称>"}',
     description: "调用模板 skill 生成 3 页项目简报 deck（封面 / 概况+亮点 / 团队+财务+估值）。视觉和版式由 Python 渲染器锁定。",
   },
+  investment_deck_pptx: {
+    label: "可变页数投决材料 PPT",
+    category: "artifact",
+    executor: "skill_template",
+    callableByModel: true,
+    allowedCallers: ["host"],
+    argShape: '{"target_pages":16,"deck_type":"investment_committee","materials":"<可选，公司原始材料；留空则用项目上下文>","company_hint":"<可选，公司全称>"}',
+    description: "调用模板 skill 生成 8-30 页投决报告/可研报告/尽调汇报 PPT。适合用户要求 10页、15页、20页、30页、完整投委会材料等场景。视觉和版式由 Python 渲染器锁定。",
+  },
   generate_docx: {
     label: "生成 Word",
     category: "artifact",
@@ -121,6 +130,15 @@ const TOOL_REGISTRY = {
     defaultTitle: "投研表格",
     argShape: '{"title":"...","sheets":[{"name":"...","headers":["..."],"rows":[["..."]]}]}',
     description: "生成财务模型、尽调清单、风险台账、竞品表。",
+  },
+  dd_checklist_xlsx: {
+    label: "尽调问题清单 Excel",
+    category: "artifact",
+    executor: "skill_template",
+    callableByModel: true,
+    allowedCallers: ["host"],
+    argShape: '{"focus_areas":["commercial","financial"],"stage_context":"A 轮投决前"}',
+    description: "一次调用生成结构化尽调追问清单并导出 Excel。当用户要求尽调清单/DD checklist/尽调追问时优先使用；内部复用 dd_questions + generate_xlsx，不要求模型连续调用两个工具。",
   },
 };
 

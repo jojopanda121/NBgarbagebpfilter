@@ -47,6 +47,7 @@ class TemplateRenderError extends Error {
  * @param {string} [opts.exampleFile]  few-shot 示例 JSON(可选)
  * @param {string} opts.endpoint       doc-service 渲染端点 e.g. "/generate/project_brief"
  * @param {(json:object)=>string} [opts.filenameOf]  根据 JSON 生成 .pptx 文件名
+ * @param {number} [opts.maxTokens=4096] LLM JSON 输出 token 上限
  *
  * @returns {{
  *   schema: object,
@@ -70,6 +71,7 @@ function createTemplate(opts) {
     exampleFile,
     endpoint,
     filenameOf,
+    maxTokens = 4096,
   } = opts;
   if (!name || !assetsDir || !endpoint) {
     throw new Error("createTemplate 需要 name/assetsDir/endpoint");
@@ -119,7 +121,7 @@ function createTemplate(opts) {
     }
     const userContent = _buildUserContent(materials, extraInstructions);
     const result = await callLLMJson(systemPrompt, userContent, schema, {
-      maxTokens: 4096,
+      maxTokens,
       maxRepairs: 2,
       useSearch,
     });

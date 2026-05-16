@@ -7,7 +7,6 @@
 // server/services/_HOW_TO_ADD_PPTX_TEMPLATE.md
 // ============================================================
 
-const path = require("path");
 const { createTemplate, TemplateSchemaError, TemplateRenderError } = require("../pptxTemplate");
 
 const tmpl = createTemplate({

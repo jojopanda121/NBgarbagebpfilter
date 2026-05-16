@@ -4,10 +4,10 @@
 // ============================================================
 
 import React, { useEffect, useRef, useState, useCallback } from "react";
+import api from "../../services/api";
 import workspaceProjectApi from "../../services/workspaceProjectApi";
 import { streamProjectChatMessage } from "../../services/workspaceStream";
-import useAuthStore from "../../store/useAuthStore";
-import { API_BASE } from "../../constants";
+import { downloadBase64File } from "../../utils/downloadFile";
 
 export default function ProjectChat({ project }) {
   const [messages, setMessages] = useState([]);
@@ -278,7 +278,7 @@ function Bubble({ m, projectId }) {
           <div className="text-[#0F1C36] mt-1 not-italic">
             {art.bufferBase64 ? (
               <button
-                onClick={() => downloadBase64(art.bufferBase64, art.filename, art.mimeType)}
+                onClick={() => downloadBase64File(art.bufferBase64, art.filename, art.mimeType)}
                 className="inline-flex items-center gap-1 px-2 py-1 rounded bg-emerald-600 text-white text-xs hover:bg-emerald-700"
               >
                 下载 {art.filename}
@@ -344,40 +344,11 @@ function Bubble({ m, projectId }) {
   );
 }
 
-function downloadBase64(base64, filename, mimeType) {
-  const bin = atob(base64);
-  const bytes = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-  const blob = new Blob([bytes], { type: mimeType || "application/octet-stream" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename || "download.pptx";
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-}
-
 function downloadArtifact(projectId, artifact) {
-  const token = useAuthStore.getState().token;
-  fetch(`${API_BASE}/api/workspace-projects/${projectId}/conversation/artifacts/${artifact.id}/download`, {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-  })
-    .then((resp) => {
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-      return resp.blob();
-    })
-    .then((blob) => {
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = artifact.filename || "artifact";
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    })
+  api.downloadBlob(
+    `/api/workspace-projects/${projectId}/conversation/artifacts/${artifact.id}/download`,
+    artifact.filename || "artifact"
+  )
     .catch((err) => alert(`下载失败: ${err.message}`));
 }
 

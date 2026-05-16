@@ -1320,11 +1320,6 @@ function buildArtifactCompletionText(artifacts = []) {
   return `已生成 ${filename}，可以在右侧“AI 生成产出”里下载。`;
 }
 
-// 兼容原 isOnePagePptRequest 调用点（构造 slides 时的旧 hint）
-function isOnePagePptRequest(userMsg = "") {
-  return isOnePagerRequest(userMsg);
-}
-
 function compactLines(text = "", limit = 7) {
   const banned = /^(已为您生成|页码|内容|封面|备注|输出要求|工具调用|TOOL_CALL|项目投资亮点|投资亮点分析|综合研判|核心判断|各专家|一、|二、|三、|四、|五、|---+|\|?\s*页码\s*\|)/i;
   const lines = text

@@ -9,6 +9,7 @@
 
 import useAuthStore from "../store/useAuthStore";
 import { API_BASE } from "../constants";
+import { triggerBlobDownload } from "../utils/downloadFile";
 
 class ApiService {
   /**
@@ -79,6 +80,13 @@ class ApiService {
     });
   }
 
+  patch(url, data) {
+    return this.request(url, {
+      method: "PATCH",
+      body: JSON.stringify(data || {}),
+    });
+  }
+
   delete(url, data) {
     const options = { method: "DELETE" };
     if (data) options.body = JSON.stringify(data);
@@ -130,14 +138,7 @@ class ApiService {
     }
 
     const blob = await resp.blob();
-    const objUrl = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = objUrl;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(objUrl);
+    triggerBlobDownload(blob, filename);
   }
 }
 

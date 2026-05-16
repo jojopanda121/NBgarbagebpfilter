@@ -70,7 +70,6 @@ describe("validateToolCalls · skill_id 合法性", () => {
   });
 
   test("空 id / 非字符串 id → 单条驳回, reason 写明", () => {
-    const r = validateToolCalls([{ args: {} }, { id: 123, args: {} }]);
     // 注意: 这里 2 条都 < maxCalls=1? 不, 总数 2 > 1, 走总量驳回, 不到细粒度.
     // 单独测每条:
     expect(validateToolCalls([{ args: {} }]).errors[0].reason).toMatch(/为空|非字符串/);

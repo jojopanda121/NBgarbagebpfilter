@@ -7,7 +7,7 @@ export const API_BASE = process.env.REACT_APP_API_URL || "";
 // ── 分析步骤定义（2步 Pipeline）──
 export const STEPS = [
   { key: "extract", label: "数据提取: 从BP中提取关键声明与数据", icon: FileText },
-  { key: "judge", label: "AI深度研究: MiniMax知识库专家分析 & 评分", icon: Gavel },
+  { key: "judge", label: "AI深度研究: AI 大模型知识库专家分析 & 评分", icon: Gavel },
 ];
 
 // ── 维度图标映射 ──

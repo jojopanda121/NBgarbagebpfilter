@@ -37,6 +37,41 @@ function _checkOwn(projectId, userId) {
   return { project: proj };
 }
 
+// ── 对话用量(每日上限/已用/剩余) ────────────────────────
+const WORKSPACE_DAILY_LIMIT = 10;
+function _getChatUsage(userId) {
+  const db = getDb();
+  const tableInfo = db.prepare("PRAGMA table_info(users)").all();
+  const hasVip = tableInfo.some((col) => col.name === "is_vip");
+  const user = hasVip
+    ? db.prepare("SELECT role, is_vip, vip_expires_at FROM users WHERE id = ?").get(userId)
+    : db.prepare("SELECT role FROM users WHERE id = ?").get(userId);
+
+  const isAdmin = user?.role === "admin";
+  const isVip = !!(hasVip && user?.is_vip && (!user.vip_expires_at || new Date(user.vip_expires_at) > new Date()));
+  const unlimited = isAdmin || isVip;
+
+  const today = new Date().toISOString().slice(0, 10);
+  const { cnt } = db.prepare(`
+    SELECT COUNT(*) as cnt FROM workspace_messages wm
+    JOIN workspace_conversations wc ON wc.id = wm.conversation_id
+    WHERE wc.user_id = ? AND wm.role = 'user' AND wm.created_at >= ?
+  `).get(userId, today + " 00:00:00");
+
+  return {
+    daily_limit: WORKSPACE_DAILY_LIMIT,
+    used_today: cnt || 0,
+    remaining: unlimited ? null : Math.max(0, WORKSPACE_DAILY_LIMIT - (cnt || 0)),
+    unlimited,
+    is_vip: isVip,
+    is_admin: isAdmin,
+  };
+}
+
+router.get("/:projectId/conversation/usage", requireAuth, (req, res) => {
+  res.json(_getChatUsage(req.user.id));
+});
+
 // ── 取对话 + 历史 ─────────────────────────────────────────
 router.get("/:projectId/conversation/messages", requireAuth, (req, res) => {
   const { projectId } = req.params;

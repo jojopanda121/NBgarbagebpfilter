@@ -63,7 +63,7 @@ export default function ChinaMap({ provinces = [], details = {}, onProvinceClick
   useEffect(() => {
     if (!mapRegistered || !chartRef.current) return;
 
-    const chart = echarts.init(chartRef.current, "dark");
+    const chart = echarts.init(chartRef.current);
     chartInstance.current = chart;
 
     // 构建数据：将 API 短名映射到 GeoJSON 全名
@@ -93,8 +93,8 @@ export default function ChinaMap({ provinces = [], details = {}, onProvinceClick
           if (count === 0) return `${params.name} — 暂无分析项目`;
           return `<strong>${params.name}</strong><br/>已分析 <strong>${count}</strong> 个项目`;
         },
-        backgroundColor: "rgba(15, 23, 42, 0.95)",
-        borderColor: "rgba(255, 255, 255, 0.1)",
+        backgroundColor: "rgba(13, 33, 69, 0.95)",
+        borderColor: "rgba(59, 130, 246, 0.3)",
         textStyle: { color: "#e2e8f0", fontSize: 13 },
         padding: [8, 12],
       },
@@ -105,9 +105,9 @@ export default function ChinaMap({ provinces = [], details = {}, onProvinceClick
         realtime: false,
         calculable: false,
         inRange: {
-          color: ["#1e293b", "#1e40af", "#2563eb", "#3b82f6", "#60a5fa"],
+          color: ["#EAF1FB", "#B6CFEC", "#7BA6D9", "#3B82F6", "#0D2145"],
         },
-        textStyle: { color: "#94a3b8", fontSize: 11 },
+        textStyle: { color: "#4B5A72", fontSize: 11 },
         left: "left",
         bottom: 10,
         itemWidth: 12,
@@ -118,20 +118,21 @@ export default function ChinaMap({ provinces = [], details = {}, onProvinceClick
           type: "map",
           map: "china",
           roam: false,
+          zoom: 1.2,
           label: {
             show: false,
           },
           emphasis: {
-            label: { show: true, color: "#fff", fontSize: 12 },
+            label: { show: true, color: "#fff", fontSize: 12, fontWeight: "bold" },
             itemStyle: {
-              areaColor: "#f59e0b",
-              borderColor: "#fbbf24",
-              borderWidth: 1,
+              areaColor: "#0D2145",
+              borderColor: "#3B82F6",
+              borderWidth: 1.5,
             },
           },
           itemStyle: {
-            areaColor: "#1e293b",
-            borderColor: "rgba(255, 255, 255, 0.15)",
+            areaColor: "#EAF1FB",
+            borderColor: "#D8DCE8",
             borderWidth: 0.5,
           },
           data: mapData,
@@ -176,7 +177,7 @@ export default function ChinaMap({ provinces = [], details = {}, onProvinceClick
   return (
     <div
       ref={chartRef}
-      style={{ width: "100%", height: "420px" }}
+      style={{ width: "100%", height: "640px" }}
     />
   );
 }

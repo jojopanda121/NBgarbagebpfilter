@@ -77,6 +77,9 @@ export const workspaceProjectApi = {
   getConversationMessages(projectId) {
     return api.get(`${BASE}/${projectId}/conversation/messages`);
   },
+  getConversationUsage(projectId) {
+    return api.get(`${BASE}/${projectId}/conversation/usage`);
+  },
   // 注意:发送消息走 SSE,见 services/workspaceStream.js,这里不暴露 post 包装
   conversationStreamPath(projectId) {
     return `${BASE}/${projectId}/conversation/messages`;

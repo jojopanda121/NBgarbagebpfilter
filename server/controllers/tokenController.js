@@ -17,6 +17,7 @@ function isAdmin(userId) {
 /** POST /api/token/generate — 生成兑换码（仅管理员） */
 function generate(req, res) {
   const { quotaAmount = 1, expireDays = 30, count = 1 } = req.body;
+  const safeCount = Math.min(100, Math.max(1, parseInt(count) || 1));
 
   if (!req.user) {
     return res.status(401).json({ error: "请先登录" });
@@ -29,8 +30,8 @@ function generate(req, res) {
 
   try {
     let result;
-    if (count > 1) {
-      result = generateTokens(count, quotaAmount, expireDays);
+    if (safeCount > 1) {
+      result = generateTokens(safeCount, quotaAmount, expireDays);
     } else {
       result = generateToken(quotaAmount, expireDays);
     }

@@ -4,6 +4,7 @@
 
 const { Router } = require("express");
 const os = require("os");
+const path = require("path");
 const multer = require("multer");
 const { requireAuth } = require("../middleware/auth");
 const {
@@ -20,12 +21,18 @@ const {
   uploadAvatar,
 } = require("../controllers/userController");
 
+const AVATAR_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".webp", ".gif"]);
 const avatarUpload = multer({
   dest: os.tmpdir(),
   limits: { fileSize: 2 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
-    if (file.mimetype.startsWith("image/")) cb(null, true);
-    else cb(new Error("仅支持图片文件"));
+    const ext = path.extname(file.originalname).toLowerCase();
+    const mime = file.mimetype;
+    if (AVATAR_EXTENSIONS.has(ext) && mime.startsWith("image/") && !mime.includes("svg")) {
+      cb(null, true);
+    } else {
+      cb(new Error("仅支持 png/jpg/jpeg/webp/gif 图片"));
+    }
   },
 });
 

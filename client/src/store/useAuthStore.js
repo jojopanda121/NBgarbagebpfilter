@@ -28,18 +28,14 @@ const useAuthStore = create((set, get) => ({
   initAuth: async () => {
     const token = get().token;
     if (!token) {
-      console.log("[Auth] initAuth: 无本地 token，跳过验证");
       set({ initialized: true });
       return;
     }
-    console.log("[Auth] initAuth: 发现本地 token，正在验证...");
     try {
       const resp = await fetch(`${API_BASE}/api/auth/me`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!resp.ok) {
-        console.warn(`[Auth] initAuth: /api/auth/me 返回 ${resp.status}，清除登录状态`);
-        // token 无效或过期，清除登录状态
         localStorage.removeItem(TOKEN_KEY);
         localStorage.removeItem(USER_KEY);
         localStorage.removeItem(PENDING_TASK_KEY);
@@ -47,12 +43,9 @@ const useAuthStore = create((set, get) => ({
         return;
       }
       const data = await resp.json();
-      console.log("[Auth] initAuth: token 验证成功，用户:", data.user?.username || data.user?.id);
       localStorage.setItem(USER_KEY, JSON.stringify(data.user));
       set({ user: data.user, quota: data.quota, initialized: true });
     } catch (err) {
-      // 网络错误时保留本地状态，不强制登出
-      console.warn("[Auth] initAuth: 网络错误，保留本地登录状态:", err.message);
       set({ initialized: true });
     }
   },

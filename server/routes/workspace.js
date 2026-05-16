@@ -6,6 +6,7 @@ const { Router } = require("express");
 const multer = require("multer");
 const os = require("os");
 const fs = require("fs");
+const path = require("path");
 const { requireAuth } = require("../middleware/auth");
 const { getDb } = require("../db");
 const { getTask } = require("../services/taskService");
@@ -15,7 +16,16 @@ const { workspaceRateLimit } = require("../middleware/workspaceQuota");
 const { enforceWorkspaceUploadLimits } = require("../services/workspaceUploadLimits");
 
 const router = Router();
-const upload = multer({ dest: os.tmpdir(), limits: { fileSize: 50 * 1024 * 1024 } });
+const ALLOWED_EXTENSIONS = new Set([".pdf",".pptx",".docx",".xlsx",".csv",".txt",".md",".png",".jpg",".jpeg"]);
+const upload = multer({
+  dest: os.tmpdir(),
+  limits: { fileSize: 50 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase();
+    if (ALLOWED_EXTENSIONS.has(ext)) cb(null, true);
+    else cb(new Error("不支持的文件类型"));
+  },
+});
 
 
 /** 校验任务归属：只有 owner 或 admin 可访问 */

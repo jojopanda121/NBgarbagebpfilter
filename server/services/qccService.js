@@ -51,7 +51,6 @@ async function execQCC(server, tool, args) {
       }
 
       stdout = out;
-      stderr = err;
 
       try {
         // 尝试解析 JSON 输出

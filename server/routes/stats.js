@@ -12,6 +12,10 @@ const { requireAuth } = require("../middleware/auth");
 
 const router = Router();
 
+function escapeLike(str = "") {
+  return String(str).replace(/[\\%_]/g, "\\$&");
+}
+
 // 平台早期数量展示倍数（所有数量类指标统一放大，保持数据间比例一致）
 const DISPLAY_MULTIPLIER = 5;
 
@@ -174,23 +178,25 @@ router.get("/sector", (req, res) => {
       return d.toISOString();
     })();
 
+    const safeSector = `%${escapeLike(sector)}%`;
+
     // 本赛道总数
     const allRows = db.prepare(
-      "SELECT id FROM tasks WHERE status = 'complete' AND industry_category LIKE ?"
-    ).all(`%${sector}%`);
+      "SELECT id FROM tasks WHERE status = 'complete' AND industry_category LIKE ? ESCAPE '\\'"
+    ).all(safeSector);
 
     // 本周新增（实际值）
     const weeklyRows = db.prepare(
-      "SELECT COUNT(*) as cnt FROM tasks WHERE status = 'complete' AND industry_category LIKE ? AND created_at >= ?"
-    ).get(`%${sector}%`, weekStart);
+      "SELECT COUNT(*) as cnt FROM tasks WHERE status = 'complete' AND industry_category LIKE ? ESCAPE '\\' AND created_at >= ?"
+    ).get(safeSector, weekStart);
     const actualWeekly = weeklyRows?.cnt || 0;
 
     // 评分统计
     const scoreRow = db.prepare(`
       SELECT AVG(total_score) as avg_score, MAX(total_score) as top_score
       FROM tasks
-      WHERE status = 'complete' AND industry_category LIKE ? AND total_score IS NOT NULL
-    `).get(`%${sector}%`);
+      WHERE status = 'complete' AND industry_category LIKE ? ESCAPE '\\' AND total_score IS NOT NULL
+    `).get(safeSector);
 
     // 评级分布
     const gradeRows = db.prepare(`
@@ -203,9 +209,9 @@ router.get("/sector", (req, res) => {
         END as grade,
         COUNT(*) as cnt
       FROM tasks
-      WHERE status = 'complete' AND industry_category LIKE ? AND total_score IS NOT NULL
+      WHERE status = 'complete' AND industry_category LIKE ? ESCAPE '\\' AND total_score IS NOT NULL
       GROUP BY grade
-    `).all(`%${sector}%`);
+    `).all(safeSector);
     const gradeDistribution = { A: 0, B: 0, C: 0, D: 0 };
     for (const r of gradeRows) gradeDistribution[r.grade] = r.cnt;
 

@@ -72,7 +72,7 @@ const analyzeLimiter = rateLimit({
   keyGenerator: (req) => (req.user && req.user.id ? `u:${req.user.id}` : `ip:${req.ip}`),
 });
 
-router.post("/", handleUpload, authMiddleware, analyzeLimiter, (req, res, _next) => {
+router.post("/", authMiddleware, analyzeLimiter, handleUpload, (req, res, _next) => {
   // 如果用户已登录，检查额度
   if (req.user) {
     return checkQuota(req, res, () => analyze(req, res));

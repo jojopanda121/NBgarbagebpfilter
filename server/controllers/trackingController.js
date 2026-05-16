@@ -6,6 +6,10 @@ const trackingService = require("../services/trackingService");
 const qccService = require("../services/qccService");
 const logger = require("../utils/logger");
 
+function escapeLike(str = "") {
+  return String(str).replace(/[\\%_]/g, "\\$&");
+}
+
 /**
  * GET /api/admin/tracking/dashboard
  * 获取追踪仪表板汇总数据
@@ -42,8 +46,9 @@ const getCompanies = (req, res) => {
       params.push(status);
     }
     if (search) {
-      where += " AND (company_name LIKE ? OR industry_tags LIKE ?)";
-      params.push(`%${search}%`, `%${search}%`);
+      where += " AND (company_name LIKE ? ESCAPE '\\' OR industry_tags LIKE ? ESCAPE '\\')";
+      const safeSearch = `%${escapeLike(search)}%`;
+      params.push(safeSearch, safeSearch);
     }
 
     const total = db.prepare(

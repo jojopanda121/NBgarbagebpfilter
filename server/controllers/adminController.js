@@ -336,7 +336,7 @@ const getAuditLogs = async (req, res, next) => {
   try {
     const { page, pageSize, action, admin_id } = req.query;
     const db = getDb();
-    const limit = parseInt(pageSize) || 50;
+    const limit = Math.min(100, Math.max(1, parseInt(pageSize) || 50));
     const offset = ((parseInt(page) || 1) - 1) * limit;
 
     let where = "1=1";

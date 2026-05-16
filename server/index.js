@@ -141,8 +141,12 @@ app.get("/api/health", (_req, res) => {
   }
   // M9: 关闭期间返回 503，让 LB / Docker / PM2 停止派发新流量
   const ok = checks.database.status === "ok" && !shuttingDown;
+  const status = shuttingDown ? "shutting_down" : (ok ? "ok" : "degraded");
+  if (config.env === "production") {
+    return res.status(ok ? 200 : 503).json({ status, version: "3.0.0", timestamp: new Date().toISOString() });
+  }
   res.status(ok ? 200 : 503).json({
-    status: shuttingDown ? "shutting_down" : (ok ? "ok" : "degraded"),
+    status,
     model: getModelName(),
     search: {
       provider: "minimax_coding_plan",

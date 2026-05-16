@@ -6,7 +6,9 @@
 const crypto = require("crypto");
 
 function requestId(req, _res, next) {
-  req.requestId = req.headers["x-request-id"] || crypto.randomUUID().slice(0, 8);
+  const clientId = req.headers["x-request-id"];
+  const isValid = clientId && /^[\w\-]{1,64}$/.test(clientId);
+  req.requestId = isValid ? clientId : crypto.randomUUID().slice(0, 8);
   next();
 }
 

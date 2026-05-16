@@ -1,3 +1,4 @@
+import DOMPurify from "dompurify";
 import { getGrade, getGradeLabel, getGradeAction, getScoreBg } from "./scoreHelpers";
 import { dimLabelsMap } from "../constants";
 
@@ -142,7 +143,8 @@ export function downloadReportAsPdf(result) {
     alert("请允许弹出窗口以下载报告");
     return;
   }
-  printWindow.document.write(html);
+  const safeHtml = DOMPurify.sanitize(html, { WHOLE_DOCUMENT: true, ADD_TAGS: ["style"] });
+  printWindow.document.write(safeHtml);
   printWindow.document.close();
   printWindow.onload = () => {
     setTimeout(() => printWindow.print(), 300);

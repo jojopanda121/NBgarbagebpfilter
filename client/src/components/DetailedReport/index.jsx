@@ -182,7 +182,7 @@ const ClaimVerdictsPanel = memo(function ClaimVerdictsPanel({ claimVerdicts }) {
         </span>
       </button>
       <p className="text-xs text-[#8E9BB0] mb-4 ml-7">
-        MiniMax AI 基于知识库对每条 BP 声明进行独立核查，点击展开查看详情
+        AI 大模型基于知识库对每条 BP 声明进行独立核查，点击展开查看详情
       </p>
 
       {expanded && (
@@ -415,7 +415,7 @@ const DeepResearchPanel = memo(function DeepResearchPanel({ deepResearch, thinki
           : <ChevronDown className="w-5 h-5 ml-auto text-[#8E9BB0]" />}
       </button>
       <p className="text-xs text-[#8E9BB0] mt-1 ml-7">
-        MiniMax M2.5 知识库全量分析 · 市场数据 · 可比公司 · 估值分析 · 投资建议
+        AI 大模型知识库全量分析 · 市场数据 · 可比公司 · 估值分析 · 投资建议
       </p>
 
       {showResearch && (

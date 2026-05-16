@@ -86,7 +86,7 @@ export function downloadReportAsPdf(result) {
 </head>
 <body>
   <h1 class="title">BP 尽调分析报告</h1>
-  <p class="subtitle">由垃圾BP过滤机生成 · 五维定量评分体系 v4.0 · Powered by MiniMax M2.5 · ${new Date().toLocaleDateString("zh-CN")}</p>
+  <p class="subtitle">由垃圾BP过滤机生成 · 五维定量评分体系 v4.0 · Powered by AI 大模型 · ${new Date().toLocaleDateString("zh-CN")}</p>
 
   <div class="score-card">
     <div class="score">${totalScore}</div>
@@ -133,7 +133,7 @@ export function downloadReportAsPdf(result) {
 
   <div class="footer">
     本报告由 AI 自动生成，仅供参考，不构成投资建议。<br>
-    垃圾BP过滤机 v4.0 · 五维定量评分体系 · Powered by MiniMax M2.5
+    垃圾BP过滤机 v4.0 · 五维定量评分体系 · Powered by AI 大模型
   </div>
 </body>
 </html>`;

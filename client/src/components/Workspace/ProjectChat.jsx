@@ -15,6 +15,7 @@ export default function ProjectChat({ project }) {
   const [streaming, setStreaming] = useState(false);
   const [error, setError] = useState("");
   const [phase, setPhase] = useState(null);     // routing | experts | host | tools
+  const [usage, setUsage] = useState(null);     // { daily_limit, used_today, remaining, unlimited, is_vip, is_admin }
   const abortRef = useRef(null);
   const tailRef = useRef(null);
 
@@ -25,7 +26,14 @@ export default function ProjectChat({ project }) {
     } catch (e) { setError(e.message); }
   }, [project?.id]);
 
-  useEffect(() => { reload(); }, [reload]);
+  const reloadUsage = useCallback(async () => {
+    try {
+      const u = await workspaceProjectApi.getConversationUsage(project.id);
+      setUsage(u);
+    } catch (e) { /* 忽略,UI 仍可使用 */ }
+  }, [project?.id]);
+
+  useEffect(() => { reload(); reloadUsage(); }, [reload, reloadUsage]);
   useEffect(() => {
     tailRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [messages, phase]);
@@ -133,6 +141,7 @@ export default function ProjectChat({ project }) {
       setStreaming(false);
       setPhase(null);
       abortRef.current = null;
+      reloadUsage();
     }
   }
 
@@ -140,8 +149,11 @@ export default function ProjectChat({ project }) {
     abortRef.current?.abort();
   }
 
+  const quotaReached = !!(usage && !usage.unlimited && (usage.remaining ?? 0) <= 0);
+
   return (
     <div className="flex flex-col h-[70vh] border border-[#EEF1F7] rounded bg-white">
+      <UsageBar usage={usage} />
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
         {messages.length === 0 && !streaming && (
           <div className="text-sm text-[#8E9BB0] text-center py-8">
@@ -157,19 +169,27 @@ export default function ProjectChat({ project }) {
         <div className="px-4 py-2 border-t border-rose-200 bg-rose-50 text-xs text-rose-600">{error}</div>
       )}
 
+      {quotaReached && (
+        <div className="px-4 py-2 border-t border-amber-200 bg-amber-50 text-xs text-amber-700">
+          今日 {usage.daily_limit} 次免费对话已用完。升级 VIP 即可解锁无限对话。
+        </div>
+      )}
+
       <form onSubmit={handleSend} className="border-t border-[#EEF1F7] p-3 flex gap-2">
         <textarea
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey && !streaming && !e.nativeEvent.isComposing) {
+            if (e.key === "Enter" && !e.shiftKey && !streaming && !quotaReached && !e.nativeEvent.isComposing) {
               e.preventDefault();
               handleSend(e);
             }
           }}
-          placeholder={`问点什么 — 比如"按 A 轮投决,这个项目最大的 3 个风险是什么?"`}
+          placeholder={quotaReached
+            ? "今日对话已达上限,升级 VIP 后可继续"
+            : `问点什么 — 比如"按 A 轮投决,这个项目最大的 3 个风险是什么?"`}
           rows={2}
-          disabled={streaming}
+          disabled={streaming || quotaReached}
           className="flex-1 border border-[#EEF1F7] rounded px-2 py-1.5 text-sm resize-none disabled:bg-[#F6F7FA]"
         />
         {streaming ? (
@@ -183,13 +203,58 @@ export default function ProjectChat({ project }) {
         ) : (
           <button
             type="submit"
-            disabled={!input.trim()}
+            disabled={!input.trim() || quotaReached}
             className="px-3 py-1.5 text-sm rounded bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50"
           >
             发送
           </button>
         )}
       </form>
+    </div>
+  );
+}
+
+function UsageBar({ usage }) {
+  if (!usage) return null;
+
+  if (usage.is_admin) {
+    return (
+      <div className="px-4 py-2 border-b border-[#EEF1F7] bg-[#F6F7FA] text-xs text-[#4B5A72] flex items-center justify-between">
+        <span>管理员账号 · 不限对话次数</span>
+        <span className="text-[#8E9BB0]">今日已对话 {usage.used_today} 轮</span>
+      </div>
+    );
+  }
+
+  if (usage.unlimited) {
+    return (
+      <div className="px-4 py-2 border-b border-amber-200 bg-amber-50 text-xs flex items-center justify-between">
+        <span className="text-amber-700 font-medium">VIP 会员 · 无限对话</span>
+        <span className="text-amber-600">今日已对话 {usage.used_today} 轮</span>
+      </div>
+    );
+  }
+
+  const limit = usage.daily_limit;
+  const used = usage.used_today;
+  const remaining = usage.remaining ?? 0;
+  const pct = Math.min(100, Math.round((used / Math.max(limit, 1)) * 100));
+  const low = remaining <= Math.max(2, Math.floor(limit * 0.2));
+  const barColor = remaining === 0 ? "bg-rose-500" : low ? "bg-amber-500" : "bg-emerald-500";
+
+  return (
+    <div className="px-4 py-2 border-b border-[#EEF1F7] bg-[#F6F7FA] text-xs">
+      <div className="flex items-center justify-between text-[#4B5A72] mb-1.5">
+        <span>
+          今日对话剩余 <strong className={remaining === 0 ? "text-rose-600" : low ? "text-amber-600" : "text-emerald-600"}>{remaining}</strong> / {limit} 轮
+        </span>
+        <span className="text-[#8E9BB0]">
+          免费用户每日 {limit} 轮 · <span className="text-amber-600 font-medium">VIP 无限</span>
+        </span>
+      </div>
+      <div className="h-1 bg-[#EEF1F7] rounded-full overflow-hidden">
+        <div className={`h-full ${barColor} transition-all`} style={{ width: `${pct}%` }} />
+      </div>
     </div>
   );
 }

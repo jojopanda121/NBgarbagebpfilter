@@ -18,6 +18,8 @@ import {
 import api from "../../services/api";
 import { streamChatMessage } from "../../services/workspaceStream";
 import WorkspaceUsageBar from "./WorkspaceUsageBar";
+import ArtifactImagePreview from "./ArtifactImagePreview";
+import { ARTIFACT_KIND_LABEL, isGeneratedArtifact, isImageArtifact } from "./workspaceArtifacts";
 
 const AGENT_META = {
   host:    { label: "主持人",   icon: MessageSquare, color: "text-blue-700",   ring: "ring-blue-300",   bg: "bg-blue-50" },
@@ -89,17 +91,6 @@ const QUICK_OUTPUT_ACTIONS = [
     prompt: "请基于当前项目分析结果和我上传的所有材料，生成一份 3 页项目简报 PPT。必须调用 project_brief 模板 skill。",
   },
 ];
-
-const ARTIFACT_KIND_LABEL = {
-  generated_pptx: "AI 生成 PPT",
-  generated_docx: "AI 生成 Word",
-  generated_xlsx: "AI 生成 Excel",
-  generated_image: "AI 生成信息图",
-  pptx: "AI 生成 PPT",
-  docx: "AI 生成 Word",
-  xlsx: "AI 生成 Excel",
-  upload: "上传",
-};
 
 const TOOL_LABEL = {
   web_search: "联网检索",
@@ -199,12 +190,7 @@ export default function WorkspaceTab({ taskId }) {
   );
 
   const uploads = useMemo(() => artifacts.filter((a) => a.kind === "upload"), [artifacts]);
-  const outputs = useMemo(() => artifacts.filter((a) => {
-    if (!a.kind) return false;
-    if (a.kind.startsWith("generated_")) return true;
-    if (a.kind === "pptx" || a.kind === "docx" || a.kind === "xlsx") return true;
-    return false;
-  }), [artifacts]);
+  const outputs = useMemo(() => artifacts.filter(isGeneratedArtifact), [artifacts]);
 
   const quotaReached = !!(usage && !usage.unlimited && (usage.remaining ?? 0) <= 0);
 
@@ -440,10 +426,7 @@ export default function WorkspaceTab({ taskId }) {
         setPendingFiles([]);
         if (fileInputRef.current) fileInputRef.current.value = "";
       } else if (scope === "outputs") {
-        setArtifacts(items => items.filter((a) => {
-          const kind = a.kind || "";
-          return !(kind.startsWith("generated_") || ["pptx", "docx", "xlsx"].includes(kind));
-        }));
+        setArtifacts(items => items.filter((a) => !isGeneratedArtifact(a)));
       }
     } catch (err) {
       alert(`${label}失败：` + err.message);
@@ -1070,52 +1053,6 @@ function describeToolInput(name, input) {
     return `${input.title || "(无标题)"} · ${sheets} 表`;
   }
   return "";
-}
-
-function isImageArtifact(art) {
-  const mime = art?.mime_type || art?.mimeType || "";
-  return art?.kind === "generated_image" || mime.startsWith("image/");
-}
-
-function ArtifactImagePreview({ url, alt }) {
-  const [src, setSrc] = useState("");
-  const [failed, setFailed] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    let objectUrl = "";
-    setSrc("");
-    setFailed(false);
-    api.getBlob(url)
-      .then((blob) => {
-        if (cancelled) return;
-        objectUrl = URL.createObjectURL(blob);
-        setSrc(objectUrl);
-      })
-      .catch(() => {
-        if (!cancelled) setFailed(true);
-      });
-    return () => {
-      cancelled = true;
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
-    };
-  }, [url]);
-
-  if (failed) {
-    return <p className="mt-2 text-xs text-[#8E9BB0]">图片预览加载失败，可直接下载查看。</p>;
-  }
-  if (!src) {
-    return (
-      <div className="mt-2 flex h-24 items-center justify-center rounded-md border border-[#EEF1F7] bg-[#F7F8FC]">
-        <Loader2 className="h-4 w-4 animate-spin text-[#8E9BB0]" />
-      </div>
-    );
-  }
-  return (
-    <div className="mt-2 overflow-hidden rounded-md border border-[#EEF1F7] bg-[#F7F8FC]">
-      <img src={src} alt={alt || "信息图预览"} className="block w-full object-contain" />
-    </div>
-  );
 }
 
 function ArtifactGroup({ title, icon: Icon, items, emptyText, streaming, onDownload, onDelete, onClearAll, previewUrlFor }) {

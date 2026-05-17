@@ -5,14 +5,11 @@
 // kind=link → 显示 teaser 分享链接 + 密码(由专门的 modal 处理,这里兜底)
 // ============================================================
 
-import React, { useEffect, useState } from "react";
+import React from "react";
 import { downloadBase64File } from "../../utils/downloadFile";
 import api from "../../services/api";
-
-const DOWNLOADABLE_KINDS = new Set([
-  "pptx", "docx", "xlsx",
-  "generated_pptx", "generated_docx", "generated_xlsx", "generated_image",
-]);
+import ArtifactImagePreview from "./ArtifactImagePreview";
+import { isDownloadableArtifact, isImageArtifact } from "./workspaceArtifacts";
 
 export default function SkillResultModal({ skill, runId, artifact, projectId, onClose }) {
   const canDownload = isDownloadableArtifact(artifact);
@@ -87,7 +84,13 @@ function Body({ artifact }) {
           {artifact.searchUsed && " · 检索增强"}
         </div>
         {isImageArtifact(artifact) && artifact.previewUrl && (
-          <ImagePreview url={artifact.previewUrl} alt={artifact.filename} />
+          <ArtifactImagePreview
+            url={artifact.previewUrl}
+            alt={artifact.filename}
+            className=""
+            loadingClassName="h-32"
+            showFailureText={false}
+          />
         )}
         {artifact.payload && <JsonPreview value={artifact.payload} />}
       </div>
@@ -116,45 +119,6 @@ function Body({ artifact }) {
   }
 
   return <JsonPreview value={artifact} />;
-}
-
-function isDownloadableArtifact(artifact) {
-  if (!artifact) return false;
-  if (DOWNLOADABLE_KINDS.has(artifact.kind)) return true;
-  const mime = artifact.mimeType || artifact.mime_type || "";
-  return Boolean(artifact.bufferBase64 || mime.includes("officedocument") || mime.startsWith("image/"));
-}
-
-function isImageArtifact(artifact) {
-  const mime = artifact?.mimeType || artifact?.mime_type || "";
-  return artifact?.kind === "generated_image" || mime.startsWith("image/");
-}
-
-function ImagePreview({ url, alt }) {
-  const [src, setSrc] = useState("");
-
-  useEffect(() => {
-    let cancelled = false;
-    let objectUrl = "";
-    api.getBlob(url)
-      .then((blob) => {
-        if (cancelled) return;
-        objectUrl = URL.createObjectURL(blob);
-        setSrc(objectUrl);
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
-    };
-  }, [url]);
-
-  if (!src) return null;
-  return (
-    <div className="overflow-hidden rounded border border-[#EEF1F7] bg-[#F7F8FC]">
-      <img src={src} alt={alt || "图片预览"} className="block w-full object-contain" />
-    </div>
-  );
 }
 
 function JsonPreview({ value }) {

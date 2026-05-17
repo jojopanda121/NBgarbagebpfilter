@@ -4,13 +4,17 @@
 // ============================================================
 
 import React, { useEffect, useMemo, useState } from "react";
-import {
-  ClipboardList, FileText, Image as ImageIcon, Loader2, MessageSquare,
-  Presentation, Share2, Table2,
-} from "lucide-react";
+import { FileText, Loader2 } from "lucide-react";
 import skillsApi from "../../services/skillsApi";
 import TeaserShareModal from "./TeaserShareModal";
 import SkillResultModal from "./SkillResultModal";
+import {
+  STANDARD_SKILL_IDS,
+  STANDARD_SKILL_ORDER,
+  SKILL_META,
+  artifactOutputHint,
+  enrichPreviewArtifact,
+} from "./workspaceArtifacts";
 
 const CATEGORY_LABELS = {
   standard: "标准化产出",
@@ -21,35 +25,6 @@ const CATEGORY_LABELS = {
   share: "分享 / Teaser",
 };
 const CATEGORY_ORDER = ["standard", "report", "research", "memo", "artifact", "share"];
-
-const STANDARD_SKILL_IDS = new Set([
-  "onepager_pptx",
-  "dd_checklist_xlsx",
-  "founder_interview_docx",
-  "competitor_matrix_xlsx",
-  "ic_questions_xlsx",
-]);
-
-const SKILL_META = {
-  onepager_pptx: { icon: Presentation, tone: "text-blue-700", hint: "PPT" },
-  investment_snapshot: { icon: FileText, tone: "text-rose-700", hint: "PPT" },
-  highlight_visual: { icon: ImageIcon, tone: "text-fuchsia-700", hint: "JPEG" },
-  project_brief: { icon: Presentation, tone: "text-blue-700", hint: "PPT" },
-  investment_deck_pptx: { icon: ClipboardList, tone: "text-blue-700", hint: "PPT" },
-  dd_checklist_xlsx: { icon: Table2, tone: "text-emerald-700", hint: "XLSX" },
-  founder_interview_docx: { icon: MessageSquare, tone: "text-indigo-700", hint: "DOCX" },
-  competitor_matrix_xlsx: { icon: Table2, tone: "text-cyan-700", hint: "XLSX" },
-  ic_questions_xlsx: { icon: ClipboardList, tone: "text-amber-700", hint: "XLSX" },
-  teaser_share: { icon: Share2, tone: "text-slate-700", hint: "Link" },
-};
-
-const STANDARD_ORDER = [
-  "onepager_pptx",
-  "dd_checklist_xlsx",
-  "founder_interview_docx",
-  "competitor_matrix_xlsx",
-  "ic_questions_xlsx",
-];
 
 export default function SkillsPanel({ project, onArtifact }) {
   const [skills, setSkills] = useState([]);
@@ -85,7 +60,7 @@ export default function SkillsPanel({ project, onArtifact }) {
         setError(out.error || "skill 执行失败");
         return;
       }
-      const artifact = enrichArtifact(out.artifact, project.id);
+      const artifact = enrichPreviewArtifact(out.artifact, project.id);
       setResultModal({ skill, runId: out.runId, artifact });
       onArtifact?.(out);
     } catch (e) {
@@ -117,7 +92,7 @@ export default function SkillsPanel({ project, onArtifact }) {
             {grouped[cat].map((s) => {
               const isTeaserShare = s.id === "teaser_share";
               const busy = running === s.id;
-              const meta = SKILL_META[s.id] || { icon: FileText, tone: "text-[#4B5A72]", hint: outputHint(s) };
+              const meta = SKILL_META[s.id] || { icon: FileText, tone: "text-[#4B5A72]", hint: artifactOutputHint(s) };
               const Icon = meta.icon;
               return (
                 <li key={s.id}>
@@ -140,7 +115,7 @@ export default function SkillsPanel({ project, onArtifact }) {
                       )}
                       <span className="min-w-0 flex-1 truncate">{s.title}</span>
                       <span className="shrink-0 rounded border border-[#EEF1F7] bg-[#F7F8FC] px-1.5 py-0.5 text-[10px] text-[#8E9BB0]">
-                        {meta.hint || outputHint(s)}
+                        {meta.hint || artifactOutputHint(s)}
                       </span>
                     </div>
                     {s.description && (
@@ -174,31 +149,7 @@ export default function SkillsPanel({ project, onArtifact }) {
 }
 
 function sortSkill(skill) {
-  const idx = STANDARD_ORDER.indexOf(skill.id);
+  const idx = STANDARD_SKILL_ORDER.indexOf(skill.id);
   if (idx >= 0) return idx;
   return 100;
-}
-
-function outputHint(skill) {
-  const kind = skill?.outputArtifactKind || "";
-  if (kind === "pptx") return "PPT";
-  if (kind === "docx") return "DOCX";
-  if (kind === "xlsx") return "XLSX";
-  if (kind === "json") return "JSON";
-  if (kind === "link") return "Link";
-  return "Skill";
-}
-
-function enrichArtifact(artifact, projectId) {
-  if (!artifact || !projectId) return artifact;
-  const artifactId = artifact.workspaceArtifactId || artifact.workspace_artifact_id || artifact.id;
-  if (!artifactId) return artifact;
-  const mime = artifact.mimeType || artifact.mime_type || "";
-  if (artifact.kind === "generated_image" || mime.startsWith("image/")) {
-    return {
-      ...artifact,
-      previewUrl: `/api/workspace-projects/${projectId}/conversation/artifacts/${artifactId}/download`,
-    };
-  }
-  return artifact;
 }

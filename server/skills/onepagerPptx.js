@@ -176,19 +176,20 @@ module.exports = {
         conversationId: ctx.conversationId,
         messageId: ctx.messageId || null,
         kind: "generated_pptx",
-        filename,
+        filename: artifactRow?.filename || filename,
         storagePath: fullPath,
         mimeType: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
         sizeBytes: pptxBuffer.length,
         summary: `一页投资亮点 PPT — ${companyName} (${mode})`,
         userId: ctx.userId,
+        artifactTitle: "一页亮点PPT",
       });
     }
 
     return {
       ok: true,
       artifact: {
-        kind: "pptx",
+        kind: "generated_pptx",
         filename,
         mimeType: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
         sizeBytes: pptxBuffer.length,

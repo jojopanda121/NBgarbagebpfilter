@@ -7,6 +7,7 @@
 // ============================================================
 
 const config = require("../config");
+const { resolveMinimaxSearchEndpoint: buildMinimaxSearchEndpoint } = require("../utils/minimaxEndpoints");
 
 function cleanQuery(q = "") {
   return String(q)
@@ -44,13 +45,7 @@ function getMinimaxSearchKey() {
 }
 
 function resolveMinimaxSearchEndpoint() {
-  const region = (config.minimaxSearchRegion || "").toLowerCase();
-  if (region === "cn") return "https://api.minimaxi.com/v1/coding_plan/search";
-  if (region === "global") return "https://api.minimax.io/v1/coding_plan/search";
-  if (/minimaxi\.com/i.test(config.minimaxApiHost || "")) {
-    return "https://api.minimaxi.com/v1/coding_plan/search";
-  }
-  return "https://api.minimax.io/v1/coding_plan/search";
+  return buildMinimaxSearchEndpoint(config.minimaxApiHost);
 }
 
 function normalizeMinimaxResults(data) {

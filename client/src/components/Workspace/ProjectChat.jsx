@@ -10,6 +10,21 @@ import { streamProjectChatMessage } from "../../services/workspaceStream";
 import { downloadBase64File } from "../../utils/downloadFile";
 import WorkspaceUsageBar from "./WorkspaceUsageBar";
 
+const TOOL_LABEL = {
+  web_search: "联网检索",
+  onepager_pptx: "一页投资亮点",
+  investment_snapshot: "投决速览",
+  highlight_visual: "亮点视觉图",
+  project_brief: "项目简报",
+  investment_deck_pptx: "投决材料",
+  generate_docx: "生成 Word",
+  generate_xlsx: "生成 Excel",
+  dd_checklist_xlsx: "尽调清单",
+  founder_interview_docx: "创始人访谈",
+  competitor_matrix_xlsx: "竞品矩阵",
+  ic_questions_xlsx: "IC 问题清单",
+};
+
 export default function ProjectChat({ project }) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
@@ -286,7 +301,8 @@ function Bubble({ m, projectId }) {
                 : t.phase === "error"
                   ? "bg-rose-50 text-rose-700"
                   : "bg-[#EEF1F7] text-[#4B5A72]";
-              const label = t.phase === "done" ? `${t.name} ✓` : t.phase === "error" ? `${t.name} ✗` : `${t.name}…`;
+              const toolName = TOOL_LABEL[t.name] || t.name;
+              const label = t.phase === "done" ? `${toolName} ✓` : t.phase === "error" ? `${toolName} ✗` : `${toolName}…`;
               return (
                 <span key={`${t.tool_id}-${i}`} className={`px-1.5 py-0.5 rounded text-[11px] ${cls}`}>
                   {label}

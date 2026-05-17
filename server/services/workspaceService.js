@@ -229,9 +229,100 @@ function deleteArtifact(artifactId, conversationId) {
   return true;
 }
 
-function insertArtifact({ conversationId, messageId, kind, filename, storagePath, mimeType, sizeBytes, summary, userId }) {
+function safeFilenamePart(value, fallback = "未命名") {
+  const s = String(value || fallback)
+    .replace(/[\\/:*?"<>|\s]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 48);
+  return s || fallback;
+}
+
+function filenameExt(filename = "") {
+  const ext = path.extname(String(filename || "")).replace(/^\./, "");
+  return ext || "dat";
+}
+
+function formatArtifactDate(d = new Date()) {
+  return `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function chineseVersion(n) {
+  const labels = ["零", "一", "二", "三", "四", "五", "六", "七", "八", "九", "十"];
+  if (n >= 1 && n <= 10) return `第${labels[n]}版`;
+  return `第${n}版`;
+}
+
+function resolveConversationProjectName(db, conversationId) {
+  const conv = db.prepare(
+    "SELECT project_id, task_id, title FROM workspace_conversations WHERE id = ?"
+  ).get(conversationId);
+  if (!conv) return "未命名项目";
+
+  if (conv.project_id) {
+    const p = db.prepare("SELECT name FROM projects WHERE id = ?").get(conv.project_id);
+    if (p?.name) return p.name;
+  }
+  if (conv.task_id) {
+    const t = db.prepare("SELECT title FROM tasks WHERE id = ?").get(conv.task_id);
+    if (t?.title) return t.title;
+  }
+  return conv.title || "未命名项目";
+}
+
+function isGeneratedArtifactKind(kind = "") {
+  return String(kind || "").startsWith("generated_") || ["pptx", "docx", "xlsx"].includes(kind);
+}
+
+function buildStandardArtifactFilename(db, { conversationId, kind, filename, artifactTitle }) {
+  if (!isGeneratedArtifactKind(kind)) return filename;
+
+  const projectName = safeFilenamePart(resolveConversationProjectName(db, conversationId));
+  const outputName = safeFilenamePart(artifactTitle || path.basename(String(filename || ""), path.extname(String(filename || ""))) || "AI产出");
+  const ext = filenameExt(filename);
+  const prefix = `${projectName}_${outputName}_`;
+  const existing = db.prepare(
+    `SELECT filename FROM workspace_artifacts
+     WHERE conversation_id = ? AND kind LIKE 'generated_%' AND filename LIKE ?`
+  ).all(conversationId, `${prefix}%`);
+  const version = existing.length + 1;
+  return `${prefix}${chineseVersion(version)}_${formatArtifactDate()}.${ext}`;
+}
+
+function standardizeArtifactFile({ db, conversationId, kind, filename, storagePath, artifactTitle }) {
+  const finalFilename = buildStandardArtifactFilename(db, { conversationId, kind, filename, artifactTitle });
+  if (!storagePath || finalFilename === filename) {
+    return { filename: finalFilename, storagePath };
+  }
+
+  const dir = path.dirname(storagePath);
+  let finalPath = path.join(dir, finalFilename);
+  if (fs.existsSync(finalPath)) {
+    const ext = path.extname(finalFilename);
+    const base = path.basename(finalFilename, ext);
+    finalPath = path.join(dir, `${base}_${Date.now()}${ext}`);
+  }
+  try {
+    if (fs.existsSync(storagePath)) fs.renameSync(storagePath, finalPath);
+    return { filename: path.basename(finalPath), storagePath: finalPath };
+  } catch (err) {
+    console.warn("[Workspace] 标准化 artifact 文件名失败:", err.message);
+    return { filename, storagePath };
+  }
+}
+
+function insertArtifact({ conversationId, messageId, kind, filename, storagePath, mimeType, sizeBytes, summary, userId, artifactTitle }) {
   const db = getDb();
   const id = uuid();
+  const standardized = standardizeArtifactFile({
+    db,
+    conversationId,
+    kind,
+    filename,
+    storagePath,
+    artifactTitle,
+  });
+  filename = standardized.filename;
+  storagePath = standardized.storagePath;
   db.prepare(
     `INSERT INTO workspace_artifacts
        (id, conversation_id, message_id, kind, filename, storage_path, mime_type, size_bytes, summary)
@@ -281,7 +372,7 @@ function readArtifactExtract(storagePath, maxChars = 5000) {
  * 按 scope 清空：
  *   - "chat":    只清聊天记录（含专家 internal 消息）
  *   - "uploads": 只清用户上传材料（kind = 'upload'）
- *   - "outputs": 只清 AI 生成产物（kind LIKE 'generated_%'）
+ *   - "outputs": 只清 AI 生成产物（kind LIKE 'generated_%'，兼容旧 pptx/docx/xlsx）
  *   - "all":     全清（向后兼容旧客户端）
  */
 function clearConversation(conversationId, scope = "all") {
@@ -306,11 +397,11 @@ function clearConversation(conversationId, scope = "all") {
 
   if (scope === "outputs" || scope === "all") {
     const outs = db.prepare(
-      "SELECT * FROM workspace_artifacts WHERE conversation_id = ? AND kind LIKE 'generated_%'"
+      "SELECT * FROM workspace_artifacts WHERE conversation_id = ? AND (kind LIKE 'generated_%' OR kind IN ('pptx','docx','xlsx'))"
     ).all(conversationId);
     for (const a of outs) removeArtifactFiles(a);
     const info = db.prepare(
-      "DELETE FROM workspace_artifacts WHERE conversation_id = ? AND kind LIKE 'generated_%'"
+      "DELETE FROM workspace_artifacts WHERE conversation_id = ? AND (kind LIKE 'generated_%' OR kind IN ('pptx','docx','xlsx'))"
     ).run(conversationId);
     result.deleted_artifacts += info.changes;
   }
@@ -529,6 +620,15 @@ function buildEnhancedProjectContext(taskId, conversationId, userQuery) {
 // ── Routing：决定调度哪些专家 ───────────────────────────────
 
 async function runHostRouting(projectCtx, history, userMsg) {
+  const forcedTool = forcedToolFromUserMsg(userMsg);
+  if (forcedTool) {
+    return {
+      task_type: taskTypeForForcedTool(forcedTool),
+      agents: ["market_deal", "finance_valuation", "product_team_risk"],
+      tools: [forcedTool],
+      reason: "quick_output_forced_tool",
+    };
+  }
   const userPrompt = `# 项目上下文\n${projectCtx}\n\n# 最近对话\n${formatHistory(history, 8)}\n\n# 当前用户消息\n${userMsg}`;
   let raw;
   try {
@@ -543,6 +643,22 @@ async function runHostRouting(projectCtx, history, userMsg) {
     obj.task_type = "generate_dd_checklist";
     obj.tools = ["dd_checklist_xlsx"];
   }
+  if (isFounderInterviewRequest(userMsg)) {
+    obj.task_type = "generate_founder_interview";
+    obj.tools = ["founder_interview_docx"];
+  }
+  if (isCompetitorMatrixRequest(userMsg)) {
+    obj.task_type = "generate_competitor_matrix";
+    obj.tools = ["competitor_matrix_xlsx"];
+  }
+  if (isIcQuestionsRequest(userMsg)) {
+    obj.task_type = "generate_ic_questions";
+    obj.tools = ["ic_questions_xlsx"];
+  }
+  if (isHighlightVisualRequest(userMsg)) {
+    obj.task_type = "generate_highlight_visual";
+    obj.tools = ["highlight_visual"];
+  }
   if (isLongInvestmentDeckRequest(userMsg)) {
     obj.task_type = "generate_pptx_template";
     obj.tools = ["investment_deck_pptx"];
@@ -554,6 +670,18 @@ async function runHostRouting(projectCtx, history, userMsg) {
 
 function inferRoutingFromText(userMsg = "", reason = "heuristic") {
   const text = userMsg.toLowerCase();
+  const forcedTool = forcedToolFromUserMsg(userMsg);
+  if (forcedTool) {
+    return {
+      task_type: taskTypeForForcedTool(forcedTool),
+      agents: ["market_deal", "finance_valuation", "product_team_risk"],
+      tools: [forcedTool],
+      reason,
+    };
+  }
+  if (isHighlightVisualRequest(userMsg)) {
+    return { task_type: "generate_highlight_visual", agents: ["market_deal", "finance_valuation", "product_team_risk"], tools: ["highlight_visual"], reason };
+  }
   // one-pager 必须先匹配，否则会被下面的通用 PPT 规则吃掉
   if (isOnePagerRequest(userMsg)) {
     const tool = /投资亮点|pitch\s*deck/i.test(userMsg) ? "onepager_pptx" : "investment_snapshot";
@@ -566,11 +694,20 @@ function inferRoutingFromText(userMsg = "", reason = "heuristic") {
     const tool = /项目简报|brief|3\s*页|三\s*页|立项/i.test(userMsg) ? "project_brief" : null;
     return { task_type: "generate_pptx_template", agents: ["market_deal", "finance_valuation", "product_team_risk"], tools: tool ? [tool] : [], reason };
   }
-  if (/word|docx|文档|报告|memo|备忘录/.test(text)) {
-    return { task_type: "generate_docx", agents: ["market_deal", "finance_valuation", "product_team_risk"], tools: ["generate_docx"], reason };
-  }
   if (/尽调清单|尽调问题|尽调追问|dd checklist|due diligence checklist/i.test(userMsg)) {
     return { task_type: "generate_dd_checklist", agents: ["finance_valuation", "product_team_risk"], tools: ["dd_checklist_xlsx"], reason };
+  }
+  if (isFounderInterviewRequest(userMsg)) {
+    return { task_type: "generate_founder_interview", agents: ["market_deal", "finance_valuation", "product_team_risk"], tools: ["founder_interview_docx"], reason };
+  }
+  if (isCompetitorMatrixRequest(userMsg)) {
+    return { task_type: "generate_competitor_matrix", agents: ["market_deal", "product_team_risk"], tools: ["competitor_matrix_xlsx"], reason };
+  }
+  if (isIcQuestionsRequest(userMsg)) {
+    return { task_type: "generate_ic_questions", agents: ["market_deal", "finance_valuation", "product_team_risk"], tools: ["ic_questions_xlsx"], reason };
+  }
+  if (/word|docx|文档|报告|memo|备忘录/.test(text)) {
+    return { task_type: "generate_docx", agents: ["market_deal", "finance_valuation", "product_team_risk"], tools: ["generate_docx"], reason };
   }
   if (/excel|xlsx|表格|模型|清单/.test(text)) {
     return { task_type: "generate_xlsx", agents: ["finance_valuation", "product_team_risk"], tools: ["generate_xlsx"], reason };
@@ -773,6 +910,17 @@ const HOST_TOOL_SCHEMAS = [
     },
   },
   {
+    name: "highlight_visual",
+    description: "调用 MiniMax image-01 生成【1 页】投资亮点视觉信息图 JPEG。适合用户明确要求视觉图、信息图、图片、海报、转发图。不是 PPT；不要传 slides、颜色、字体、坐标。",
+    input_schema: {
+      type: "object",
+      properties: {
+        materials: { type: "string", description: "可选，公司原始材料；留空则用 workspace 项目上下文。" },
+        company_hint: { type: "string", description: "可选，公司名提示。" },
+      },
+    },
+  },
+  {
     name: "project_brief",
     description: "调用模板 skill 生成【3 页】项目简报 PPT（封面 / 概况+亮点 / 团队+财务+估值）。适合内部立项、IC 前置 brief、项目快速介绍。视觉、字号、坐标由模板锁定；严禁传 slides、颜色、字体、坐标。",
     input_schema: {
@@ -841,6 +989,39 @@ const HOST_TOOL_SCHEMAS = [
     },
   },
   {
+    name: "founder_interview_docx",
+    description: "生成 Word 格式的创始人访谈提纲。每个问题包含为什么问、追问、好答案信号、红旗信号和事实来源。用户要求创始人访谈/面谈提纲时调用。",
+    input_schema: {
+      type: "object",
+      properties: {
+        interview_stage: { type: "string", description: "可选, 如 '首次面谈' / 'IC 前复核' / '条款会前'" },
+        focus_areas: { type: "array", items: { type: "string" }, description: "可选, 额外关注方向" },
+      },
+    },
+  },
+  {
+    name: "competitor_matrix_xlsx",
+    description: "生成 Excel 格式的竞品对比矩阵。明确区分已确认竞品和待确认假设竞品；缺失数据不编造。用户要求竞品对比/竞品矩阵时调用。",
+    input_schema: {
+      type: "object",
+      properties: {
+        include_hypothesis: { type: "boolean", description: "是否允许列出待确认假设竞品, 默认 true" },
+        focus_dimension: { type: "string", description: "可选, 如 产品能力/商业模式/价格/客户渠道" },
+      },
+    },
+  },
+  {
+    name: "ic_questions_xlsx",
+    description: "生成 Excel 格式的 IC 投委问题清单。内部执行 Bull/Bear 左右脑互搏，输出投委可能追问的 Top 问题、建议回答、需补材料和负责人。",
+    input_schema: {
+      type: "object",
+      properties: {
+        ic_stage: { type: "string", description: "可选, 如 '首次 IC' / '最终 IC' / '条款会前'" },
+        question_count: { type: "integer", minimum: 10, maximum: 15, description: "目标问题数量, 默认 12" },
+      },
+    },
+  },
+  {
     name: "generate_xlsx",
     description: "生成 Excel 文件（财务模型、尽调清单、风险台账、竞品表）。sheets 数组每项是一个 sheet。",
     input_schema: {
@@ -878,6 +1059,7 @@ async function runHostAgentic({
   userMsg,
   expertOutputs,
   memoryPack,
+  routing,
   signal,
   onEvent = () => {},
   hostToolRunner, // (toolName, input) => Promise<{ artifact, summary }>
@@ -898,14 +1080,19 @@ async function runHostAgentic({
     `# 用户当前消息`,
     userMsg,
     "",
+    routing?.tools?.length
+      ? `# 后端已判定应调用的工具\n${routing.tools.join(", ")}\n不要向用户请求确认；如果用户当前消息已经要求生成文件，必须立即调用上述工具。`
+      : "",
+    "",
     `# 各专家本轮意见（你的审计素材，不要逐条复读）`,
     expertBlock,
     "",
     `# 你的任务`,
     `1. 先在 thinking 块里**真实地推理**：先做市场-财务-产品逻辑闭环检查，再审计专家意见之间的矛盾，最后凝结成 IC Memo 级 thesis 与 Verdict。`,
-    `2. 如果用户要生成文件，先在 thinking 里判断文件类型和模板匹配，再调用对应工具（onepager_pptx / investment_snapshot / project_brief / investment_deck_pptx / generate_docx / generate_xlsx / dd_checklist_xlsx），args 必须是合法 JSON。`,
-    `2a. PPT 硬规则：任何 PPT 都必须走模板 skill。可用模板只有 onepager_pptx（1 页投资亮点 pitch）、investment_snapshot（1 页 A4 投决速览）、project_brief（3 页项目简报）、investment_deck_pptx（8-30 页投决/可研/尽调 deck）。严禁输出 slides 数组，严禁调用 generate_pptx，严禁传颜色/字号/坐标/字体。`,
+    `2. 如果用户要生成文件，先在 thinking 里判断文件类型和模板匹配，再调用对应工具（onepager_pptx / investment_snapshot / highlight_visual / project_brief / investment_deck_pptx / generate_docx / generate_xlsx / dd_checklist_xlsx / founder_interview_docx / competitor_matrix_xlsx / ic_questions_xlsx），args 必须是合法 JSON。`,
+    `2a. PPT 硬规则：任何 PPT 都必须走模板 skill。可用模板只有 onepager_pptx（1 页投资亮点 pitch）、investment_snapshot（1 页 A4 投决速览）、project_brief（3 页项目简报）、investment_deck_pptx（8-30 页投决/可研/尽调 deck）。用户要求视觉图/信息图/图片/海报时调用 highlight_visual，它输出 JPEG，不是 PPT。严禁输出 slides 数组，严禁调用 generate_pptx，严禁传颜色/字号/坐标/字体。`,
     `2b. 如果用户要 5 页、10 页、路演完整 deck、竞品地图等当前没有模板的 PPT，不要硬凑；直接说明当前模板库只支持上述模板，并建议按 harness 范式新增对应模板。`,
+    `2c. 标准化投研工具硬规则：尽调清单用 dd_checklist_xlsx；创始人访谈提纲用 founder_interview_docx；竞品对比矩阵用 competitor_matrix_xlsx；IC/投委问题清单/左右脑互搏用 ic_questions_xlsx。不要用 generate_xlsx/generate_docx 临时拼这些标准产物。`,
     `3. 工具返回 tool_result 后，写最终答复给用户：投资备忘录口吻，不复述上下文，不复读专家原话，必须给出核心矛盾、决策结论和杀手级问题。`,
     `4. 如果只是普通问答且不需要联网/最新信息，跳过工具直接写答复；如果用户要求搜索或问题依赖近期外部信息，最多调用一次 web_search，拿到 tool_result 后必须直接综合成最终答复，不要继续搜索。`,
   ].join("\n");
@@ -1085,6 +1272,35 @@ async function runHostAgentic({
     }
   }
 
+  if (isFileGenerationRequest(userMsg) && artifacts.length === 0 && hostToolRunner) {
+    const fallback = buildFallbackToolCall({
+      routing: routing || inferRoutingFromText(userMsg),
+      userMsg,
+      cleanContent: stripModelToolCalls(stripToolCalls(text)).trim(),
+      expertOutputs,
+    });
+    if (fallback?.tool) {
+      const toolId = `forced-${Date.now()}`;
+      console.warn("[Workspace] 文件生成请求未触发 tool_use，按路由强制执行工具:", fallback.tool);
+      onEvent({ type: "tool_use_start", id: toolId, name: fallback.tool });
+      onEvent({ type: "tool_use", id: toolId, name: fallback.tool, input: fallback.args || {} });
+      const r = await hostToolRunner(fallback.tool, fallback.args || {});
+      if (r?.artifact) {
+        artifacts.push(r.artifact);
+        onEvent({
+          type: "tool_result",
+          id: toolId,
+          name: fallback.tool,
+          result: r.summary || "已生成",
+          error: false,
+        });
+        const completionText = buildArtifactCompletionText(artifacts);
+        text = completionText;
+        onEvent({ type: "text_delta", text: completionText });
+      }
+    }
+  }
+
   return {
     text: text.trim(),
     thinking,
@@ -1161,6 +1377,7 @@ async function runHostStreamingPhase({
     userMsg,
     expertOutputs,
     memoryPack,
+    routing,
     signal,
     hostToolRunner,
     onEvent: (ev) => {
@@ -1270,13 +1487,66 @@ function stripToolCalls(content) {
 }
 
 function taskTypeToTool(taskType) {
+  if (taskType === "generate_highlight_visual") return "highlight_visual";
   if (taskType === "generate_onepager") return "onepager_pptx"; // legacy alias
   if (taskType === "generate_pptx") return "project_brief"; // legacy alias; free PPT is disabled
   if (taskType === "generate_pptx_template") return "investment_deck_pptx";
   if (taskType === "generate_docx") return "generate_docx";
   if (taskType === "generate_xlsx") return "generate_xlsx";
   if (taskType === "generate_dd_checklist") return "dd_checklist_xlsx";
+  if (taskType === "generate_founder_interview") return "founder_interview_docx";
+  if (taskType === "generate_competitor_matrix") return "competitor_matrix_xlsx";
+  if (taskType === "generate_ic_questions") return "ic_questions_xlsx";
   return null;
+}
+
+function forcedToolFromUserMsg(userMsg = "") {
+  const m = String(userMsg || "").match(/必须(?:立即)?调用\s*([a-zA-Z0-9_]+)\s*(?:工具|模板|skill)?/);
+  const tool = m?.[1];
+  const allowed = new Set([
+    "onepager_pptx",
+    "investment_snapshot",
+    "highlight_visual",
+    "dd_checklist_xlsx",
+    "founder_interview_docx",
+    "competitor_matrix_xlsx",
+    "ic_questions_xlsx",
+    "investment_deck_pptx",
+    "project_brief",
+  ]);
+  return allowed.has(tool) ? tool : "";
+}
+
+function taskTypeForForcedTool(tool) {
+  if (tool === "highlight_visual") return "generate_highlight_visual";
+  if (tool === "dd_checklist_xlsx") return "generate_dd_checklist";
+  if (tool === "founder_interview_docx") return "generate_founder_interview";
+  if (tool === "competitor_matrix_xlsx") return "generate_competitor_matrix";
+  if (tool === "ic_questions_xlsx") return "generate_ic_questions";
+  if (["onepager_pptx", "investment_snapshot", "investment_deck_pptx", "project_brief"].includes(tool)) {
+    return "generate_pptx_template";
+  }
+  return "answer";
+}
+
+function isHighlightVisualRequest(userMsg = "") {
+  if (!userMsg) return false;
+  return /亮点视觉图|视觉图|信息图|infographic|海报|转发图|宣传图|图片|生成图|生成一张图|image/i.test(userMsg);
+}
+
+function isFounderInterviewRequest(userMsg = "") {
+  if (!userMsg) return false;
+  return /创始人.*(访谈|采访|面谈|提纲|问题)|founder.*(interview|questions)|访谈提纲|面谈提纲/i.test(userMsg);
+}
+
+function isCompetitorMatrixRequest(userMsg = "") {
+  if (!userMsg) return false;
+  return /竞品.*(矩阵|对比|分析|表格|excel|xlsx)|竞争对手.*(矩阵|对比)|competitor.*(matrix|comparison)/i.test(userMsg);
+}
+
+function isIcQuestionsRequest(userMsg = "") {
+  if (!userMsg) return false;
+  return /IC.*(问题|清单|预演|投委)|投委.*(问题|清单|预演|追问)|左右脑|Bull|Bear|投委会.*(问题|追问)/i.test(userMsg);
 }
 
 // "一页纸 / 投资亮点 / 速览" 这类硬性要求单页 pitch 的措辞 → 走 onepager 工具
@@ -1309,6 +1579,10 @@ function isLongInvestmentDeckRequest(userMsg = "") {
 function isFileGenerationRequest(userMsg = "") {
   const text = String(userMsg || "");
   return (
+    isHighlightVisualRequest(text) ||
+    isFounderInterviewRequest(text) ||
+    isCompetitorMatrixRequest(text) ||
+    isIcQuestionsRequest(text) ||
     isOnePagerRequest(text) ||
     /ppt|pptx|演示|幻灯片|slide|项目简报|brief|word|docx|文档|报告|memo|备忘录|excel|xlsx|表格|模型|清单/i.test(text)
   );
@@ -1427,6 +1701,50 @@ function inferDeckType(userMsg = "") {
 }
 
 function buildFallbackToolCall({ routing, userMsg, cleanContent, expertOutputs }) {
+  const forcedTool = forcedToolFromUserMsg(userMsg);
+  if (forcedTool) {
+    const baseMaterials = {
+      materials: collectMaterialsForTemplate({ userMsg, cleanContent, expertOutputs }),
+      company_hint: inferCompanyNameFromMsg(userMsg) || undefined,
+    };
+    if (forcedTool === "onepager_pptx") return { tool: forcedTool, args: {} };
+    if (forcedTool === "investment_deck_pptx") {
+      const pages = extractRequestedPageCount(userMsg);
+      return {
+        tool: forcedTool,
+        args: {
+          ...baseMaterials,
+          target_pages: pages ? Math.max(8, Math.min(30, pages)) : 16,
+          deck_type: inferDeckType(userMsg),
+        },
+      };
+    }
+    if (["investment_snapshot", "highlight_visual", "project_brief"].includes(forcedTool)) {
+      return { tool: forcedTool, args: baseMaterials };
+    }
+    if (forcedTool === "founder_interview_docx") {
+      return { tool: forcedTool, args: { interview_stage: inferIcStage(userMsg) || "IC 前创始人访谈" } };
+    }
+    if (forcedTool === "competitor_matrix_xlsx") {
+      return { tool: forcedTool, args: { include_hypothesis: true } };
+    }
+    if (forcedTool === "ic_questions_xlsx") {
+      return { tool: forcedTool, args: { ic_stage: inferIcStage(userMsg) || "投委会汇报前预演", question_count: 12 } };
+    }
+    if (forcedTool === "dd_checklist_xlsx") {
+      return { tool: forcedTool, args: { stage_context: "投决前尽调" } };
+    }
+  }
+
+  if (isHighlightVisualRequest(userMsg)) {
+    return {
+      tool: "highlight_visual",
+      args: {
+        materials: collectMaterialsForTemplate({ userMsg, cleanContent, expertOutputs }),
+        company_hint: inferCompanyNameFromMsg(userMsg) || undefined,
+      },
+    };
+  }
   // isOnePagerRequest 优先级最高：路由层若没识别到（如 LLM routing 失败），
   // 在这里再兜一次，保证用户说"一页纸/投资亮点"时不会落到多页 generate_pptx。
   const onePager = isOnePagerRequest(userMsg);
@@ -1495,7 +1813,26 @@ function buildFallbackToolCall({ routing, userMsg, cleanContent, expertOutputs }
     };
   }
 
+  if (tool === "founder_interview_docx") {
+    return { tool, args: { interview_stage: inferIcStage(userMsg) || "IC 前创始人访谈" } };
+  }
+
+  if (tool === "competitor_matrix_xlsx") {
+    return { tool, args: { include_hypothesis: true } };
+  }
+
+  if (tool === "ic_questions_xlsx") {
+    return { tool, args: { ic_stage: inferIcStage(userMsg) || "投委会汇报前预演", question_count: 12 } };
+  }
+
   return null;
+}
+
+function inferIcStage(userMsg = "") {
+  if (/最终|final/i.test(userMsg)) return "最终 IC";
+  if (/条款|term/i.test(userMsg)) return "条款会前";
+  if (/首次|first/i.test(userMsg)) return "首次 IC";
+  return "";
 }
 
 function normalizeToolCalls(calls, { routing, userMsg, cleanContent, expertOutputs }) {
@@ -1522,7 +1859,7 @@ function normalizeToolCalls(calls, { routing, userMsg, cleanContent, expertOutpu
   }
 
   if (
-    ["project_brief", "investment_snapshot", "onepager_pptx", "investment_deck_pptx"].includes(requestedTool) &&
+    ["project_brief", "investment_snapshot", "onepager_pptx", "investment_deck_pptx", "highlight_visual"].includes(requestedTool) &&
     isPromptLikePptArgs(normalized[idx]?.args)
   ) {
     const fallback = buildFallbackToolCall({ routing, userMsg, cleanContent, expertOutputs });
@@ -1702,6 +2039,7 @@ async function executeDocumentTool({ tool, args, conversationId, messageId, user
     sizeBytes: buf.length,
     summary: builder.summary(body),
     userId,
+    artifactTitle: args?.artifactTitle || body.title || toolDef.defaultTitle,
   });
 }
 
@@ -1755,7 +2093,11 @@ async function executeToolCalls(calls, { conversationId, messageId, projectId, u
         continue;
       }
 
-      if (["onepager_pptx", "investment_snapshot", "project_brief", "investment_deck_pptx", "generate_docx", "generate_xlsx", "dd_checklist_xlsx"].includes(skillId)) {
+      if ([
+        "onepager_pptx", "investment_snapshot", "highlight_visual", "project_brief",
+        "investment_deck_pptx", "generate_docx", "generate_xlsx", "dd_checklist_xlsx",
+        "founder_interview_docx", "competitor_matrix_xlsx", "ic_questions_xlsx",
+      ].includes(skillId)) {
         const r = await executeWorkspaceTool({
           tool: skillId,
           args: c.args || {},
@@ -1860,6 +2202,7 @@ module.exports = {
   executeToolCalls,
   inferRoutingFromText,
   taskTypeToTool,
+  isHighlightVisualRequest,
   isOnePagerRequest,
   buildFallbackToolCall,
   buildFallbackOnepagerArgs,
@@ -1871,5 +2214,6 @@ module.exports = {
   runWorkspaceMemoryGc,
   queryMemory,
   listWorkspaceCapabilities,
+  buildStandardArtifactFilename,
   ARTIFACTS_ROOT,
 };

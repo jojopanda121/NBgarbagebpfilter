@@ -26,6 +26,18 @@ describe("isOnePagerRequest", () => {
 });
 
 describe("inferRoutingFromText", () => {
+  test("快捷产出强制工具标记优先于普通路由", () => {
+    const r = ws.inferRoutingFromText("【快捷产出按钮】用户已确认生成该产物。\n必须立即调用 highlight_visual 工具，并一直执行到右侧 AI 生成产出出现文件为止。");
+    expect(r.task_type).toBe("generate_highlight_visual");
+    expect(r.tools).toEqual(["highlight_visual"]);
+  });
+
+  test("'亮点视觉图' 优先路由到 highlight_visual，不被一页纸/PPT 规则吃掉", () => {
+    const r = ws.inferRoutingFromText("生成一页投资亮点视觉图");
+    expect(r.task_type).toBe("generate_highlight_visual");
+    expect(r.tools).toContain("highlight_visual");
+  });
+
   test("'投资亮点' 路由到 onepager_pptx 模板（不被通用 PPT 规则吃掉）", () => {
     const r = ws.inferRoutingFromText("生成一份投资亮点 PPT");
     expect(r.task_type).toBe("generate_pptx_template");
@@ -66,6 +78,9 @@ describe("taskTypeToTool", () => {
   test("legacy generate_onepager → onepager_pptx", () => {
     expect(ws.taskTypeToTool("generate_onepager")).toBe("onepager_pptx");
   });
+  test("generate_highlight_visual → highlight_visual", () => {
+    expect(ws.taskTypeToTool("generate_highlight_visual")).toBe("highlight_visual");
+  });
   test("legacy generate_pptx → project_brief", () => {
     expect(ws.taskTypeToTool("generate_pptx")).toBe("project_brief");
   });
@@ -74,6 +89,32 @@ describe("taskTypeToTool", () => {
   });
   test("未知任务 → null", () => {
     expect(ws.taskTypeToTool("answer")).toBeNull();
+  });
+});
+
+describe("artifact filename convention", () => {
+  test("生成产出命名为 项目名_产物名_版本_日期.ext", () => {
+    const fakeDb = {
+      prepare(sql) {
+        return {
+          get() {
+            if (sql.includes("workspace_conversations")) return { project_id: "p1", task_id: null, title: "默认会话" };
+            if (sql.includes("projects")) return { name: "星尘科技" };
+            return null;
+          },
+          all() {
+            return [{ filename: "星尘科技_亮点视觉图_第一版_20260517.jpeg" }];
+          },
+        };
+      },
+    };
+    const name = ws.buildStandardArtifactFilename(fakeDb, {
+      conversationId: "c1",
+      kind: "generated_image",
+      filename: "old.jpeg",
+      artifactTitle: "亮点视觉图",
+    });
+    expect(name).toMatch(/^星尘科技_亮点视觉图_第二版_\d{8}\.jpeg$/);
   });
 });
 
@@ -89,6 +130,7 @@ describe("HOST_TOOL_SCHEMAS", () => {
     const names = ws.HOST_TOOL_SCHEMAS.map((s) => s.name);
     expect(names).toContain("onepager_pptx");
     expect(names).toContain("investment_snapshot");
+    expect(names).toContain("highlight_visual");
     expect(names).toContain("project_brief");
     expect(names).toContain("investment_deck_pptx");
     expect(names).not.toContain("generate_pptx");
@@ -137,6 +179,14 @@ describe("workspaceRegistry PPT 模板工具登记", () => {
 
   test("TOOL_REGISTRY 有 investment_deck_pptx 且 host 可调", () => {
     const def = reg.TOOL_REGISTRY.investment_deck_pptx;
+    expect(def).toBeTruthy();
+    expect(def.callableByModel).toBe(true);
+    expect(def.allowedCallers).toContain("host");
+    expect(def.executor).toBe("skill_template");
+  });
+
+  test("TOOL_REGISTRY 有 highlight_visual 且 host 可调", () => {
+    const def = reg.TOOL_REGISTRY.highlight_visual;
     expect(def).toBeTruthy();
     expect(def.callableByModel).toBe(true);
     expect(def.allowedCallers).toContain("host");

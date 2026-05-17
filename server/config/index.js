@@ -42,8 +42,9 @@ const config = {
   // MiniMax LLM
   minimaxApiKey: process.env.MINIMAX_API_KEY || "",
   minimaxModel: process.env.MINIMAX_MODEL || "MiniMax-M2.7",
+  minimaxImageModel: process.env.MINIMAX_IMAGE_MODEL || "image-01",
   minimaxCodePlanKey: process.env.MINIMAX_CODE_PLAN_KEY || process.env.MINIMAX_CODING_API_KEY || "",
-  minimaxApiHost: process.env.MINIMAX_API_HOST || "https://api.minimax.io",
+  minimaxApiHost: process.env.MINIMAX_API_HOST || "https://api.minimaxi.com",
   minimaxSearchRegion: process.env.MINIMAX_SEARCH_REGION || "",
 
   // 企查查 Agent（企业追踪数据源）

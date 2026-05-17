@@ -140,6 +140,24 @@ class ApiService {
     const blob = await resp.blob();
     triggerBlobDownload(blob, filename);
   }
+
+  /** 获取二进制文件 Blob，供图片预览等组件使用 */
+  async getBlob(url) {
+    const token = useAuthStore.getState().token;
+    const headers = {};
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+
+    const resp = await fetch(`${API_BASE}${url}`, { headers });
+    if (!resp.ok) {
+      let msg = `文件获取失败 (${resp.status})`;
+      try {
+        const body = await resp.json();
+        if (body?.error) msg = body.error;
+      } catch {}
+      throw new ApiError(msg, resp.status);
+    }
+    return resp.blob();
+  }
 }
 
 class ApiError extends Error {

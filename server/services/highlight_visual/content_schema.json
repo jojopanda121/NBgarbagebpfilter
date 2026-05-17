@@ -1,0 +1,96 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["brand", "top_metrics", "sections"],
+  "properties": {
+    "brand": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["company_name", "title", "subtitle"],
+      "properties": {
+        "company_name": { "type": "string" },
+        "english_name": { "type": "string" },
+        "title": { "type": "string" },
+        "subtitle": { "type": "string" }
+      }
+    },
+    "top_metrics": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 4,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["title", "value"],
+        "properties": {
+          "icon": { "type": "string" },
+          "title": { "type": "string" },
+          "value": { "type": "string" },
+          "description": { "type": "string" }
+        }
+      }
+    },
+    "sections": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["technology_flow", "team_capital", "clients", "ipo_milestones", "investment_highlights", "financial_table"],
+      "properties": {
+        "technology_flow": {
+          "type": "array",
+          "maxItems": 4,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["label", "summary"],
+            "properties": {
+              "label": { "type": "string" },
+              "summary": { "type": "string" }
+            }
+          }
+        },
+        "team_capital": {
+          "type": "array",
+          "maxItems": 4,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["label", "summary"],
+            "properties": {
+              "label": { "type": "string" },
+              "summary": { "type": "string" }
+            }
+          }
+        },
+        "clients": {
+          "type": "array",
+          "maxItems": 5,
+          "items": { "type": "string" }
+        },
+        "ipo_milestones": {
+          "type": "array",
+          "maxItems": 4,
+          "items": { "type": "string" }
+        },
+        "investment_highlights": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 5,
+          "items": { "type": "string" }
+        },
+        "financial_table": {
+          "type": "array",
+          "maxItems": 4,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["metric", "value"],
+            "properties": {
+              "metric": { "type": "string" },
+              "value": { "type": "string" }
+            }
+          }
+        }
+      }
+    }
+  }
+}

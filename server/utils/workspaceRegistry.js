@@ -11,7 +11,12 @@ const HOST_DEFINITION = {
   role: "Investment Lead / Host",
   description: "拆解任务、制定执行计划、调度专家和 MiniMax 工具、选择模板产物，并把专家意见收敛成投不投、什么条件投、下一步怎么做。",
   skills: ["task_decomposition", "expert_orchestration", "template_selection", "investment_synthesis"],
-  tools: ["web_search", "onepager_pptx", "investment_snapshot", "project_brief", "investment_deck_pptx", "generate_docx", "generate_xlsx", "dd_checklist_xlsx"],
+  tools: [
+    "web_search", "onepager_pptx", "investment_snapshot", "highlight_visual",
+    "project_brief", "investment_deck_pptx", "generate_docx", "generate_xlsx",
+    "dd_checklist_xlsx", "founder_interview_docx", "competitor_matrix_xlsx",
+    "ic_questions_xlsx",
+  ],
   searchEnabled: false,
 };
 
@@ -85,6 +90,15 @@ const TOOL_REGISTRY = {
     argShape: '{"materials":"<可选，公司原始材料；留空则用项目上下文>","company_hint":"<可选，公司全称>"}',
     description: "调用模板 skill 生成 1 页 A4 横版投决速览。适合投决/速览/one-pager，视觉和版式由 Python 渲染器锁定。",
   },
+  highlight_visual: {
+    label: "一页纸亮点视觉图",
+    category: "artifact",
+    executor: "skill_template",
+    callableByModel: true,
+    allowedCallers: ["host"],
+    argShape: '{"materials":"<可选，公司原始材料；留空则用项目上下文>","company_hint":"<可选，公司全称>"}',
+    description: "调用 MiniMax image-01 生成 1 页投资亮点视觉信息图 JPEG。适合微信、邮件、FA 批量转发的视觉化项目摘要。",
+  },
   project_brief: {
     label: "项目简报 3 页 deck",
     category: "artifact",
@@ -139,6 +153,33 @@ const TOOL_REGISTRY = {
     allowedCallers: ["host"],
     argShape: '{"focus_areas":["commercial","financial"],"stage_context":"A 轮投决前"}',
     description: "一次调用生成结构化尽调追问清单并导出 Excel。当用户要求尽调清单/DD checklist/尽调追问时优先使用；内部复用 dd_questions + generate_xlsx，不要求模型连续调用两个工具。",
+  },
+  founder_interview_docx: {
+    label: "创始人访谈提纲",
+    category: "artifact",
+    executor: "skill_template",
+    callableByModel: true,
+    allowedCallers: ["host"],
+    argShape: '{"interview_stage":"IC 前复核","focus_areas":["商业化","团队治理"]}',
+    description: "生成标准化创始人访谈提纲 Word：问题、为什么问、追问、好答案信号、红旗信号、事实来源。",
+  },
+  competitor_matrix_xlsx: {
+    label: "竞品对比矩阵 Excel",
+    category: "artifact",
+    executor: "skill_template",
+    callableByModel: true,
+    allowedCallers: ["host"],
+    argShape: '{"include_hypothesis":true,"focus_dimension":"产品能力/商业模式/客户渠道"}',
+    description: "生成标准化竞品对比矩阵 Excel，明确区分已确认竞品与待确认假设竞品，缺失数据不编造。",
+  },
+  ic_questions_xlsx: {
+    label: "IC 投委问题清单",
+    category: "artifact",
+    executor: "skill_template",
+    callableByModel: true,
+    allowedCallers: ["host"],
+    argShape: '{"ic_stage":"投委会汇报前预演","question_count":12}',
+    description: "通过 Bull/Bear 左右脑互搏，生成投委可能追问的 Top 问题、建议回答、需补材料和负责人。",
   },
 };
 

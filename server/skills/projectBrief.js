@@ -104,20 +104,21 @@ module.exports = {
         conversationId: ctx.conversationId,
         messageId: ctx.messageId || null,
         kind: "generated_pptx",
-        filename,
+        filename: artifactRow?.filename || filename,
         storagePath: fullPath,
         mimeType:
           "application/vnd.openxmlformats-officedocument.presentationml.presentation",
         sizeBytes: buffer.length,
         summary: `项目简报 3 页 — ${json.company_full_name}`,
         userId: ctx.userId,
+        artifactTitle: "项目简报",
       });
     }
 
     return {
       ok: true,
       artifact: {
-        kind: "pptx",
+        kind: "generated_pptx",
         filename,
         mimeType:
           "application/vnd.openxmlformats-officedocument.presentationml.presentation",

@@ -427,6 +427,9 @@ ${renderAgentCatalog()}
    - "generate_docx": 用户明确要求生成 Word/尽调备忘录/会议纪要/报告文档
    - "generate_xlsx": 用户明确要求生成 Excel/财务模型/通用表格
    - "generate_dd_checklist": 用户明确要求生成尽调清单/尽调问题/DD checklist/尽调追问
+   - "generate_founder_interview": 用户明确要求生成创始人访谈/面谈提纲
+   - "generate_competitor_matrix": 用户明确要求生成竞品对比/竞品矩阵
+   - "generate_ic_questions": 用户明确要求生成 IC/投委问题清单/左右脑互搏预演
 2. 简单闲聊、只要求改写措辞，不调专家。
 3. 维度明确的问题只调对应专家；综合投资判断、生成投委会材料、分析复杂文件，可并行调多个专家，最多 4 个。
 4. 生成文档时，除非只是格式转换，否则应调度相关专家提供素材；投委会/项目材料通常调 market_deal、finance_valuation、product_team_risk。
@@ -437,7 +440,10 @@ ${renderAgentCatalog()}
    - 项目简报 / 3 页 / brief / 内部立项介绍 → "project_brief"
    - 投决报告 / 可研报告 / 尽调汇报 / 完整投委会材料 / 用户要求 8-30 页或更长中长 deck → "investment_deck_pptx"。若用户要求超过 30 页，仍用 investment_deck_pptx 先生成 30 页深度版，并说明当前模板上限。
 7. 当用户要求"尽调清单"/"尽调问题"/"DD checklist"/"尽调追问"时：task_type 设为 "generate_dd_checklist"，tools 设为 ["dd_checklist_xlsx"]，调度 product_team_risk + finance_valuation 专家提供素材。该工具是后端组合 skill，会一次性完成结构化问题生成与 Excel 导出。
-8. 只输出纯 JSON，不要任何其他文字、不要 markdown 代码块。
+8. 当用户要求"创始人访谈提纲"时：task_type 设为 "generate_founder_interview"，tools 设为 ["founder_interview_docx"]。
+9. 当用户要求"竞品对比矩阵/竞品 Excel"时：task_type 设为 "generate_competitor_matrix"，tools 设为 ["competitor_matrix_xlsx"]。
+10. 当用户要求"IC 问题清单/投委问题/左右脑互搏"时：task_type 设为 "generate_ic_questions"，tools 设为 ["ic_questions_xlsx"]。
+11. 只输出纯 JSON，不要任何其他文字、不要 markdown 代码块。
 
 输出格式：
 { "task_type": "answer", "agents": ["market_deal","finance_valuation"], "tools": [], "reason": "用户问行业增速和估值" }`;
@@ -490,12 +496,15 @@ const WORKSPACE_HOST_SYSTEM_PROMPT = `你是一级市场投资负责人（Invest
 - 你正在和真人投资人逐轮对话，每次都要结合最新一条用户消息重新调用判断，不要假设用户已经看过你之前的某段话。
 
 【工具调用】
-后端会用 Anthropic tools 接口给你 web_search / onepager_pptx / investment_snapshot / project_brief / investment_deck_pptx / generate_docx / generate_xlsx / dd_checklist_xlsx 函数工具。
+后端会用 Anthropic tools 接口给你 web_search / onepager_pptx / investment_snapshot / project_brief / investment_deck_pptx / generate_docx / generate_xlsx / dd_checklist_xlsx / founder_interview_docx / competitor_matrix_xlsx / ic_questions_xlsx 函数工具。
 
 - 当用户要求联网、搜索、检索、最新信息，或问题明显依赖当前市场/政策/新闻/诉讼/竞品动态时，先调用 web_search。不要说"我没有联网能力"；如果工具失败，再说明"这次检索没有拿到可用结果"并基于已有材料回答。
 - 所有 PPT 产物必须调用模板 skill：onepager_pptx / investment_snapshot / project_brief / investment_deck_pptx。严禁输出 slides 数组，严禁调用 generate_pptx，严禁让模型决定颜色、字号、坐标、字体。
 - 用户要求 8 页以上、完整投决报告、可研报告、尽调汇报、投委会材料时，调用 investment_deck_pptx；target_pages 按用户页数填，超过 30 页填 30。
 - 用户要求尽调清单 / DD checklist / 尽调追问 Excel 时，必须调用 dd_checklist_xlsx；不要自己先调用 dd_questions 再调用 generate_xlsx。
+- 用户要求创始人访谈/面谈提纲时，必须调用 founder_interview_docx；不要用 generate_docx 自由拼。
+- 用户要求竞品对比/竞品矩阵时，必须调用 competitor_matrix_xlsx；不要用 generate_xlsx 自由拼。
+- 用户要求 IC 问题清单/投委问题/左右脑互搏时，必须调用 ic_questions_xlsx；不要用 generate_xlsx 自由拼。
 - 用户要求的 PPT 页数或场景没有匹配模板时，不要硬生成；直接说明当前可用模板及缺口，并建议新增模板。
 - 只有用户**明确要求生成/导出文件**时才调用生成类工具。否则直接答话，不用调生成类工具。
 - 调工具前先在 thinking 里想清楚：用户要的是哪个模板？是否有足够材料？缺什么字段？
@@ -511,8 +520,8 @@ const WORKSPACE_HOST_SYSTEM_PROMPT = `你是一级市场投资负责人（Invest
 <CRITICAL_INSTRUCTION>
 1. 如果用户问题与上传材料相关，必须优先引用材料原文数据作答，不得编造未出现的数字或事实。
 2. 如果用户要求生成文档（DCF模型/尽调清单/备忘录），必须严格基于上传材料中的数据。
-3. 需要生成文件时，必须使用工具（generate_xlsx / generate_docx / PPT 模板 skill / dd_checklist_xlsx）。
-4. 当用户要求"尽调清单"/"DD checklist"时，用 dd_checklist_xlsx 生成 Excel 格式的尽调追问清单。
+3. 需要生成文件时，必须使用工具（generate_xlsx / generate_docx / PPT 模板 skill / 标准化投研 skill）。
+4. 当用户要求"尽调清单"/"DD checklist"时，用 dd_checklist_xlsx；创始人访谈用 founder_interview_docx；竞品矩阵用 competitor_matrix_xlsx；IC 问题清单用 ic_questions_xlsx。
 </CRITICAL_INSTRUCTION>`;
 
 function buildWorkspaceExpertPrompt(agentName) {

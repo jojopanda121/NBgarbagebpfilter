@@ -27,6 +27,11 @@ function questionRows(payload) {
     q.question || "",
     q.evidence || "",
     q.expected_format || "",
+    q.verification_method || "",
+    q.decision_standard || "",
+    q.owner || "",
+    q.status || "",
+    Array.isArray(q.source_refs) ? q.source_refs.join(", ") : "",
   ]);
 }
 
@@ -44,8 +49,21 @@ function buildWorkbookArgs(payload, title) {
     sheets: [
       {
         name: "尽调问题清单",
-        headers: ["序号", "类别", "优先级", "问题", "触发依据", "期望材料"],
+        headers: [
+          "序号", "类别", "优先级", "问题", "触发依据", "期望材料",
+          "验证方法", "判断标准", "负责人", "状态", "事实来源",
+        ],
         rows: questionRows(payload),
+      },
+      {
+        name: "高优先级问题",
+        headers: [
+          "序号", "类别", "优先级", "问题", "触发依据", "期望材料",
+          "验证方法", "判断标准", "负责人", "状态", "事实来源",
+        ],
+        rows: questionRows({
+          questions: (payload?.questions || []).filter((q) => q.priority === 1),
+        }),
       },
       {
         name: "类目重点",
@@ -105,7 +123,7 @@ module.exports = {
     const title = params.title || "尽调问题清单";
     const artifact = await ws.executeDocumentTool({
       tool: "generate_xlsx",
-      args: buildWorkbookArgs(payload, title),
+      args: { ...buildWorkbookArgs(payload, title), artifactTitle: "尽调清单Excel" },
       conversationId: ctx.conversationId,
       messageId: ctx.messageId,
       userId: userId || ctx.userId,

@@ -74,7 +74,18 @@ router.post("/:skillId/run", requireAuth, skillRunLimiter, async (req, res) => {
     if (!project) return res.status(404).json({ error: "项目不存在或无权访问" });
   }
 
-  const out = await skills.registry.execute({ skillId, params, project, userId });
+  let ctx = { userId };
+  if (project) {
+    try {
+      const ws = require("../services/workspaceService");
+      const conv = ws.createOrGetConversationByProject(project.id, userId);
+      ctx = { ...ctx, conversationId: conv.id };
+    } catch (_) {
+      // 没有 conversation 时 skill 仍可返回 JSON/base64；不阻断执行。
+    }
+  }
+
+  const out = await skills.registry.execute({ skillId, params, project, userId, ctx });
   if (!out.ok) return res.status(400).json(out);
   res.json(out);
 });

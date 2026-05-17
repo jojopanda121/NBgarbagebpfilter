@@ -13,6 +13,7 @@ import {
   TrendingUp, DollarSign, Cpu, Shield, MessageSquare, FileBox,
   CheckCircle2, X, Trash2, ChevronDown, ChevronRight, Sparkles, Info,
   Brain, Wrench, FileText, Presentation, ClipboardList, Table2,
+  Image as ImageIcon,
 } from "lucide-react";
 import api from "../../services/api";
 import { streamChatMessage } from "../../services/workspaceStream";
@@ -36,26 +37,55 @@ const QUICK_OUTPUT_ACTIONS = [
   {
     label: "一页亮点 PPT",
     icon: Presentation,
+    tool: "onepager_pptx",
     prompt: "请基于当前项目分析结果和我上传的所有材料，生成一份投资亮点一页 PPT。必须调用 onepager_pptx 模板 skill，内容要克制、可溯源，不要堆字。",
   },
   {
     label: "投决速览",
     icon: FileText,
+    tool: "investment_snapshot",
     prompt: "请基于当前项目分析结果和我上传的所有材料，生成一份投委会一页纸投决速览。必须调用 investment_snapshot 模板 skill，文字精简，避免版面拥挤。",
+  },
+  {
+    label: "亮点视觉图",
+    icon: ImageIcon,
+    tool: "highlight_visual",
+    prompt: "请基于当前项目分析结果和我上传的所有材料，生成一页投资亮点视觉信息图 JPEG。必须调用 highlight_visual 工具。",
   },
   {
     label: "尽调清单 Excel",
     icon: Table2,
+    tool: "dd_checklist_xlsx",
     prompt: "请基于当前项目分析结果和我上传的所有材料，生成一份尽调问题清单 Excel。必须调用 dd_checklist_xlsx 工具。",
+  },
+  {
+    label: "创始人访谈",
+    icon: MessageSquare,
+    tool: "founder_interview_docx",
+    prompt: "请基于当前项目分析结果和我上传的所有材料，生成一份创始人访谈提纲 Word。必须调用 founder_interview_docx 工具，每个问题要带追问、好答案信号、红旗信号和事实来源。",
+  },
+  {
+    label: "竞品矩阵",
+    icon: Table2,
+    tool: "competitor_matrix_xlsx",
+    prompt: "请基于当前项目分析结果和我上传的所有材料，生成一份竞品对比矩阵 Excel。必须调用 competitor_matrix_xlsx 工具，明确区分已确认竞品与待确认假设竞品，缺失数据不要编造。",
+  },
+  {
+    label: "IC 问题清单",
+    icon: ClipboardList,
+    tool: "ic_questions_xlsx",
+    prompt: "请基于当前项目分析结果和我上传的所有材料，生成一份 IC 投委问题清单 Excel。必须调用 ic_questions_xlsx 工具，用 Bull/Bear 左右脑互搏模拟投委尖锐问题，并给出建议回答和需补材料。",
   },
   {
     label: "投决材料",
     icon: ClipboardList,
+    tool: "investment_deck_pptx",
     prompt: "请基于当前项目分析结果和我上传的所有材料，生成一份 16 页投决材料 PPT。必须调用 investment_deck_pptx 模板 skill，按投资概要、尽调概况、公司、行业、业务技术、财务、估值、风险建议组织。",
   },
   {
     label: "项目简报",
     icon: ClipboardList,
+    tool: "project_brief",
     prompt: "请基于当前项目分析结果和我上传的所有材料，生成一份 3 页项目简报 PPT。必须调用 project_brief 模板 skill。",
   },
 ];
@@ -64,6 +94,10 @@ const ARTIFACT_KIND_LABEL = {
   generated_pptx: "AI 生成 PPT",
   generated_docx: "AI 生成 Word",
   generated_xlsx: "AI 生成 Excel",
+  generated_image: "AI 生成信息图",
+  pptx: "AI 生成 PPT",
+  docx: "AI 生成 Word",
+  xlsx: "AI 生成 Excel",
   upload: "上传",
 };
 
@@ -71,12 +105,17 @@ const TOOL_LABEL = {
   web_search: "联网检索",
   onepager_pptx: "一页投资亮点",
   investment_snapshot: "投决速览",
+  highlight_visual: "亮点视觉图",
   project_brief: "项目简报",
   investment_deck_pptx: "投决材料",
   generate_onepager: "生成一页纸",
   generate_pptx: "生成 PPT",
   generate_docx: "生成 Word",
   generate_xlsx: "生成 Excel",
+  dd_checklist_xlsx: "尽调清单",
+  founder_interview_docx: "创始人访谈",
+  competitor_matrix_xlsx: "竞品矩阵",
+  ic_questions_xlsx: "IC 问题清单",
 };
 
 function bytes(n) {
@@ -160,7 +199,12 @@ export default function WorkspaceTab({ taskId }) {
   );
 
   const uploads = useMemo(() => artifacts.filter((a) => a.kind === "upload"), [artifacts]);
-  const outputs = useMemo(() => artifacts.filter((a) => a.kind && a.kind.startsWith("generated_")), [artifacts]);
+  const outputs = useMemo(() => artifacts.filter((a) => {
+    if (!a.kind) return false;
+    if (a.kind.startsWith("generated_")) return true;
+    if (a.kind === "pptx" || a.kind === "docx" || a.kind === "xlsx") return true;
+    return false;
+  }), [artifacts]);
 
   const quotaReached = !!(usage && !usage.unlimited && (usage.remaining ?? 0) <= 0);
 
@@ -361,11 +405,25 @@ export default function WorkspaceTab({ taskId }) {
       setCurrentRunId(null);
       abortRef.current = null;
       reloadUsage();
+      // 兜底：流结束后从服务端重新加载 artifacts，防止 SSE 事件丢失
+      try {
+        const fresh = await api.get(`/api/workspace/${taskId}/artifacts`);
+        if (fresh.artifacts) setArtifacts(fresh.artifacts);
+      } catch (_) {}
     }
   };
 
   const handleStop = () => abortRef.current?.abort();
-  const handleQuickOutput = (prompt) => handleSend(prompt);
+  const handleQuickOutput = (action) => {
+    const directPrompt = [
+      "【快捷产出按钮】用户已确认生成该产物。",
+      "不要询问确认，不要只给方案，不要推荐其他模板。",
+      `必须立即调用 ${action.tool} 工具，并一直执行到右侧 AI 生成产出出现文件为止。`,
+      "",
+      action.prompt,
+    ].join("\n");
+    handleSend(directPrompt);
+  };
 
   const doClear = async (scope, label) => {
     if (streaming) return;
@@ -382,7 +440,10 @@ export default function WorkspaceTab({ taskId }) {
         setPendingFiles([]);
         if (fileInputRef.current) fileInputRef.current.value = "";
       } else if (scope === "outputs") {
-        setArtifacts(items => items.filter((a) => !(a.kind || "").startsWith("generated_")));
+        setArtifacts(items => items.filter((a) => {
+          const kind = a.kind || "";
+          return !(kind.startsWith("generated_") || ["pptx", "docx", "xlsx"].includes(kind));
+        }));
       }
     } catch (err) {
       alert(`${label}失败：` + err.message);
@@ -615,11 +676,12 @@ export default function WorkspaceTab({ taskId }) {
             title="AI 生成产出"
             icon={FileBox}
             items={outputs}
-            emptyText="AI 生成的 PPT / Word / Excel 会出现在这里。"
+            emptyText="AI 生成的 PPT / Word / Excel / 信息图会出现在这里。"
             streaming={streaming}
             onDownload={downloadArtifact}
             onDelete={deleteArtifact}
             onClearAll={() => doClear("outputs", "清空所有 AI 生成产出")}
+            previewUrlFor={(art) => `/api/workspace/${taskId}/artifacts/${art.id}/download`}
           />
         </aside>
       </div>
@@ -638,7 +700,7 @@ function QuickOutputActions({ actions, disabled, onRun }) {
             <button
               key={action.label}
               type="button"
-              onClick={() => onRun(action.prompt)}
+              onClick={() => onRun(action)}
               disabled={disabled}
               title={action.label}
               className="w-full flex items-center gap-2 rounded-lg border border-[#D8DCE8] bg-white px-3 py-2 text-left text-sm text-[#0F1C36] transition-colors hover:border-[#1B4FD8] hover:text-[#1B4FD8] disabled:opacity-45 disabled:hover:border-[#D8DCE8] disabled:hover:text-[#0F1C36]"
@@ -977,8 +1039,23 @@ function describeToolInput(name, input) {
   if (name === "onepager_pptx") {
     return input.regenerate ? "重新生成投资亮点单页" : "投资亮点单页";
   }
-  if (name === "investment_snapshot" || name === "project_brief") {
+  if (name === "investment_snapshot" || name === "project_brief" || name === "highlight_visual") {
     return input.company_hint || (input.materials ? "基于补充材料" : "基于项目上下文");
+  }
+  if (name === "investment_deck_pptx") {
+    return `${input.deck_type || "investment_committee"} · ${input.target_pages || 16} 页`;
+  }
+  if (name === "dd_checklist_xlsx") {
+    return input.stage_context || "尽调问题清单";
+  }
+  if (name === "founder_interview_docx") {
+    return input.interview_stage || "创始人访谈提纲";
+  }
+  if (name === "competitor_matrix_xlsx") {
+    return input.focus_dimension || "竞品对比矩阵";
+  }
+  if (name === "ic_questions_xlsx") {
+    return `${input.ic_stage || "投委会预演"} · ${input.question_count || 12} 问`;
   }
   if (name === "generate_pptx") {
     const slides = Array.isArray(input.slides) ? input.slides.length : 0;
@@ -995,7 +1072,53 @@ function describeToolInput(name, input) {
   return "";
 }
 
-function ArtifactGroup({ title, icon: Icon, items, emptyText, streaming, onDownload, onDelete, onClearAll }) {
+function isImageArtifact(art) {
+  const mime = art?.mime_type || art?.mimeType || "";
+  return art?.kind === "generated_image" || mime.startsWith("image/");
+}
+
+function ArtifactImagePreview({ url, alt }) {
+  const [src, setSrc] = useState("");
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    let objectUrl = "";
+    setSrc("");
+    setFailed(false);
+    api.getBlob(url)
+      .then((blob) => {
+        if (cancelled) return;
+        objectUrl = URL.createObjectURL(blob);
+        setSrc(objectUrl);
+      })
+      .catch(() => {
+        if (!cancelled) setFailed(true);
+      });
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [url]);
+
+  if (failed) {
+    return <p className="mt-2 text-xs text-[#8E9BB0]">图片预览加载失败，可直接下载查看。</p>;
+  }
+  if (!src) {
+    return (
+      <div className="mt-2 flex h-24 items-center justify-center rounded-md border border-[#EEF1F7] bg-[#F7F8FC]">
+        <Loader2 className="h-4 w-4 animate-spin text-[#8E9BB0]" />
+      </div>
+    );
+  }
+  return (
+    <div className="mt-2 overflow-hidden rounded-md border border-[#EEF1F7] bg-[#F7F8FC]">
+      <img src={src} alt={alt || "信息图预览"} className="block w-full object-contain" />
+    </div>
+  );
+}
+
+function ArtifactGroup({ title, icon: Icon, items, emptyText, streaming, onDownload, onDelete, onClearAll, previewUrlFor }) {
   return (
     <div>
       <div className="flex items-center justify-between mb-2">
@@ -1049,6 +1172,9 @@ function ArtifactGroup({ title, icon: Icon, items, emptyText, streaming, onDownl
             </div>
             {art.summary && (
               <p className="text-xs text-[#4B5A72] mt-1.5 line-clamp-3">{art.summary}</p>
+            )}
+            {previewUrlFor && isImageArtifact(art) && (
+              <ArtifactImagePreview url={previewUrlFor(art)} alt={art.filename} />
             )}
           </div>
         ))}
@@ -1149,8 +1275,13 @@ const TOOL_TRIGGER_HINTS = {
   web_search: "联网检索这个赛道最新政策",
   onepager_pptx: "生成一份投资亮点一页纸",
   investment_snapshot: "生成一页纸投决速览",
+  highlight_visual: "生成一页投资亮点视觉图",
   project_brief: "生成 3 页项目简报",
   investment_deck_pptx: "生成 16 页投决材料",
+  dd_checklist_xlsx: "生成尽调清单 Excel",
+  founder_interview_docx: "生成创始人访谈提纲",
+  competitor_matrix_xlsx: "生成竞品对比矩阵",
+  ic_questions_xlsx: "生成 IC 投委问题清单",
   generate_docx: "生成一份尽调备忘录 Word",
   generate_xlsx: "生成一份风险台账 Excel",
 };

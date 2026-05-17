@@ -97,6 +97,12 @@ describe("validateToolCalls · skill_id 合法性", () => {
     expect(r.accepted[0].id).toBe("dd_checklist_xlsx");
     expect(MAX_TOOL_CALLS_PER_TURN).toBe(1);
   });
+
+  test("highlight_visual → accepted, 不套用 PPT 版式字段禁令", () => {
+    const r = validateToolCalls([{ id: "highlight_visual", args: { materials: "公司材料足够生成视觉图" } }]);
+    expect(r.ok).toBe(true);
+    expect(r.accepted[0].id).toBe("highlight_visual");
+  });
 });
 
 describe("validateToolCalls · legacy alias", () => {

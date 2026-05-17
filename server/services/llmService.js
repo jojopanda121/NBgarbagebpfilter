@@ -9,15 +9,11 @@ const config = require("../config");
 const { runWebSearch, formatSearchContext } = require("./webSearchService");
 const { extractJson } = require("../utils/jsonParser");
 const jsonSchema = require("../utils/jsonSchema");
-
-function resolveAnthropicBaseURL() {
-  const host = (config.minimaxApiHost || "https://api.minimax.io").replace(/\/+$/, "");
-  return host.endsWith("/anthropic") ? host : `${host}/anthropic`;
-}
+const { resolveAnthropicBaseURL } = require("../utils/minimaxEndpoints");
 
 const anthropic = new Anthropic({
   apiKey: config.minimaxApiKey,
-  baseURL: resolveAnthropicBaseURL(),
+  baseURL: resolveAnthropicBaseURL(config.minimaxApiHost),
 });
 
 const MODEL = config.minimaxModel;

@@ -145,6 +145,8 @@ export default function WorkspaceTab({ taskId }) {
   const fileInputRef = useRef(null);
   const scrollRef = useRef(null);
   const abortRef  = useRef(null);
+  const mountedRef = useRef(true);
+  useEffect(() => () => { mountedRef.current = false; }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -394,7 +396,7 @@ export default function WorkspaceTab({ taskId }) {
       // 兜底：流结束后从服务端重新加载 artifacts，防止 SSE 事件丢失
       try {
         const fresh = await api.get(`/api/workspace/${taskId}/artifacts`);
-        if (fresh.artifacts) setArtifacts(fresh.artifacts);
+        if (mountedRef.current && fresh.artifacts) setArtifacts(fresh.artifacts);
       } catch (_) {}
     }
   };

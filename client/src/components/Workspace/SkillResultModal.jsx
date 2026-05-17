@@ -25,7 +25,7 @@ export default function SkillResultModal({ skill, runId, artifact, projectId, on
     api.downloadBlob(
       `/api/workspace-projects/${projectId}/conversation/artifacts/${artifactId}/download`,
       artifact.filename || "artifact"
-    ).catch((err) => alert("下载失败：" + err.message));
+    ).catch((err) => alert("下载失败：" + (err?.message || "未知错误")));
   };
 
   return (

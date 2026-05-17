@@ -153,7 +153,16 @@ module.exports = {
 
     const { data, repairs } = await callLLMJson(SYSTEM, userMsg, SCHEMA, { maxTokens: 6144, maxRepairs: 2 });
     const closedQFixes = _fixClosedQuestions(data);
-    const audit = assertGrounded(data, factPack, { requiredPaths: ["opening", "closing_checks"] });
+    let audit;
+    try {
+      audit = assertGrounded(data, factPack, { requiredPaths: ["opening", "closing_checks"] });
+    } catch (groundingErr) {
+      return {
+        ok: false,
+        error: `事实溯源审计失败：${groundingErr.audit?.errors?.join("；") || groundingErr.message}`,
+        metadata: { grounding: groundingErr.audit },
+      };
+    }
     const artifact = await exportDocx({
       title: data.title || "创始人访谈提纲",
       sections: buildDocxSections(data),

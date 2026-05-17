@@ -234,7 +234,15 @@ module.exports = {
       SYSTEM_BULL, bullMsg, SCHEMA_BULL, { maxTokens: 4096, maxRepairs: 2 }
     );
     // Bull 必须全部有事实支撑
-    assertGrounded(bullData, factPack, { requiredPaths: ["key_strengths"] });
+    try {
+      assertGrounded(bullData, factPack, { requiredPaths: ["key_strengths"] });
+    } catch (groundingErr) {
+      return {
+        ok: false,
+        error: `Bull 论点事实溯源审计失败：${groundingErr.audit?.errors?.join("；") || groundingErr.message}`,
+        metadata: { grounding: groundingErr.audit },
+      };
+    }
 
     // ── Step 2: Bear Agent ──────────────────────────────────
     const bearMsg = [
@@ -272,10 +280,19 @@ module.exports = {
       SYSTEM_SYNTH, synthMsg, SCHEMA_SYNTH, { maxTokens: 8192, maxRepairs: 2 }
     );
     // Synth 产出走 grounding audit，假设挑战型允许空 source_refs
-    const audit = assertGrounded(synthData, factPack, {
-      requiredPaths: ["ic_questions"],
-      allowHypothesis: true,
-    });
+    let audit;
+    try {
+      audit = assertGrounded(synthData, factPack, {
+        requiredPaths: ["ic_questions"],
+        allowHypothesis: true,
+      });
+    } catch (groundingErr) {
+      return {
+        ok: false,
+        error: `IC 问题事实溯源审计失败：${groundingErr.audit?.errors?.join("；") || groundingErr.message}`,
+        metadata: { grounding: groundingErr.audit },
+      };
+    }
 
     // 服务端后处理：按 priority 排序
     _sortByPriority(synthData.ic_questions);

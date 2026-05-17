@@ -30,7 +30,7 @@ module.exports = {
     additionalProperties: false,
   },
 
-  async run({ project, params, ctx }) {
+  async run({ project, params, ctx, userId }) {
     const { hv, ws } = _loadDeps();
 
     const parts = [];
@@ -79,7 +79,7 @@ module.exports = {
       if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
       const fullPath = path.join(dir, `${Date.now()}-${filename}`);
       require("../services/workspaceUploadLimits").enforceWorkspaceOutputLimits({
-        userId: ctx.userId,
+        userId,
         sizeBytes: imageBuffer.length,
         artifactRoot: ws.ARTIFACTS_ROOT,
       });
@@ -93,7 +93,7 @@ module.exports = {
         mimeType: "image/jpeg",
         sizeBytes: imageBuffer.length,
         summary: `一页纸项目亮点视觉图 — ${json?.brand?.company_name || "未命名项目"}`,
-        userId: ctx.userId,
+        userId,
         artifactTitle: "亮点视觉图",
       });
     }

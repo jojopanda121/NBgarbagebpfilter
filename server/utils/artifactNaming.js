@@ -3,7 +3,7 @@ const path = require("path");
 
 function safeFilenamePart(value, fallback = "未命名") {
   const s = String(value || fallback)
-    .replace(/[\\/:*?"<>|\s]+/g, "_")
+    .replace(/[\\/:*?"<>|%\s]+/g, "_")
     .replace(/^_+|_+$/g, "")
     .slice(0, 48);
   return s || fallback;
@@ -67,19 +67,28 @@ function standardizeArtifactFile({ db, conversationId, kind, filename, storagePa
   }
 
   const dir = path.dirname(storagePath);
-  let finalPath = path.join(dir, finalFilename);
-  if (fs.existsSync(finalPath)) {
+  const finalPath = path.join(dir, finalFilename);
+  try {
+    moveFileWithoutOverwrite(storagePath, finalPath);
+    return { filename: finalFilename, storagePath: finalPath };
+  } catch (_) {
     const ext = path.extname(finalFilename);
     const base = path.basename(finalFilename, ext);
-    finalPath = path.join(dir, `${base}_${Date.now()}${ext}`);
+    const fallback = path.join(dir, `${base}_${Date.now()}${ext}`);
+    try {
+      moveFileWithoutOverwrite(storagePath, fallback);
+      return { filename: path.basename(fallback), storagePath: fallback };
+    } catch (e2) {
+      console.warn("[Workspace] 标准化 artifact 文件名失败:", e2.message);
+      return { filename, storagePath };
+    }
   }
-  try {
-    if (fs.existsSync(storagePath)) fs.renameSync(storagePath, finalPath);
-    return { filename: path.basename(finalPath), storagePath: finalPath };
-  } catch (err) {
-    console.warn("[Workspace] 标准化 artifact 文件名失败:", err.message);
-    return { filename, storagePath };
-  }
+}
+
+function moveFileWithoutOverwrite(source, target) {
+  if (!fs.existsSync(source)) return;
+  fs.copyFileSync(source, target, fs.constants.COPYFILE_EXCL);
+  fs.unlinkSync(source);
 }
 
 module.exports = {

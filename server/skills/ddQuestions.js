@@ -126,7 +126,16 @@ module.exports = {
     ].join("\n");
 
     const { data, repairs } = await callLLMJson(SYSTEM, userMsg, SCHEMA, { maxTokens: 4096, maxRepairs: 2 });
-    const audit = assertGrounded(data, factPack, { requiredPaths: ["questions"] });
+    let audit;
+    try {
+      audit = assertGrounded(data, factPack, { requiredPaths: ["questions"] });
+    } catch (groundingErr) {
+      return {
+        ok: false,
+        error: `事实溯源审计失败：${groundingErr.audit?.errors?.join("；") || groundingErr.message}`,
+        metadata: { grounding: groundingErr.audit },
+      };
+    }
 
     return {
       ok: true,

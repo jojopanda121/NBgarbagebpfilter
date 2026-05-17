@@ -172,7 +172,16 @@ module.exports = {
     ].join("\n");
 
     const { data, repairs } = await callLLMJson(SYSTEM, userMsg, SCHEMA, { maxTokens: 6144, maxRepairs: 2 });
-    const audit = assertGrounded(data, factPack, { requiredPaths: ["confirmed_competitors"] });
+    let audit;
+    try {
+      audit = assertGrounded(data, factPack, { requiredPaths: ["confirmed_competitors"] });
+    } catch (groundingErr) {
+      return {
+        ok: false,
+        error: `事实溯源审计失败：${groundingErr.audit?.errors?.join("；") || groundingErr.message}`,
+        metadata: { grounding: groundingErr.audit },
+      };
+    }
     const artifact = await exportXlsx({
       title: "竞品对比矩阵",
       sheets: buildSheets(data),

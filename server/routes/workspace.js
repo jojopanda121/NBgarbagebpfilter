@@ -12,7 +12,7 @@ const { getDb } = require("../db");
 const { getTask } = require("../services/taskService");
 const ws = require("../services/workspaceService");
 const { persistWorkspaceUpload } = require("../services/workspaceUploads");
-const { workspaceRateLimit } = require("../middleware/workspaceQuota");
+const { workspaceRateLimit, getWorkspaceUsage } = require("../middleware/workspaceQuota");
 const { enforceWorkspaceUploadLimits } = require("../services/workspaceUploadLimits");
 
 const router = Router();
@@ -43,6 +43,11 @@ function checkTaskOwnership(taskId, userId) {
 // ── GET workspace agent/tool capabilities ───────────────────
 router.get("/capabilities", requireAuth, (req, res) => {
   res.json(ws.listWorkspaceCapabilities());
+});
+
+// ── GET 当日对话用量（普通 3 轮 / VIP 无限） ────────────────
+router.get("/usage", requireAuth, (req, res) => {
+  res.json(getWorkspaceUsage(req.user.id));
 });
 
 // ── GET 历史消息 ────────────────────────────────────────────

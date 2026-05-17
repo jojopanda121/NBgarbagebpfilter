@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import api from "../../services/api";
 import { streamChatMessage } from "../../services/workspaceStream";
+import WorkspaceUsageBar from "./WorkspaceUsageBar";
 
 const AGENT_META = {
   host:    { label: "主持人",   icon: MessageSquare, color: "text-blue-700",   ring: "ring-blue-300",   bg: "bg-blue-50" },
@@ -102,6 +103,14 @@ export default function WorkspaceTab({ taskId }) {
   const [pendingFiles, setPendingFiles] = useState([]);
   const [capabilities, setCapabilities] = useState(null);
   const [capOpen, setCapOpen] = useState(false);
+  const [usage, setUsage] = useState(null);
+
+  const reloadUsage = async () => {
+    try {
+      const u = await api.get("/api/workspace/usage");
+      setUsage(u);
+    } catch (e) { /* UI 容错：拿不到 usage 不阻断对话 */ }
+  };
 
   const fileInputRef = useRef(null);
   const scrollRef = useRef(null);
@@ -138,6 +147,8 @@ export default function WorkspaceTab({ taskId }) {
     return () => { cancelled = true; };
   }, []);
 
+  useEffect(() => { reloadUsage(); }, []);
+
   useEffect(() => {
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
@@ -150,6 +161,8 @@ export default function WorkspaceTab({ taskId }) {
 
   const uploads = useMemo(() => artifacts.filter((a) => a.kind === "upload"), [artifacts]);
   const outputs = useMemo(() => artifacts.filter((a) => a.kind && a.kind.startsWith("generated_")), [artifacts]);
+
+  const quotaReached = !!(usage && !usage.unlimited && (usage.remaining ?? 0) <= 0);
 
   const updateMessage = (id, updater) => {
     setMessages((m) => m.map((msg) => (msg.id === id ? updater(msg) : msg)));
@@ -347,6 +360,7 @@ export default function WorkspaceTab({ taskId }) {
       setActiveAgents([]);
       setCurrentRunId(null);
       abortRef.current = null;
+      reloadUsage();
     }
   };
 
@@ -445,7 +459,7 @@ export default function WorkspaceTab({ taskId }) {
           })}
           <QuickOutputActions
             actions={QUICK_OUTPUT_ACTIONS}
-            disabled={streaming}
+            disabled={streaming || quotaReached}
             onRun={handleQuickOutput}
           />
         </aside>
@@ -464,6 +478,7 @@ export default function WorkspaceTab({ taskId }) {
               清空对话
             </button>
           </div>
+          <WorkspaceUsageBar usage={usage} />
           <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto p-4 space-y-3">
             {timeline.length === 0 && (
               <div className="text-center text-[#8E9BB0] py-12">
@@ -486,6 +501,17 @@ export default function WorkspaceTab({ taskId }) {
             })}
           </div>
 
+          {quotaReached && (
+            <div className="px-4 py-2 border-t border-amber-200 bg-amber-50 text-xs text-amber-700 flex items-center justify-between">
+              <span>今日 {usage.daily_limit} 次免费对话已用完。升级 VIP 即可解锁无限对话。</span>
+              <a
+                href="/settings"
+                className="ml-3 inline-flex items-center px-2.5 py-1 rounded-md bg-amber-500 hover:bg-amber-600 text-white text-xs font-medium"
+              >
+                升级 VIP
+              </a>
+            </div>
+          )}
           <div className="border-t border-[#EEF1F7] p-3">
             <div className="flex gap-2 items-end">
               <input
@@ -498,7 +524,7 @@ export default function WorkspaceTab({ taskId }) {
               />
               <button
                 onClick={() => fileInputRef.current?.click()}
-                disabled={streaming}
+                disabled={streaming || quotaReached}
                 className="p-2 text-[#4B5A72] hover:text-[#0D2145] disabled:opacity-50 transition-colors"
                 title="上传补充材料 (PDF/PPTX/DOCX/XLSX/CSV/TXT)"
               >
@@ -508,13 +534,19 @@ export default function WorkspaceTab({ taskId }) {
                 value={input}
                 onChange={e => setInput(e.target.value)}
                 onKeyDown={e => {
-                  if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+                  if (e.key === "Enter" && !e.shiftKey && !quotaReached && !e.nativeEvent.isComposing) {
                     e.preventDefault();
                     handleSend();
                   }
                 }}
-                placeholder={streaming ? "AI 正在思考..." : "输入消息（Enter 发送 / Shift+Enter 换行）"}
-                disabled={streaming}
+                placeholder={
+                  quotaReached
+                    ? "今日对话已达上限，升级 VIP 后可继续"
+                    : streaming
+                    ? "AI 正在思考..."
+                    : "输入消息（Enter 发送 / Shift+Enter 换行）"
+                }
+                disabled={streaming || quotaReached}
                 rows={1}
                 className="flex-1 bg-[#EEF1F7] border border-[#D8DCE8] rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:border-blue-500 disabled:opacity-50"
                 style={{ maxHeight: 120 }}
@@ -529,7 +561,7 @@ export default function WorkspaceTab({ taskId }) {
               ) : (
                 <button
                   onClick={() => handleSend()}
-                  disabled={!input.trim() && pendingFiles.length === 0}
+                  disabled={quotaReached || (!input.trim() && pendingFiles.length === 0)}
                   className="px-3 py-2 bg-[#1B4FD8] hover:bg-[#163069] disabled:bg-[#E5E9F4] disabled:text-[#8E9BB0] text-white rounded-lg flex items-center gap-1.5"
                 >
                   <Send className="w-4 h-4" />

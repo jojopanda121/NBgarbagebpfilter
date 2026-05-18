@@ -115,7 +115,7 @@ function createTemplate(opts) {
   }
 
   async function generateJson(materials, runOpts = {}) {
-    const { useSearch = true, extraInstructions = null } = runOpts;
+    const { useSearch = true, extraInstructions = null, searchQueries = [] } = runOpts;
     if (!materials || typeof materials !== "string" || materials.trim().length < 20) {
       throw new Error(`[${name}] 公司材料不足, 至少 20 字`);
     }
@@ -124,6 +124,10 @@ function createTemplate(opts) {
       maxTokens,
       maxRepairs: 2,
       useSearch,
+      preSearchQueries: searchQueries,
+      // P2-4 模型路由：template 名直接映射 skillId
+      // (investment_snapshot / project_brief / investment_deck → 经 SKILL_TIER_MAP 路由)
+      skillId: name,
     });
     return { json: result.data, searchUsed: !!result.searchUsed, repairs: result.repairs };
   }
@@ -163,15 +167,31 @@ function createTemplate(opts) {
         503
       );
     }
+    // doc-service 偶发抖动 → 一次重试再放弃, 避免单次 fetch failed 直接报错
     let resp;
-    try {
-      resp = await fetch(`${config.docServiceUrl}${endpoint}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(json),
-      });
-    } catch (err) {
-      throw new TemplateRenderError(`[${name}] doc-service 不可达: ${err.message}`, 503);
+    let lastFetchErr;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        resp = await fetch(`${config.docServiceUrl}${endpoint}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(json),
+        });
+        lastFetchErr = null;
+        break;
+      } catch (err) {
+        lastFetchErr = err;
+        if (attempt === 0) {
+          logger.warn(`[PptxTemplate/${name}] doc-service fetch 失败, 1.5s 后重试: ${err.message}`);
+          await new Promise((r) => setTimeout(r, 1500));
+        }
+      }
+    }
+    if (lastFetchErr) {
+      throw new TemplateRenderError(
+        `文档渲染服务暂时不可用, 请稍后重试. (后台细节: ${lastFetchErr.message})`,
+        503
+      );
     }
     if (!resp.ok) {
       let detail = "";

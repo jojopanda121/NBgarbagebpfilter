@@ -1,7 +1,7 @@
 {
   "type": "object",
   "additionalProperties": false,
-  "required": ["brand", "top_metrics", "sections"],
+  "required": ["brand", "top_metrics", "sections", "template_used"],
   "properties": {
     "brand": {
       "type": "object",
@@ -27,6 +27,112 @@
           "title": { "type": "string" },
           "value": { "type": "string" },
           "description": { "type": "string" }
+        }
+      }
+    },
+    "template_used": {
+      "type": "string",
+      "enum": ["value_chain", "ue_flywheel", "positioning_map", "generic_kpi"],
+      "description": "由 LLM 按优先级链选定的视觉模板。优先级：value_chain > ue_flywheel > positioning_map > generic_kpi。每个模板有 required 数据条件，未满足时必须降级。"
+    },
+    "template_fallback_reason": {
+      "type": "string",
+      "description": "若 template_used != value_chain，写一句话说明上层模板为何未被选中（数据缺什么）。template_used == value_chain 时填 ''。"
+    },
+    "value_chain": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["nodes", "company_position_index", "profit_pool_note"],
+      "description": "产业链价值流转图。触发条件：材料中识别出 ≥3 个上下游角色 + 利润池信号。",
+      "properties": {
+        "nodes": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 6,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["stage", "role"],
+            "properties": {
+              "stage": { "type": "string", "description": "环节名，如 '上游元器件' / '本公司' / '渠道经销商' / '终端客户'" },
+              "role": { "type": "string", "description": "该环节代表性玩家或角色描述，≤30 字" },
+              "value_capture": { "type": "string", "description": "该环节的价值/利润占比口径，如 '占总利润 35%' / '低毛利组装环节'，无则填 '待核实'" }
+            }
+          }
+        },
+        "company_position_index": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "目标公司在 nodes 中的索引位置（0 起算）"
+        },
+        "profit_pool_note": { "type": "string", "description": "≤60 字，说明产业链利润池主要落在哪一环、本公司切的是哪块蛋糕" }
+      }
+    },
+    "ue_flywheel": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["nodes", "ltv_cac", "payback_months"],
+      "description": "单位经济飞轮。触发条件：材料中至少有 LTV / CAC / payback / churn 其中 2 项。",
+      "properties": {
+        "nodes": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 6,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["label", "metric"],
+            "properties": {
+              "label": { "type": "string", "description": "飞轮节点名，如 '更低 CAC' / '更高 LTV' / '更多复购' / '更强口碑' / '更多新客'" },
+              "metric": { "type": "string", "description": "节点关联的数字/口径，如 'CAC ¥420 (-18% YoY)' / 'NRR 118%'，无则 '待核实'" }
+            }
+          }
+        },
+        "ltv_cac": { "type": "string", "description": "LTV/CAC 比值，含口径，如 '3.8x (cohort: 2024)' 或 '待核实'" },
+        "payback_months": { "type": "string", "description": "回本月数，如 '11 个月' 或 '待核实'" }
+      }
+    },
+    "positioning_map": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["x_axis", "y_axis", "points"],
+      "description": "二维竞对站位图。触发条件：≥3 个竞对 + 两个可量化维度。",
+      "properties": {
+        "x_axis": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["label", "low_anchor", "high_anchor"],
+          "properties": {
+            "label": { "type": "string", "description": "X 轴语义，如 '价格 (低→高)' / '消费级→企业级'" },
+            "low_anchor": { "type": "string", "description": "低端锚点描述，≤14 字" },
+            "high_anchor": { "type": "string", "description": "高端锚点描述，≤14 字" }
+          }
+        },
+        "y_axis": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["label", "low_anchor", "high_anchor"],
+          "properties": {
+            "label": { "type": "string" },
+            "low_anchor": { "type": "string" },
+            "high_anchor": { "type": "string" }
+          }
+        },
+        "points": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 8,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "x", "y", "is_target"],
+            "properties": {
+              "name": { "type": "string", "description": "公司名，≤20 字" },
+              "x": { "type": "number", "minimum": 0, "maximum": 1, "description": "X 轴归一化坐标，0=low, 1=high" },
+              "y": { "type": "number", "minimum": 0, "maximum": 1 },
+              "is_target": { "type": "boolean", "description": "是否为目标公司" }
+            }
+          }
         }
       }
     },

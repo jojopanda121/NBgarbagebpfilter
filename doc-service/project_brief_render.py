@@ -215,7 +215,7 @@ def _render_team_financials_valuation(prs, content):
                          {"x": 0.96, "y": 6.05, "w": 5.92, "h": 1.58})
     add_rect(slide, {"x": 7.05, "y": 6.05, "w": 0.012, "h": 1.52},
              fill=COLOR["border"])
-    _draw_risk_list(slide, content["risks"],
+    _draw_risk_list(slide, content["risks"], content.get("deal_breakers") or [],
                     {"x": 7.18, "y": 6.05, "w": 3.46, "h": 1.58})
 
     _add_page_footer(slide, 3, PAGE_TOTAL, content["company_full_name"])
@@ -342,20 +342,39 @@ def _draw_valuation_view(slide, vv, geom):
             size=SIZE["body"], color=COLOR["ink"])
 
 
-def _draw_risk_list(slide, risks, geom):
-    """紧凑风险列表: 只承载 3 条标签 + 缓释/影响句, 防止挤爆 P3."""
+def _draw_risk_list(slide, risks, deal_breakers, geom):
+    """紧凑风险列表: deal_breakers (0-2 条, 加粗深红 ⚠) + 核心风险 3 条.
+    总条数 ≤ 5, 在 1.58" 高度内紧凑排列, 字号 SIZE["table"] - 0.5 略缩.
+    """
     tf = add_text(slide,
                   {"x": geom["x"], "y": geom["y"],
                    "w": geom["w"], "h": 0.24}, margin=0.02)
-    set_run(add_para(tf, "l").add_run(), "核心风险",
+    has_db = len(deal_breakers) > 0
+    header = "致命伤 / 风险" if has_db else "核心风险"
+    set_run(add_para(tf, "l").add_run(), header,
             size=SIZE["label_inline"], bold=True, color=COLOR["red"])
 
-    row_h = (geom["h"] - 0.28) / 3
-    for i, item in enumerate(risks[:3]):
-        y = geom["y"] + 0.30 + i * row_h
+    total_items = min(len(deal_breakers), 2) + min(len(risks), 3)
+    row_h = (geom["h"] - 0.28) / max(total_items, 1)
+    idx = 0
+    for db in deal_breakers[:2]:
+        y = geom["y"] + 0.30 + idx * row_h
         tf = add_text(slide,
                       {"x": geom["x"], "y": y,
-                       "w": geom["w"], "h": row_h - 0.03},
+                       "w": geom["w"], "h": row_h - 0.02},
+                      margin=0.02)
+        p = add_para(tf, "l", space_after_pt=1)
+        p.line_spacing = 1.0
+        set_run(p.add_run(), f"⚠ {db.get('title', '')}：",
+                size=SIZE["table"], bold=True, color=COLOR["red"])
+        set_run(p.add_run(), db.get("logic", ""),
+                size=SIZE["table"], color=COLOR["ink"])
+        idx += 1
+    for item in risks[:3]:
+        y = geom["y"] + 0.30 + idx * row_h
+        tf = add_text(slide,
+                      {"x": geom["x"], "y": y,
+                       "w": geom["w"], "h": row_h - 0.02},
                       margin=0.02)
         p = add_para(tf, "l", space_after_pt=1)
         p.line_spacing = 1.05
@@ -363,6 +382,7 @@ def _draw_risk_list(slide, risks, geom):
                 size=SIZE["table"], bold=True, color=COLOR["red"])
         set_run(p.add_run(), item["desc"],
                 size=SIZE["table"], color=COLOR["ink"])
+        idx += 1
 
 
 def render(content: dict, out_path: str):

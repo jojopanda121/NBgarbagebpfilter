@@ -157,6 +157,19 @@ def render(content: dict, out_path: str):
             size=SIZE["section"], bold=True, color=COLOR["white"])
     add_rect(slide, LAYOUT["block_risk"], fill=COLOR["red_bg"])
     tf = add_text(slide, LAYOUT["body_risk"], margin=0.08)
+    # Deal-breakers 先行 (如果有). 与 risks 视觉区分: "致命伤 ⚠️" 加深红粗体 + 证伪条件.
+    deal_breakers = content.get("deal_breakers") or []
+    for db in deal_breakers:
+        p = add_para(tf, "l", space_after_pt=2)
+        set_run(p.add_run(), f"致命伤 · {db.get('title', '')}：",
+                size=SIZE["label_inline"], bold=True, color=COLOR["red"])
+        set_run(p.add_run(), db.get("logic", ""),
+                size=SIZE["body"], color=COLOR["ink"])
+        p = add_para(tf, "l", space_after_pt=2)
+        set_run(p.add_run(), "证伪条件：",
+                size=SIZE["label_inline"], bold=True, color=COLOR["mid"])
+        set_run(p.add_run(), db.get("falsification_test", ""),
+                size=SIZE["body"], color=COLOR["mid"])
     for item in content["risks"]:
         p = add_para(tf, "l", space_after_pt=2)
         set_run(p.add_run(), f"{item['label']}：",

@@ -42,6 +42,13 @@ const config = {
   // MiniMax LLM
   minimaxApiKey: process.env.MINIMAX_API_KEY || "",
   minimaxModel: process.env.MINIMAX_MODEL || "MiniMax-M2.7",
+  // P2-4 per-skill 模型路由 (可选)：
+  //   heavy  → deck / memo / investmentDeckPptx / icQuestions 等重任务
+  //   light  → snapshot / brief / one-pager / 语义抽样审计 等轻任务
+  //   default→ 其他所有 skill（兜底）
+  // 任一字段未配置时回落到 minimaxModel，保持单模型行为不变。
+  minimaxModelHeavy: process.env.MINIMAX_MODEL_HEAVY || "",
+  minimaxModelLight: process.env.MINIMAX_MODEL_LIGHT || "",
   minimaxImageModel: process.env.MINIMAX_IMAGE_MODEL || "image-01",
   minimaxCodePlanKey: process.env.MINIMAX_CODE_PLAN_KEY || process.env.MINIMAX_CODING_API_KEY || "",
   minimaxApiHost: process.env.MINIMAX_API_HOST || "https://api.minimaxi.com",

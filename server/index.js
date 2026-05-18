@@ -211,6 +211,66 @@ function checkPythonDeps() {
 }
 checkPythonDeps();
 
+// ── doc-service 自启动 ──
+// 没有 pm2 / 没有外部部署的场景（npm run dev、单机 node 起服务）下,
+// 自动 fork 一个 uvicorn 子进程, 避免投决速览/竞品矩阵/IC 问题清单/xlsx/docx
+// 这些依赖 doc-service 的产出因为「忘了起 Python」而集体失败.
+//
+// 仅当 docServiceUrl 指向 localhost:8001 (默认 dev 值) 时才启动;
+// 显式配置远程 url 则跳过, 由部署侧自己保证.
+let _docServiceChild = null;
+function bootDocServiceIfLocal() {
+  const url = config.docServiceUrl || "";
+  const isLocal = /^https?:\/\/(localhost|127\.0\.0\.1):8001\/?$/.test(url);
+  if (!isLocal) return;
+
+  const http = require("http");
+  // 先 probe: 已经在跑就别重复启
+  const probeReq = http.get(`${url.replace(/\/$/, "")}/health`, { timeout: 1500 }, (res) => {
+    res.resume();
+    if (res.statusCode === 200) {
+      console.log("[doc-service] 已检测到 8001 端口在运行, 跳过自启");
+    } else {
+      spawnDocService();
+    }
+  });
+  probeReq.on("timeout", () => { probeReq.destroy(new Error("timeout")); });
+  probeReq.on("error", () => { spawnDocService(); });
+}
+
+function spawnDocService() {
+  const { spawn } = require("child_process");
+  const docDir = path.join(__dirname, "..", "doc-service");
+  if (!fs.existsSync(path.join(docDir, "main.py"))) {
+    console.warn(`[doc-service] 未找到 ${docDir}/main.py, 跳过自启`);
+    return;
+  }
+  console.log("[doc-service] 自启 uvicorn 子进程 ...");
+  const child = spawn(
+    "python3",
+    ["-m", "uvicorn", "main:app", "--host", "127.0.0.1", "--port", "8001"],
+    { cwd: docDir, stdio: ["ignore", "pipe", "pipe"], env: process.env }
+  );
+  _docServiceChild = child;
+
+  child.stdout.on("data", (d) => process.stdout.write(`[doc-service] ${d}`));
+  child.stderr.on("data", (d) => process.stderr.write(`[doc-service] ${d}`));
+  child.on("error", (err) => {
+    console.error(
+      `[doc-service] 启动失败: ${err.message}\n` +
+      "  这会导致投决速览/竞品矩阵/IC 问题清单/xlsx/docx 产出全部不可用.\n" +
+      "  解决: 安装 Python 3.10+ 并执行 npm run install:doc-service"
+    );
+  });
+  child.on("exit", (code, signal) => {
+    _docServiceChild = null;
+    if (!shuttingDown) {
+      console.warn(`[doc-service] 子进程退出 (code=${code}, signal=${signal})`);
+    }
+  });
+}
+bootDocServiceIfLocal();
+
 // ── 启动 ──
 const PORT = config.port;
 const server = app.listen(PORT, () => {
@@ -246,6 +306,7 @@ function gracefulShutdown(signal) {
   server.close(() => {
     console.log("All connections closed, exiting...");
     try { const { closeDb } = require("./db"); closeDb(); } catch {}
+    try { if (_docServiceChild && !_docServiceChild.killed) _docServiceChild.kill("SIGTERM"); } catch {}
     process.exit(0);
   });
   setTimeout(() => {

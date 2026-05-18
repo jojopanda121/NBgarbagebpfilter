@@ -11,6 +11,7 @@ function _loadDeps() {
   return {
     tmpl: require("../services/project_brief"),
     ws: require("../services/workspaceService"),
+    augmentMaterialsWithEvidence: require("./_evidenceMaterial").augmentMaterialsWithEvidence,
   };
 }
 
@@ -41,12 +42,20 @@ module.exports = {
         type: "string",
         description: "可选, 公司名提示",
       },
+      enable_bp_deep_parsing: {
+        type: "boolean",
+        description: "可选. 开启后并行跑 3 个 BP 深度解析 agent. 默认走 env ENABLE_BP_DEEP_PARSING.",
+      },
+      enable_institutional_memory: {
+        type: "boolean",
+        description: "可选. 开启后注入机构历史先例 (K 编号). 默认走 env ENABLE_INSTITUTIONAL_MEMORY.",
+      },
     },
     additionalProperties: false,
   },
 
   async run({ project, params, ctx }) {
-    const { tmpl, ws } = _loadDeps();
+    const { tmpl, ws, augmentMaterialsWithEvidence } = _loadDeps();
 
     const parts = [];
     if (params.company_hint) parts.push(`【目标公司】${params.company_hint}`);
@@ -61,7 +70,7 @@ module.exports = {
         }
       } catch { /* swallow; 没有项目上下文不阻塞 */ }
     }
-    const materials = parts.join("\n\n").trim();
+    let materials = parts.join("\n\n").trim();
     if (materials.length < 20) {
       return {
         ok: false,
@@ -69,10 +78,29 @@ module.exports = {
           "公司材料不足. 请在 materials 参数提供原始资料, 或先在 workspace 关联一个已分析的项目.",
       };
     }
+    let evidenceMeta = {};
+    try {
+      const augmented = await augmentMaterialsWithEvidence({
+        project,
+        ctx,
+        skillId: "project_brief",
+        materials,
+        companyHint: params.company_hint || "",
+        enableBpDeepParsing: params.enable_bp_deep_parsing,
+        enableInstitutionalMemory: params.enable_institutional_memory,
+      });
+      materials = augmented.materials;
+      evidenceMeta = { ...(augmented.evidence || {}), searchQueries: augmented.searchQueries || [] };
+    } catch (err) {
+      console.warn("[project_brief] Evidence Pack 注入失败，继续使用原材料:", err.message);
+    }
 
     let result;
     try {
-      result = await tmpl.generate(materials, { useSearch: true });
+      result = await tmpl.generate(materials, {
+        useSearch: !evidenceMeta.searchUsed,
+        searchQueries: evidenceMeta.searchQueries || [],
+      });
     } catch (err) {
       if (err.name === "TemplateSchemaError") {
         return { ok: false, error: `内容 JSON 不合 schema: ${err.message}` };
@@ -127,7 +155,21 @@ module.exports = {
         bufferBase64: buffer.toString("base64"),
         workspaceArtifactId: artifactRow?.id || null,
         payload: json,
-        searchUsed,
+        searchUsed: searchUsed || !!evidenceMeta.searchUsed,
+        evidence: {
+          searchUsed: !!evidenceMeta.searchUsed,
+          uploadCount: evidenceMeta.uploadCount || 0,
+        },
+      },
+      // P3 fix-E：可观测指标统一放 result.metadata
+      metadata: {
+        evidence_search_used: !!(searchUsed || evidenceMeta.searchUsed),
+        upload_facts_used: evidenceMeta.uploadCount || 0,
+        bp_deep_parsing_used: !!evidenceMeta.bpDeepUsed,
+        bp_deep_fact_count: evidenceMeta.bpDeepCount || 0,
+        bp_deep_reason: evidenceMeta.bpDeepReason || null,
+        institutional_memory_used: !!evidenceMeta.institutionalMemoryUsed,
+        institutional_memory_count: evidenceMeta.institutionalMemoryCount || 0,
       },
     };
   },

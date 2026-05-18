@@ -50,6 +50,8 @@
               "timeline",
               "financial_table",
               "valuation_sensitivity",
+              "cap_table",
+              "downside_case",
               "risk_mitigation",
               "next_steps"
             ]

@@ -147,6 +147,22 @@
           "mitigant": { "type": "string", "minLength": 12, "maxLength": 80, "description": "缓解措施/兜底机制, render 自动以 '缓解: ' 前缀拼接." }
         }
       }
+    },
+    "deal_breakers": {
+      "type": "array",
+      "description": "Deal-breaker (致命伤) 0-2 条. 每条必须可证伪. 区别于 risks: risks 是 '需要监控的', deal_breakers 是 '不解决就杀掉这笔交易'.",
+      "minItems": 0,
+      "maxItems": 2,
+      "items": {
+        "type": "object",
+        "required": ["title", "logic", "falsification_test"],
+        "additionalProperties": false,
+        "properties": {
+          "title":              { "type": "string", "minLength": 4, "maxLength": 16 },
+          "logic":              { "type": "string", "minLength": 24, "maxLength": 140, "description": "为什么这条不解决就死. 必须可验证, 不是泛泛'市场风险'." },
+          "falsification_test": { "type": "string", "minLength": 12, "maxLength": 100, "description": "做什么尽调动作 / 拿到什么证据能洗清这一条. 不能写'继续观察'." }
+        }
+      }
     }
   }
 }

@@ -4,7 +4,9 @@
   "metadata": {
     "industry": "AI 存储 / 数据基础设施",
     "stage": "Pre-IPO",
-    "location": "北京"
+    "location": "北京",
+    "business_model": "B2B 软件 (License)",
+    "dd_stage": "DD 进行中"
   },
   "dealroom_meta": {
     "round_size": "未披露",
@@ -44,6 +46,13 @@
       "desc": "GPU 与存储硬件价格波动挤压一体机毛利, 季度毛利率需设 60% 红线监控。"
     }
   ],
+  "deal_breakers": [
+    {
+      "title": "应收账款超标",
+      "logic": "应收账款激增 208%, 远超收入增速, 若 Q4 集中坏账, 现金转换周期可能直接拖死扩张, 估值倍数失去支撑.",
+      "falsification_test": "拉前 10 大客户账龄分析 + 抽样 3 家做回款承诺访谈, 验证 90 天以内占比 ≥ 65%."
+    }
+  ],
   "team": [
     {
       "name": "胥昕",
@@ -73,5 +82,11 @@
     "comp_anchor": "对标纯石科技 2024 B+ 轮 12x ARR, 上市可比公司 NetApp 4-5x PS",
     "recommended_range": "120-150 亿人民币 Pre-money",
     "rationale": "按 2025E ARR 6 亿 + 12x 给 72 亿 (一级折价), 叠加 NRR 141% 给 +30% 估值溢价, 区间锚定 120-150 亿。"
-  }
+  },
+  "next_steps": [
+    { "action": "拉前 10 大客户账龄分析, 验证回款拐点真实性", "owner": "财务尽调", "due_date": "T+2 周", "action_type": "收集材料" },
+    { "action": "访谈 CTO, 验证 AIMesh 量产时点与 KA 复制路径", "owner": "技术尽调", "due_date": "T+1 周", "action_type": "访谈" },
+    { "action": "梳理科创板 IPO 申报材料合规缺口", "owner": "法务", "due_date": "T+3 周", "action_type": "走法务" },
+    { "action": "投委会上会, 决定是否进 TS", "owner": "合伙人", "due_date": "IC 前", "action_type": "走 IC" }
+  ]
 }

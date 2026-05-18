@@ -126,6 +126,12 @@ risks × 2 (含 mitigant)             ← 底部风险与缓解
 - desc 先指出风险源, 再说潜在影响; mitigant 写如何监控/缓解.
 - mitigant 不要写 "建议关注" 这种空话; 要给可执行动作 (访谈 / 拉数据 / 设红线).
 
+### `deal_breakers[]` (0-2 条, 可选但强烈建议)
+- 与 `risks` 严格分开: risks 是 "需要监控的", deal_breakers 是 "不解决就杀掉这笔交易".
+- 每条必须**可证伪**: falsification_test 写"做什么尽调动作 / 拿到什么证据能洗清这一条". 例: "拿到前 5 大客户合同验证集中度 ≤ 35%" / "看到 CTO 真实在岗证明，不再 part-time".
+- 禁止写"市场风险大"/"竞争激烈"这种空话. 真没看到 deal-breaker 信号就**留空数组**, **不要凑数**.
+- logic 必须能引用 highlights 或 risks 的具体事实链, 不能孤立成段.
+
 ---
 
 ## 输出格式
@@ -147,7 +153,8 @@ risks × 2 (含 mitigant)             ← 底部风险与缓解
     "traction":     [{"metric":"...","value":"...","note":"..."}, x3]
   },
   "highlights": [{"label":"...","desc":"..."}, x4],
-  "risks":      [{"label":"...","desc":"...","mitigant":"..."}, x2]
+  "risks":      [{"label":"...","desc":"...","mitigant":"..."}, x2],
+  "deal_breakers": [{"title":"...","logic":"...","falsification_test":"..."}, 0-2 项]
 }
 ```
 

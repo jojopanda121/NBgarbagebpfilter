@@ -119,6 +119,15 @@ async function execute({ skillId, params = {}, project = null, userId, ctx = {} 
   const db = getDb();
   const runId = require("crypto").randomUUID();
   const startedAt = Date.now();
+  try {
+    db.prepare(
+      `UPDATE skill_runs
+       SET status='failed',
+           error='stale running run auto-closed before new execution',
+           finished_at=datetime('now')
+       WHERE status='running' AND created_at < datetime('now', '-30 minutes')`
+    ).run();
+  } catch (_) { /* older schemas/tests may not have skill_runs */ }
   db.prepare(
     `INSERT INTO skill_runs (id, skill_id, user_id, project_id, params_json, status)
      VALUES (?, ?, ?, ?, ?, 'running')`
@@ -133,13 +142,48 @@ async function execute({ skillId, params = {}, project = null, userId, ctx = {} 
       ).run(errMsg, Date.now() - startedAt, runId);
       return { ok: false, runId, error: errMsg };
     }
-    db.prepare(
-      `UPDATE skill_runs SET status='succeeded', artifact_json=?, duration_ms=?, finished_at=datetime('now') WHERE id=?`
-    ).run(
-      JSON.stringify(result.artifact || null),
-      Date.now() - startedAt,
-      runId
-    );
+    // P3-4 metricsAggregator 友好: metadata 单独落 metadata_json 列, 避免后续聚合
+    // 时逐行 JSON.parse(artifact_json). 旧 schema 没有 metadata_json 列时 silently 降级。
+    let metricsMetadata = null;
+    if (result.metadata && typeof result.metadata === "object") {
+      // 只挑跟可观测指标相关的子集, 避免存大块原始 payload
+      metricsMetadata = {
+        fallback: result.metadata.fallback || null,
+        semantic_audit: result.metadata.semantic_audit || null,
+        bp_deep_parsing_used: !!result.metadata.bp_deep_parsing_used,
+        bp_deep_fact_count: result.metadata.bp_deep_fact_count || 0,
+        institutional_memory_used: !!result.metadata.institutional_memory_used,
+        institutional_memory_count: result.metadata.institutional_memory_count || 0,
+        sector_compliance_hits: result.metadata.sector_compliance_hits || [],
+        evidence_search_used: !!result.metadata.evidence_search_used,
+        upload_facts_used: result.metadata.upload_facts_used || 0,
+        llm_repairs: result.metadata.llm_repairs ?? null,
+        grounding_ok: result.metadata.grounding?.ok ?? null,
+        grounding_referenced_count: result.metadata.grounding?.referenced_count ?? null,
+        valuation_exit_error: result.metadata.valuation_exit_error || null,
+        closed_question_fixes: result.metadata.closed_question_fixes ?? null,
+        pipeline_steps: result.metadata.pipeline_steps ?? null,
+      };
+    }
+    try {
+      db.prepare(
+        `UPDATE skill_runs SET status='succeeded', artifact_json=?, metadata_json=?, duration_ms=?, finished_at=datetime('now') WHERE id=?`
+      ).run(
+        JSON.stringify(result.artifact || null),
+        metricsMetadata ? JSON.stringify(metricsMetadata) : null,
+        Date.now() - startedAt,
+        runId
+      );
+    } catch (e) {
+      // 旧 schema 没 metadata_json 列时回退到老 UPDATE
+      db.prepare(
+        `UPDATE skill_runs SET status='succeeded', artifact_json=?, duration_ms=?, finished_at=datetime('now') WHERE id=?`
+      ).run(
+        JSON.stringify(result.artifact || null),
+        Date.now() - startedAt,
+        runId
+      );
+    }
     return { ok: true, runId, artifact: result.artifact, metadata: result.metadata };
   } catch (err) {
     logger.warn(`[Skills/${skillId}] 失败: ${err.message}`);

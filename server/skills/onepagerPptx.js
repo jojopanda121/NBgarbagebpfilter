@@ -20,6 +20,8 @@ function _loadDeps() {
     pptService: require("../services/pptService"),
     ws: require("../services/workspaceService"),
     precheck: require("../agents/quality/materialPrecheck").precheck,
+    augmentMaterialsWithEvidence: require("./_evidenceMaterial").augmentMaterialsWithEvidence,
+    summarizeFallback: require("./_groundingAudit").summarizeFallback,
   };
 }
 
@@ -85,12 +87,20 @@ module.exports = {
         type: "boolean",
         description: "true 时清缓存重新生成. 仅 bp_analysis 模式生效 (materials 模式本就不写缓存).",
       },
+      enable_bp_deep_parsing: {
+        type: "boolean",
+        description: "可选. 开启后并行跑 3 个 BP 深度解析 agent (财务三表/单位经济/客户清单), 默认走 env ENABLE_BP_DEEP_PARSING.",
+      },
+      enable_institutional_memory: {
+        type: "boolean",
+        description: "可选. 开启后注入机构历史先例 (K 编号), 默认走 env ENABLE_INSTITUTIONAL_MEMORY.",
+      },
     },
     additionalProperties: false,
   },
 
   async run({ project, params, ctx }) {
-    const { pptService, ws, precheck } = _loadDeps();
+    const { pptService, ws, precheck, augmentMaterialsWithEvidence, summarizeFallback } = _loadDeps();
 
     // 模式判定: 显式 source_mode 优先; 否则若传了 materials, 隐式走 materials 模式;
     // 否则走默认 bp_analysis. 这种自动兜底让 LLM 忘带 source_mode 也能跑.
@@ -136,6 +146,47 @@ module.exports = {
         return { ok: false, error: `materials 模式生成失败: ${err.message}` };
       }
       companyName = cache.json.company_name;
+    } else if (ctx?.conversationId && project?.latest_task_id) {
+      // Workspace 快捷产出优先使用“当前会话证据包”：用户上传的财务/访谈/补充材料
+      // 要压过旧 onepager_cache，避免生成结果只复用早期 BP 分析。
+      try {
+        let materials = ws.buildEnhancedProjectContext(
+          project.latest_task_id,
+          ctx.conversationId,
+          "一页投资亮点 PPT 北极星指标 TAM 交易概况 风险"
+        );
+        const augmented = await augmentMaterialsWithEvidence({
+          project,
+          ctx,
+          skillId: "onepager_pptx",
+          materials,
+          companyHint: params.company_hint || project?.name || "",
+          industryHint: params.industry_hint || project?.industry || "",
+          enableBpDeepParsing: params.enable_bp_deep_parsing,
+          enableInstitutionalMemory: params.enable_institutional_memory,
+        });
+        materials = augmented.materials;
+        cache = await pptService.generateOnePagerFromMaterials(materials, {
+          companyHint: params.company_hint || project?.name || "",
+          industryHint: params.industry_hint || project?.industry || "",
+          stageHint: params.stage_hint || project?.stage || "",
+          userOverrides: params.user_overrides || null,
+        });
+        cache.search_used = cache.search_used || !!augmented.evidence?.searchUsed;
+        cache.evidence = {
+          searchUsed: !!augmented.evidence?.searchUsed,
+          uploadCount: augmented.evidence?.uploadCount || 0,
+          // P3 fix-E: 透传 BP 深度解析 / 机构记忆 metrics 到 metadata
+          bpDeepUsed: !!augmented.evidence?.bpDeepUsed,
+          bpDeepCount: augmented.evidence?.bpDeepCount || 0,
+          bpDeepReason: augmented.evidence?.bpDeepReason || null,
+          institutionalMemoryUsed: !!augmented.evidence?.institutionalMemoryUsed,
+          institutionalMemoryCount: augmented.evidence?.institutionalMemoryCount || 0,
+        };
+        companyName = cache.json.company_name;
+      } catch (err) {
+        return { ok: false, error: `workspace evidence 模式生成失败: ${err.message}` };
+      }
     } else {
       // bp_analysis 默认模式
       const taskId = project?.latest_task_id;
@@ -186,6 +237,7 @@ module.exports = {
       });
     }
 
+    const fallback = summarizeFallback(cache.json, "onepager_pptx");
     return {
       ok: true,
       artifact: {
@@ -199,7 +251,20 @@ module.exports = {
         payload: cache.json,
         sourceMode: mode,
         searchUsed: cache.search_used,
+        evidence: cache.evidence || null,
         generatedAt: cache.generated_at,
+        fallback,
+      },
+      // P3 fix-E：把可观测指标统一放 result.metadata 让 registry 落入 skill_runs.metadata_json
+      metadata: {
+        evidence_search_used: !!cache.search_used,
+        upload_facts_used: cache.evidence?.uploadCount || 0,
+        bp_deep_parsing_used: !!cache.evidence?.bpDeepUsed,
+        bp_deep_fact_count: cache.evidence?.bpDeepCount || 0,
+        institutional_memory_used: !!cache.evidence?.institutionalMemoryUsed,
+        institutional_memory_count: cache.evidence?.institutionalMemoryCount || 0,
+        fallback,
+        source_mode: mode,
       },
     };
   },

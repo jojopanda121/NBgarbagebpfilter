@@ -18,10 +18,86 @@ const anthropic = new Anthropic({
 
 const MODEL = config.minimaxModel;
 
+// ── P2-4 per-skill 模型路由 ─────────────────────────────────
+// 三档：heavy / default / light。每档可走不同 model name；未配置时回落 default。
+// 路由表按 skillId / taskHint 命中；都不命中 → "default" 档。
+const MODEL_TIERS = {
+  heavy: () => config.minimaxModelHeavy || MODEL,
+  default: () => MODEL,
+  light: () => config.minimaxModelLight || MODEL,
+};
+
+// skillId / taskHint → tier
+// heavy：长 deck、IC 多步对抗、估值/退出推演 (token 多 + 推理重)
+// light：1 页材料抽取、视觉信息提炼、语义抽样校验 (短任务 + 模板化)
+// 注：包含 skill id 和 pptxTemplate name 的两套命名，便于不同入口路由
+const SKILL_TIER_MAP = {
+  // heavy
+  investment_deck_pptx: "heavy",
+  investment_deck: "heavy",       // pptxTemplate name
+  ic_questions_xlsx: "heavy",
+  ic_memo: "heavy",
+  // light
+  onepager_pptx: "light",
+  investment_snapshot: "light",
+  project_brief: "light",
+  highlight_visual: "light",
+  teaser_generate: "light",
+};
+const TASK_HINT_TIER_MAP = {
+  semantic_audit: "light",
+  bp_deep_parsing: "default",  // 三表抽取需要中等理解力，走 default
+};
+
+function _resolveModelTier(opts = {}) {
+  if (opts && opts.modelTier && MODEL_TIERS[opts.modelTier]) return opts.modelTier;
+  if (opts && opts.taskHint && TASK_HINT_TIER_MAP[opts.taskHint]) return TASK_HINT_TIER_MAP[opts.taskHint];
+  if (opts && opts.skillId && SKILL_TIER_MAP[opts.skillId]) return SKILL_TIER_MAP[opts.skillId];
+  return "default";
+}
+
+function _resolveModel(opts = {}) {
+  const tier = _resolveModelTier(opts);
+  return MODEL_TIERS[tier]();
+}
+
 // 超时和重试配置
 const LLM_TIMEOUT_MS = 300 * 1000;    // 单次请求超时 300s（5分钟），大 prompt 需要更多时间
 const MAX_RETRIES = 3;                  // 最多重试 3 次（共 4 次尝试）
 const BASE_DELAY_MS = 2000;             // 重试基础延迟 2s
+
+// ── Prompt Caching (Anthropic ephemeral cache) ─────────────
+// 默认关闭，因为 MiniMax 兼容端点不一定支持 cache_control 数组形式。
+// 开关：env ENABLE_PROMPT_CACHE=1（生产对接真 Anthropic / Claude 时启用）。
+// 经验阈值：≥ 1500 字符（~ 1000 tokens）才值得标 cache_control，
+// 否则缓存收益不抵开销（Sonnet/Haiku 最低 1024 tokens 才入缓存）。
+const PROMPT_CACHE_MIN_CHARS = 1500;
+function _promptCacheEnabled() {
+  return process.env.ENABLE_PROMPT_CACHE === "1";
+}
+
+// 系统提示如够长且 cache 开启，转成带 cache_control 的 content block 数组。
+// 不够长或未开启 → 原样字符串。
+function _buildCacheableSystem(systemPrompt) {
+  if (!_promptCacheEnabled()) return systemPrompt;
+  if (typeof systemPrompt !== "string" || systemPrompt.length < PROMPT_CACHE_MIN_CHARS) {
+    return systemPrompt;
+  }
+  return [{ type: "text", text: systemPrompt, cache_control: { type: "ephemeral" } }];
+}
+
+// 把用户消息切成 [稳定前缀（缓存）, 动态尾部（不缓存）]。
+// 调用方传 opts.userPrefix = Fact Pack 长文本时，可显著降低重复 token 成本。
+// 不开启缓存或前缀过短 → 直接拼接成单字符串，行为与之前一致。
+function _buildCacheableUserMessage(userContent, userPrefix) {
+  if (!_promptCacheEnabled() || !userPrefix || userPrefix.length < PROMPT_CACHE_MIN_CHARS) {
+    return userPrefix ? `${userPrefix}\n\n${userContent}` : userContent;
+  }
+  return [
+    { type: "text", text: userPrefix, cache_control: { type: "ephemeral" } },
+    { type: "text", text: userContent || "" },
+  ];
+}
 
 function ensureMinimaxConfigured() {
   if (!config.minimaxApiKey) {
@@ -84,10 +160,25 @@ function normalizeLLMError(err) {
   return err;
 }
 
-/** 调用 MiniMax LLM（普通模式），含超时和重试 */
-async function callLLM(systemPrompt, userContent, maxTokens = 8192) {
+/**
+ * 调用 MiniMax LLM（普通模式），含超时和重试。
+ *
+ * @param {string} systemPrompt
+ * @param {string} userContent
+ * @param {number|object} [maxTokensOrOpts=8192]  - 兼容旧签名 (数字 = maxTokens)；
+ *                                                   或传 { maxTokens, userPrefix } 启用 prompt caching
+ */
+async function callLLM(systemPrompt, userContent, maxTokensOrOpts = 8192) {
   ensureMinimaxConfigured();
+  const opts = typeof maxTokensOrOpts === "object" ? maxTokensOrOpts : { maxTokens: maxTokensOrOpts };
+  const { maxTokens = 8192, userPrefix = "" } = opts;
   let lastError;
+
+  // Prompt caching: 系统提示 + 用户消息可选前缀
+  const cachedSystem = _buildCacheableSystem(systemPrompt);
+  const userMessage = _buildCacheableUserMessage(userContent, userPrefix);
+  // P2-4 模型路由
+  const model = _resolveModel(opts);
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     try {
@@ -100,13 +191,13 @@ async function callLLM(systemPrompt, userContent, maxTokens = 8192) {
       const timeout = calcTimeout(maxTokens);
       const resp = await withTimeout(
         anthropic.messages.create({
-          model: MODEL,
+          model,
           max_tokens: maxTokens,
-          system: systemPrompt,
-          messages: [{ role: "user", content: userContent }],
+          system: cachedSystem,
+          messages: [{ role: "user", content: userMessage }],
         }),
         timeout,
-        `callLLM(maxTokens=${maxTokens})`
+        `callLLM(model=${model}, maxTokens=${maxTokens})`
       );
 
       return resp.content
@@ -315,11 +406,12 @@ async function callLLMChat(systemPrompt, messages, opts = {}) {
  * @param {object} [opts]
  * @param {number} [opts.maxTokens=8192]
  * @param {number} [opts.maxToolRounds=6]
+ * @param {string[]} [opts.preSearchQueries] — 服务端先行检索并注入上下文, 避免模型在 JSON 模式下不主动 tool_use
  * @returns {Promise<{ text: string, searchUsed: boolean }>}
  */
 async function callLLMWithSearch(systemPrompt, userContent, opts = {}) {
   ensureMinimaxConfigured();
-  const { maxTokens = 8192, maxToolRounds = 6 } = opts;
+  const { maxTokens = 8192, maxToolRounds = 6, preSearchQueries = [] } = opts;
 
   const tools = [{
     name: "web_search",
@@ -340,6 +432,28 @@ async function callLLMWithSearch(systemPrompt, userContent, opts = {}) {
 
   let searchUsed = false;
   let lastError;
+  let initialUserContent = userContent;
+
+  const forcedQueries = Array.isArray(preSearchQueries)
+    ? preSearchQueries.map((q) => String(q || "").trim()).filter(Boolean)
+    : [];
+  if (forcedQueries.length > 0) {
+    try {
+      const rows = await runWebSearch(forcedQueries);
+      if (rows.length > 0) {
+        searchUsed = true;
+        initialUserContent = [
+          userContent,
+          "",
+          formatSearchContext(rows),
+          "",
+          "重要：上方是服务端已经完成的联网检索证据。涉及市场规模、政策、竞品、融资、诉讼、创始人背景等外部事实时，优先使用这些结果；未被检索结果支撑的信息必须标注待核实，不得补全。",
+        ].join("\n");
+      }
+    } catch (err) {
+      console.warn("[LLM/Search] preSearch 失败，继续使用模型工具搜索:", err.message);
+    }
+  }
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     try {
@@ -349,7 +463,7 @@ async function callLLMWithSearch(systemPrompt, userContent, opts = {}) {
         await sleep(delay);
       }
 
-      const convo = [{ role: "user", content: userContent }];
+      const convo = [{ role: "user", content: initialUserContent }];
       let finalText = "";
 
       // 工具调用循环（兼容客户端 tool_use 格式）
@@ -426,8 +540,14 @@ async function callLLMWithSearch(systemPrompt, userContent, opts = {}) {
   return { text, searchUsed: false };
 }
 
-function getModelName() {
+function getModelName(opts) {
+  // P2-4: 可选传 { skillId, taskHint, modelTier } 查询路由后的实际 model
+  if (opts) return _resolveModel(opts);
   return MODEL;
+}
+
+function getModelTier(opts) {
+  return _resolveModelTier(opts || {});
 }
 
 // ============================================================
@@ -751,7 +871,17 @@ function buildJsonSystemPrompt(originalSystem, schema) {
 }
 
 async function callLLMJson(systemPrompt, userContent, schema, opts = {}) {
-  const { maxTokens = 8192, maxRepairs = 2, useSearch = false } = opts;
+  const {
+    maxTokens = 8192,
+    maxRepairs = 2,
+    useSearch = false,
+    preSearchQueries = [],
+    userPrefix = "", // P2-3 prompt caching: 调用方可把 Fact Pack 等稳定长文本前缀单独传入
+    // P2-4 model routing 信号 (透传给 callLLM)
+    modelTier,       // 显式 'heavy'|'default'|'light'
+    skillId,
+    taskHint,
+  } = opts;
   const sysWithContract = buildJsonSystemPrompt(systemPrompt, schema);
 
   let lastRaw = "";
@@ -759,15 +889,27 @@ async function callLLMJson(systemPrompt, userContent, schema, opts = {}) {
   let repairs = 0;
   let searchUsed = false;
   let conversation = userContent;
+  // 首次尝试可走 cached prefix；repair 轮已经把错误 + 上次输出拼进新 conversation，
+  // 缓存命中率为零，关闭以省一次"试探"开销。
+  let activeUserPrefix = userPrefix;
 
   for (let attempt = 0; attempt <= maxRepairs; attempt++) {
     let raw;
     if (useSearch) {
-      const r = await callLLMWithSearch(sysWithContract, conversation, { maxTokens });
+      const r = await callLLMWithSearch(sysWithContract, conversation, {
+        maxTokens,
+        preSearchQueries: attempt === 0 ? preSearchQueries : [],
+      });
       raw = r.text;
       searchUsed = searchUsed || r.searchUsed;
     } else {
-      raw = await callLLM(sysWithContract, conversation, maxTokens);
+      raw = await callLLM(sysWithContract, conversation, {
+        maxTokens,
+        userPrefix: activeUserPrefix,
+        modelTier,
+        skillId,
+        taskHint,
+      });
     }
     lastRaw = raw;
 
@@ -794,6 +936,9 @@ async function callLLMJson(systemPrompt, userContent, schema, opts = {}) {
       "【原始任务】",
       userContent,
     ].join("\n");
+    // repair 轮起，userPrefix 已经被合并进原始任务的 userContent；
+    // 同时新对话头部包含错误反馈，缓存命中率为 0，关闭以省 cache 探测开销。
+    activeUserPrefix = "";
   }
 
   throw new LLMJsonValidationError(
@@ -811,4 +956,5 @@ module.exports = {
   callLLMJson,
   LLMJsonValidationError,
   getModelName,
+  getModelTier,
 };

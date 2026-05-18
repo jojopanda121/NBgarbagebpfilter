@@ -15,7 +15,8 @@
 
 - 只输出一个合法 JSON 对象, 最外层不带任何 ``` 围栏或前后文字
 - 严格遵守每个字段的字数上下限 (schema 已规定)
-- 模块数刚性: highlights 恰好 4 条, risks 恰好 3 条, team 2-3 人, financials_compact 恰好 3 行 (营收/增速/毛利率), columns 恰好 3 期
+- 模块数刚性: highlights 恰好 4 条, risks 恰好 3 条, deal_breakers 0-2 条 (可空数组, **禁止凑数**), team 2-3 人, financials_compact 恰好 3 行 (营收/增速/毛利率), columns 恰好 3 期
+- **deal_breakers 段**与 risks 严格分开：risks 是"需要监控的"，deal_breakers 是"不解决就杀掉这笔交易"。每条 falsification_test 必须是具体动作（如"拿合同核实集中度≤35%"），禁止写"继续观察"。Fact Pack 中真没有 deal-breaker 信号就**留空数组**。
 - 字段为空时也必须出现 key, 内容填 "未披露" / "待补充"
 
 ---
@@ -96,11 +97,12 @@ P3 团队+数 team[2-3] + financials_compact + valuation_view
 {
   "company_full_name": "...",
   "tagline": "...",
-  "metadata": {"industry":"...","stage":"...","location":"..."},
+  "metadata": {"industry":"...","stage":"...","location":"...","business_model":"...","dd_stage":"..."},
   "dealroom_meta": {"round_size":"...","pre_valuation":"...","lead_investor_status":"..."},
   "overview": "...",
   "highlights": [{"label":"...","desc":"..."}, x4],
   "risks":      [{"label":"...","desc":"..."}, x3],
+  "deal_breakers": [{"title":"...","logic":"...","falsification_test":"..."}, 0-2 项],
   "team":       [{"name":"...","role":"...","bio":"..."}, 2-3 个],
   "financials_compact": {
     "columns": ["期1","期2","期3"],
@@ -114,9 +116,21 @@ P3 团队+数 team[2-3] + financials_compact + valuation_view
     "comp_anchor": "...",
     "recommended_range": "...",
     "rationale": "..."
-  }
+  },
+  "next_steps": [{"action":"...","owner":"投资经理","due_date":"T+2 周","action_type":"收集材料"}, 3-6 项]
 }
 ```
+
+**metadata 字段 enum 约束** (跨项目 CRM 可比):
+- `stage` ∈ {天使轮 / 种子轮 / Pre-A / A 轮 / A+ 轮 / B 轮 / B+ 轮 / C 轮 / D 轮及以后 / Pre-IPO / 战略投资 / 未披露}
+- `business_model` ∈ {B2B SaaS / B2B 软件 (License) / B2B 解决方案 / B2C 订阅 / B2C 交易 / B2B2C / 硬件 / 硬件+服务 / 平台/交易撮合 / API / Infra / 生物医药管线 / 实体生产/制造 / 其他}
+- `dd_stage` ∈ {初次沟通 / NDA 已签 / DD 进行中 / IC 已立项 / 条款会前 / 已 TS / 已 SPA / 已 close / 已 pass}
+
+**next_steps 段** (3-6 条, CRM 流水线用):
+- 每条 action 必须**具体可执行**, 禁止 "继续跟进" / "持续观察".
+- owner ∈ {投资经理 / 合伙人 / 财务尽调 / 技术尽调 / 法务 / 投后 / 创始人}.
+- due_date 必须明确 (ISO YYYY-MM-DD 或 'T+2 周' / 'IC 前'), **禁止 '尽快'**.
+- action_type ∈ {收集材料 / 访谈 / 建模 / 走法务 / 走 IC / 条款谈判 / 投后规划 / 决策}.
 
 ## 自检清单
 

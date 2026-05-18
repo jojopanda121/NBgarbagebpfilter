@@ -11,9 +11,11 @@
     "overview",
     "highlights",
     "risks",
+    "deal_breakers",
     "team",
     "financials_compact",
-    "valuation_view"
+    "valuation_view",
+    "next_steps"
   ],
   "additionalProperties": false,
   "properties": {
@@ -31,12 +33,27 @@
     },
     "metadata": {
       "type": "object",
-      "required": ["industry", "stage", "location"],
+      "required": ["industry", "stage", "location", "business_model", "dd_stage"],
       "additionalProperties": false,
+      "description": "CRM 录入用的标准化标签段. industry/location 保留自由字符串以适配长尾赛道; stage/business_model/dd_stage 走 enum, 跨项目可比.",
       "properties": {
-        "industry": { "type": "string", "minLength": 2, "maxLength": 16 },
-        "stage":    { "type": "string", "minLength": 2, "maxLength": 12 },
-        "location": { "type": "string", "minLength": 2, "maxLength": 16 }
+        "industry": { "type": "string", "minLength": 2, "maxLength": 16, "description": "行业细分, 如 'AI 存储' / '工业 SaaS'. 保留自由文本以适配长尾赛道." },
+        "stage": {
+          "type": "string",
+          "enum": ["天使轮", "种子轮", "Pre-A", "A 轮", "A+ 轮", "B 轮", "B+ 轮", "C 轮", "D 轮及以后", "Pre-IPO", "战略投资", "未披露"],
+          "description": "本轮融资轮次. 必填, 未披露写 '未披露'."
+        },
+        "location": { "type": "string", "minLength": 2, "maxLength": 16 },
+        "business_model": {
+          "type": "string",
+          "enum": ["B2B SaaS", "B2B 软件 (License)", "B2B 解决方案", "B2C 订阅", "B2C 交易", "B2B2C", "硬件", "硬件+服务", "平台/交易撮合", "API / Infra", "生物医药管线", "实体生产/制造", "其他"],
+          "description": "业务模式枚举. 跨项目可比, 用于 CRM 投资组合视图."
+        },
+        "dd_stage": {
+          "type": "string",
+          "enum": ["初次沟通", "NDA 已签", "DD 进行中", "IC 已立项", "条款会前", "已 TS", "已 SPA", "已 close", "已 pass"],
+          "description": "当前尽调阶段. 用于 CRM 流水线 + 周会汇报."
+        }
       }
     },
     "dealroom_meta": {
@@ -98,6 +115,22 @@
         "properties": {
           "label": { "type": "string", "minLength": 2, "maxLength": 16 },
           "desc":  { "type": "string", "minLength": 24, "maxLength": 110 }
+        }
+      }
+    },
+    "deal_breakers": {
+      "type": "array",
+      "description": "Deal-breaker (致命伤) 0-2 条. 每条必须可证伪 (falsification_test 是具体动作而非'继续观察'). 与 risks 严格区分: risks 是监控项, deal_breakers 是不解决就杀掉交易.",
+      "minItems": 0,
+      "maxItems": 2,
+      "items": {
+        "type": "object",
+        "required": ["title", "logic", "falsification_test"],
+        "additionalProperties": false,
+        "properties": {
+          "title":              { "type": "string", "minLength": 4, "maxLength": 14 },
+          "logic":              { "type": "string", "minLength": 24, "maxLength": 120 },
+          "falsification_test": { "type": "string", "minLength": 12, "maxLength": 80 }
         }
       }
     },
@@ -166,6 +199,41 @@
           "description": "估值推导一句话, 含 1 个数字或可比项.",
           "minLength": 30,
           "maxLength": 150
+        }
+      }
+    },
+    "next_steps": {
+      "type": "array",
+      "description": "下一步动作清单, 用于 CRM 流水线 + 投决备忘. 3-6 条, 每条带 owner / due_date / action_type.",
+      "minItems": 3,
+      "maxItems": 6,
+      "items": {
+        "type": "object",
+        "required": ["action", "owner", "due_date", "action_type"],
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "type": "string",
+            "description": "动作描述, 如 '完成客户集中度核查' / '协调财务 DD kickoff'. 必须具体可执行, 不要写'继续跟进'.",
+            "minLength": 6,
+            "maxLength": 80
+          },
+          "owner": {
+            "type": "string",
+            "enum": ["投资经理", "合伙人", "财务尽调", "技术尽调", "法务", "投后", "创始人"],
+            "description": "责任人岗位."
+          },
+          "due_date": {
+            "type": "string",
+            "description": "ISO 日期 YYYY-MM-DD 或自然语言相对时点 (如 'T+2 周' / 'IC 前'). 不允许 '尽快'.",
+            "minLength": 4,
+            "maxLength": 20
+          },
+          "action_type": {
+            "type": "string",
+            "enum": ["收集材料", "访谈", "建模", "走法务", "走 IC", "条款谈判", "投后规划", "决策"],
+            "description": "动作类型枚举, 用于 CRM 看板分类."
+          }
         }
       }
     }

@@ -71,6 +71,38 @@ describe("standardized workspace tools · schemas and sheets", () => {
         follow_up: "何时提供",
         source_refs: ["F001"],
       })),
+      background_signals: [{
+        signal_type: "无明显信号",
+        fact_summary: "已扫描 Fact Pack 未见负面/异常",
+        probe_question: "暂无需追问，建议常规聊履历",
+        source_refs: [],
+      }],
+      stress_test_scenarios: [
+        {
+          scenario_id: "giant_free_competition",
+          scenario_prompt: "如果腾讯下月推出免费同类产品 12 个月你们怎么活？",
+          context_anchor: "待访谈核实数据",
+          listen_for: "听到具体定价/产品差异化决策",
+          red_flag_response: "只说团队执行力强不给方案",
+          source_refs: [],
+        },
+        {
+          scenario_id: "runway_six_months",
+          scenario_prompt: "如果本轮延后 6 个月你砍哪些团队？",
+          context_anchor: "待访谈核实数据",
+          listen_for: "听到具体砍 R&D/裁员比例",
+          red_flag_response: "回答不出取舍",
+          source_refs: [],
+        },
+        {
+          scenario_id: "top_customer_loss",
+          scenario_prompt: "如果第一大客户下季度不续约多久能补上？",
+          context_anchor: "待访谈核实数据",
+          listen_for: "听到具体复制时间与替代客户名单",
+          red_flag_response: "回答模糊或避谈",
+          source_refs: [],
+        },
+      ],
     };
     expect(validate(sample, skill._private.SCHEMA).valid).toBe(true);
   });

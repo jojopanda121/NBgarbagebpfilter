@@ -41,6 +41,21 @@ router.post("/users/:id/vip", adminController.requireAdmin, adminController.togg
 // 统计数据
 router.get("/stats", adminController.requireAdmin, adminController.getStats);
 
+// P3-4 skill 运行健康度看板：fallback / semantic_audit / bp_deep / institutional_memory
+// query: ?days=7 (默认 7) &skillId=onepager_pptx (可选过滤)
+router.get("/skill-metrics", adminController.requireAdmin, (req, res) => {
+  try {
+    const { aggregateSkillMetrics } = require("../services/metricsAggregator");
+    const days = Math.max(1, Math.min(90, parseInt(req.query.days, 10) || 7));
+    const skillId = typeof req.query.skillId === "string" && req.query.skillId.trim()
+      ? req.query.skillId.trim() : null;
+    const summary = aggregateSkillMetrics({ days, skillId });
+    res.json(summary);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // 反馈管理
 router.get("/feedback", adminController.requireAdmin, adminController.getFeedbackList);
 router.post("/feedback/:id/reply", adminController.requireAdmin, adminController.replyFeedback);

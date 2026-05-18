@@ -22,11 +22,11 @@ function questionRows(payload) {
   const questions = Array.isArray(payload?.questions) ? payload.questions : [];
   return questions.map((q, idx) => [
     String(idx + 1),
-    CATEGORY_LABEL[q.category] || q.category || "",
-    String(q.priority || ""),
     q.question || "",
     q.evidence || "",
+    q.priority === 1 ? "高" : q.priority === 2 ? "中" : "低",
     q.expected_format || "",
+    CATEGORY_LABEL[q.category] || q.category || "",
     q.verification_method || "",
     q.decision_standard || "",
     q.owner || "",
@@ -44,23 +44,22 @@ function categoryRows(payload) {
 }
 
 function buildWorkbookArgs(payload, title) {
+  const headers = [
+    "序号", "核查事项", "核查原因 (基于 BP/上传材料/检索的存疑)",
+    "优先级 (高/中/低)", "所需材料/数据", "类别",
+    "验证方法", "判断标准", "负责人", "状态", "事实来源",
+  ];
   return {
     title,
     sheets: [
       {
         name: "尽调问题清单",
-        headers: [
-          "序号", "类别", "优先级", "问题", "触发依据", "期望材料",
-          "验证方法", "判断标准", "负责人", "状态", "事实来源",
-        ],
+        headers,
         rows: questionRows(payload),
       },
       {
         name: "高优先级问题",
-        headers: [
-          "序号", "类别", "优先级", "问题", "触发依据", "期望材料",
-          "验证方法", "判断标准", "负责人", "状态", "事实来源",
-        ],
+        headers,
         rows: questionRows({
           questions: (payload?.questions || []).filter((q) => q.priority === 1),
         }),
@@ -112,7 +111,7 @@ module.exports = {
     if (!project) return { ok: false, error: "需要项目上下文" };
     if (!ctx?.conversationId) return { ok: false, error: "需要 workspace conversation 上下文" };
 
-    const q = await ddQuestions.run({ project, params });
+    const q = await ddQuestions.run({ project, params, ctx, userId });
     if (!q?.ok) return q;
 
     const payload = q.artifact?.payload;
@@ -121,21 +120,39 @@ module.exports = {
 
     const ws = require("../services/workspaceService");
     const title = params.title || "尽调问题清单";
-    const artifact = await ws.executeDocumentTool({
-      tool: "generate_xlsx",
-      args: { ...buildWorkbookArgs(payload, title), artifactTitle: "尽调清单Excel" },
-      conversationId: ctx.conversationId,
-      messageId: ctx.messageId,
-      userId: userId || ctx.userId,
-    });
+    try {
+      const artifact = await ws.executeDocumentTool({
+        tool: "generate_xlsx",
+        args: { ...buildWorkbookArgs(payload, title), artifactTitle: "尽调清单Excel" },
+        conversationId: ctx.conversationId,
+        messageId: ctx.messageId,
+        userId: userId || ctx.userId,
+      });
 
-    return {
-      ok: true,
-      artifact,
-      metadata: {
-        question_count: rows.length,
-        dd_questions_repairs: q.metadata?.llm_repairs || 0,
-      },
-    };
+      return {
+        ok: true,
+        artifact,
+        metadata: {
+          question_count: rows.length,
+          dd_questions_repairs: q.metadata?.llm_repairs || 0,
+        },
+      };
+    } catch (err) {
+      return {
+        ok: true,
+        artifact: {
+          kind: "json",
+          summary: `${rows.length} 条尽调问题(Excel 渲染失败,已降级为结构化数据)`,
+          payload,
+        },
+        metadata: {
+          question_count: rows.length,
+          dd_questions_repairs: q.metadata?.llm_repairs || 0,
+          degraded: true,
+          degradation_reason: "xlsx_render_failed",
+          xlsx_error: err.message,
+        },
+      };
+    }
   },
 };

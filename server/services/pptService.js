@@ -24,6 +24,33 @@ const REQUIRED_PRODUCTS = 3;
 const REQUIRED_KPIS = 4;
 const REQUIRED_DRIVERS = 3;
 const PLACEHOLDER = "暂无";
+// Deal Dynamics 用单独占位符。投资人看到"未披露"会去 data room 找；看到"暂无"
+// 会以为是真没融资，两种语义在 onepager 上必须分开。
+const DEAL_PLACEHOLDER = "未披露";
+
+const DEAL_DYNAMICS_FIELDS = ["round", "amount", "valuation", "lead_investor", "progress"];
+const DEAL_DYNAMICS_LIMITS = { round: 14, amount: 16, valuation: 22, lead_investor: 22, progress: 26 };
+
+// Traction Snippet 4 字段固定为 ARR / MoM / NDR / Burn，跨行业不变。
+// 与 market_opportunity.kpis（市场容量，行业模板自适应）严格分开。
+const TRACTION_FIELDS = ["arr", "mom", "ndr", "burn_rate"];
+const TRACTION_LABELS = { arr: "ARR", mom: "MoM", ndr: "NDR", burn_rate: "Burn" };
+const TRACTION_LIMITS = { arr: 18, mom: 18, ndr: 18, burn_rate: 22 };
+
+// Deal-breakers: 0-2 条致命伤，每条必须可证伪。与 risks 严格分开（risks = 监控项，
+// deal_breakers = 不解决就杀交易）。LLM 不许凑数。
+const DEAL_BREAKER_LIMITS = { title: 14, logic: 80, falsification_test: 50 };
+const MAX_DEAL_BREAKERS = 2;
+
+function buildOnePagerSearchQueries({ companyName = "", industry = "", materials = "" }) {
+  const seed = [companyName, industry].filter(Boolean).join(" ") || String(materials || "").slice(0, 80);
+  if (!seed.trim()) return [];
+  return [
+    `${seed} TAM 市场规模 CAGR 竞品 融资`,
+    `${seed} 政策 行业报告 估值 2026`,
+    `${seed} 风险 监管 诉讼 新闻`,
+  ];
+}
 
 // ── 行业 × 阶段 自适应模板（onepager 路由） ──
 // 命中规则：按 keywords 在 industry 字符串中做大小写不敏感的 includes 匹配，
@@ -256,6 +283,9 @@ function clampOnePagerForRender(raw) {
       title: clampText(r?.title, 8),
       desc: clampText(r?.desc, 30),
     })),
+    deal_breakers: clampDealBreakersForRender(j.deal_breakers),
+    deal_dynamics: clampDealDynamicsForRender(j.deal_dynamics),
+    traction_snippet: clampTractionForRender(j.traction_snippet),
     footer: {
       founded: clampText(footer.founded, 12),
       team_size: clampText(footer.team_size, 12),
@@ -263,6 +293,33 @@ function clampOnePagerForRender(raw) {
       ai_grade: clampText(footer.ai_grade, 18),
     },
   };
+}
+
+function clampDealDynamicsForRender(raw) {
+  const dd = raw && typeof raw === "object" ? raw : {};
+  const out = {};
+  for (const k of DEAL_DYNAMICS_FIELDS) {
+    out[k] = clampText(dd[k], DEAL_DYNAMICS_LIMITS[k], DEAL_PLACEHOLDER);
+  }
+  return out;
+}
+
+function clampTractionForRender(raw) {
+  const t = raw && typeof raw === "object" ? raw : {};
+  const out = {};
+  for (const k of TRACTION_FIELDS) {
+    out[k] = clampText(t[k], TRACTION_LIMITS[k], DEAL_PLACEHOLDER);
+  }
+  return out;
+}
+
+function clampDealBreakersForRender(raw) {
+  const arr = Array.isArray(raw) ? raw.slice(0, MAX_DEAL_BREAKERS) : [];
+  return arr.map((d) => ({
+    title: clampText(d?.title, DEAL_BREAKER_LIMITS.title, ""),
+    logic: clampText(d?.logic, DEAL_BREAKER_LIMITS.logic, ""),
+    falsification_test: clampText(d?.falsification_test, DEAL_BREAKER_LIMITS.falsification_test, ""),
+  })).filter((d) => d.title && d.logic);
 }
 
 function normalizeOnePager(raw, fallbackName, template) {
@@ -322,6 +379,33 @@ function normalizeOnePager(raw, fallbackName, template) {
     desc: clampText(r?.desc, 30),
   }));
 
+  // Deal Dynamics: 5 个固定字段，缺失统一回填 DEAL_PLACEHOLDER ("未披露")
+  // 同时支持 user_overrides 直接覆盖（轮次/估值/领投这些是用户最常临时补录的字段）。
+  const dealRaw = (json.deal_dynamics && typeof json.deal_dynamics === "object") ? json.deal_dynamics : {};
+  const deal_dynamics = {};
+  for (const k of DEAL_DYNAMICS_FIELDS) {
+    deal_dynamics[k] = clampText(dealRaw[k], DEAL_DYNAMICS_LIMITS[k], DEAL_PLACEHOLDER);
+  }
+
+  // Traction Snippet: 4 个固定 SaaS 风指标 (ARR/MoM/NDR/Burn)。
+  // 非 SaaS 项目允许 LLM 填 "N/A — <理由>"（normalize 阶段不区分，只兜底缺失值）。
+  const tractionRaw = (json.traction_snippet && typeof json.traction_snippet === "object") ? json.traction_snippet : {};
+  const traction_snippet = {};
+  for (const k of TRACTION_FIELDS) {
+    traction_snippet[k] = clampText(tractionRaw[k], TRACTION_LIMITS[k], DEAL_PLACEHOLDER);
+  }
+
+  // Deal-breakers: 可空数组；若 LLM 凑数写空 title/logic，过滤掉。
+  const dealBreakersRaw = Array.isArray(json.deal_breakers) ? json.deal_breakers : [];
+  const deal_breakers = dealBreakersRaw
+    .slice(0, MAX_DEAL_BREAKERS)
+    .map((d) => ({
+      title: clampText(d?.title, DEAL_BREAKER_LIMITS.title, ""),
+      logic: clampText(d?.logic, DEAL_BREAKER_LIMITS.logic, ""),
+      falsification_test: clampText(d?.falsification_test, DEAL_BREAKER_LIMITS.falsification_test, ""),
+    }))
+    .filter((d) => d.title && d.logic);
+
   const f = json.footer || {};
   const footer = {
     founded: clampText(f.founded, 12),
@@ -337,6 +421,9 @@ function normalizeOnePager(raw, fallbackName, template) {
     market_opportunity,
     highlights,
     risks,
+    deal_breakers,
+    traction_snippet,
+    deal_dynamics,
     footer,
   };
 }
@@ -383,7 +470,14 @@ async function getOrGenerateOnePager(taskId, userOverrides = null, forceRegenera
   const { text, searchUsed } = await callLLMWithSearch(
     ONEPAGER_EXTRACTION_PROMPT,
     llmInput,
-    { maxTokens: 4096 }
+    {
+      maxTokens: 4096,
+      preSearchQueries: buildOnePagerSearchQueries({
+        companyName: fallbackName,
+        industry: e.industry || e.Industry,
+        materials: llmInput,
+      }),
+    }
   );
 
   let parsed;
@@ -461,7 +555,14 @@ async function generateOnePagerFromMaterials(materials, opts = {}) {
   const { text, searchUsed } = await callLLMWithSearch(
     ONEPAGER_EXTRACTION_PROMPT,
     llmInput,
-    { maxTokens: 4096 }
+    {
+      maxTokens: 4096,
+      preSearchQueries: buildOnePagerSearchQueries({
+        companyName: companyHint,
+        industry: industryRaw,
+        materials,
+      }),
+    }
   );
 
   let parsed;
@@ -626,49 +727,141 @@ function renderOnePagerPptxLocal(j) {
     fontFace: FONT_FACE, fontSize: 9, valign: "top", margin: 2,
   });
 
-  // 投资亮点 4 条 2x2
+  // 投资亮点 4 条 2x2 — 压缩 cell 高度到 0.40 给 traction strip 让位
   const HL_TOP = 4.55;
   sectionLabel(LX, HL_TOP, 12.2, "投资亮点");
   const cellsTop = HL_TOP + 0.40;
   const cellW = (12.2 - 0.30) / 2;
-  const cellH = (1.45 - 0.40) / 2;
+  const cellH = 0.40;
   (j.highlights || []).slice(0, 4).forEach((h, i) => {
     const col = i % 2, row = Math.floor(i / 2);
     const x = LX + (cellW + 0.30) * col;
     const y = cellsTop + cellH * row;
     slide.addText(`· ${h.title || "暂无"}`, {
-      x, y, w: cellW, h: 0.35,
+      x, y, w: cellW, h: 0.22,
       fontFace: FONT_FACE, fontSize: 10, bold: true, color: LABEL_FG, valign: "middle",
     });
     slide.addText(h.desc || "暂无", {
-      x: x + 0.18, y: y + 0.32, w: cellW - 0.18, h: cellH - 0.32,
+      x: x + 0.18, y: y + 0.20, w: cellW - 0.18, h: cellH - 0.20,
       fontFace: FONT_FACE, fontSize: 8, color: BLACK, valign: "top",
     });
   });
 
-  // 风险板块 (语义红浅底 + 语义红文字)
-  const RISK_TOP = 6.18, RISK_H = 0.70;
+  // 经营指标 (Traction Snippet) — 4 个固定字段：ARR / MoM / NDR / Burn
+  // y=5.80, 在 highlights (终于 5.75) 与 risks (始于 6.18) 之间
+  const TR_TOP = 5.80, TR_H = 0.32;
+  const tr = j.traction_snippet || {};
+  slide.addShape(pptx.ShapeType.rect, {
+    x: LX, y: TR_TOP, w: 12.2, h: TR_H,
+    fill: { color: LIGHT }, line: { type: "none" },
+  });
+  const trTitleW = 1.20;
+  slide.addText("经营指标", {
+    x: LX + 0.1, y: TR_TOP, w: trTitleW, h: TR_H,
+    fontFace: FONT_FACE, fontSize: 9, bold: true, color: TITLE_FG, valign: "middle",
+  });
+  const trAreaX = LX + trTitleW + 0.15;
+  const trAreaW = 12.2 - trTitleW - 0.25;
+  const trCellW = trAreaW / TRACTION_FIELDS.length;
+  TRACTION_FIELDS.forEach((k, i) => {
+    const val = tr[k] || DEAL_PLACEHOLDER;
+    const isMissing = !val || val === DEAL_PLACEHOLDER || /^N\/A/i.test(val);
+    slide.addText([
+      { text: `${TRACTION_LABELS[k]} `, options: { bold: true, color: LABEL_FG } },
+      { text: val, options: { color: isMissing ? GRAY : BLACK, italic: isMissing } },
+    ], {
+      x: trAreaX + trCellW * i, y: TR_TOP, w: trCellW, h: TR_H,
+      fontFace: FONT_FACE, fontSize: 9, valign: "middle", margin: 4,
+    });
+  });
+
+  // 风险板块 (语义红浅底 + 语义红文字) — h 压缩到 0.50 给 deal_dynamics 让位
+  // 若存在 deal_breakers, label 改为"致命伤 / 风险"，body 上半放 deal_breakers，下半放 risks
+  const dealBreakers = Array.isArray(j.deal_breakers) ? j.deal_breakers.slice(0, MAX_DEAL_BREAKERS) : [];
+  const hasDealBreaker = dealBreakers.length > 0;
+  const RISK_TOP = 6.18, RISK_H = 0.50;
   slide.addShape(pptx.ShapeType.rect, {
     x: LX, y: RISK_TOP, w: 12.2, h: RISK_H,
     fill: { color: RISK_BG }, line: { type: "none" },
   });
-  slide.addText("投资风险", {
-    x: LX + 0.1, y: RISK_TOP, w: 1.2, h: RISK_H,
-    fontFace: FONT_FACE, fontSize: 12, bold: true, color: RISK_FG, valign: "middle",
+  slide.addText(hasDealBreaker ? "致命伤 / 风险" : "投资风险", {
+    x: LX + 0.1, y: RISK_TOP, w: 1.4, h: RISK_H,
+    fontFace: FONT_FACE, fontSize: 10, bold: true, color: RISK_FG, valign: "middle",
   });
-  const risks = (j.risks || []).slice(0, 2);
-  const rAreaX = LX + 1.35;
-  const rAreaW = 12.2 - 1.35;
-  const rW = rAreaW / Math.max(risks.length, 1);
-  risks.forEach((r, i) => {
+  const rAreaX = LX + 1.55;
+  const rAreaW = 12.2 - 1.55;
+  if (hasDealBreaker) {
+    // 上半行：致命伤 (深红粗体) — 横排 1-2 条
+    const dbAreaH = RISK_H * 0.5;
+    const dbW = rAreaW / dealBreakers.length;
+    dealBreakers.forEach((d, i) => {
+      slide.addText([
+        { text: `⚠ ${d.title || "致命伤"}：`, options: { bold: true, color: RISK_FG } },
+        { text: d.logic || "", options: { color: BLACK } },
+        { text: d.falsification_test ? ` | 证伪：${d.falsification_test}` : "", options: { color: GRAY, italic: true } },
+      ], {
+        x: rAreaX + dbW * i, y: RISK_TOP, w: dbW, h: dbAreaH,
+        fontFace: FONT_FACE, fontSize: 7, valign: "middle", margin: 3,
+      });
+    });
+    // 下半行：常规 risks
+    const risks = (j.risks || []).slice(0, 2);
+    const rW = rAreaW / Math.max(risks.length, 1);
+    risks.forEach((r, i) => {
+      slide.addText([
+        { text: `${r.title || "暂无"}： `, options: { bold: true, color: RISK_FG } },
+        { text: r.desc || "暂无", options: { color: BLACK } },
+      ], {
+        x: rAreaX + rW * i, y: RISK_TOP + dbAreaH, w: rW, h: dbAreaH,
+        fontFace: FONT_FACE, fontSize: 7, valign: "middle", margin: 3,
+      });
+    });
+  } else {
+    const risks = (j.risks || []).slice(0, 2);
+    const rW = rAreaW / Math.max(risks.length, 1);
+    risks.forEach((r, i) => {
+      slide.addText([
+        { text: `${r.title || "暂无"}： `, options: { bold: true, color: RISK_FG } },
+        { text: r.desc || "暂无", options: { color: BLACK } },
+      ], {
+        x: rAreaX + rW * i, y: RISK_TOP, w: rW, h: RISK_H,
+        fontFace: FONT_FACE, fontSize: 8, valign: "middle", margin: 4,
+      });
+    });
+  }
+
+  // 本轮交易 (Deal Dynamics) — 风险条与页脚之间的单行 strip
+  // 5 个字段等宽分列：轮次 / 金额 / 估值 / 领投 / 进度
+  // 视觉风格：浅蓝胶囊底 + 品牌蓝标签 + 黑色值，"未披露"灰色显示以提示 data room 缺口
+  const DD_TOP = 6.75, DD_H = 0.24;
+  const dd = j.deal_dynamics || {};
+  slide.addShape(pptx.ShapeType.rect, {
+    x: LX, y: DD_TOP, w: 12.2, h: DD_H,
+    fill: { color: LIGHT }, line: { type: "none" },
+  });
+  const ddLabel = (lbl, val, x, w) => {
+    const isMissing = !val || val === "未披露" || val === "暂无";
     slide.addText([
-      { text: `${r.title || "暂无"}： `, options: { bold: true, color: RISK_FG } },
-      { text: r.desc || "暂无", options: { color: BLACK } },
+      { text: `${lbl} `, options: { bold: true, color: LABEL_FG } },
+      { text: val || "未披露", options: { color: isMissing ? GRAY : BLACK, italic: isMissing } },
     ], {
-      x: rAreaX + rW * i, y: RISK_TOP, w: rW, h: RISK_H,
+      x, y: DD_TOP, w, h: DD_H,
       fontFace: FONT_FACE, fontSize: 8, valign: "middle", margin: 4,
     });
+  };
+  const ddTitleW = 1.20;
+  slide.addText("本轮交易", {
+    x: LX + 0.1, y: DD_TOP, w: ddTitleW, h: DD_H,
+    fontFace: FONT_FACE, fontSize: 9, bold: true, color: TITLE_FG, valign: "middle",
   });
+  const ddAreaX = LX + ddTitleW + 0.15;
+  const ddAreaW = 12.2 - ddTitleW - 0.25;
+  const ddCellW = ddAreaW / 5;
+  ddLabel("轮次", dd.round, ddAreaX + ddCellW * 0, ddCellW);
+  ddLabel("金额", dd.amount, ddAreaX + ddCellW * 1, ddCellW);
+  ddLabel("估值", dd.valuation, ddAreaX + ddCellW * 2, ddCellW);
+  ddLabel("领投", dd.lead_investor, ddAreaX + ddCellW * 3, ddCellW);
+  ddLabel("进度", dd.progress, ddAreaX + ddCellW * 4, ddCellW);
 
   // 页脚
   const f = j.footer || {};

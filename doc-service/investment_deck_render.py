@@ -222,6 +222,14 @@ def _render_generic(slide, data, total, company):
     elif tmpl == "valuation_sensitivity":
         _grid_blocks(slide, blocks[:4], LEFT, 1.60, 4.8, 4.95, cols=1)
         _draw_table(slide, data.get("table"), {"x": 5.55, "y": 1.60, "w": 7.23, "h": 4.95})
+    elif tmpl == "cap_table":
+        # 左：股权结构 table (pre/post)，右：稀释 & ESOP 解读 blocks
+        _draw_table(slide, data.get("table"), {"x": LEFT, "y": 1.60, "w": 7.6, "h": 4.95})
+        _grid_blocks(slide, blocks[:4], 8.45, 1.60, 4.33, 4.95, cols=1)
+    elif tmpl == "downside_case":
+        # 上：Base vs Downside 财务 table (含跑道行)；下：触发条件 + 缓释动作 blocks (双栏，缓释列用 risk 红)
+        _draw_table(slide, data.get("table"), {"x": LEFT, "y": 1.60, "w": CONTENT_W, "h": 2.75})
+        _grid_blocks(slide, blocks[:4], LEFT, 4.50, CONTENT_W, 2.05, cols=2, risk=True)
     elif tmpl == "risk_mitigation":
         if data.get("table"):
             _draw_table(slide, data.get("table"), {"x": LEFT, "y": 1.60, "w": CONTENT_W, "h": 4.95}, risk=True)

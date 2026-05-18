@@ -48,10 +48,28 @@
 - `timeline`：发展历程、产品路线、产能释放计划。
 - `financial_table`：历史财务、预测假设、收入/成本结构。
 - `valuation_sensitivity`：估值方法、IRR/MOC、敏感性分析。
+- `cap_table`：本轮进入前 → 本轮进入后股权结构演练；必填 table（headers: ["股东","持股 (pre)","持股 (post)","锁定/优先权"]，rows ≥ 3 行；至少包含创始团队、本轮投资方、ESOP 期权池）；blocks 至少 1 个解释稀释与 ESOP 预留是否满足后续 1-2 轮融资需要；source_note 写"来源: 创始团队披露 cap table / 待核实"。
+- `downside_case`：3-5 年财务模型 + Downside Case 现金流压力测试；必填 table（headers: ["年份","收入 (Base)","收入 (Downside)","现金消耗","跑道 (月)"]，rows 至少 3 行覆盖未来 3 年）+ 必填 blocks 至少 2 个分别说明 (a) Downside 触发条件（如"核心客户流失/政策收紧/融资延后 6 个月"）和 (b) 缓释动作（如"砍 R&D 40%/裁员 30%/订阅价格涨 15%"）；不允许只贴 Base Case，必须给出 Downside 的同年同期数字对照。
 - `risk_mitigation`：风险、影响、缓释方案。
 - `next_steps`：访谈清单、data room 缺口、IC 决策动作。
 
 连续 3 页不得使用完全相同的 template。
+
+【BP 深度解析事实 — D-prefixed facts】
+- Fact Pack 中以 **D** 开头的事实是 schema-validated 数字（财务三表 / 单位经济 / 客户清单），每条带 confidence 字段。
+- **来源本质**：D 编号仍来自 BP 原文，只是经 strict JSON schema 二次抽取后变成可直接消费的数字；可信度 ≈ BP 自报。
+- **冲突解决（全局优先级）**：上传材料 > BP/项目结构化数据 > 外部检索 > BP 深度解析 (D 编号)。
+  - 上传材料数字 vs D 编号 → 以**上传材料**为准；D 编号在 source_note 里降级为"BP 自报"。
+  - 外部检索数字（如行业公允倍数、第三方调研）vs D 编号 → 以**外部检索**为准；D 编号写"BP 自报，待外部交叉验证"。
+  - 同一份 BP 内"自报文字陈述"与"D 编号抽取数字"不一致 → 以 **D 编号**为准（schema 校验更严格），source_note 标注"D 编号 vs BP 文字陈述存在差异"。
+- `cap_table` 页：股东占比 / ESOP 留存数据如能匹配 D 编号（如 D015=cash, D018=cohort），source_note 必须引用对应 D 编号。
+- `downside_case` 页：Base Case 收入、Downside Case 现金消耗、跑道月数等数字**优先**走 D 编号（如 D008=runway_months）；若同时存在更可信的上传材料或外部检索数字，按上面冲突规则处理。
+- D 编号 confidence=missing 时不要瞎填，写"待补充 financial agent 抽取数据"。
+
+【硬性章节约束】
+- 投决报告 (investment_committee) 与可研报告 (feasibility_study)：valuation_deal 章节**必须包含至少 1 页 `cap_table`**；financial_analysis 章节**必须包含至少 1 页 `downside_case`**。
+- 尽调汇报 (diligence_report)：`cap_table` 必填（放在 company_profile）；`downside_case` 推荐放在 financial_analysis，无完整财务模型时可降级为标注"待补充财务模型"的 financial_table。
+- 这两类页是 PE/VC 投决最直接的"风险量化"载体，遗漏视为输出不合格。
 
 ## 内容规则
 

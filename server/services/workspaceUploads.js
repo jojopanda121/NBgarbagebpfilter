@@ -14,8 +14,20 @@ const fs = require("fs");
 const path = require("path");
 const ws = require("./workspaceService");
 const { extractDocText } = require("./extractionService");
+const { getDb } = require("../db");
+const uploadStructured = require("./extraction/uploadStructuredExtraction");
+const logger = require("../utils/logger");
 
 const EXTRACT_MODES = new Set(["pdf", "pptx", "docx", "xlsx", "csv"]);
+
+// 同步抽取的文件大小阈值（字符数）。超过这个阈值就走后台异步，避免阻塞上传响应。
+// 4 vCPU / 4GB 机型 LLM 调用 5-15s 量级，小文档同步可接受。
+const SYNC_EXTRACTION_MAX_CHARS = 6000;
+
+// 是否启用上传后结构化抽取。env UPLOAD_STRUCTURED_EXTRACTION_DISABLED=1 显式关闭。
+function _structuredExtractionEnabled() {
+  return process.env.UPLOAD_STRUCTURED_EXTRACTION_DISABLED !== "1";
+}
 
 function decodeUploadName(name = "") {
   if (!name) return name;
@@ -83,6 +95,36 @@ async function persistWorkspaceUpload({ file, conversationId, scope, taskId, use
   if (scope === "task" && taskId && userId && summary) {
     ws.processUploadMemory({ taskId, userId, filename: originalName, summary })
       .catch((err) => console.warn("[WorkspaceUpload] 记忆提炼失败:", err.message));
+  }
+
+  // 触发上传资料结构化抽取（替代旧的"BP 深度解析"）。
+  // - 短文本同步跑，方便首次 skill 立刻拿到结构化证据。
+  // - 长文本异步跑，不阻塞上传响应；下游 skill 若先于抽取完成调用，
+  //   会拿不到 upload_structured fact，自动降级到 upload sidecar + external_search。
+  // - 任何错误都吞掉、记入 workspace_artifact_structured_extracts.error，
+  //   不影响 persistWorkspaceUpload 自身的返回成功。
+  if (artifact?.id && text && _structuredExtractionEnabled()) {
+    const trimmed = text.length > 24000 ? text.slice(0, 24000) : text;
+    const runArgs = {
+      db: getDb(),
+      artifactId: artifact.id,
+      conversationId,
+      filename: originalName,
+      uploadText: trimmed,
+      mimeType: file.mimetype,
+    };
+    if (text.length <= SYNC_EXTRACTION_MAX_CHARS) {
+      try {
+        await uploadStructured.runAndPersist(runArgs);
+      } catch (err) {
+        logger.warn?.(`[WorkspaceUpload] 同步结构化抽取失败: ${err.message}`);
+      }
+    } else {
+      // fire-and-forget；任何 reject 都吞掉
+      uploadStructured.runAndPersist(runArgs).catch((err) => {
+        logger.warn?.(`[WorkspaceUpload] 异步结构化抽取失败: ${err.message}`);
+      });
+    }
   }
 
   return { artifact, text, summary };

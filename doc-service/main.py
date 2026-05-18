@@ -525,6 +525,29 @@ class OnePagerFooter(BaseModel):
     ai_grade: str
 
 
+class OnePagerDealDynamics(BaseModel):
+    # 5 个字段均必填，缺失由 Node 端 normalize 阶段补 "未披露"
+    round: str = "未披露"
+    amount: str = "未披露"
+    valuation: str = "未披露"
+    lead_investor: str = "未披露"
+    progress: str = "未披露"
+
+
+class OnePagerDealBreaker(BaseModel):
+    title: str
+    logic: str
+    falsification_test: str = ""
+
+
+class OnePagerTractionSnippet(BaseModel):
+    # 4 个 SaaS 风经营指标，跨行业不变。非订阅业务可填 "N/A — <理由>"。
+    arr: str = "未披露"
+    mom: str = "未披露"
+    ndr: str = "未披露"
+    burn_rate: str = "未披露"
+
+
 class OnePagerPayload(BaseModel):
     company_name: str
     headline: str
@@ -532,6 +555,10 @@ class OnePagerPayload(BaseModel):
     market_opportunity: OnePagerMarket
     highlights: List[OnePagerItem]
     risks: List[OnePagerItem]
+    # 旧版 payload 兼容：缺省时全部 "未披露"
+    deal_breakers: List[OnePagerDealBreaker] = []
+    traction_snippet: OnePagerTractionSnippet = OnePagerTractionSnippet()
+    deal_dynamics: OnePagerDealDynamics = OnePagerDealDynamics()
     footer: OnePagerFooter
 
 
@@ -782,56 +809,169 @@ def _build_onepager(payload: OnePagerPayload) -> bytes:
     cr2.text = clip(payload.market_opportunity.competition, 50)
     _set_cn_font(cr2, 9, color=BLACK)
 
-    # ── 投资亮点（4 条，2x2 网格） ─────────────────────────
+    # ── 投资亮点（4 条，2x2 网格） — cell 高度压到 0.40 给 traction strip 让位
     HL_TOP = Inches(4.55)
-    HL_H = Inches(1.45)
     add_section_label(LEFT_X, HL_TOP, Inches(12.2), "投资亮点")
     cells_top = HL_TOP + Inches(0.40)
     cell_w = (Inches(12.2) - Inches(0.30)) // 2
-    cell_h = (HL_H - Inches(0.40)) // 2
+    cell_h = Inches(0.40)
     for i, hl in enumerate(payload.highlights[:4]):
         col = i % 2
         row = i // 2
         x = LEFT_X + (cell_w + Inches(0.30)) * col
         y = cells_top + cell_h * row
         # 标题
-        add_text(x, y, cell_w, Inches(0.35),
+        add_text(x, y, cell_w, Inches(0.22),
                  f"· {clip(hl.title, 10)}", size=10, bold=True, color=LABEL_FG,
                  anchor_top=False)
         # 描述
-        add_text(x + Inches(0.18), y + Inches(0.32), cell_w - Inches(0.18),
-                 cell_h - Inches(0.32), clip(hl.desc, 32), size=8, color=BLACK,
+        add_text(x + Inches(0.18), y + Inches(0.20), cell_w - Inches(0.18),
+                 cell_h - Inches(0.20), clip(hl.desc, 32), size=8, color=BLACK,
                  line_spacing=1.2)
 
-    # ── 投资风险（灰底，2 条横排） ─────────────────────────
-    RISK_TOP = Inches(6.18)
-    RISK_H = Inches(0.70)
-    add_filled_rect(LEFT_X, RISK_TOP, Inches(12.2), RISK_H, GRAY_BG)
-    # 标签
-    add_text(LEFT_X + Inches(0.1), RISK_TOP, Inches(1.2), RISK_H,
-             "投资风险", size=12, bold=True, color=RISK_FG, anchor_top=False)
-    risks = payload.risks[:2]
-    risk_area_x = LEFT_X + Inches(1.35)
-    risk_area_w = Inches(12.2) - Inches(1.35)
-    rw = risk_area_w // max(len(risks), 1)
-    for i, rk in enumerate(risks):
-        x = risk_area_x + rw * i
-        box = s.shapes.add_textbox(x, RISK_TOP, rw, RISK_H)
+    # ── 经营指标 (Traction Snippet) — 4 个固定字段 ARR/MoM/NDR/Burn ─────
+    TR_TOP = Inches(5.80)
+    TR_H = Inches(0.32)
+    add_filled_rect(LEFT_X, TR_TOP, Inches(12.2), TR_H, LIGHT)
+    add_text(LEFT_X + Inches(0.1), TR_TOP, Inches(1.20), TR_H,
+             "经营指标", size=9, bold=True, color=COLOR["navy"], anchor_top=False)
+    tr = payload.traction_snippet
+    tr_area_x = LEFT_X + Inches(1.35)
+    tr_area_w = Inches(12.2) - Inches(1.45)
+    tr_cell_w = tr_area_w // 4
+    tr_fields = [
+        ("ARR", clip(tr.arr, 18, "未披露")),
+        ("MoM", clip(tr.mom, 18, "未披露")),
+        ("NDR", clip(tr.ndr, 18, "未披露")),
+        ("Burn", clip(tr.burn_rate, 22, "未披露")),
+    ]
+    for i, (lbl, val) in enumerate(tr_fields):
+        x = tr_area_x + tr_cell_w * i
+        box = s.shapes.add_textbox(x, TR_TOP, tr_cell_w, TR_H)
         box.line.fill.background()
         box.fill.background()
         tf = box.text_frame
         tf.auto_size = MSO_AUTO_SIZE.NONE
         tf.word_wrap = True
-        tf.margin_left = Inches(0.05)
-        tf.margin_right = Inches(0.10)
+        tf.margin_left = Inches(0.04)
+        tf.margin_right = Inches(0.04)
+        tf.vertical_anchor = MSO_ANCHOR.MIDDLE
         p = tf.paragraphs[0]
-        p.line_spacing = 1.15
+        p.line_spacing = 1.0
         r1 = p.add_run()
-        r1.text = f"{clip(rk.title, 8)}： "
-        _set_cn_font(r1, 8, bold=True, color=RISK_FG)
+        r1.text = f"{lbl} "
+        _set_cn_font(r1, 9, bold=True, color=LABEL_FG)
+        is_missing = val in ("未披露", "暂无", "") or val.startswith("N/A")
         r2 = p.add_run()
-        r2.text = clip(rk.desc, 30)
-        _set_cn_font(r2, 8, color=BLACK)
+        r2.text = val or "未披露"
+        _set_cn_font(r2, 9, color=GRAY if is_missing else BLACK)
+        if is_missing:
+            r2.font.italic = True
+
+    # ── 投资风险 / 致命伤（灰底，2 行布局） ─────────────────────────
+    # 风险条压缩到 0.50 寸以腾位给 deal_dynamics strip
+    # 若存在 deal_breakers, 上半行红色加粗 ⚠ 致命伤; 下半行常规 risks
+    RISK_TOP = Inches(6.18)
+    RISK_H = Inches(0.50)
+    add_filled_rect(LEFT_X, RISK_TOP, Inches(12.2), RISK_H, GRAY_BG)
+    deal_breakers = payload.deal_breakers or []
+    has_db = len(deal_breakers) > 0
+    label_text = "致命伤 / 风险" if has_db else "投资风险"
+    add_text(LEFT_X + Inches(0.1), RISK_TOP, Inches(1.4), RISK_H,
+             label_text, size=10 if has_db else 11, bold=True, color=RISK_FG, anchor_top=False)
+    risk_area_x = LEFT_X + Inches(1.55)
+    risk_area_w = Inches(12.2) - Inches(1.55)
+
+    def _render_band_item(x, y, w, h, prefix, prefix_color, body, body_color, suffix=None, suffix_color=None, size=8):
+        box = s.shapes.add_textbox(x, y, w, h)
+        box.line.fill.background()
+        box.fill.background()
+        tf = box.text_frame
+        tf.auto_size = MSO_AUTO_SIZE.NONE
+        tf.word_wrap = True
+        tf.margin_left = Inches(0.04)
+        tf.margin_right = Inches(0.04)
+        tf.vertical_anchor = MSO_ANCHOR.MIDDLE
+        p = tf.paragraphs[0]
+        p.line_spacing = 1.1
+        r1 = p.add_run()
+        r1.text = prefix
+        _set_cn_font(r1, size, bold=True, color=prefix_color)
+        r2 = p.add_run()
+        r2.text = body
+        _set_cn_font(r2, size, color=body_color)
+        if suffix:
+            r3 = p.add_run()
+            r3.text = suffix
+            _set_cn_font(r3, size - 1, color=suffix_color or GRAY)
+            r3.font.italic = True
+
+    if has_db:
+        db_h = RISK_H // 2
+        db_w = risk_area_w // max(len(deal_breakers), 1)
+        for i, db in enumerate(deal_breakers[:2]):
+            suffix = f" | 证伪：{clip(db.falsification_test, 28)}" if db.falsification_test else None
+            _render_band_item(
+                risk_area_x + db_w * i, RISK_TOP, db_w, db_h,
+                f"⚠ {clip(db.title, 12)}：", RISK_FG, clip(db.logic, 38), BLACK,
+                suffix=suffix, size=7,
+            )
+        risks = payload.risks[:2]
+        rw = risk_area_w // max(len(risks), 1)
+        for i, rk in enumerate(risks):
+            _render_band_item(
+                risk_area_x + rw * i, RISK_TOP + db_h, rw, db_h,
+                f"{clip(rk.title, 8)}： ", RISK_FG, clip(rk.desc, 28), BLACK,
+                size=7,
+            )
+    else:
+        risks = payload.risks[:2]
+        rw = risk_area_w // max(len(risks), 1)
+        for i, rk in enumerate(risks):
+            _render_band_item(
+                risk_area_x + rw * i, RISK_TOP, rw, RISK_H,
+                f"{clip(rk.title, 8)}： ", RISK_FG, clip(rk.desc, 30), BLACK,
+                size=8,
+            )
+
+    # ── 本轮交易 (Deal Dynamics) — 风险条与页脚之间的单行 strip ─────
+    DD_TOP = Inches(6.75)
+    DD_H = Inches(0.24)
+    add_filled_rect(LEFT_X, DD_TOP, Inches(12.2), DD_H, LIGHT)
+    add_text(LEFT_X + Inches(0.1), DD_TOP, Inches(1.20), DD_H,
+             "本轮交易", size=9, bold=True, color=COLOR["navy"], anchor_top=False)
+    dd = payload.deal_dynamics
+    dd_area_x = LEFT_X + Inches(1.35)
+    dd_area_w = Inches(12.2) - Inches(1.45)
+    dd_cell_w = dd_area_w // 5
+    dd_fields = [
+        ("轮次", clip(dd.round, 14, "未披露")),
+        ("金额", clip(dd.amount, 16, "未披露")),
+        ("估值", clip(dd.valuation, 22, "未披露")),
+        ("领投", clip(dd.lead_investor, 22, "未披露")),
+        ("进度", clip(dd.progress, 26, "未披露")),
+    ]
+    for i, (lbl, val) in enumerate(dd_fields):
+        x = dd_area_x + dd_cell_w * i
+        box = s.shapes.add_textbox(x, DD_TOP, dd_cell_w, DD_H)
+        box.line.fill.background()
+        box.fill.background()
+        tf = box.text_frame
+        tf.auto_size = MSO_AUTO_SIZE.NONE
+        tf.word_wrap = True
+        tf.margin_left = Inches(0.04)
+        tf.margin_right = Inches(0.04)
+        p = tf.paragraphs[0]
+        p.line_spacing = 1.0
+        r1 = p.add_run()
+        r1.text = f"{lbl} "
+        _set_cn_font(r1, 8, bold=True, color=LABEL_FG)
+        is_missing = val in ("未披露", "暂无", "")
+        r2 = p.add_run()
+        r2.text = val or "未披露"
+        _set_cn_font(r2, 8, color=GRAY if is_missing else BLACK)
+        if is_missing:
+            r2.font.italic = True
 
     # ── 页脚小条 ────────────────────────────────────────────
     FOOT_TOP = Inches(7.02)

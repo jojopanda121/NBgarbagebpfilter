@@ -1013,7 +1013,7 @@ async function runHostAgentic({
     `# 你的任务`,
     `1. 先在 thinking 块里**真实地推理**：先做市场-财务-产品逻辑闭环检查，再审计专家意见之间的矛盾，最后凝结成 IC Memo 级 thesis 与 Verdict。`,
     `2. 如果用户要生成文件，先在 thinking 里判断文件类型和模板匹配，再调用对应工具（onepager_pptx / investment_snapshot / highlight_visual / project_brief / investment_deck_pptx / generate_docx / generate_xlsx / dd_checklist_xlsx / founder_interview_docx / competitor_matrix_xlsx / ic_questions_xlsx），args 必须是合法 JSON。`,
-    `2a. PPT 硬规则：任何 PPT 都必须走模板 skill。可用模板只有 onepager_pptx（1 页投资亮点 pitch）、investment_snapshot（1 页 A4 投决速览）、project_brief（3 页项目简报）、investment_deck_pptx（8-30 页投决/可研/尽调 deck）。用户要求视觉图/信息图/图片/海报时调用 highlight_visual，它输出 JPEG，不是 PPT。严禁输出 slides 数组，严禁调用 generate_pptx，严禁传颜色/字号/坐标/字体。`,
+    `2a. PPT 硬规则：任何 PPT 都必须走模板 skill。可用模板只有 onepager_pptx（1 页投资亮点 pitch）、investment_snapshot（1 页 A4 投决速览）、project_brief（3 页项目简报）、investment_deck_pptx（8-30 页投决/可研/尽调 deck）。用户要求视觉图/信息图/图片/海报时调用 highlight_visual，它输出 PNG，不是 PPT。严禁输出 slides 数组，严禁调用 generate_pptx，严禁传颜色/字号/坐标/字体。`,
     `2b. 如果用户要 5 页、10 页、路演完整 deck、竞品地图等当前没有模板的 PPT，不要硬凑；直接说明当前模板库只支持上述模板，并建议按 harness 范式新增对应模板。`,
     `2c. 标准化投研工具硬规则：尽调清单用 dd_checklist_xlsx；创始人访谈提纲用 founder_interview_docx；竞品对比矩阵用 competitor_matrix_xlsx；IC/投委问题清单/左右脑互搏用 ic_questions_xlsx。不要用 generate_xlsx/generate_docx 临时拼这些标准产物。`,
     `3. 工具返回 tool_result 后，写最终答复给用户：投资备忘录口吻，不复述上下文，不复读专家原话，必须给出核心矛盾、决策结论和杀手级问题。`,
@@ -1925,14 +1925,39 @@ async function executeDocumentTool({ tool, args, conversationId, messageId, user
   if (!builder) throw new Error(`工具尚未实现: ${tool}`);
   const body = builder.buildBody();
 
-  const resp = await fetch(`${config.docServiceUrl}${toolDef.endpoint}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
+  const url = `${config.docServiceUrl}${toolDef.endpoint}`;
+  const fetchWithRetry = async () => {
+    let lastErr;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 60000);
+      try {
+        const r = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+          signal: controller.signal,
+        });
+        clearTimeout(timer);
+        return r;
+      } catch (err) {
+        clearTimeout(timer);
+        lastErr = err;
+        if (attempt === 0) {
+          console.warn(`[doc-service] ${tool} fetch 失败,1.5s 后重试: ${err.message}`);
+          await new Promise((res) => setTimeout(res, 1500));
+        }
+      }
+    }
+    throw new Error(
+      `文档渲染服务暂时不可用, 请稍后重试. (后台细节: ${url} ${lastErr?.message || "fetch failed"})`
+    );
+  };
+
+  const resp = await fetchWithRetry();
   if (!resp.ok) {
     const t = await resp.text();
-    throw new Error(`doc-service 错误: ${t}`);
+    throw new Error(`doc-service 错误 (${resp.status}): ${t}`);
   }
   const buf = Buffer.from(await resp.arrayBuffer());
   try {

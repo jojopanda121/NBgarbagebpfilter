@@ -11,9 +11,11 @@
 function _deps() {
   return {
     callLLMJson: require("../services/llmService").callLLMJson,
-    buildFactPack: require("./_factPack").buildFactPack,
+    buildEvidencePack: require("./_factPack").buildEvidencePack,
     formatFactPackForPrompt: require("./_factPack").formatFactPackForPrompt,
     assertGrounded: require("./_groundingAudit").assertGrounded,
+    summarizeFallback: require("./_groundingAudit").summarizeFallback,
+    semanticGroundingAudit: require("./_groundingAudit").semanticGroundingAudit,
     exportXlsx: require("./_artifactExport").exportXlsx,
   };
 }
@@ -155,16 +157,187 @@ const SCHEMA_SYNTH = {
   },
 };
 
+// ── Step 4: Valuation & Exit Agent ──────────────────────────
+// 在 Synthesizer 之后跑：合伙人最关心估值合理性与退出推演，把这两块从
+// "假设挑战型" 问题里提炼成独立结构化产出，方便后续条款会和投决用。
+
+const SYSTEM_VALUATION_EXIT = `你是一级市场基金的估值合伙人 (Valuation Partner)。你已看完 Bull/Bear/IC 问题清单，
+现在要给投委会一份"估值挑战 + 退出推演"独立结论，覆盖被 Bull/Bear 都点到但未深挖的估值与退出维度。
+
+任务：
+1. valuation_benchmark：基于 Fact Pack（含 web_search 检索到的可比公司）+ 项目自身 ARR/GMV/利润数据，
+   计算/估算被投项目隐含倍数，与同赛道同阶段公允中位数对比，给出明确判定。
+2. exit_scenarios：列出 2-4 条退出路径（IPO / 战略并购 / 二级市场 / 回购 / 清算），每条给出
+   时点、概率档、可比先例、假设退出估值、MOIC 区间 (downside/base/upside)。
+
+硬性约束：
+- 任何倍数、可比公司、退出先例必须 source_refs 引用 Fact Pack F 编号；找不到对照就写"待检索"并放
+  到 challenge_questions 里追问，**绝不编造可比公司估值或退出对价**。
+- Fact Pack 中 **D 开头**的事实是 BP 深度解析后的 schema-validated 数字（如 D004=EBITDA、D012=LTV/CAC）。
+  **D 编号本质仍是 BP 自报**（只是经 schema 二次抽取），可信度高于 BP 文字陈述但低于外部检索。
+  计算 subject_implied PS / PE 倍数：
+    1) 行业公允倍数 / 可比交易必须用 **外部检索 (F 编号 source_type=external_search)** —— 不要用 D 编号当行业基准。
+    2) 项目自身收入 / EBITDA / LTV 等用 D 编号优先于 BP 文字陈述；若上传材料 (审计版财务) 与 D 编号冲突，以**上传材料**为准。
+  source_refs 必须真实引用对应编号。
+- MOIC 三档 (downside/base/upside) 必须自洽：downside ≤ base ≤ upside，downside 可以 < 1.0（亏损）。
+- verdict 判定必须能在 challenge_questions 中至少 1 条找到对应质问。
+- challenge_questions 是给投委会的"估值挑战追问"，与已有 IC 问题清单不重复（不能是已经问过的）。
+- 退出 timeline 必须给具体年份范围（如 "2028-2030"），不允许写 "未来若干年"。
+- probability 档严格 4 档：高/中/低/极低，并且 sum 不要求 = 100%（互不排斥）。
+- 退出 precedents 至少 1 条要有 source_refs；找不到就标"待补充行业可比"。
+- 禁止宣传词。`;
+
+const VAL_EXIT_SOURCE_REFS = {
+  type: "array",
+  minItems: 0,
+  maxItems: 5,
+  items: { type: "string" },
+};
+
+const SCHEMA_VALUATION_EXIT = {
+  type: "object",
+  required: ["valuation_benchmark", "exit_scenarios"],
+  additionalProperties: false,
+  properties: {
+    valuation_benchmark: {
+      type: "object",
+      required: [
+        "methodology", "comparable_set", "industry_median",
+        "subject_implied", "verdict", "challenge_questions",
+      ],
+      additionalProperties: false,
+      properties: {
+        methodology: {
+          type: "string",
+          enum: ["PS 倍数", "PE 倍数", "DCF", "用户数估值", "EV/EBITDA", "可比交易倍数", "暂无可用方法"],
+        },
+        comparable_set: {
+          type: "array",
+          minItems: 0,
+          maxItems: 8,
+          items: {
+            type: "object",
+            required: ["company", "stage", "year", "source_refs"],
+            additionalProperties: false,
+            properties: {
+              company: { type: "string", minLength: 2, maxLength: 80 },
+              stage: { type: "string", maxLength: 60 },
+              year: { type: "string", maxLength: 12 },
+              ps_multiple: { type: ["number", "string"], description: "PS 倍数；缺失填字符串'待检索'" },
+              pe_multiple: { type: ["number", "string"], description: "PE 倍数；缺失填字符串'待检索'或'N/A — 未盈利'" },
+              ev_ebitda: { type: ["number", "string"] },
+              note: { type: "string", maxLength: 160 },
+              source_refs: VAL_EXIT_SOURCE_REFS,
+            },
+          },
+        },
+        industry_median: {
+          type: "object",
+          required: ["note"],
+          additionalProperties: false,
+          properties: {
+            ps: { type: ["number", "string"] },
+            pe: { type: ["number", "string"] },
+            ev_ebitda: { type: ["number", "string"] },
+            note: { type: "string", minLength: 4, maxLength: 240 },
+          },
+        },
+        subject_implied: {
+          type: "object",
+          required: ["note"],
+          additionalProperties: false,
+          properties: {
+            ps: { type: ["number", "string"] },
+            pe: { type: ["number", "string"] },
+            ev_ebitda: { type: ["number", "string"] },
+            note: { type: "string", minLength: 4, maxLength: 240 },
+          },
+        },
+        verdict: {
+          type: "string",
+          enum: ["明显偏高", "略偏高", "合理", "偏低", "无法判断"],
+        },
+        challenge_questions: {
+          type: "array",
+          minItems: 2,
+          maxItems: 6,
+          items: { type: "string", minLength: 8, maxLength: 240 },
+        },
+      },
+    },
+    exit_scenarios: {
+      type: "array",
+      minItems: 2,
+      maxItems: 4,
+      items: {
+        type: "object",
+        required: [
+          "path", "timeline", "probability", "precedents",
+          "assumed_exit_value", "moic_range", "key_risks", "source_refs",
+        ],
+        additionalProperties: false,
+        properties: {
+          path: { type: "string", enum: ["IPO", "战略并购", "二级市场转让", "管理层回购", "清算"] },
+          timeline: { type: "string", minLength: 4, maxLength: 40 },
+          probability: { type: "string", enum: ["高", "中", "低", "极低"] },
+          precedents: {
+            type: "array",
+            minItems: 0,
+            maxItems: 5,
+            items: { type: "string", maxLength: 160 },
+          },
+          assumed_exit_value: { type: "string", minLength: 2, maxLength: 80 },
+          moic_range: {
+            type: "object",
+            required: ["downside", "base", "upside"],
+            additionalProperties: false,
+            properties: {
+              downside: { type: "number" },
+              base: { type: "number" },
+              upside: { type: "number" },
+            },
+          },
+          key_risks: {
+            type: "array",
+            minItems: 1,
+            maxItems: 4,
+            items: { type: "string", maxLength: 180 },
+          },
+          source_refs: VAL_EXIT_SOURCE_REFS,
+        },
+      },
+    },
+  },
+};
+
 // ── 服务端后处理 ────────────────────────────────────────────
 
 function _sortByPriority(questions) {
   questions.sort((a, b) => a.priority - b.priority);
 }
 
+// MOIC 三档自洽校验：downside ≤ base ≤ upside。LLM 偶尔会写反，主动 swap，
+// 而不是抛错把整次 pipeline 浪费掉。
+function _normalizeExitScenarios(scenarios) {
+  if (!Array.isArray(scenarios)) return [];
+  for (const s of scenarios) {
+    const m = s.moic_range;
+    if (!m) continue;
+    const trio = [Number(m.downside), Number(m.base), Number(m.upside)].filter((v) => !Number.isNaN(v));
+    if (trio.length === 3) {
+      trio.sort((a, b) => a - b);
+      m.downside = trio[0];
+      m.base = trio[1];
+      m.upside = trio[2];
+    }
+  }
+  return scenarios;
+}
+
 // ── XLSX 导出 ───────────────────────────────────────────────
 
 function buildSheets(payload) {
-  return [
+  const sheets = [
     {
       name: "IC Top问题",
       headers: ["优先级", "投委问题", "问题类型", "为什么会被问", "假设/事实基础", "建议准备回答", "需要补充材料", "回答不好影响", "负责人", "事实来源"],
@@ -191,15 +364,76 @@ function buildSheets(payload) {
       headers: ["攻击目标", "反驳点", "类型", "严重度", "致命追问", "数据缺口", "事实来源"],
       rows: (payload.bear_objections || []).map((x) => [x.attack_target, x.objection, x.objection_type, x.severity, x.killer_question, x.data_gap, (x.source_refs || []).join(", ")]),
     },
-    {
-      name: "准备摘要",
-      headers: ["项目", "内容"],
-      rows: [
-        ["Bull Thesis", payload.bull_thesis_statement || ""],
-        ["准备摘要", payload.preparation_summary],
-      ],
-    },
   ];
+
+  const vb = payload.valuation_benchmark;
+  if (vb) {
+    sheets.push({
+      name: "估值挑战",
+      headers: ["板块", "字段", "内容", "事实来源"],
+      rows: [
+        ["方法", "methodology", vb.methodology || "", ""],
+        ["行业中位", "PS", String(vb.industry_median?.ps ?? ""), ""],
+        ["行业中位", "PE", String(vb.industry_median?.pe ?? ""), ""],
+        ["行业中位", "EV/EBITDA", String(vb.industry_median?.ev_ebitda ?? ""), ""],
+        ["行业中位", "注解", vb.industry_median?.note || "", ""],
+        ["项目隐含", "PS", String(vb.subject_implied?.ps ?? ""), ""],
+        ["项目隐含", "PE", String(vb.subject_implied?.pe ?? ""), ""],
+        ["项目隐含", "EV/EBITDA", String(vb.subject_implied?.ev_ebitda ?? ""), ""],
+        ["项目隐含", "注解", vb.subject_implied?.note || "", ""],
+        ["判定", "verdict", vb.verdict || "", ""],
+        ...(vb.challenge_questions || []).map((q, i) => [
+          "挑战追问", `Q${i + 1}`, q, "",
+        ]),
+      ],
+    });
+    sheets.push({
+      name: "可比公司",
+      headers: ["公司", "阶段", "年份", "PS", "PE", "EV/EBITDA", "备注", "事实来源"],
+      rows: (vb.comparable_set || []).map((c) => [
+        c.company,
+        c.stage || "",
+        c.year || "",
+        String(c.ps_multiple ?? ""),
+        String(c.pe_multiple ?? ""),
+        String(c.ev_ebitda ?? ""),
+        c.note || "",
+        (c.source_refs || []).join(", "),
+      ]),
+    });
+  }
+
+  if (Array.isArray(payload.exit_scenarios) && payload.exit_scenarios.length > 0) {
+    sheets.push({
+      name: "退出推演",
+      headers: ["路径", "时间窗", "概率", "假设退出对价", "MOIC 悲观", "MOIC 中性", "MOIC 乐观", "可比先例", "关键风险", "事实来源"],
+      rows: payload.exit_scenarios.map((s) => [
+        s.path,
+        s.timeline,
+        s.probability,
+        s.assumed_exit_value,
+        String(s.moic_range?.downside ?? ""),
+        String(s.moic_range?.base ?? ""),
+        String(s.moic_range?.upside ?? ""),
+        (s.precedents || []).join(" | "),
+        (s.key_risks || []).join(" | "),
+        (s.source_refs || []).join(", "),
+      ]),
+    });
+  }
+
+  sheets.push({
+    name: "准备摘要",
+    headers: ["项目", "内容"],
+    rows: [
+      ["Bull Thesis", payload.bull_thesis_statement || ""],
+      ["准备摘要", payload.preparation_summary],
+      ["估值判定", payload.valuation_benchmark?.verdict || "（未生成）"],
+      ["退出路径数", String((payload.exit_scenarios || []).length)],
+    ],
+  });
+
+  return sheets;
 }
 
 module.exports = {
@@ -213,14 +447,28 @@ module.exports = {
     properties: {
       ic_stage: { type: "string", description: "可选，如 首次 IC / 最终 IC / 条款会前" },
       question_count: { type: "integer", minimum: 10, maximum: 15, description: "目标问题数量，schema 会控制在 10-15" },
+      enable_semantic_audit: {
+        type: "boolean",
+        description: "可选。开启后，对 ic_questions + bull_theses + bear_objections 做语义抽样校验。默认走 env ENABLE_SEMANTIC_AUDIT。",
+      },
+      enable_bp_deep_parsing: {
+        type: "boolean",
+        description: "可选。开启后并行跑 3 个 BP 深度解析 agent (财务三表/单位经济/客户清单)，结构化数字 (D-prefixed) 喂给 Bull/Bear/Synth/Valuation 四步 pipeline。默认走 env ENABLE_BP_DEEP_PARSING。",
+      },
     },
     additionalProperties: false,
   },
 
   async run({ project, params = {}, ctx = {}, userId }) {
     if (!project) return { ok: false, error: "需要项目上下文" };
-    const { callLLMJson, buildFactPack, formatFactPackForPrompt, assertGrounded, exportXlsx } = _deps();
-    const { factPack } = buildFactPack(project);
+    const { callLLMJson, buildEvidencePack, formatFactPackForPrompt, assertGrounded, summarizeFallback, semanticGroundingAudit, exportXlsx } = _deps();
+    const { factPack, searchUsed, uploadCount, bpDeepUsed, bpDeepCount } = await buildEvidencePack(project, {
+      ctx,
+      skillId: "ic_questions_xlsx",
+      useSearch: true,
+      materialsHint: params.ic_stage || "",
+      enableBpDeepParsing: params.enable_bp_deep_parsing,
+    });
     const factsPrompt = formatFactPackForPrompt(factPack);
 
     // ── Step 1: Bull Agent ──────────────────────────────────
@@ -231,7 +479,8 @@ module.exports = {
     ].join("\n");
 
     const { data: bullData, repairs: bullRepairs } = await callLLMJson(
-      SYSTEM_BULL, bullMsg, SCHEMA_BULL, { maxTokens: 4096, maxRepairs: 2 }
+      SYSTEM_BULL, bullMsg, SCHEMA_BULL,
+      { maxTokens: 4096, maxRepairs: 2, skillId: "ic_questions_xlsx" }
     );
     // Bull 必须全部有事实支撑
     try {
@@ -255,7 +504,8 @@ module.exports = {
     ].join("\n");
 
     const { data: bearData, repairs: bearRepairs } = await callLLMJson(
-      SYSTEM_BEAR, bearMsg, SCHEMA_BEAR, { maxTokens: 4096, maxRepairs: 2 }
+      SYSTEM_BEAR, bearMsg, SCHEMA_BEAR,
+      { maxTokens: 4096, maxRepairs: 2, skillId: "ic_questions_xlsx" }
     );
     // Bear 允许假设型攻击无 source_refs，但其他类型需要有
     // 不做 assertGrounded 强制（Bear 的核心价值在于逻辑攻击而非事实引用）
@@ -277,7 +527,8 @@ module.exports = {
     ].join("\n");
 
     const { data: synthData, repairs: synthRepairs } = await callLLMJson(
-      SYSTEM_SYNTH, synthMsg, SCHEMA_SYNTH, { maxTokens: 8192, maxRepairs: 2 }
+      SYSTEM_SYNTH, synthMsg, SCHEMA_SYNTH,
+      { maxTokens: 8192, maxRepairs: 2, skillId: "ic_questions_xlsx" }
     );
     // Synth 产出走 grounding audit，假设挑战型允许空 source_refs
     let audit;
@@ -297,13 +548,48 @@ module.exports = {
     // 服务端后处理：按 priority 排序
     _sortByPriority(synthData.ic_questions);
 
-    // 组装最终 payload（合并三步产出，供 buildSheets 消费）
+    // ── Step 4: Valuation & Exit Agent ───────────────────────
+    // 不阻断主流程：估值/退出生成失败时，仍输出前三步的结果，只在 metadata 里记录失败原因。
+    let valExitData = null;
+    let valExitRepairs = 0;
+    let valExitError = null;
+    try {
+      const valExitMsg = [
+        factsPrompt,
+        "",
+        "【Bull Case（乐观论据）】",
+        JSON.stringify(bullData, null, 2),
+        "",
+        "【Bear Case（质疑反驳）】",
+        JSON.stringify(bearData, null, 2),
+        "",
+        "【已生成 IC 问题清单（不要重复其中的问题）】",
+        JSON.stringify(synthData.ic_questions.map((q) => q.question), null, 2),
+        "",
+        "请按 schema 输出 valuation_benchmark + exit_scenarios JSON。",
+      ].join("\n");
+      const out = await callLLMJson(
+        SYSTEM_VALUATION_EXIT, valExitMsg, SCHEMA_VALUATION_EXIT,
+        { maxTokens: 6144, maxRepairs: 2, skillId: "ic_questions_xlsx" }
+      );
+      valExitData = out.data;
+      valExitRepairs = out.repairs;
+      _normalizeExitScenarios(valExitData.exit_scenarios);
+      // 不在估值/退出节点强制 assertGrounded —— 估值挑战本身就是"假设型"产出，
+      // 但记录在 metadata 让人工 review 时能扫到 source_refs 完整性。
+    } catch (e) {
+      valExitError = e.message;
+    }
+
+    // 组装最终 payload（合并四步产出，供 buildSheets 消费）
     const finalPayload = {
       bull_thesis_statement: bullData.thesis_statement,
       bull_theses: bullData.key_strengths,
       bear_objections: bearData.counter_arguments,
       ic_questions: synthData.ic_questions,
       preparation_summary: synthData.preparation_summary,
+      valuation_benchmark: valExitData?.valuation_benchmark || null,
+      exit_scenarios: valExitData?.exit_scenarios || [],
     };
 
     const artifact = await exportXlsx({
@@ -318,11 +604,27 @@ module.exports = {
       ok: true,
       artifact: artifact || { kind: "json", summary: "IC 投委问题清单", payload: finalPayload },
       metadata: {
-        llm_repairs: { bull: bullRepairs, bear: bearRepairs, synth: synthRepairs },
+        llm_repairs: { bull: bullRepairs, bear: bearRepairs, synth: synthRepairs, val_exit: valExitRepairs },
         grounding: audit,
-        pipeline_steps: 3,
+        fallback: summarizeFallback(finalPayload, "ic_questions_xlsx"),
+        semantic_audit: await (async () => {
+          const enable = params.enable_semantic_audit === true
+            || (params.enable_semantic_audit !== false && process.env.ENABLE_SEMANTIC_AUDIT === "1");
+          if (!enable) return null;
+          return semanticGroundingAudit(finalPayload, factPack, {
+            sampleRate: 0.3,
+            maxSamples: 15,
+            skillId: "ic_questions_xlsx",
+          });
+        })(),
+        pipeline_steps: 4,
+        evidence_search_used: searchUsed,
+        upload_facts_used: uploadCount,
+        bp_deep_parsing_used: !!bpDeepUsed,
+        bp_deep_fact_count: bpDeepCount || 0,
+        valuation_exit_error: valExitError,
       },
     };
   },
-  _private: { SCHEMA_BULL, SCHEMA_BEAR, SCHEMA_SYNTH, buildSheets },
+  _private: { SCHEMA_BULL, SCHEMA_BEAR, SCHEMA_SYNTH, SCHEMA_VALUATION_EXIT, buildSheets, _normalizeExitScenarios },
 };

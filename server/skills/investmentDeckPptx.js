@@ -58,7 +58,7 @@ module.exports = {
       },
       enable_bp_deep_parsing: {
         type: "boolean",
-        description: "可选。开启后并行跑 3 个 BP 深度解析 agent，结构化数字 (D-prefixed) 喂给 Cap Table + Downside Case 页。默认走 env ENABLE_BP_DEEP_PARSING。",
+        description: "可选。兼容旧参数；上传结构化证据会优先用于 Cap Table 与 Downside Case 页。",
       },
       enable_institutional_memory: {
         type: "boolean",
@@ -97,7 +97,7 @@ module.exports = {
       };
     }
     let evidenceMeta = {};
-    let bpDeepInfo = { used: false, count: 0 };
+    let uploadStructuredInfo = { used: false, count: 0 };
     try {
       const augmented = await augmentMaterialsWithEvidence({
         project,
@@ -110,8 +110,8 @@ module.exports = {
       });
       materials = augmented.materials;
       evidenceMeta = { ...(augmented.evidence || {}), searchQueries: augmented.searchQueries || [] };
-      bpDeepInfo.used = !!augmented.evidence?.bpDeepUsed;
-      bpDeepInfo.count = augmented.evidence?.bpDeepCount || 0;
+      uploadStructuredInfo.used = !!augmented.evidence?.uploadStructuredUsed;
+      uploadStructuredInfo.count = augmented.evidence?.uploadStructuredFactCount || 0;
     } catch (err) {
       console.warn("[investment_deck_pptx] Evidence Pack 注入失败，继续使用原材料:", err.message);
     }
@@ -186,9 +186,9 @@ module.exports = {
       metadata: {
         evidence_search_used: !!(searchUsed || evidenceMeta.searchUsed),
         upload_facts_used: evidenceMeta.uploadCount || 0,
-        bp_deep_parsing_used: !!bpDeepInfo.used,
-        bp_deep_fact_count: bpDeepInfo.count || 0,
-        bp_deep_reason: evidenceMeta.bpDeepReason || null,
+        upload_structured_used: !!uploadStructuredInfo.used,
+        upload_structured_fact_count: uploadStructuredInfo.count || 0,
+        upload_structured_reason: evidenceMeta.uploadStructuredReason || null,
         institutional_memory_used: !!evidenceMeta.institutionalMemoryUsed,
         institutional_memory_count: evidenceMeta.institutionalMemoryCount || 0,
       },

@@ -5,7 +5,7 @@
 // 从 skill_runs.metadata_json 跑 SQL 出"健康度看板"，覆盖：
 //   - fallback ratio: preferred 字段缺失率（data room 缺口监控）
 //   - semantic audit verdict 分布: entailed / contradicted / unclear
-//   - bp_deep_parsing 使用率 + 平均 fact count
+//   - upload_structured 使用率 + 平均 fact count
 //   - institutional_memory 检索命中率 + 平均 match count
 //   - sector_compliance 触发分布
 //   - cache 间接信号: 通过 search_used 与 upload_facts_used 替代
@@ -89,8 +89,8 @@ function aggregateSkillMetrics(opts = {}) {
       semantic_entailed: 0,
       semantic_contradicted: 0,
       semantic_unclear: 0,
-      bp_deep_used_count: 0,
-      bp_deep_fact_total: 0,
+      upload_structured_used_count: 0,
+      upload_structured_fact_total: 0,
       institutional_memory_used_count: 0,
       institutional_memory_count_total: 0,
       sector_compliance_hits_count: 0,
@@ -125,9 +125,9 @@ function aggregateSkillMetrics(opts = {}) {
         totals.semantic_contradicted += Number(meta.semantic_audit.contradicted) || 0;
         totals.semantic_unclear += Number(meta.semantic_audit.unclear) || 0;
       }
-      if (meta.bp_deep_parsing_used) {
-        totals.bp_deep_used_count++;
-        totals.bp_deep_fact_total += Number(meta.bp_deep_fact_count) || 0;
+      if (meta.upload_structured_used || meta.bp_deep_parsing_used) {
+        totals.upload_structured_used_count++;
+        totals.upload_structured_fact_total += Number(meta.upload_structured_fact_count ?? meta.bp_deep_fact_count) || 0;
       }
       if (meta.institutional_memory_used) {
         totals.institutional_memory_used_count++;
@@ -182,10 +182,10 @@ function aggregateSkillMetrics(opts = {}) {
         contradicted_pct: _pct(totals.semantic_contradicted, totals.semantic_sampled),
         unclear_pct: _pct(totals.semantic_unclear, totals.semantic_sampled),
       } : null,
-      bp_deep_parsing: {
-        usage_rate_pct: _pct(totals.bp_deep_used_count, totals.total_runs),
-        avg_fact_count: totals.bp_deep_used_count > 0
-          ? Math.round((totals.bp_deep_fact_total / totals.bp_deep_used_count) * 100) / 100
+      upload_structured: {
+        usage_rate_pct: _pct(totals.upload_structured_used_count, totals.total_runs),
+        avg_fact_count: totals.upload_structured_used_count > 0
+          ? Math.round((totals.upload_structured_fact_total / totals.upload_structured_used_count) * 100) / 100
           : null,
       },
       institutional_memory: {

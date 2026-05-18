@@ -3,7 +3,7 @@
 //
 // 覆盖 P3-4 metrics aggregator:
 //   - 从 mock 的 skill_runs 行聚合各项指标
-//   - fallback ratio / semantic_audit 分布 / bp_deep_parsing 使用率
+//   - fallback ratio / semantic_audit 分布 / upload_structured 使用率
 //   - 处理无 metadata_json 的旧行（不崩溃）
 //   - top_errors / sector_compliance_categories 排序
 //   - percentile / avg / pct 辅助函数
@@ -102,22 +102,22 @@ describe("P3-4 metricsAggregator · 聚合主流程", () => {
     expect(s.semantic_audit.unclear_pct).toBe(15);
   });
 
-  test("bp_deep_parsing / institutional_memory 使用率 + 平均 count", () => {
+  test("upload_structured / institutional_memory 使用率 + 平均 count", () => {
     mockRows = [
       {
         skill_id: "ic_questions_xlsx", status: "succeeded", duration_ms: 1000,
-        metadata_json: JSON.stringify({ bp_deep_parsing_used: true, bp_deep_fact_count: 18, institutional_memory_used: true, institutional_memory_count: 4 }),
+        metadata_json: JSON.stringify({ upload_structured_used: true, upload_structured_fact_count: 18, institutional_memory_used: true, institutional_memory_count: 4 }),
         created_at: "2026-05-17",
       },
       {
         skill_id: "ic_questions_xlsx", status: "succeeded", duration_ms: 1000,
-        metadata_json: JSON.stringify({ bp_deep_parsing_used: false, institutional_memory_used: true, institutional_memory_count: 2 }),
+        metadata_json: JSON.stringify({ upload_structured_used: false, institutional_memory_used: true, institutional_memory_count: 2 }),
         created_at: "2026-05-17",
       },
     ];
     const s = agg.aggregateSkillMetrics({ days: 7 }).skills[0];
-    expect(s.bp_deep_parsing.usage_rate_pct).toBe(50);
-    expect(s.bp_deep_parsing.avg_fact_count).toBe(18);
+    expect(s.upload_structured.usage_rate_pct).toBe(50);
+    expect(s.upload_structured.avg_fact_count).toBe(18);
     expect(s.institutional_memory.usage_rate_pct).toBe(100);
     expect(s.institutional_memory.avg_match_count).toBe(3);
   });

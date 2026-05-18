@@ -143,26 +143,59 @@ function _hasTable(db) {
   } catch (_) { return false; }
 }
 
-function upsertExtractionRow({ db, artifactId, conversationId, filename, docType, structured, status, error, factCount }) {
+function _hasColumn(db, table, column) {
+  try {
+    return db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === column);
+  } catch (_) { return false; }
+}
+
+function upsertExtractionRow({ db, artifactId, conversationId, projectId, filename, docType, structured, status, error, factCount }) {
   if (!_hasTable(db)) return null;
   const existing = db.prepare(
     "SELECT id FROM workspace_artifact_structured_extracts WHERE artifact_id = ?"
   ).get(artifactId);
   const json = structured ? JSON.stringify(structured) : null;
+  const hasProject = _hasColumn(db, "workspace_artifact_structured_extracts", "project_id");
+  const hasLevel = _hasColumn(db, "workspace_artifact_structured_extracts", "evidence_level");
   if (existing) {
+    const projectSet = hasProject ? "project_id = ?, " : "";
+    const levelSet = hasLevel ? "evidence_level = 1, " : "";
+    const args = [
+      conversationId,
+      ...(hasProject ? [projectId || null] : []),
+      filename || null,
+      docType || null,
+      json,
+      status,
+      error || null,
+      factCount || 0,
+      artifactId,
+    ];
     db.prepare(
       `UPDATE workspace_artifact_structured_extracts
-       SET conversation_id = ?, filename = ?, doc_type = ?, structured_json = ?,
-           extraction_status = ?, error = ?, fact_count = ?, updated_at = CURRENT_TIMESTAMP
+       SET conversation_id = ?, ${projectSet}filename = ?, doc_type = ?, structured_json = ?,
+           extraction_status = ?, error = ?, fact_count = ?, ${levelSet}updated_at = CURRENT_TIMESTAMP
        WHERE artifact_id = ?`
-    ).run(conversationId, filename || null, docType || null, json, status, error || null, factCount || 0, artifactId);
+    ).run(...args);
     return existing.id;
   }
+  const cols = [
+    "artifact_id", "conversation_id",
+    ...(hasProject ? ["project_id"] : []),
+    "filename", "doc_type", "structured_json", "extraction_status", "error", "fact_count",
+    ...(hasLevel ? ["evidence_level"] : []),
+  ];
+  const values = [
+    artifactId, conversationId,
+    ...(hasProject ? [projectId || null] : []),
+    filename || null, docType || null, json, status, error || null, factCount || 0,
+    ...(hasLevel ? [1] : []),
+  ];
+  const placeholders = cols.map(() => "?").join(", ");
   const info = db.prepare(
-    `INSERT INTO workspace_artifact_structured_extracts
-       (artifact_id, conversation_id, filename, doc_type, structured_json, extraction_status, error, fact_count)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-  ).run(artifactId, conversationId, filename || null, docType || null, json, status, error || null, factCount || 0);
+    `INSERT INTO workspace_artifact_structured_extracts (${cols.join(", ")})
+     VALUES (${placeholders})`
+  ).run(...values);
   return info.lastInsertRowid;
 }
 
@@ -180,7 +213,7 @@ function upsertExtractionRow({ db, artifactId, conversationId, filename, docType
  * @param {object} [args.agentOpts]
  * @returns {Promise<{ status, structured, errors, error }>}
  */
-async function runAndPersist({ db, artifactId, conversationId, filename, uploadText, mimeType, agentOpts }) {
+async function runAndPersist({ db, artifactId, conversationId, projectId, filename, uploadText, mimeType, agentOpts }) {
   if (!artifactId || !conversationId) {
     return { status: "error", error: "missing_artifact_or_conversation_id", structured: null, errors: {} };
   }
@@ -188,6 +221,7 @@ async function runAndPersist({ db, artifactId, conversationId, filename, uploadT
   try {
     upsertExtractionRow({
       db, artifactId, conversationId, filename,
+      projectId,
       docType: null, structured: null, status: "running", error: null, factCount: 0,
     });
   } catch (_) { /* ignore */ }
@@ -200,6 +234,7 @@ async function runAndPersist({ db, artifactId, conversationId, filename, uploadT
     try {
       upsertExtractionRow({
         db, artifactId, conversationId, filename,
+        projectId,
         docType: null, structured: null, status: "error", error: errMsg, factCount: 0,
       });
     } catch (_) { /* ignore */ }
@@ -210,12 +245,34 @@ async function runAndPersist({ db, artifactId, conversationId, filename, uploadT
   try {
     upsertExtractionRow({
       db, artifactId, conversationId, filename,
+      projectId,
       docType: result.structured?.meta?.doc_type_guess || null,
       structured: result.structured,
       status: result.status,
       error: result.status === "error" ? JSON.stringify(result.errors) : null,
       factCount,
     });
+    if (result.status === "success") {
+      try {
+        const evidenceStore = require("../evidenceStore");
+        const persistedFacts = evidenceStore.replaceStructuredFactsForArtifact({
+          db,
+          artifactId,
+          conversationId,
+          projectId,
+          flatFacts: flattenStructuredToFacts(result.structured, { artifactId, filename }),
+        });
+        const finalProjectId = persistedFacts.projectId || projectId;
+        if (finalProjectId && process.env.CONFLICT_JUDGE_DISABLED !== "1") {
+          const taskQueue = require("../taskQueue");
+          taskQueue.fireAndForget(
+            "conflict_judge",
+            () => require("../conflictJudge").runConflictJudgeForProject({ projectId: finalProjectId, db }),
+            { concurrency: Number(process.env.CONFLICT_JUDGE_CONCURRENCY || 1) },
+          );
+        }
+      } catch (_) { /* optional evidence store may not be migrated yet */ }
+    }
   } catch (e) {
     // 持久化失败不抛错；调用方还能拿到 in-memory 结果
     return { ...result, error: `persist_failed: ${e.message}` };

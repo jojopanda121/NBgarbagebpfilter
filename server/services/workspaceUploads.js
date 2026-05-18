@@ -16,6 +16,8 @@ const ws = require("./workspaceService");
 const { extractDocText } = require("./extractionService");
 const { getDb } = require("../db");
 const uploadStructured = require("./extraction/uploadStructuredExtraction");
+const evidenceStore = require("./evidenceStore");
+const taskQueue = require("./taskQueue");
 const logger = require("../utils/logger");
 
 const EXTRACT_MODES = new Set(["pdf", "pptx", "docx", "xlsx", "csv"]);
@@ -92,12 +94,28 @@ async function persistWorkspaceUpload({ file, conversationId, scope, taskId, use
     userId,
   });
 
+  let evidenceDoc = null;
+  if (artifact?.id && text) {
+    try {
+      evidenceDoc = evidenceStore.upsertUploadDocument({
+        db: getDb(),
+        artifact,
+        conversationId,
+        userId,
+        text,
+        expiresAt: artifact.expires_at || null,
+      });
+    } catch (err) {
+      logger.warn?.(`[WorkspaceUpload] 证据文档入库失败: ${err.message}`);
+    }
+  }
+
   if (scope === "task" && taskId && userId && summary) {
     ws.processUploadMemory({ taskId, userId, filename: originalName, summary })
       .catch((err) => console.warn("[WorkspaceUpload] 记忆提炼失败:", err.message));
   }
 
-  // 触发上传资料结构化抽取（替代旧的"BP 深度解析"）。
+  // 触发上传资料结构化抽取（替代旧的"上传结构化抽取"）。
   // - 短文本同步跑，方便首次 skill 立刻拿到结构化证据。
   // - 长文本异步跑，不阻塞上传响应；下游 skill 若先于抽取完成调用，
   //   会拿不到 upload_structured fact，自动降级到 upload sidecar + external_search。
@@ -109,20 +127,24 @@ async function persistWorkspaceUpload({ file, conversationId, scope, taskId, use
       db: getDb(),
       artifactId: artifact.id,
       conversationId,
+      projectId: evidenceDoc?.projectId || null,
+      userId,
       filename: originalName,
       uploadText: trimmed,
       mimeType: file.mimetype,
     };
     if (text.length <= SYNC_EXTRACTION_MAX_CHARS) {
       try {
-        await uploadStructured.runAndPersist(runArgs);
+        await taskQueue.enqueue("upload_structured_extraction", () => uploadStructured.runAndPersist(runArgs), {
+          concurrency: Number(process.env.UPLOAD_EXTRACTION_CONCURRENCY || 1),
+        });
       } catch (err) {
         logger.warn?.(`[WorkspaceUpload] 同步结构化抽取失败: ${err.message}`);
       }
     } else {
-      // fire-and-forget；任何 reject 都吞掉
-      uploadStructured.runAndPersist(runArgs).catch((err) => {
-        logger.warn?.(`[WorkspaceUpload] 异步结构化抽取失败: ${err.message}`);
+      taskQueue.fireAndForget("upload_structured_extraction", () => uploadStructured.runAndPersist(runArgs), {
+        concurrency: Number(process.env.UPLOAD_EXTRACTION_CONCURRENCY || 1),
+        logger,
       });
     }
   }

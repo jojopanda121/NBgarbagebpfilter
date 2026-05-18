@@ -1,5 +1,5 @@
 -- 047_skill_runs_metadata.sql
--- P3-4: 把 skill 运行时 metadata（fallback / semantic_audit / bp_deep_parsing /
+-- P3-4: 把 skill 运行时 metadata（fallback / semantic_audit / upload_structured /
 -- institutional_memory / sector_compliance 等）独立成列，方便 metricsAggregator
 -- 跑 SQL 聚合，而不是逐行解析 artifact_json。
 --

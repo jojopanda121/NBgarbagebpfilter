@@ -160,7 +160,7 @@ async function extract(bpText, opts = {}) {
       {
         maxTokens: opts.maxTokens || 4096,
         maxRepairs: opts.maxRepairs ?? 2,
-        taskHint: "bp_deep_parsing",
+        taskHint: "upload_structured_extraction",
         skillId: "customer_list_agent",
       },
     );

@@ -150,8 +150,8 @@ async function execute({ skillId, params = {}, project = null, userId, ctx = {} 
       metricsMetadata = {
         fallback: result.metadata.fallback || null,
         semantic_audit: result.metadata.semantic_audit || null,
-        bp_deep_parsing_used: !!result.metadata.bp_deep_parsing_used,
-        bp_deep_fact_count: result.metadata.bp_deep_fact_count || 0,
+        upload_structured_used: !!(result.metadata.upload_structured_used || result.metadata.bp_deep_parsing_used),
+        upload_structured_fact_count: result.metadata.upload_structured_fact_count ?? result.metadata.bp_deep_fact_count ?? 0,
         institutional_memory_used: !!result.metadata.institutional_memory_used,
         institutional_memory_count: result.metadata.institutional_memory_count || 0,
         sector_compliance_hits: result.metadata.sector_compliance_hits || [],

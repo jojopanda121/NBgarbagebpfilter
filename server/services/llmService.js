@@ -46,7 +46,7 @@ const SKILL_TIER_MAP = {
 };
 const TASK_HINT_TIER_MAP = {
   semantic_audit: "light",
-  bp_deep_parsing: "default",  // 三表抽取需要中等理解力，走 default
+  upload_structured_extraction: "default",  // 上传结构化抽取需要中等理解力，走 default
 };
 
 function _resolveModelTier(opts = {}) {

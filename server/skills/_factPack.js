@@ -20,6 +20,7 @@
 const { buildContext } = require("./_projectContext");
 const fs = require("fs");
 const { getDb } = require("../db");
+const evidenceStore = require("../services/evidenceStore");
 
 const EMPTY_VALUES = new Set(["", "暂无", "未披露", "null", "undefined"]);
 
@@ -37,7 +38,7 @@ function compactValue(value, max = 360) {
   return text.length > max ? `${text.slice(0, max)}...` : text;
 }
 
-function pushFact(facts, { field, label, value, sourceType, sourceName, sourceRef, sourceUrl, confidence = "medium", artifactId, filename }) {
+function pushFact(facts, { field, label, value, sourceType, sourceName, sourceRef, sourceUrl, confidence = "medium", artifactId, filename, evidenceLevel }) {
   if (!isUsefulValue(value)) return;
   // 临时 id；最终在 buildEvidencePack 末尾会被 _renumberFFacts 重排成 F001..FN。
   const id = `F${String(facts.length + 1).padStart(3, "0")}`;
@@ -53,6 +54,7 @@ function pushFact(facts, { field, label, value, sourceType, sourceName, sourceRe
     artifact_id: artifactId || null,
     filename: filename || null,
     confidence,
+    evidence_level: evidenceLevel || evidenceStore.evidenceLevelForSource(sourceType || "project_context"),
   });
 }
 
@@ -234,6 +236,36 @@ function _readSidecar(storagePath, maxChars = 2400) {
 
 function appendUploadFacts(facts, conversationId, opts = {}) {
   if (!conversationId) return { uploadCount: 0 };
+  const projectId = opts.projectId || opts.ctx?.projectId || null;
+  const query = [opts.materialsHint, opts.companyHint, opts.industryHint].filter(Boolean).join(" ");
+  try {
+    const db = getDb();
+    const chunks = evidenceStore.searchUploadExcerpts({
+      db,
+      projectId,
+      conversationId,
+      query,
+      limit: opts.maxUploadChunks || 8,
+    });
+    if (chunks.length) {
+      for (const c of chunks) {
+        pushFact(facts, {
+          field: "upload.excerpt",
+          label: `上传材料摘录-${c.source_ref || c.artifact_id || "chunk"}`,
+          value: c.chunk_text,
+          sourceType: "upload",
+          sourceName: c.source_ref || "上传材料",
+          sourceRef: c.chunk_id || c.artifact_id,
+          artifactId: c.artifact_id,
+          confidence: "high",
+          evidenceLevel: 2,
+        });
+      }
+      return { uploadCount: chunks.length };
+    }
+  } catch (_) {
+    // Fall through to legacy sidecar reads.
+  }
   const maxUploads = opts.maxUploads || 8;
   const db = getDb();
   let rows = [];
@@ -282,6 +314,37 @@ function appendUploadFacts(facts, conversationId, opts = {}) {
 // ──────────────────────────────────────────────────────────────
 function appendUploadStructuredFacts(facts, conversationId, opts = {}) {
   if (!conversationId) return { used: false, factCount: 0, artifactCount: 0, errorCount: 0 };
+  const projectId = opts.projectId || opts.ctx?.projectId || null;
+  try {
+    const db = getDb();
+    const rows = evidenceStore.listStructuredFactsForEvidencePack({
+      db,
+      projectId,
+      conversationId,
+      limit: opts.maxStructuredFacts || 120,
+    });
+    if (rows.length) {
+      for (const f of rows) {
+        facts.push({
+          id: `F${String(facts.length + 1).padStart(3, "0")}`,
+          field: f.field,
+          label: f.label,
+          value: compactValue(f.value),
+          source_type: f.source_type,
+          source_name: f.source_name,
+          source_ref: f.source_ref || "",
+          source_url: f.source_url || "",
+          artifact_id: f.artifact_id || null,
+          filename: f.filename || null,
+          confidence: f.confidence || "medium",
+          evidence_level: 1,
+        });
+      }
+      return { used: true, factCount: rows.length, artifactCount: new Set(rows.map((r) => r.artifact_id).filter(Boolean)).size, errorCount: 0 };
+    }
+  } catch (_) {
+    // Fall through to legacy extraction table.
+  }
   let rows = [];
   let errorRows = 0;
   try {
@@ -320,6 +383,7 @@ function appendUploadStructuredFacts(facts, conversationId, opts = {}) {
         artifact_id: f.artifact_id || null,
         filename: f.filename || null,
         confidence: f.confidence,
+        evidence_level: 1,
       });
       total++;
     }
@@ -422,6 +486,7 @@ function appendConflictFacts(facts) {
       source_ref: `${c.upload.id}↔${c.other.id}`,
       source_url: "",
       confidence: "high",
+      evidence_level: 0,
       upload_fact_id: c.upload.id,
       other_fact_id: c.other.id,
       winner: "upload_structured",
@@ -430,6 +495,48 @@ function appendConflictFacts(facts) {
   // 倒插：保证 C 编号在 facts 数组最前面
   for (let i = conflictFacts.length - 1; i >= 0; i--) facts.unshift(conflictFacts[i]);
   return { conflictFactCount: conflictFacts.length, conflicts: conflictFacts };
+}
+
+function appendPersistedConflictFacts(facts, projectId, opts = {}) {
+  if (!projectId) return { conflictFactCount: 0, conflicts: [] };
+  try {
+    const db = getDb();
+    if (!evidenceStore.tableExists(db, "conflicts")) return { conflictFactCount: 0, conflicts: [] };
+    const rows = db.prepare(
+      `SELECT conflict_id, field, sources, severity, status, conflict_json, updated_at
+       FROM conflicts
+       WHERE project_id = ? AND status IN ('open', 'needs_review')
+       ORDER BY CASE severity
+          WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END,
+          updated_at DESC
+       LIMIT ?`
+    ).all(projectId, opts.maxPersistedConflicts || 12);
+    const start = facts.filter((f) => f.id?.startsWith("C")).length + 1;
+    const out = rows.map((r, idx) => {
+      let parsed = {};
+      let sources = [];
+      try { parsed = JSON.parse(r.conflict_json || "{}"); } catch (_) {}
+      try { sources = JSON.parse(r.sources || "[]"); } catch (_) {}
+      return {
+        id: `C${String(start + idx).padStart(3, "0")}`,
+        field: `conflict.${r.field || "ai_judge"}`,
+        label: `AI Judge 冲突/红旗-${r.severity}`,
+        value: parsed.summary || `${r.field}: ${sources.join("；")}`,
+        source_type: "evidence_conflict",
+        source_name: "AI Judge 冲突检测",
+        source_ref: sources.join(", ") || r.conflict_id,
+        source_url: "",
+        confidence: r.severity === "critical" || r.severity === "high" ? "high" : "medium",
+        evidence_level: 0,
+        conflict_id: r.conflict_id,
+        severity: r.severity,
+      };
+    });
+    for (let i = out.length - 1; i >= 0; i--) facts.unshift(out[i]);
+    return { conflictFactCount: out.length, conflicts: out };
+  } catch (_) {
+    return { conflictFactCount: 0, conflicts: [] };
+  }
 }
 
 function _factValue(factPack, fieldRegex, labelRegex) {
@@ -507,6 +614,7 @@ async function appendSearchFacts(facts, factPack, opts = {}) {
       sourceUrl: item.url,
       sourceRef: item.url || item.query,
       confidence: "medium",
+      evidenceLevel: 3,
     });
   }
   return {
@@ -547,6 +655,8 @@ function appendInstitutionalMemoryFacts(facts, project, opts = {}) {
 }
 
 async function buildEvidencePack(project, opts = {}) {
+  const projectId = opts.projectId || opts.ctx?.projectId || project?.id || null;
+  opts = { ...opts, projectId };
   // Step 1: 项目结构化字段（旧 BP 分析 + BP 自报），暂存到 baseFacts
   const { context, factPack } = buildFactPack(project, opts);
   const baseFacts = factPack.facts.slice();
@@ -585,6 +695,7 @@ async function buildEvidencePack(project, opts = {}) {
   // Step 8: 冲突检测（必须在 renumber 之后，引用 F 编号）。
   //         产生的 C 编号 fact 插到 facts 数组最前。
   const conflictMeta = appendConflictFacts(factPack.facts);
+  const persistedConflictMeta = appendPersistedConflictFacts(factPack.facts, projectId, opts);
 
   factPack.facts = factPack.facts.slice(0, opts.maxFacts || 140);
 
@@ -611,8 +722,13 @@ async function buildEvidencePack(project, opts = {}) {
     uploadStructuredFactCount: uploadStructuredMeta.factCount,
     uploadStructuredArtifactCount: uploadStructuredMeta.artifactCount,
     uploadStructuredErrorCount: uploadStructuredMeta.errorCount,
-    conflictFactCount: conflictMeta.conflictFactCount,
-    conflictFacts: conflictMeta.conflicts,
+    // Backward-compatible aliases for older skills; new code should use
+    // uploadStructured* names.
+    bpDeepUsed: uploadStructuredMeta.used,
+    bpDeepCount: uploadStructuredMeta.factCount,
+    bpDeepReason: uploadStructuredMeta.used ? null : "no_upload_structured_facts",
+    conflictFactCount: conflictMeta.conflictFactCount + persistedConflictMeta.conflictFactCount,
+    conflictFacts: [...conflictMeta.conflicts, ...persistedConflictMeta.conflicts],
     searchUsed: searchMeta.searchUsed,
     searchQueries: searchMeta.searchQueries,
     searchResults: searchMeta.searchResults,
@@ -693,6 +809,7 @@ module.exports = {
     _SOURCE_GROUPS,
     appendUploadStructuredFacts,
     appendConflictFacts,
+    appendPersistedConflictFacts,
     CONFLICT_RULES,
   },
 };

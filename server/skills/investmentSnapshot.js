@@ -54,7 +54,7 @@ module.exports = {
       },
       enable_bp_deep_parsing: {
         type: "boolean",
-        description: "可选. 开启后并行跑 3 个 BP 深度解析 agent. 默认走 env ENABLE_BP_DEEP_PARSING.",
+        description: "可选。兼容旧参数；上传材料结构化抽取现在会在上传后自动执行。",
       },
       enable_institutional_memory: {
         type: "boolean",
@@ -183,9 +183,9 @@ module.exports = {
       metadata: {
         evidence_search_used: !!(searchUsed || evidenceMeta.searchUsed),
         upload_facts_used: evidenceMeta.uploadCount || 0,
-        bp_deep_parsing_used: !!evidenceMeta.bpDeepUsed,
-        bp_deep_fact_count: evidenceMeta.bpDeepCount || 0,
-        bp_deep_reason: evidenceMeta.bpDeepReason || null,
+        upload_structured_used: !!evidenceMeta.uploadStructuredUsed,
+        upload_structured_fact_count: evidenceMeta.uploadStructuredFactCount || 0,
+        upload_structured_reason: evidenceMeta.uploadStructuredReason || null,
         institutional_memory_used: !!evidenceMeta.institutionalMemoryUsed,
         institutional_memory_count: evidenceMeta.institutionalMemoryCount || 0,
       },

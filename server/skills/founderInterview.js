@@ -252,7 +252,7 @@ module.exports = {
       },
       enable_bp_deep_parsing: {
         type: "boolean",
-        description: "可选。BP 深度解析数字 (D-prefixed) 帮你设计针对 LTV/CAC、跑道、客户集中度的精准追问。默认走 env ENABLE_BP_DEEP_PARSING。",
+        description: "可选。兼容旧参数；上传结构化证据会用于设计 LTV/CAC、跑道、客户集中度等精准追问。",
       },
     },
     additionalProperties: false,
@@ -264,7 +264,7 @@ module.exports = {
       callLLMJson, buildEvidencePack, formatFactPackForPrompt, assertGrounded,
       semanticGroundingAudit, summarizeFallback, exportDocx,
     } = _deps();
-    const { factPack, searchUsed, uploadCount, bpDeepUsed, bpDeepCount } = await buildEvidencePack(project, {
+    const { factPack, searchUsed, uploadCount, uploadStructuredUsed, uploadStructuredFactCount } = await buildEvidencePack(project, {
       ctx,
       skillId: "founder_interview_docx",
       useSearch: true,
@@ -320,8 +320,8 @@ module.exports = {
         closed_question_fixes: closedQFixes,
         evidence_search_used: searchUsed,
         upload_facts_used: uploadCount,
-        bp_deep_parsing_used: !!bpDeepUsed,
-        bp_deep_fact_count: bpDeepCount || 0,
+        upload_structured_used: !!uploadStructuredUsed,
+        upload_structured_fact_count: uploadStructuredFactCount || 0,
         semantic_audit: await (async () => {
           const enable = params.enable_semantic_audit === true
             || (params.enable_semantic_audit !== false && process.env.ENABLE_SEMANTIC_AUDIT === "1");

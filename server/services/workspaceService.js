@@ -229,6 +229,7 @@ function deleteArtifact(artifactId, conversationId) {
   const artifact = getArtifact(artifactId);
   if (!artifact || artifact.conversation_id !== conversationId) return false;
   removeArtifactFiles(artifact);
+  try { require("./evidenceStore").deleteEvidenceForArtifact(db, artifactId); } catch (_) {}
   db.prepare("DELETE FROM workspace_artifacts WHERE id = ?").run(artifactId);
   return true;
 }
@@ -252,17 +253,16 @@ function insertArtifact({ conversationId, messageId, kind, filename, storagePath
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(id, conversationId, messageId || null, kind, filename, storagePath, mimeType || null, sizeBytes || null, summary || null);
 
-  // Set expires_at: VIP = permanent, non-VIP = 7 days
+  // Retention:
+  // - VIP/admin: permanent while VIP/admin is active.
+  // - Free upload materials: 3 days.
+  // - Generated artifacts: short-lived cache (7 days) for non-VIP users.
   try {
     const cols = db.prepare("PRAGMA table_info(workspace_artifacts)").all();
     if (cols.some((c) => c.name === "expires_at")) {
-      let isVip = false;
-      if (userId) {
-        const u = db.prepare("SELECT is_vip, vip_expires_at FROM users WHERE id = ?").get(userId);
-        isVip = u?.is_vip && (!u.vip_expires_at || new Date(u.vip_expires_at) > new Date());
-      }
+      const { computeArtifactExpiresAt } = require("./evidenceStore");
       db.prepare("UPDATE workspace_artifacts SET expires_at = ? WHERE id = ?")
-        .run(isVip ? null : new Date(Date.now() + 7 * 86400000).toISOString(), id);
+        .run(computeArtifactExpiresAt({ db, userId, kind }), id);
     }
   } catch {}
 
@@ -312,6 +312,10 @@ function clearConversation(conversationId, scope = "all") {
       "SELECT * FROM workspace_artifacts WHERE conversation_id = ? AND kind = 'upload'"
     ).all(conversationId);
     for (const a of uploads) removeArtifactFiles(a);
+    try {
+      const evidenceStore = require("./evidenceStore");
+      for (const a of uploads) evidenceStore.deleteEvidenceForArtifact(db, a.id);
+    } catch (_) {}
     const info = db.prepare(
       "DELETE FROM workspace_artifacts WHERE conversation_id = ? AND kind = 'upload'"
     ).run(conversationId);

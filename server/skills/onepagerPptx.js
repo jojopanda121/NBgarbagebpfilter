@@ -89,7 +89,7 @@ module.exports = {
       },
       enable_bp_deep_parsing: {
         type: "boolean",
-        description: "可选. 开启后并行跑 3 个 BP 深度解析 agent (财务三表/单位经济/客户清单), 默认走 env ENABLE_BP_DEEP_PARSING.",
+        description: "可选。兼容旧参数；上传材料结构化抽取现在会在上传后自动执行。",
       },
       enable_institutional_memory: {
         type: "boolean",
@@ -176,10 +176,10 @@ module.exports = {
         cache.evidence = {
           searchUsed: !!augmented.evidence?.searchUsed,
           uploadCount: augmented.evidence?.uploadCount || 0,
-          // P3 fix-E: 透传 BP 深度解析 / 机构记忆 metrics 到 metadata
-          bpDeepUsed: !!augmented.evidence?.bpDeepUsed,
-          bpDeepCount: augmented.evidence?.bpDeepCount || 0,
-          bpDeepReason: augmented.evidence?.bpDeepReason || null,
+          // P3 fix-E: 透传 upload_structured / 机构记忆 metrics 到 metadata
+          uploadStructuredUsed: !!augmented.evidence?.uploadStructuredUsed,
+          uploadStructuredFactCount: augmented.evidence?.uploadStructuredFactCount || 0,
+          uploadStructuredReason: augmented.evidence?.uploadStructuredReason || null,
           institutionalMemoryUsed: !!augmented.evidence?.institutionalMemoryUsed,
           institutionalMemoryCount: augmented.evidence?.institutionalMemoryCount || 0,
         };
@@ -259,8 +259,8 @@ module.exports = {
       metadata: {
         evidence_search_used: !!cache.search_used,
         upload_facts_used: cache.evidence?.uploadCount || 0,
-        bp_deep_parsing_used: !!cache.evidence?.bpDeepUsed,
-        bp_deep_fact_count: cache.evidence?.bpDeepCount || 0,
+        upload_structured_used: !!cache.evidence?.uploadStructuredUsed,
+        upload_structured_fact_count: cache.evidence?.uploadStructuredFactCount || 0,
         institutional_memory_used: !!cache.evidence?.institutionalMemoryUsed,
         institutional_memory_count: cache.evidence?.institutionalMemoryCount || 0,
         fallback,

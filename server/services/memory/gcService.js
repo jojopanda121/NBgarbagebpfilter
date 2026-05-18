@@ -9,6 +9,7 @@ function runMemoryGc({ artifactRoot, artifactMaxAgeDays = 30 } = {}) {
     workingDeleted: 0,
     messagesDeleted: 0,
     artifactsDeleted: 0,
+    uploadRetentionUpdated: 0,
     staleShared: 0,
     archivedLongTerm: 0,
   };
@@ -45,6 +46,11 @@ function runMemoryGc({ artifactRoot, artifactMaxAgeDays = 30 } = {}) {
   ).run().changes || 0;
 
   if (artifactRoot && fs.existsSync(artifactRoot)) {
+    let evidenceStore = null;
+    try {
+      evidenceStore = require("../evidenceStore");
+      result.uploadRetentionUpdated = evidenceStore.refreshUploadRetention(db).updated || 0;
+    } catch (_) {}
     const cols = db.prepare("PRAGMA table_info(workspace_artifacts)").all();
     const hasExpires = cols.some((c) => c.name === "expires_at");
 
@@ -64,6 +70,7 @@ function runMemoryGc({ artifactRoot, artifactMaxAgeDays = 30 } = {}) {
         const sidecar = `${row.storage_path}.extracted.txt`;
         if (fs.existsSync(sidecar)) fs.unlinkSync(sidecar);
       } catch {}
+      try { evidenceStore?.deleteEvidenceForArtifact(db, row.id); } catch (_) {}
       db.prepare("DELETE FROM workspace_artifacts WHERE id = ?").run(row.id);
       result.artifactsDeleted++;
     }

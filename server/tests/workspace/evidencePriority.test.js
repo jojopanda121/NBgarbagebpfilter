@@ -2,15 +2,15 @@
 // tests/workspace/evidencePriority.test.js
 //
 // 覆盖 P3 fix 改造后的证据优先级流：
-//   1) evidence_policy 文本里"用户上传 > 外部检索 > 旧 BP 分析 > BP 深度解析"
+//   1) evidence_policy 文本里"用户上传 > 外部检索 > 旧 BP 分析 > 上传结构化抽取"
 //   2) formatFactPackForPrompt 按 source_type 分组渲染
-//   3) appendBpDeepFacts 不会用短 hint 文本 (stage_context / focus_dimension) 触发
+//   3) upload_structured facts 使用 F 编号并排在上传摘录之前
 //   4) _evidenceMaterial 把 enableBpDeepParsing 透传到 buildEvidencePack
 //   5) registry 把 skill metadata 写入 skill_runs.metadata_json
 // ============================================================
 
 describe("P3 fix · evidence_policy 优先级文本", () => {
-  test("buildEvidencePack 写出的 evidence_policy 顺序正确 (上传 > 外部检索 > 旧 BP > BP 深度解析)", async () => {
+  test("buildEvidencePack 写出的 evidence_policy 顺序正确 (上传 > 外部检索 > 旧 BP > 上传结构化抽取)", async () => {
     jest.resetModules();
     jest.doMock("../../skills/_projectContext", () => ({
       buildContext: () => ({ project: { name: "X" }, extracted_data: {}, verdict: {}, claim_verdicts: [], deep_research_excerpt: "" }),
@@ -19,11 +19,10 @@ describe("P3 fix · evidence_policy 优先级文本", () => {
     const out = await fp.buildEvidencePack({ id: 1, name: "X" }, { useSearch: false });
     const policy = out.factPack.evidence_policy;
     // 必须包含完整优先级链
-    expect(policy).toMatch(/用户上传材料 > 外部检索\/实时搜索交叉验证 > 上一轮 BP 分析\/项目结构化数据 > BP 原文\/BP 深度解析/);
+    expect(policy).toMatch(/用户上传资料-结构化 > 用户上传资料-原文摘录 > 外部检索\/实时搜索交叉验证 > 上一轮 BP 分析\/项目结构化数据 > BP 原文\/BP 自报/);
     // 必须把 BP 标为被审查对象
     expect(policy).toMatch(/BP 本身是被审查对象，不是可信事实源/);
-    // 必须明确说 D 编号本质 = 公司自报
-    expect(policy).toMatch(/D 编号.*来源仍是 BP.*公司自报/s);
+    expect(policy).toMatch(/source_type=upload_structured/);
     // K 编号必须标注为参考
     expect(policy).toMatch(/K 编号.*仅作为.*思考参考/s);
     jest.dontMock("../../skills/_projectContext");
@@ -39,7 +38,8 @@ describe("P3 fix · formatFactPackForPrompt 按 source_type 分组", () => {
         { id: "F003", label: "上一轮分析-行业", value: "AI SaaS", source_type: "project_context", source_name: "WS", confidence: "high" },
         { id: "F001", label: "上传摘要", value: "某 PDF", source_type: "upload", source_name: "bp.pdf", confidence: "high" },
         { id: "F002", label: "外部搜索-tam", value: "TAM 800 亿", source_type: "external_search", source_name: "report", confidence: "medium" },
-        { id: "D001", label: "营收", value: "1.2 亿", source_type: "bp_deep_parsing", source_name: "BP 深度解析", confidence: "low" },
+        { id: "F004", label: "上传资料-营业收入", value: "1.2 亿", source_type: "upload_structured", source_name: "财务表", confidence: "high" },
+        { id: "F005", label: "BP 声称收入", value: "2 亿", source_type: "bp_self_report", source_name: "BP", confidence: "low" },
         { id: "K001", label: "历史先例", value: "公司 X invested 2023", source_type: "institutional_memory", source_name: "机构知识库", confidence: "medium" },
       ],
       evidence_policy: "policy",
@@ -50,61 +50,24 @@ describe("P3 fix · formatFactPackForPrompt 按 source_type 分组", () => {
     expect(text).toMatch(/用户上传资料/);
     expect(text).toMatch(/外部搜索交叉验证/);
     expect(text).toMatch(/上一轮 BP 分析 \/ 项目结构化数据/);
-    expect(text).toMatch(/BP 原文深度解析/);
+    expect(text).toMatch(/BP 原文 \/ BP 自报/);
     expect(text).toMatch(/机构历史先例/);
     // upload section 必须出现在 external_search 之前 (用 ## 【 prefix 精确定位 section header,
     // 避免 policy 文本里其它处出现关键词造成误判)
     const idx = (kw) => text.indexOf(`## 【${kw}`);
     expect(idx("用户上传资料")).toBeGreaterThan(-1);
-    expect(idx("用户上传资料")).toBeLessThan(idx("外部搜索交叉验证"));
+    expect(idx("用户上传资料-结构化")).toBeLessThan(idx("用户上传资料-原文摘录"));
+    expect(idx("用户上传资料-原文摘录")).toBeLessThan(idx("外部搜索交叉验证"));
     expect(idx("外部搜索交叉验证")).toBeLessThan(idx("上一轮 BP 分析"));
-    expect(idx("上一轮 BP 分析")).toBeLessThan(idx("BP 原文深度解析"));
-    expect(idx("BP 原文深度解析")).toBeLessThan(idx("机构历史先例"));
-    // F/D/K 编号引用规则必须出现
-    expect(text).toMatch(/F = 用户上传 \/ 外部搜索 \/ 项目结构化/);
+    expect(idx("上一轮 BP 分析")).toBeLessThan(idx("BP 原文 / BP 自报"));
+    expect(idx("BP 原文 / BP 自报")).toBeLessThan(idx("机构历史先例"));
+    expect(text).toMatch(/F = 上传结构化 \/ 上传摘录 \/ 外部搜索/);
   });
 
   test("空 fact pack 不崩 且输出'（暂无可用事实）'", () => {
     const { formatFactPackForPrompt } = require("../../skills/_factPack");
     const text = formatFactPackForPrompt({ project_name: "X", facts: [] });
     expect(text).toMatch(/（暂无可用事实）/);
-  });
-});
-
-describe("P3 fix · BP 深度解析拒绝短 hint 文本", () => {
-  test("_collectBpRawText: stage_context 这种短字符串不会被当成 BP 原文", () => {
-    const fp = require("../../skills/_factPack");
-    const out = fp._private._collectBpRawText(
-      { id: 1 },
-      { bpText: "首次 IC", conversationId: null }, // 只有短 hint
-      { deep_research_excerpt: "" },
-    );
-    expect(out.text).toBe("");
-    expect(out.source).toBeNull();
-  });
-
-  test("_collectBpRawText: 显式 bpText 够长走 explicit_opts", () => {
-    const fp = require("../../skills/_factPack");
-    const longText = "BP 原文 ".repeat(50); // > 200 字符
-    const out = fp._private._collectBpRawText(
-      { id: 1 },
-      { bpText: longText },
-      null,
-    );
-    expect(out.source).toBe("explicit_opts");
-    expect(out.text.length).toBeGreaterThan(200);
-  });
-
-  test("_collectBpRawText: 兜底用 context.deep_research_excerpt", () => {
-    const fp = require("../../skills/_factPack");
-    const dr = "深度研究输出 ".repeat(60);
-    const out = fp._private._collectBpRawText(
-      { id: 1 },
-      { bpText: "", conversationId: null },
-      { deep_research_excerpt: dr },
-    );
-    expect(out.source).toBe("deep_research_excerpt");
-    expect(out.text.length).toBeGreaterThan(200);
   });
 });
 
@@ -121,8 +84,8 @@ describe("P3 fix · _evidenceMaterial 透传 enableBpDeepParsing", () => {
           searchUsed: false,
           searchQueries: [],
           searchResults: [],
-          bpDeepUsed: false,
-          bpDeepCount: 0,
+          uploadStructuredUsed: false,
+          uploadStructuredFactCount: 0,
           institutionalMemoryUsed: false,
         };
       },
@@ -176,8 +139,8 @@ describe("P3 fix · registry 写 skill_runs.metadata_json", () => {
         metadata: {
           evidence_search_used: true,
           upload_facts_used: 2,
-          bp_deep_parsing_used: true,
-          bp_deep_fact_count: 7,
+          upload_structured_used: true,
+          upload_structured_fact_count: 7,
           institutional_memory_used: false,
           institutional_memory_count: 0,
           fallback: { preferred_missing: 1, preferred_total: 12 },
@@ -199,8 +162,8 @@ describe("P3 fix · registry 写 skill_runs.metadata_json", () => {
     const meta = JSON.parse(metadataJson);
     expect(meta.evidence_search_used).toBe(true);
     expect(meta.upload_facts_used).toBe(2);
-    expect(meta.bp_deep_parsing_used).toBe(true);
-    expect(meta.bp_deep_fact_count).toBe(7);
+    expect(meta.upload_structured_used).toBe(true);
+    expect(meta.upload_structured_fact_count).toBe(7);
     expect(meta.fallback.preferred_missing).toBe(1);
     expect(meta.grounding_ok).toBe(true);
     expect(meta.grounding_referenced_count).toBe(9);

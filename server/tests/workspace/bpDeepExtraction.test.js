@@ -1,7 +1,7 @@
 // ============================================================
 // tests/workspace/bpDeepExtraction.test.js
 //
-// 覆盖 BP 深度解析 3 agent 的 normalize / fallback / flattenToFacts 逻辑。
+// 覆盖 上传结构化抽取 3 agent 的 normalize / fallback / flattenToFacts 逻辑。
 // 不调用真实 LLM；只验证：
 //   - LLM 返回脏数据时 normalize 能强制兜回 schema
 //   - extract 失败时 buildExtractionFailedPayload 给出可消费的结构
@@ -13,7 +13,7 @@ const ue = require("../../services/extraction/unitEconomicsAgent");
 const cust = require("../../services/extraction/customerListAgent");
 const orchestrator = require("../../services/extraction");
 
-describe("BP 深度解析 · normalize 强制兜底", () => {
+describe("上传结构化抽取 · normalize 强制兜底", () => {
   test("financialStatementsAgent.normalize 处理 LLM 自然语言占位", () => {
     const raw = {
       pl: {
@@ -95,7 +95,7 @@ describe("BP 深度解析 · normalize 强制兜底", () => {
   });
 });
 
-describe("BP 深度解析 · extraction_failed payload 结构稳定", () => {
+describe("上传结构化抽取 · extraction_failed payload 结构稳定", () => {
   test("financialStatementsAgent 三表骨架完整", () => {
     const p = fin.buildExtractionFailedPayload("test_reason");
     expect(p.pl.revenue.confidence).toBe("missing");
@@ -104,17 +104,17 @@ describe("BP 深度解析 · extraction_failed payload 结构稳定", () => {
     expect(p.notes.warnings).toEqual(["test_reason"]);
   });
 
-  test("orchestrator extractBpDeepFacts 在空输入下不抛错且结构完整", async () => {
-    const out = await orchestrator.extractBpDeepFacts("");
-    expect(out.financials.pl.revenue.value).toBeNull();
-    expect(out.unit_economics.ltv.value).toBeNull();
-    expect(out.customers.top_customers).toEqual([]);
-    expect(out.meta.financials_repairs).toBe(0);
+  test("orchestrator extractUploadStructured 在空输入下不抛错且结构完整", async () => {
+    const out = await orchestrator.extractUploadStructured("");
+    expect(out.structured.financials.pl.revenue.value).toBeNull();
+    expect(out.structured.unit_economics.ltv.value).toBeNull();
+    expect(out.structured.customers.top_customers).toEqual([]);
+    expect(out.status).toBe("skipped");
   });
 });
 
-describe("BP 深度解析 · flattenToFacts 兼容 Fact Pack", () => {
-  test("跳过 null value，按 startSeq 编号 D001 D002...", () => {
+describe("上传结构化抽取 · flattenToFacts 兼容 Fact Pack", () => {
+  test("跳过 null value，输出 upload_structured facts", () => {
     const deep = {
       financials: {
         pl: {
@@ -137,25 +137,20 @@ describe("BP 深度解析 · flattenToFacts 兼容 Fact Pack", () => {
         ],
       },
     };
-    const facts = orchestrator.flattenToFacts(deep);
+    const facts = orchestrator.flattenStructuredToFacts(deep);
     expect(facts.length).toBeGreaterThan(0);
-    expect(facts[0].id).toBe("D001");
-    expect(facts[0].source_type).toBe("bp_deep_parsing");
+    expect(facts[0].source_type).toBe("upload_structured");
     // null value 应被跳过 (gross_margin_pct, cac)
     const labels = facts.map((f) => f.label);
-    expect(labels).toContain("营业收入");
-    expect(labels).not.toContain("毛利率 %"); // null 跳过
+    expect(labels).toContain("上传资料-营业收入");
+    expect(labels).not.toContain("上传资料-毛利率 %"); // null 跳过
     expect(labels).not.toContain("CAC");
-    expect(labels).toContain("LTV/CAC");
-    expect(labels).toContain("前 3 大客户占比 %");
-    expect(labels.filter((l) => l === "Top 1 客户").length).toBe(1);
+    expect(labels).toContain("上传资料-LTV/CAC");
+    expect(labels).toContain("上传资料-前 3 大客户占比 %");
+    expect(labels.filter((l) => l === "上传资料-Top 1 客户").length).toBe(1);
   });
 
-  test("startSeq 偏移生效", () => {
-    const facts = orchestrator.flattenToFacts(
-      { financials: { pl: { revenue: { value: 12000, confidence: "high" } } } },
-      { startSeq: 50 },
-    );
-    expect(facts[0].id).toBe("D050");
+  test("空结构不抛错", () => {
+    expect(orchestrator.flattenStructuredToFacts(null)).toEqual([]);
   });
 });

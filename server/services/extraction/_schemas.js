@@ -1,7 +1,7 @@
 // ============================================================
 // server/services/extraction/_schemas.js
 //
-// BP 深度解析 3 agent 共用的字段约定。
+// 上传结构化抽取 3 agent 共用的字段约定。
 //
 // 设计目标：让下游 skill (InvestmentDeck 的 Downside Case 页、
 // IC Questions 的估值挑战段、DDChecklist 的财务稽核点、CompetitorMatrix

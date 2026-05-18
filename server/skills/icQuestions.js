@@ -173,12 +173,11 @@ const SYSTEM_VALUATION_EXIT = `你是一级市场基金的估值合伙人 (Valua
 硬性约束：
 - 任何倍数、可比公司、退出先例必须 source_refs 引用 Fact Pack F 编号；找不到对照就写"待检索"并放
   到 challenge_questions 里追问，**绝不编造可比公司估值或退出对价**。
-- Fact Pack 中 **D 开头**的事实是 BP 深度解析后的 schema-validated 数字（如 D004=EBITDA、D012=LTV/CAC）。
-  **D 编号本质仍是 BP 自报**（只是经 schema 二次抽取），可信度高于 BP 文字陈述但低于外部检索。
+- Fact Pack 中 source_type=upload_structured 的 F 编号来自用户上传底层资料（财务表、客户清单、合同、Cap Table、合规材料），可信度最高。
   计算 subject_implied PS / PE 倍数：
-    1) 行业公允倍数 / 可比交易必须用 **外部检索 (F 编号 source_type=external_search)** —— 不要用 D 编号当行业基准。
-    2) 项目自身收入 / EBITDA / LTV 等用 D 编号优先于 BP 文字陈述；若上传材料 (审计版财务) 与 D 编号冲突，以**上传材料**为准。
-  source_refs 必须真实引用对应编号。
+    1) 行业公允倍数 / 可比交易必须用 **外部检索 (F 编号 source_type=external_search)** 或上传材料，不得编造行业基准。
+    2) 项目自身收入 / EBITDA / LTV 等优先用 upload_structured；若只有 BP 自报，必须标注「BP 自报/待验证」。
+  source_refs 必须真实引用对应 F/C 编号。
 - MOIC 三档 (downside/base/upside) 必须自洽：downside ≤ base ≤ upside，downside 可以 < 1.0（亏损）。
 - verdict 判定必须能在 challenge_questions 中至少 1 条找到对应质问。
 - challenge_questions 是给投委会的"估值挑战追问"，与已有 IC 问题清单不重复（不能是已经问过的）。
@@ -453,7 +452,7 @@ module.exports = {
       },
       enable_bp_deep_parsing: {
         type: "boolean",
-        description: "可选。开启后并行跑 3 个 BP 深度解析 agent (财务三表/单位经济/客户清单)，结构化数字 (D-prefixed) 喂给 Bull/Bear/Synth/Valuation 四步 pipeline。默认走 env ENABLE_BP_DEEP_PARSING。",
+        description: "可选。兼容旧参数；上传材料结构化抽取现在会在上传后自动执行，并以 upload_structured F 编号注入 Fact Pack。",
       },
     },
     additionalProperties: false,
@@ -462,7 +461,7 @@ module.exports = {
   async run({ project, params = {}, ctx = {}, userId }) {
     if (!project) return { ok: false, error: "需要项目上下文" };
     const { callLLMJson, buildEvidencePack, formatFactPackForPrompt, assertGrounded, summarizeFallback, semanticGroundingAudit, exportXlsx } = _deps();
-    const { factPack, searchUsed, uploadCount, bpDeepUsed, bpDeepCount } = await buildEvidencePack(project, {
+    const { factPack, searchUsed, uploadCount, uploadStructuredUsed, uploadStructuredFactCount } = await buildEvidencePack(project, {
       ctx,
       skillId: "ic_questions_xlsx",
       useSearch: true,
@@ -620,8 +619,8 @@ module.exports = {
         pipeline_steps: 4,
         evidence_search_used: searchUsed,
         upload_facts_used: uploadCount,
-        bp_deep_parsing_used: !!bpDeepUsed,
-        bp_deep_fact_count: bpDeepCount || 0,
+        upload_structured_used: !!uploadStructuredUsed,
+        upload_structured_fact_count: uploadStructuredFactCount || 0,
         valuation_exit_error: valExitError,
       },
     };

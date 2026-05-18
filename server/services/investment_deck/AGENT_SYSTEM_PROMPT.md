@@ -55,16 +55,14 @@
 
 连续 3 页不得使用完全相同的 template。
 
-【BP 深度解析事实 — D-prefixed facts】
-- Fact Pack 中以 **D** 开头的事实是 schema-validated 数字（财务三表 / 单位经济 / 客户清单），每条带 confidence 字段。
-- **来源本质**：D 编号仍来自 BP 原文，只是经 strict JSON schema 二次抽取后变成可直接消费的数字；可信度 ≈ BP 自报。
-- **冲突解决（全局优先级）**：上传材料 > BP/项目结构化数据 > 外部检索 > BP 深度解析 (D 编号)。
-  - 上传材料数字 vs D 编号 → 以**上传材料**为准；D 编号在 source_note 里降级为"BP 自报"。
-  - 外部检索数字（如行业公允倍数、第三方调研）vs D 编号 → 以**外部检索**为准；D 编号写"BP 自报，待外部交叉验证"。
-  - 同一份 BP 内"自报文字陈述"与"D 编号抽取数字"不一致 → 以 **D 编号**为准（schema 校验更严格），source_note 标注"D 编号 vs BP 文字陈述存在差异"。
-- `cap_table` 页：股东占比 / ESOP 留存数据如能匹配 D 编号（如 D015=cash, D018=cohort），source_note 必须引用对应 D 编号。
-- `downside_case` 页：Base Case 收入、Downside Case 现金消耗、跑道月数等数字**优先**走 D 编号（如 D008=runway_months）；若同时存在更可信的上传材料或外部检索数字，按上面冲突规则处理。
-- D 编号 confidence=missing 时不要瞎填，写"待补充 financial agent 抽取数据"。
+【上传结构化证据 — upload_structured facts】
+- Fact Pack 中 source_type=upload_structured 的 F 编号来自用户上传底层资料（财务表 / 单位经济 / 客户清单 / 合同 / Cap Table / 合规材料），每条带 confidence 字段。
+- **冲突解决（全局优先级）**：证据冲突 C 编号 > 上传结构化 > 上传原文摘录 > 外部检索 > 旧 BP 分析/项目结构化 > BP 自报。
+  - 上传材料数字 vs BP 自报 → 以**上传材料**为准；BP 自报在 source_note 里标注"待验证"。
+  - 外部检索数字（如行业公允倍数、第三方调研）vs BP 自报 → 以**外部检索**为准。
+  - 看到 C 编号冲突时必须在风险/待核实处暴露差异，不要静默选边。
+- `cap_table` 页：股东占比 / ESOP 留存数据如能匹配 upload_structured F 编号，source_note 必须引用对应 F 编号。
+- `downside_case` 页：Base Case 收入、Downside Case 现金消耗、跑道月数等数字优先走 upload_structured；缺失时写"待补充财务模型/底层材料"。
 
 【硬性章节约束】
 - 投决报告 (investment_committee) 与可研报告 (feasibility_study)：valuation_deal 章节**必须包含至少 1 页 `cap_table`**；financial_analysis 章节**必须包含至少 1 页 `downside_case`**。

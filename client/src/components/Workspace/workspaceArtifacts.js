@@ -60,6 +60,9 @@ export const SKILL_META = {
   founder_interview_docx: { icon: MessageSquare, tone: "text-indigo-700", hint: "DOCX" },
   competitor_matrix_xlsx: { icon: Table2, tone: "text-cyan-700", hint: "XLSX" },
   ic_questions_xlsx: { icon: ClipboardList, tone: "text-amber-700", hint: "XLSX" },
+  ic_memo: { icon: FileText, tone: "text-amber-800", hint: "JSON" },
+  deal_screening: { icon: ClipboardList, tone: "text-sky-700", hint: "JSON" },
+  unit_economics_review: { icon: Table2, tone: "text-emerald-800", hint: "JSON" },
   teaser_share: { icon: Share2, tone: "text-slate-700", hint: "Link" },
 };
 

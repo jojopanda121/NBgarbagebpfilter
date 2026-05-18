@@ -17,6 +17,8 @@ const builtins = [
   require("./competitorMatrix"),
   require("./icQuestions"),
   require("./icMemo"),
+  require("./dealScreening"),
+  require("./unitEconomicsReview"),
   require("./riskRegister"),
   require("./teaserGenerate"),
   require("./teaserShare"),

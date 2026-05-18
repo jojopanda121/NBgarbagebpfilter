@@ -84,6 +84,34 @@ function getByPath(obj, path) {
   return cur;
 }
 
+// ── 轻量 metadata 助手:统计关键字段中 source_refs 为空的位置 ────────
+// 用法:在 skill 完成 LLM + assertGrounded 后调用,把结果丢进 metadata,
+// 让 ops/前端可以提示用户"哪些字段没有事实支撑、需要人工核实",
+// **但不阻塞 skill 出结果**。
+//
+// paths 接受 "dot.path" 形式;指向单对象时算单条,指向数组时按下标展开。
+// 例: countMissingRefs(payload, ["thesis", "risks_mitigants", "company"])
+function countMissingRefs(payload, paths = []) {
+  const missing = [];
+  if (!payload || typeof payload !== "object") return { count: 0, paths: missing };
+  for (const p of paths) {
+    const value = getByPath(payload, p);
+    if (value == null) continue;
+    if (Array.isArray(value)) {
+      value.forEach((item, idx) => {
+        const refs = Array.isArray(item?.source_refs) ? item.source_refs : null;
+        // 项里完全没有 source_refs 字段时跳过(可能是非引用类节点),
+        // 只在显式存在 source_refs 但为空时算一条 miss。
+        if (refs && refs.length === 0) missing.push(`${p}[${idx}]`);
+      });
+    } else if (typeof value === "object") {
+      const refs = Array.isArray(value.source_refs) ? value.source_refs : null;
+      if (refs && refs.length === 0) missing.push(p);
+    }
+  }
+  return { count: missing.length, paths: missing };
+}
+
 // ── Fallback / Priority 统计 ──────────────────────────────
 // 对照 _fieldPriorities 表，统计 preferred 字段里有多少被 LLM 填成
 // "未披露 / 待核实 / N/A — ..."。结果只写入 metadata，**不抛错**，
@@ -355,6 +383,7 @@ async function semanticGroundingAudit(payload, factPack, opts = {}) {
 module.exports = {
   auditGrounding,
   assertGrounded,
+  countMissingRefs,
   summarizeFallback,
   auditWithFallback,
   semanticGroundingAudit,

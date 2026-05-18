@@ -37,12 +37,14 @@ const SKILL_TIER_MAP = {
   investment_deck: "heavy",       // pptxTemplate name
   ic_questions_xlsx: "heavy",
   ic_memo: "heavy",
+  unit_economics_review: "default",
   // light
   onepager_pptx: "light",
   investment_snapshot: "light",
   project_brief: "light",
   highlight_visual: "light",
   teaser_generate: "light",
+  deal_screening: "light",
 };
 const TASK_HINT_TIER_MAP = {
   semantic_audit: "light",

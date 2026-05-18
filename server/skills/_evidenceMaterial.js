@@ -20,12 +20,11 @@ async function augmentMaterialsWithEvidence({
   companyHint = "",
   industryHint = "",
   useSearch = true,
-  // P3 fix-D：之前 template-based skills (investment_deck_pptx 等) 传了这些参数也丢失，
-  // 导致 enable_bp_deep_parsing 打开等于没开。这里补齐透传。
+  // 兼容 9 个 skill 旧的 enable_bp_deep_parsing 参数：buildEvidencePack 已不再
+  // 从 BP 原文跑 deep parsing（上传材料结构化抽取在上传时就完成了），这里只
+  // 透传以避免老调用方崩，下游不消费。
   enableBpDeepParsing,
   enableInstitutionalMemory,
-  bpText,
-  bpDeepOpts,
   maxFacts,
   imLimit,
 }) {
@@ -38,8 +37,6 @@ async function augmentMaterialsWithEvidence({
     useSearch,
     enableBpDeepParsing,
     enableInstitutionalMemory,
-    bpText,
-    bpDeepOpts,
     maxFacts,
     imLimit,
   });

@@ -1,7 +1,7 @@
 // ============================================================
-// tests/workspace/bpDeepExtraction.test.js
+// tests/workspace/uploadStructuredExtraction.test.js
 //
-// 覆盖 上传结构化抽取 3 agent 的 normalize / fallback / flattenToFacts 逻辑。
+// 覆盖 上传结构化抽取 3 agent 的 normalize / fallback / flattenStructuredToFacts 逻辑。
 // 不调用真实 LLM；只验证：
 //   - LLM 返回脏数据时 normalize 能强制兜回 schema
 //   - extract 失败时 buildExtractionFailedPayload 给出可消费的结构

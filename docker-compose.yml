@@ -51,8 +51,9 @@ services:
       - PORT=3001
       - DOC_SERVICE_URL=http://doc-service:8001
       - DB_PATH=/app/data/app.db
+      - UPLOADS_DIR=/app/data/uploads   # 头像/站点图持久化目录（容器重建不丢失）
     volumes:
-      - ./data:/app/data        # 数据库持久化（宿主机直接可见，易于备份）
+      - ./data:/app/data        # 数据库 + 上传文件持久化（宿主机直接可见，易于备份）
       - ./logs:/app/logs        # 日志持久化
     depends_on:
       doc-service:

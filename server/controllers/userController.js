@@ -7,6 +7,7 @@ const { getDb } = require("../db");
 const { getUserById, isEmailTaken, isPhoneTaken, updateUserProfile, updateUserPassword } = require("../services/userService");
 const { getUserQuota } = require("../services/quotaService");
 const { getOrCreateInviteCode, getReferralStats } = require("../services/referralService");
+const config = require("../config");
 
 /** GET /api/user/profile — 获取当前用户信息 */
 function getProfile(req, res) {
@@ -327,19 +328,26 @@ function uploadAvatar(req, res) {
     const ext = path.extname(req.file.originalname || ".png").toLowerCase();
     const hash = crypto.randomBytes(8).toString("hex");
     const filename = `avatar_${req.user.id}_${hash}${ext}`;
-    const uploadsDir = path.join(__dirname, "..", "..", "client", "public", "uploads", "avatars");
-    if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
+    const avatarsDir = path.join(config.uploadsDir, "avatars");
+    if (!fs.existsSync(avatarsDir)) fs.mkdirSync(avatarsDir, { recursive: true });
 
-    const destPath = path.join(uploadsDir, filename);
+    const destPath = path.join(avatarsDir, filename);
     fs.copyFileSync(req.file.path, destPath);
     fs.unlinkSync(req.file.path);
     const avatarUrl = `/uploads/avatars/${filename}`;
 
     const db = getDb();
     const oldUser = db.prepare("SELECT avatar_url FROM users WHERE id = ?").get(req.user.id);
-    if (oldUser?.avatar_url) {
-      const oldPath = path.join(__dirname, "..", "..", "client", "public", oldUser.avatar_url);
-      try { fs.unlinkSync(oldPath); } catch {}
+    if (oldUser?.avatar_url && oldUser.avatar_url.startsWith("/uploads/")) {
+      // 旧文件可能在新 uploadsDir 或旧 client/public/uploads，两处都尝试清理
+      const rel = oldUser.avatar_url.replace(/^\/uploads\//, "");
+      const candidates = [
+        path.join(config.uploadsDir, rel),
+        path.join(__dirname, "..", "..", "client", "public", "uploads", rel),
+      ];
+      for (const p of candidates) {
+        try { fs.unlinkSync(p); } catch {}
+      }
     }
     db.prepare("UPDATE users SET avatar_url = ? WHERE id = ?").run(avatarUrl, req.user.id);
     res.json({ avatar_url: avatarUrl, message: "头像更新成功" });

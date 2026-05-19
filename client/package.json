@@ -7,7 +7,7 @@
   "dependencies": {
     "@tsparticles/react": "^3.0.0",
     "@tsparticles/slim": "^3.9.1",
-    "dompurify": "^3.3.1",
+    "dompurify": "^3.4.5",
     "echarts": "^6.0.0",
     "echarts-for-react": "^3.0.6",
     "framer-motion": "^12.35.0",

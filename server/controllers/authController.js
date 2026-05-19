@@ -104,6 +104,10 @@ async function login(req, res) {
       return res.status(401).json({ error: "用户名或密码错误" });
     }
 
+    if (user.is_banned) {
+      return res.status(403).json({ error: "账号已被封禁，请联系管理员" });
+    }
+
     // 记录最后登录时间
     updateLastLogin(user.id);
 

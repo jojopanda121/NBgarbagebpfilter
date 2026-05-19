@@ -6,9 +6,10 @@ const path = require("path");
 const fs = require("fs");
 const { getDb } = require("../db");
 const adminService = require("../services/adminService");
+const config = require("../config");
 
-// 图片上传目录
-const UPLOAD_DIR = path.join(__dirname, "..", "..", "client", "public", "uploads");
+// 图片上传目录（持久化到 data 卷，容器重建不丢失）
+const UPLOAD_DIR = config.uploadsDir;
 if (!fs.existsSync(UPLOAD_DIR)) {
   fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 }
@@ -32,7 +33,7 @@ const requireAdmin = (req, res, next) => {
     const targetId = req.params.id || req.params.taskId || req.params.token || null;
 
     // 使用 res.on('finish') 在请求完成后记录，这样可以捕获完整的请求体
-    const bodySnapshot = JSON.stringify(req.body || {});
+    const bodySnapshot = JSON.stringify(redactSensitive(req.body || {}));
     res.on("finish", () => {
       try {
         db.prepare(
@@ -47,6 +48,20 @@ const requireAdmin = (req, res, next) => {
 
   next();
 };
+
+// 审计日志 body 脱敏：敏感字段值替换为 "[REDACTED]"
+const SENSITIVE_KEY_RE = /pass(word|wd)?|token|secret|api[_-]?key|authorization|cookie|hash|otp|code$|^code|encryption|jwt|bearer/i;
+function redactSensitive(value) {
+  if (Array.isArray(value)) return value.map(redactSensitive);
+  if (value && typeof value === "object") {
+    const out = {};
+    for (const [k, v] of Object.entries(value)) {
+      out[k] = SENSITIVE_KEY_RE.test(k) ? "[REDACTED]" : redactSensitive(v);
+    }
+    return out;
+  }
+  return value;
+}
 
 // 根据请求方法和路径推导操作类型
 function deriveAction(method, path) {

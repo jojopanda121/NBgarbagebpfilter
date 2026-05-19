@@ -8,6 +8,7 @@ const { requireAuth } = require("../middleware/auth");
 const { getDb } = require("../db");
 const skills = require("../skills");
 const teaserService = require("../services/teaserService");
+const asyncHandler = require("../utils/asyncHandler");
 
 skills.init();
 
@@ -62,7 +63,7 @@ function _decodeRun(r) {
 }
 
 // ── 调用 skill ─────────────────────────────────────────────
-router.post("/:skillId/run", requireAuth, skillRunLimiter, async (req, res) => {
+router.post("/:skillId/run", requireAuth, skillRunLimiter, asyncHandler(async (req, res) => {
   const { skillId } = req.params;
   const { project_id, params = {} } = req.body || {};
   const userId = req.user.id;
@@ -88,7 +89,7 @@ router.post("/:skillId/run", requireAuth, skillRunLimiter, async (req, res) => {
   const out = await skills.registry.execute({ skillId, params, project, userId, ctx });
   if (!out.ok) return res.status(400).json(out);
   res.json(out);
-});
+}));
 
 // ── 取一次 skill 运行的产物(用于异步/历史回看) ───────────
 router.get("/runs/:runId", requireAuth, (req, res) => {

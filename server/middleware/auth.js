@@ -20,6 +20,18 @@ function isRevoked(jti) {
   }
 }
 
+/** 查询用户基本状态（is_banned/role），DB 异常时返回 null 不锁死 */
+function loadUserState(userId) {
+  if (!userId) return null;
+  try {
+    return getDb()
+      .prepare("SELECT id, is_banned, role FROM users WHERE id = ?")
+      .get(userId);
+  } catch {
+    return null;
+  }
+}
+
 /** 必须登录：验证 JWT token，将 user 信息注入 req.user */
 function requireAuth(req, res, next) {
   const authHeader = req.headers.authorization;
@@ -33,7 +45,17 @@ function requireAuth(req, res, next) {
     if (isRevoked(payload.jti)) {
       return res.status(401).json({ error: "登录已失效，请重新登录" });
     }
-    req.user = { id: payload.sub, username: payload.username, jti: payload.jti, exp: payload.exp };
+    const state = loadUserState(payload.sub);
+    if (state && state.is_banned) {
+      return res.status(403).json({ error: "账号已被封禁，请联系管理员" });
+    }
+    req.user = {
+      id: payload.sub,
+      username: payload.username,
+      jti: payload.jti,
+      exp: payload.exp,
+      role: state?.role || "user",
+    };
     next();
   } catch (err) {
     if (err.name === "TokenExpiredError") {
@@ -57,7 +79,18 @@ function optionalAuth(req, _res, next) {
     if (isRevoked(payload.jti)) {
       req.user = null;
     } else {
-      req.user = { id: payload.sub, username: payload.username, jti: payload.jti, exp: payload.exp };
+      const state = loadUserState(payload.sub);
+      if (state && state.is_banned) {
+        req.user = null;
+      } else {
+        req.user = {
+          id: payload.sub,
+          username: payload.username,
+          jti: payload.jti,
+          exp: payload.exp,
+          role: state?.role || "user",
+        };
+      }
     }
   } catch {
     req.user = null;

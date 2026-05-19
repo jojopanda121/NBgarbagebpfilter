@@ -39,6 +39,9 @@ const config = {
   // Database
   dbPath: process.env.DB_PATH || require("path").join(__dirname, "..", "..", "data", "app.db"),
 
+  // Uploads (公开上传：头像、站点图片)。容器中映射到 /app/data/uploads，与数据卷一同持久化。
+  uploadsDir: process.env.UPLOADS_DIR || require("path").join(__dirname, "..", "..", "data", "uploads"),
+
   // MiniMax LLM
   minimaxApiKey: process.env.MINIMAX_API_KEY || "",
   minimaxModel: process.env.MINIMAX_MODEL || "MiniMax-M2.7",

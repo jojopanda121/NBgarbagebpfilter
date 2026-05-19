@@ -20,7 +20,10 @@
     "docker:down": "docker-compose down",
     "docker:logs": "docker-compose logs -f app",
     "docker:prod": "docker-compose --profile production up -d --build",
-    "lint": "cd server && npx eslint . --ext .js"
+    "lint": "cd server && npx eslint . --ext .js",
+    "test:server": "cd server && npm test -- --runInBand",
+    "build:client": "cd client && npm run build",
+    "verify": "npm run test:server && npm run build:client"
   },
   "dependencies": {
     "pm2": "^6.0.14"

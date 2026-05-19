@@ -1,40 +1,10 @@
-import React, { Suspense, lazy, useEffect } from "react";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import React, { useEffect } from "react";
+import { BrowserRouter } from "react-router-dom";
 import useAuthStore from "./store/useAuthStore";
 import ContactBindingModal from "./components/auth/ContactBindingModal";
-import AuthGuard from "./components/AuthGuard";
-import AppLayout from "./components/AppLayout";
 import ErrorBoundary from "./components/ErrorBoundary";
-
-// 懒加载页面组件（代码分割）
-const LoginPage = lazy(() => import("./pages/LoginPage"));
-const ForgotPasswordPage = lazy(() => import("./pages/ForgotPasswordPage"));
-const LandingPage = lazy(() => import("./pages/LandingPage"));
-const DashboardPage = lazy(() => import("./pages/DashboardPage"));
-const DemoReportPage = lazy(() => import("./pages/DemoReportPage"));
-const ReportPage = lazy(() => import("./pages/ReportPage"));
-const SettingsPage = lazy(() => import("./pages/SettingsPage"));
-const HistoryPage = lazy(() => import("./pages/HistoryPage"));
-const AdminPage = lazy(() => import("./pages/AdminPage"));
-const LeaderboardPage = lazy(() => import("./pages/LeaderboardPage"));
-const ProjectPage = lazy(() => import("./pages/ProjectPage"));
-const PlatformStatsPage = lazy(() => import("./pages/PlatformStatsPage"));
-const TrackingDashboardPage = lazy(() => import("./pages/TrackingDashboardPage"));
-const WorkspaceProjectListPage = lazy(() => import("./pages/WorkspaceProjectListPage"));
-const WorkspaceProjectPage = lazy(() => import("./pages/WorkspaceProjectPage"));
-const PublicTeaserPage = lazy(() => import("./pages/PublicTeaserPage"));
-
-// 加载中组件
-function LoadingFallback() {
-  return (
-    <div className="min-h-screen bg-[#F6F7FA] flex items-center justify-center">
-      <div className="text-center">
-        <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-[#1B4FD8]"></div>
-        <p className="mt-4 text-[#4B5A72]">加载中...</p>
-      </div>
-    </div>
-  );
-}
+import LoadingFallback from "./components/LoadingFallback";
+import AppRoutes from "./routes/AppRoutes";
 
 // ── 根组件（路由协调器 + 全局弹层）──
 export default function App() {
@@ -58,71 +28,7 @@ export default function App() {
         <div className="min-h-screen bg-[#F6F7FA] text-[#0F1C36]">
           {/* 全局弹层：联系方式绑定 */}
           {requireContactBinding && <ContactBindingModal />}
-
-          <Suspense fallback={<LoadingFallback />}>
-            <Routes>
-              {/* ── 公开区 (Public Zone) ── */}
-              {/* 首页/营销落地页 */}
-              <Route path="/" element={<LandingPage />} />
-
-              {/* 登录页（无 Header） */}
-              <Route path="/login" element={<LoginPage />} />
-
-              {/* 找回密码页 */}
-              <Route path="/forgot-password" element={<ForgotPasswordPage />} />
-
-              {/* 示例报告（无需登录） */}
-              <Route path="/demo" element={<DemoReportPage />} />
-
-              {/* 报告查看页（需登录，owner 或 admin） */}
-              <Route path="/report/:taskId" element={<ReportPage />} />
-
-              {/* 分享报告页（公开，通过 shareToken 访问） */}
-              <Route path="/report/s/:shareToken" element={<ReportPage />} />
-
-              {/* 项目详情页（三 Tab：报告 + 尽调 + 备注） */}
-              <Route path="/project/:taskId" element={<ProjectPage />} />
-
-              {/* 公开 Teaser 查看页（密码保护） */}
-              <Route path="/teaser/:token" element={<PublicTeaserPage />} />
-
-              {/* ── 核心区 (Protected Zone) - 需要登录 ── */}
-              <Route
-                element={
-                  <AuthGuard>
-                    <AppLayout />
-                  </AuthGuard>
-                }
-              >
-                {/* 工作台首页 */}
-                <Route path="/app" element={<Navigate to="/app/dashboard" replace />} />
-                <Route path="/app/dashboard" element={<DashboardPage />} />
-
-                {/* 历史报告 */}
-                <Route path="/app/history" element={<HistoryPage />} />
-
-                {/* Sprint 2: 项目工作台 */}
-                <Route path="/app/projects" element={<WorkspaceProjectListPage />} />
-                <Route path="/app/projects/:id" element={<WorkspaceProjectPage />} />
-
-                {/* 用户中心 */}
-                <Route path="/settings" element={<SettingsPage />} />
-
-                {/* 排行榜 */}
-                <Route path="/app/leaderboard" element={<LeaderboardPage />} />
-
-                {/* 平台数据看板 */}
-                <Route path="/app/stats" element={<PlatformStatsPage />} />
-
-                {/* 管理员中心 */}
-                <Route path="/admin" element={<AdminPage />} />
-                <Route path="/admin/tracking" element={<TrackingDashboardPage />} />
-              </Route>
-
-              {/* 404 重定向到首页 */}
-              <Route path="*" element={<Navigate to="/" replace />} />
-            </Routes>
-          </Suspense>
+          <AppRoutes />
         </div>
       </BrowserRouter>
     </ErrorBoundary>

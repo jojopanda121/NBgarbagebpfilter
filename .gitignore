@@ -31,6 +31,11 @@ data/workspace_artifacts/
 
 # 日志文件（保留目录占位符）
 logs/*.log
+doc-service/logs/*.log
+
+# 字体二进制（按需在 build 时下载，不入 git）
+server/assets/fonts/*.otf
+server/assets/fonts/*.ttf
 
 # SSL 证书（绝对不能入库）
 nginx-certs/*.pem

@@ -185,7 +185,7 @@ async function extract(bpText, opts = {}) {
   if (!bpText || typeof bpText !== "string" || bpText.trim().length < 50) {
     return { data: buildExtractionFailedPayload("input_too_short"), repairs: 0 };
   }
-  const { callLLMJson, LLMJsonValidationError } = require("../llmService");
+  const { callLLMJson } = require("../llmService");
   try {
     const out = await callLLMJson(
       SYSTEM_PROMPT,

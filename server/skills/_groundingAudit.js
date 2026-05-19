@@ -213,7 +213,7 @@ const CLAIM_FIELD_HINTS = [
   "point", "headline", "insight",
 ];
 
-function collectClaimRefPairs(node, path = "$", out = [], parentText = "") {
+function collectClaimRefPairs(node, path = "$", out = [], _parentText = "") {
   // 收集所有 (text, refs) 配对：node 包含 source_refs 数组 + 同级有可读文本字段
   if (Array.isArray(node)) {
     node.forEach((v, i) => collectClaimRefPairs(v, `${path}[${i}]`, out));

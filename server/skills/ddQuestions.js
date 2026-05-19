@@ -320,7 +320,7 @@ module.exports = {
     if (!project) return { ok: false, error: "需要项目上下文" };
     const {
       callLLMJson, buildEvidencePack, formatFactPackForPrompt, assertGrounded,
-      semanticGroundingAudit, summarizeFallback,
+      semanticGroundingAudit,
     } = _deps();
     const { LLMJsonValidationError } = require("../services/llmService");
     const { factPack, searchUsed, uploadCount, uploadStructuredUsed, uploadStructuredFactCount } = await buildEvidencePack(project, {

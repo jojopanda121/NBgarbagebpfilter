@@ -3,6 +3,7 @@
 // ============================================================
 
 const { getDb } = require("../db");
+const { buildVipSelectFragment } = require("../utils/userPlan");
 
 // 用户管理
 const getUsers = (options = {}) => {
@@ -38,8 +39,7 @@ const getUsers = (options = {}) => {
 
   // 获取列表 - 使用条件列名和参数化查询
   const isBannedSelect = hasBanned ? "u.is_banned," : "0 as is_banned,";
-  const hasVip = tableInfo.some((col) => col.name === "is_vip");
-  const vipSelect = hasVip ? "u.is_vip, u.vip_expires_at," : "0 as is_vip, NULL as vip_expires_at,";
+  const { vipSelect } = buildVipSelectFragment(db, "u");
   const listQuery = `
     SELECT
       u.id, u.username, u.email, u.phone, u.usage_count, ${isBannedSelect} ${vipSelect} ${lastLoginSelect} u.contact_bound, u.created_at, u.updated_at,

@@ -1,5 +1,6 @@
 const { execFileSync } = require("child_process");
 const { getDb } = require("../db");
+const { getUserPlan: sharedGetUserPlan } = require("../utils/userPlan");
 
 const UPLOAD_DAILY_LIMIT = 50;
 const USER_STORAGE_LIMIT_BYTES = 500 * 1024 * 1024;
@@ -11,17 +12,7 @@ function todayStartSqlite() {
 }
 
 function getUserPlan(userId) {
-  try {
-    const db = getDb();
-    const cols = db.prepare("PRAGMA table_info(users)").all();
-    const hasVip = cols.some((c) => c.name === "is_vip");
-    const fields = hasVip ? "role, is_vip, vip_expires_at" : "role, 0 as is_vip, NULL as vip_expires_at";
-    const u = db.prepare(`SELECT ${fields} FROM users WHERE id = ?`).get(userId);
-    const isVip = !!u?.is_vip && (!u.vip_expires_at || new Date(u.vip_expires_at) > new Date());
-    return { role: u?.role || "user", isVip };
-  } catch {
-    return { role: "user", isVip: false };
-  }
+  return sharedGetUserPlan(getDb(), userId);
 }
 
 function countUploadsToday(userId) {

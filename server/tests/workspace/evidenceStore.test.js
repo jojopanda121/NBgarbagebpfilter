@@ -143,7 +143,6 @@ describe("evidenceStore · structured_facts 往返 (replace + list)", () => {
     conversationsTable = [{ id: "conv-1", project_id: 42, user_id: 7 }];
     return {
       prepare: (sql) => {
-        const lower = sql.toLowerCase();
         // tableExists checks
         if (sql.includes("FROM sqlite_master")) {
           return { get: (name) => {

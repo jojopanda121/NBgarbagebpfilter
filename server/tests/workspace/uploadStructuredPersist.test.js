@@ -12,21 +12,19 @@
 // ============================================================
 
 describe("uploadStructured · runAndPersist 持久化合约", () => {
-  let upsertCalls;
   let factsByArtifact;
   let llmCalls;
   let conflictJudgeFires;
 
   beforeEach(() => {
     jest.resetModules();
-    upsertCalls = [];
     factsByArtifact = new Map();
     llmCalls = 0;
     conflictJudgeFires = 0;
 
     // ── Mock llmService.callLLMJson：每个 schema 返回最小但合规的 payload
     jest.doMock("../../services/llmService", () => ({
-      callLLMJson: jest.fn(async (system, user, schema, opts) => {
+      callLLMJson: jest.fn(async (system, user, schema) => {
         llmCalls++;
         const required = (schema && schema.required) || [];
         // 4 个 agent 各自的最小合规返回
@@ -108,7 +106,7 @@ describe("uploadStructured · runAndPersist 持久化合约", () => {
 
     // ── Mock taskQueue：把 fire-and-forget 改成 sync 记录
     jest.doMock("../../services/taskQueue", () => ({
-      fireAndForget: (name, fn) => {
+      fireAndForget: (name) => {
         if (name === "conflict_judge") conflictJudgeFires++;
         // 不实际跑 fn，避免被 conflictJudge 真链路拖累
       },

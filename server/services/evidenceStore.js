@@ -8,6 +8,7 @@
 
 const crypto = require("crypto");
 const { getDb } = require("../db");
+const { getUserPlan: sharedGetUserPlan, isActiveVipRow } = require("../utils/userPlan");
 
 const FREE_UPLOAD_TTL_DAYS = 3;
 const GENERATED_ARTIFACT_TTL_DAYS = 7;
@@ -38,17 +39,7 @@ function getConversationMeta(db, conversationId) {
 }
 
 function getUserPlan(db, userId) {
-  if (!userId) return { role: "user", isVip: false, vipExpiresAt: null };
-  try {
-    const cols = db.prepare("PRAGMA table_info(users)").all();
-    const hasVip = cols.some((c) => c.name === "is_vip");
-    const fields = hasVip ? "role, is_vip, vip_expires_at" : "role, 0 as is_vip, NULL as vip_expires_at";
-    const u = db.prepare(`SELECT ${fields} FROM users WHERE id = ?`).get(userId);
-    const isVip = !!u?.is_vip && (!u.vip_expires_at || new Date(u.vip_expires_at) > new Date());
-    return { role: u?.role || "user", isVip, vipExpiresAt: u?.vip_expires_at || null };
-  } catch (_) {
-    return { role: "user", isVip: false, vipExpiresAt: null };
-  }
+  return sharedGetUserPlan(db, userId);
 }
 
 function addDaysIso(base, days) {
@@ -95,7 +86,7 @@ function refreshUploadRetention(db = getDb()) {
     : null;
 
   for (const row of rows) {
-    const activeVip = row.role === "admin" || (!!row.is_vip && (!row.vip_expires_at || new Date(row.vip_expires_at) > new Date()));
+    const activeVip = isActiveVipRow(row);
     const next = activeVip
       ? null
       : computeLapsedVipUploadExpiresAt({ vipExpiresAt: row.vip_expires_at, createdAt: row.created_at });

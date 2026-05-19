@@ -262,7 +262,7 @@ module.exports = {
     if (!project) return { ok: false, error: "需要项目上下文" };
     const {
       callLLMJson, buildEvidencePack, formatFactPackForPrompt, assertGrounded,
-      semanticGroundingAudit, summarizeFallback, exportDocx,
+      semanticGroundingAudit, exportDocx,
     } = _deps();
     const { factPack, searchUsed, uploadCount, uploadStructuredUsed, uploadStructuredFactCount } = await buildEvidencePack(project, {
       ctx,

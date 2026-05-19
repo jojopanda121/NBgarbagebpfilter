@@ -1,17 +1,13 @@
 const { getDb } = require("../db");
+const { getUserPlan } = require("../utils/userPlan");
 
-const DAILY_LIMIT = 3;
+const DAILY_LIMIT = Number(process.env.WORKSPACE_DAILY_CHAT_LIMIT) || 3;
 
 function getWorkspaceUsage(userId) {
   const db = getDb();
-  const tableInfo = db.prepare("PRAGMA table_info(users)").all();
-  const hasVip = tableInfo.some((col) => col.name === "is_vip");
-  const user = hasVip
-    ? db.prepare("SELECT role, is_vip, vip_expires_at FROM users WHERE id = ?").get(userId)
-    : db.prepare("SELECT role FROM users WHERE id = ?").get(userId);
-
-  const isAdmin = user?.role === "admin";
-  const isVip = !!(hasVip && user?.is_vip && (!user.vip_expires_at || new Date(user.vip_expires_at) > new Date()));
+  const plan = getUserPlan(db, userId);
+  const isAdmin = plan.role === "admin";
+  const isVip = plan.isVip;
   const unlimited = isAdmin || isVip;
 
   const today = new Date().toISOString().slice(0, 10);

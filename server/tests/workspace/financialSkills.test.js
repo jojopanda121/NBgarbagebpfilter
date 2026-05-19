@@ -85,7 +85,6 @@ describe("icMemo · input schema 接受合法参数", () => {
 describe("dealScreening · verdict 自洽", () => {
   function makeCriteria(failCount, grayCount = 0) {
     const total = 10;
-    const passCount = total - failCount - grayCount;
     const items = [];
     const dims = [
       "sector_fit", "geography_fit", "stage_fit", "revenue_size", "revenue_growth",

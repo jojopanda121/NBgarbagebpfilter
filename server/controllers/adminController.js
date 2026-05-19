@@ -507,12 +507,28 @@ const toggleVip = async (req, res, next) => {
   try {
     const userId = parseInt(req.params.id, 10);
     if (!Number.isInteger(userId) || userId <= 0) return res.status(400).json({ error: "用户 ID 非法" });
-    const { is_vip, vip_expires_at } = req.body;
+    const { is_vip, vip_expires_at, notes } = req.body;
     const db = require("../db").getDb();
     const cols = db.prepare("PRAGMA table_info(users)").all();
     if (!cols.some((c) => c.name === "is_vip")) return res.status(400).json({ error: "VIP 功能尚未启用（缺少数据库迁移）" });
     db.prepare("UPDATE users SET is_vip = ?, vip_expires_at = ? WHERE id = ?")
       .run(is_vip ? 1 : 0, vip_expires_at || null, userId);
+
+    // 审计：记录每次授予/取消，为未来接入支付时的收入/续费率统计铺路。
+    // vip_grants 表 050 迁移建立；老数据库还没迁移就 silently skip。
+    try {
+      db.prepare(
+        `INSERT INTO vip_grants (user_id, action, expires_at_at_action, granted_by_admin_id, source, notes)
+         VALUES (?, ?, ?, ?, 'admin_grant', ?)`
+      ).run(
+        userId,
+        is_vip ? "grant" : "cancel",
+        is_vip ? (vip_expires_at || null) : null,
+        req.user?.id || null,
+        notes || null,
+      );
+    } catch (_) { /* table not migrated yet */ }
+
     try { require("../services/evidenceStore").refreshUploadRetention(db); } catch (_) {}
     res.json({ success: true });
   } catch (err) {

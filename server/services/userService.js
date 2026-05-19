@@ -25,7 +25,7 @@ function getUserById(userId) {
 function getUserByUsername(username) {
   const db = getDb();
   return db.prepare(
-    "SELECT id, username, password_hash, email, contact_bound, usage_count, role FROM users WHERE username = ?"
+    "SELECT id, username, password_hash, email, contact_bound, usage_count, role, is_banned FROM users WHERE username = ?"
   ).get(username);
 }
 

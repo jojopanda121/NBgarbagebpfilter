@@ -103,9 +103,17 @@ function mountHealthRoute(app, getShutdownState) {
 }
 
 function mountStaticAssets(app) {
-  const uploadsDir = path.join(__dirname, "..", "client", "public", "uploads");
+  const config = require("./config");
+  const uploadsDir = config.uploadsDir;
   if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
   app.use("/uploads", express.static(uploadsDir));
+
+  // 兼容旧路径：v3.0 以前头像/站点图写到 client/public/uploads，旧 URL 仍在 DB 中。
+  // 容器重建后该目录会随镜像消失，本地开发仍可命中。
+  const legacyUploadsDir = path.join(__dirname, "..", "client", "public", "uploads");
+  if (fs.existsSync(legacyUploadsDir) && legacyUploadsDir !== uploadsDir) {
+    app.use("/uploads", express.static(legacyUploadsDir));
+  }
 
   const clientBuildDir = path.join(__dirname, "..", "client", "build");
   if (fs.existsSync(clientBuildDir)) {

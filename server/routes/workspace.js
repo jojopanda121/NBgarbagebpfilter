@@ -169,6 +169,20 @@ router.post("/:taskId/messages", requireAuth, workspaceRateLimit, upload.single(
   if (!userMsg && !req.file) return res.status(400).json({ error: "消息内容为空" });
   if (userMsg.length > 4000) return res.status(400).json({ error: "消息过长（限 4000 字）" });
 
+  // 附件需在 SSE 头部 flush 前完成配额校验，否则只能用 SSE error 事件，前端处理更复杂
+  if (req.file) {
+    try {
+      enforceWorkspaceUploadLimits({
+        userId,
+        fileSize: req.file.size || 0,
+        artifactRoot: ws.ARTIFACTS_ROOT,
+      });
+    } catch (err) {
+      if (req.file?.path) try { fs.unlinkSync(req.file.path); } catch {}
+      return res.status(err.status || 429).json({ error: err.message, code: err.code });
+    }
+  }
+
   // SSE 头
   res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
   res.setHeader("Cache-Control", "no-cache, no-transform");

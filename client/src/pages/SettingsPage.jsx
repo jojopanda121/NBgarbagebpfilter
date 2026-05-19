@@ -1254,6 +1254,7 @@ function UsersTab({ users, total, page, setPage, search, setSearch, status, setS
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(null);
   const [batchDeleting, setBatchDeleting] = useState(false);
+  const [vipModalUser, setVipModalUser] = useState(null);
 
   const handleBan = async (userId, banned) => {
     try {
@@ -1265,14 +1266,35 @@ function UsersTab({ users, total, page, setPage, search, setSearch, status, setS
     }
   };
 
-  const handleToggleVip = async (userId, currentVip) => {
+  // 取消 VIP：直接调用，不弹窗。
+  const handleCancelVip = async (userId) => {
     try {
-      await api.post(`/api/admin/users/${userId}/vip`, { is_vip: !currentVip });
-      setMessage({ type: "success", text: currentVip ? "已取消 VIP" : "已设为 VIP" });
+      await api.post(`/api/admin/users/${userId}/vip`, { is_vip: false, vip_expires_at: null });
+      setMessage({ type: "success", text: "已取消 VIP" });
       loadUsers();
     } catch (err) {
       setMessage({ type: "error", text: err.message });
     }
+  };
+
+  // 授予 VIP：通过弹窗选时长（vipModalUser 见下方 modal）。
+  const handleGrantVip = async (userId, expiresAt) => {
+    try {
+      await api.post(`/api/admin/users/${userId}/vip`, { is_vip: true, vip_expires_at: expiresAt });
+      setMessage({
+        type: "success",
+        text: expiresAt ? `已设为 VIP，至 ${new Date(expiresAt).toLocaleDateString("zh-CN")}` : "已设为永久 VIP",
+      });
+      setVipModalUser(null);
+      loadUsers();
+    } catch (err) {
+      setMessage({ type: "error", text: err.message });
+    }
+  };
+
+  const handleVipButton = (u) => {
+    if (u.is_vip) handleCancelVip(u.id);
+    else setVipModalUser(u);
   };
 
   const handleDelete = async (userId) => {
@@ -1385,7 +1407,14 @@ function UsersTab({ users, total, page, setPage, search, setSearch, status, setS
                 <td className="py-3">{u.usage_count || 0}</td>
                 <td className="py-3">
                   <span className={`px-2 py-0.5 rounded text-xs ${u.is_banned ? "bg-red-500/20 text-red-400" : "bg-green-500/20 text-green-400"}`}>{u.is_banned ? "已禁用" : "正常"}</span>
-                  {!!u.is_vip && <span className="ml-1 px-2 py-0.5 rounded text-xs bg-amber-500/20 text-amber-500">VIP</span>}
+                  {!!u.is_vip && (
+                    <span
+                      className="ml-1 px-2 py-0.5 rounded text-xs bg-amber-500/20 text-amber-600"
+                      title={u.vip_expires_at ? `到期：${new Date(u.vip_expires_at).toLocaleString("zh-CN")}` : "永久 VIP"}
+                    >
+                      VIP{u.vip_expires_at ? `·至 ${new Date(u.vip_expires_at).toLocaleDateString("zh-CN")}` : "·永久"}
+                    </span>
+                  )}
                 </td>
                 <td className="py-3 text-[#4B5A72] text-xs" title={u.last_login_at ? new Date(u.last_login_at).toLocaleString("zh-CN") : "从未登录"}>
                   <span className={!u.last_login_at ? "text-[#8E9BB0]" : ""}>{formatLastLogin(u.last_login_at)}</span>
@@ -1395,7 +1424,7 @@ function UsersTab({ users, total, page, setPage, search, setSearch, status, setS
                   <div className="flex gap-1">
                     <button onClick={() => setSelectedUser(u)} className="p-1 hover:bg-[#E5E9F4] rounded" title="查看详情"><Eye className="w-4 h-4" /></button>
                     <button onClick={() => handleBan(u.id, !u.is_banned)} className={`p-1 rounded text-xs ${u.is_banned ? "hover:bg-green-500/20 text-green-400" : "hover:bg-red-500/20 text-red-400"}`} title={u.is_banned ? "启用" : "禁用"}>{u.is_banned ? "启用" : "禁用"}</button>
-                    <button onClick={() => handleToggleVip(u.id, u.is_vip)} className={`p-1 rounded text-xs ${u.is_vip ? "hover:bg-amber-500/20 text-amber-500" : "hover:bg-purple-500/20 text-purple-400"}`} title={u.is_vip ? "取消VIP" : "设VIP"}>{u.is_vip ? "取消VIP" : "设VIP"}</button>
+                    <button onClick={() => handleVipButton(u)} className={`p-1 rounded text-xs ${u.is_vip ? "hover:bg-amber-500/20 text-amber-500" : "hover:bg-purple-500/20 text-purple-400"}`} title={u.is_vip ? "取消VIP" : "设VIP"}>{u.is_vip ? "取消VIP" : "设VIP"}</button>
                     <button onClick={() => setShowDeleteConfirm(u)} className="p-1 hover:bg-red-500/20 text-red-400 rounded" title="删除"><Trash2 className="w-4 h-4" /></button>
                   </div>
                 </td>
@@ -1426,7 +1455,101 @@ function UsersTab({ users, total, page, setPage, search, setSearch, status, setS
         </div>
       )}
 
+      {vipModalUser && (
+        <VipGrantModal
+          user={vipModalUser}
+          onClose={() => setVipModalUser(null)}
+          onConfirm={(expiresAt) => handleGrantVip(vipModalUser.id, expiresAt)}
+        />
+      )}
+
       {selectedUser && <UserDetailModal user={selectedUser} onClose={() => setSelectedUser(null)} />}
+    </div>
+  );
+}
+
+function VipGrantModal({ user, onClose, onConfirm }) {
+  const PRESETS = [
+    { label: "1 个月", months: 1 },
+    { label: "3 个月", months: 3 },
+    { label: "6 个月", months: 6 },
+    { label: "1 年", months: 12 },
+    { label: "永久", months: null },
+  ];
+  const [pickedIndex, setPickedIndex] = useState(0);
+  const [customDate, setCustomDate] = useState("");
+
+  const computeExpiresAt = () => {
+    if (customDate) {
+      return new Date(`${customDate}T23:59:59`).toISOString();
+    }
+    const preset = PRESETS[pickedIndex];
+    if (preset.months == null) return null;
+    const d = new Date();
+    d.setMonth(d.getMonth() + preset.months);
+    return d.toISOString();
+  };
+
+  const previewLabel = () => {
+    if (customDate) return `自定义到 ${customDate}`;
+    const preset = PRESETS[pickedIndex];
+    return preset.months == null ? "永久 VIP" : `${preset.label}（到 ${new Date(computeExpiresAt()).toLocaleDateString("zh-CN")}）`;
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+      <div className="bg-white border border-[#D8DCE8] rounded-xl p-6 w-full max-w-md">
+        <h3 className="text-lg font-bold mb-1">授予 VIP</h3>
+        <p className="text-[#4B5A72] text-sm mb-4">
+          用户：<span className="text-[#0D2145] font-medium">{user.username}</span>
+          {user.email && <span className="text-[#8E9BB0] ml-2">{user.email}</span>}
+        </p>
+
+        <div className="mb-4">
+          <div className="text-xs text-[#4B5A72] mb-2">时长</div>
+          <div className="grid grid-cols-5 gap-2">
+            {PRESETS.map((p, i) => (
+              <button
+                key={p.label}
+                type="button"
+                onClick={() => { setPickedIndex(i); setCustomDate(""); }}
+                className={`px-2 py-2 rounded-lg text-xs border transition-colors ${
+                  !customDate && pickedIndex === i
+                    ? "bg-amber-500/15 border-amber-500 text-amber-700 font-medium"
+                    : "bg-[#F6F7FA] border-[#E5E9F4] hover:border-amber-300 text-[#4B5A72]"
+                }`}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="mb-4">
+          <div className="text-xs text-[#4B5A72] mb-2">或自定义到期日期</div>
+          <input
+            type="date"
+            value={customDate}
+            min={new Date().toISOString().slice(0, 10)}
+            onChange={(e) => setCustomDate(e.target.value)}
+            className="w-full px-3 py-2 rounded-lg border border-[#E5E9F4] bg-[#F6F7FA] text-sm focus:outline-none focus:border-amber-400"
+          />
+        </div>
+
+        <div className="rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-xs p-2.5 mb-4">
+          将设为：<span className="font-medium">{previewLabel()}</span>
+        </div>
+
+        <div className="flex gap-3 justify-end">
+          <button onClick={onClose} className="px-4 py-2 bg-[#E5E9F4] hover:bg-slate-300 rounded-lg text-sm">取消</button>
+          <button
+            onClick={() => onConfirm(computeExpiresAt())}
+            className="px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-lg text-sm"
+          >
+            确认授予
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

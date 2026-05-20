@@ -355,9 +355,49 @@ const deletePackage = (id) => {
 };
 
 // 分析记录管理
+// 列表只选必要的元数据列；不要 SELECT *，因为 result / onepager_cache / imemo_cache /
+// dd_questionnaire / dd_answers 是大 JSON，一页 20 条全拉会拖慢到几 MB 响应。
+const TASK_LIST_COLUMNS = [
+  "t.id",
+  "t.archive_number",
+  "t.user_id",
+  "t.status",
+  "t.percentage",
+  "t.stage",
+  "t.message",
+  "t.title",
+  "t.industry_category",
+  "t.total_score",
+  "t.project_stage",
+  "t.project_location",
+  "t.file_role",
+  "t.deleted_at",
+  "t.created_at",
+  "t.updated_at",
+];
+
+// 排序字段白名单，防止注入
+const TASK_SORT_FIELDS = new Set([
+  "created_at",
+  "updated_at",
+  "total_score",
+  "percentage",
+  "status",
+]);
+
 const getAllTasks = (options = {}) => {
   const db = getDb();
-  const { page = 1, pageSize = 20, status = "", search = "" } = options;
+  const {
+    page = 1,
+    pageSize = 20,
+    status = "",
+    search = "",
+    startDate = "",
+    endDate = "",
+    industry = "",
+    sortBy = "created_at",
+    sortDir = "desc",
+  } = options;
   const offset = (page - 1) * pageSize;
 
   let whereClause = "1=1";
@@ -369,24 +409,58 @@ const getAllTasks = (options = {}) => {
   }
 
   if (search) {
-    whereClause += " AND (u.username LIKE ? OR t.id LIKE ? OR t.archive_number LIKE ?)";
-    params.push(`%${search}%`, `%${search}%`, `%${search}%`);
+    whereClause += " AND (u.username LIKE ? OR t.id LIKE ? OR t.archive_number LIKE ? OR t.title LIKE ?)";
+    params.push(`%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`);
   }
+
+  // 日期范围（按本地日期，闭区间）
+  if (startDate) {
+    whereClause += " AND DATE(t.created_at) >= DATE(?)";
+    params.push(startDate);
+  }
+  if (endDate) {
+    whereClause += " AND DATE(t.created_at) <= DATE(?)";
+    params.push(endDate);
+  }
+
+  if (industry) {
+    whereClause += " AND t.industry_category = ?";
+    params.push(industry);
+  }
+
+  const sortField = TASK_SORT_FIELDS.has(sortBy) ? sortBy : "created_at";
+  const sortDirection = String(sortDir).toLowerCase() === "asc" ? "ASC" : "DESC";
 
   const countQuery = `SELECT COUNT(*) as total FROM tasks t LEFT JOIN users u ON t.user_id = u.id WHERE ${whereClause}`;
   const { total } = db.prepare(countQuery).get(...params);
 
   const listQuery = `
-    SELECT t.*, u.username
+    SELECT ${TASK_LIST_COLUMNS.join(", ")}, u.username
     FROM tasks t
     LEFT JOIN users u ON t.user_id = u.id
     WHERE ${whereClause}
-    ORDER BY t.created_at DESC
+    ORDER BY t.${sortField} ${sortDirection}
     LIMIT ? OFFSET ?
   `;
   const tasks = db.prepare(listQuery).all(...params, pageSize, offset);
 
   return { tasks, total, page, pageSize };
+};
+
+// 行业分类下拉选项（去重，按出现频次排序）
+const getTaskIndustries = () => {
+  const db = getDb();
+  try {
+    return db.prepare(`
+      SELECT industry_category as category, COUNT(*) as count
+      FROM tasks
+      WHERE industry_category IS NOT NULL AND industry_category != ''
+      GROUP BY industry_category
+      ORDER BY count DESC
+    `).all();
+  } catch (_) {
+    return [];
+  }
 };
 
 const getTaskDetail = (taskId) => {
@@ -541,6 +615,7 @@ module.exports = {
   getSettings,
   updateSettings,
   getAllTasks,
+  getTaskIndustries,
   getTaskDetail,
   getTokenList,
   deleteToken,

@@ -72,6 +72,7 @@ router.put("/settings", adminController.requireAdmin, adminController.updateSett
 
 // 分析记录管理
 router.get("/tasks", adminController.requireAdmin, adminController.getAllTasks);
+router.get("/task-industries", adminController.requireAdmin, adminController.getTaskIndustries);
 router.get("/tasks/:taskId", adminController.requireAdmin, adminController.getTaskDetail);
 
 // 兑换码管理

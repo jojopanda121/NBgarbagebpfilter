@@ -123,6 +123,13 @@ export default function SettingsPage({ adminMode = false }) {
   const [taskPage, setTaskPage] = useState(1);
   const [taskStatus, setTaskStatus] = useState("");
   const [taskSearch, setTaskSearch] = useState("");
+  const [taskStartDate, setTaskStartDate] = useState("");
+  const [taskEndDate, setTaskEndDate] = useState("");
+  const [taskIndustry, setTaskIndustry] = useState("");
+  const [taskIndustries, setTaskIndustries] = useState([]);
+  const [taskSortBy, setTaskSortBy] = useState("created_at");
+  const [taskSortDir, setTaskSortDir] = useState("desc");
+  const [tasksLoading, setTasksLoading] = useState(false);
   const [selectedTask, setSelectedTask] = useState(null);
 
   const setQuota = useAuthStore((s) => s.setQuota);
@@ -256,9 +263,16 @@ export default function SettingsPage({ adminMode = false }) {
     // 加载分析记录
     if (activeTab === "tasks" && isAdmin) {
       loadTasks();
+      // 行业下拉选项只在首次进入 tab 时加载，后续切换筛选不重复请求
+      if (taskIndustries.length === 0) {
+        api.get("/api/admin/task-industries")
+          .then((d) => setTaskIndustries(d.industries || []))
+          .catch(() => {});
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab, isAdmin, userPage, userSearch, userStatus, feedbackPage, feedbackStatus, taskPage, taskStatus, taskSearch]);
+  }, [activeTab, isAdmin, userPage, userSearch, userStatus, feedbackPage, feedbackStatus,
+      taskPage, taskStatus, taskSearch, taskStartDate, taskEndDate, taskIndustry, taskSortBy, taskSortDir]);
 
   const loadUsers = async () => {
     try {
@@ -281,12 +295,26 @@ export default function SettingsPage({ adminMode = false }) {
   };
 
   const loadTasks = async () => {
+    setTasksLoading(true);
     try {
-      const data = await api.get(`/api/admin/tasks?page=${taskPage}&pageSize=20&status=${taskStatus}&search=${taskSearch}`);
+      const params = new URLSearchParams({
+        page: String(taskPage),
+        pageSize: "20",
+        status: taskStatus || "",
+        search: taskSearch || "",
+        startDate: taskStartDate || "",
+        endDate: taskEndDate || "",
+        industry: taskIndustry || "",
+        sortBy: taskSortBy || "created_at",
+        sortDir: taskSortDir || "desc",
+      });
+      const data = await api.get(`/api/admin/tasks?${params.toString()}`);
       setTasks(data.tasks || []);
       setTasksTotal(data.total || 0);
     } catch (err) {
       console.error("加载分析记录失败:", err);
+    } finally {
+      setTasksLoading(false);
     }
   };
 
@@ -521,6 +549,13 @@ export default function SettingsPage({ adminMode = false }) {
           tasks={tasks} total={tasksTotal} page={taskPage} setPage={setTaskPage}
           status={taskStatus} setStatus={setTaskStatus}
           search={taskSearch} setSearch={setTaskSearch}
+          startDate={taskStartDate} setStartDate={setTaskStartDate}
+          endDate={taskEndDate} setEndDate={setTaskEndDate}
+          industry={taskIndustry} setIndustry={setTaskIndustry}
+          industries={taskIndustries}
+          sortBy={taskSortBy} setSortBy={setTaskSortBy}
+          sortDir={taskSortDir} setSortDir={setTaskSortDir}
+          loading={tasksLoading}
           loadTasks={loadTasks}
           selectedTask={selectedTask} setSelectedTask={setSelectedTask}
         />
@@ -1588,33 +1623,214 @@ function UserDetailModal({ user, onClose }) {
 }
 
 // 分析记录组件
-function TasksTab({ tasks, total, page, setPage, status, setStatus, search, setSearch, loadTasks, selectedTask, setSelectedTask }) {
+function TasksTab({
+  tasks, total, page, setPage,
+  status, setStatus,
+  search, setSearch,
+  startDate, setStartDate,
+  endDate, setEndDate,
+  industry, setIndustry,
+  industries,
+  sortBy, setSortBy,
+  sortDir, setSortDir,
+  loading,
+  loadTasks,
+  selectedTask, setSelectedTask,
+}) {
+  // 快捷日期范围：今天 / 近 7 天 / 近 30 天 / 全部
+  const todayStr = () => new Date().toISOString().slice(0, 10);
+  const daysAgoStr = (n) => { const d = new Date(); d.setDate(d.getDate() - n); return d.toISOString().slice(0, 10); };
+  const applyQuickRange = (days) => {
+    if (days === null) { setStartDate(""); setEndDate(""); }
+    else if (days === 0) { setStartDate(todayStr()); setEndDate(todayStr()); }
+    else { setStartDate(daysAgoStr(days)); setEndDate(todayStr()); }
+    setPage(1);
+  };
+
+  // 按日期分组（仅对当前页排过序的数据；后端已按 sortBy 排序）
+  const groupedByDate = React.useMemo(() => {
+    const groups = new Map();
+    for (const t of tasks) {
+      const dateKey = t.created_at ? t.created_at.slice(0, 10) : "未知";
+      if (!groups.has(dateKey)) groups.set(dateKey, []);
+      groups.get(dateKey).push(t);
+    }
+    return Array.from(groups.entries());
+  }, [tasks]);
+
+  const showGrouped = sortBy === "created_at"; // 仅按时间排序时分组才有意义
+
+  const statusBadge = (s) => {
+    const map = {
+      complete: ["bg-green-500/20 text-green-700", "已完成"],
+      running: ["bg-blue-500/20 text-blue-700", "分析中"],
+      queued: ["bg-gray-500/20 text-gray-700", "排队中"],
+      error: ["bg-red-500/20 text-red-700", "失败"],
+      failed: ["bg-orange-500/20 text-orange-700", "中断"],
+    };
+    const [cls, label] = map[s] || ["bg-gray-500/20 text-gray-700", s || "-"];
+    return <span className={`px-2 py-0.5 rounded text-xs ${cls}`}>{label}</span>;
+  };
+
+  const scoreCell = (t) => {
+    if (t.total_score == null) return <span className="text-[#8E9BB0]">-</span>;
+    const v = Number(t.total_score);
+    const color = v >= 80 ? "text-green-600" : v >= 60 ? "text-yellow-600" : "text-red-600";
+    return <span className={`font-medium ${color}`}>{v.toFixed(1)}</span>;
+  };
+
+  const headerCell = (label, field) => {
+    const active = sortBy === field;
+    const arrow = active ? (sortDir === "asc" ? "▲" : "▼") : "";
+    return (
+      <th
+        className={`pb-3 cursor-pointer select-none ${active ? "text-[#1B4FD8]" : ""}`}
+        onClick={() => {
+          if (active) setSortDir(sortDir === "asc" ? "desc" : "asc");
+          else { setSortBy(field); setSortDir("desc"); }
+          setPage(1);
+        }}
+      >
+        {label} {arrow}
+      </th>
+    );
+  };
+
+  const renderRow = (t) => (
+    <tr key={t.id} className="border-b border-[#D8DCE8]/50 text-sm hover:bg-[#F5F7FB]">
+      <td className="py-3 font-mono text-xs text-[#4B5A72]">{t.archive_number || (t.id?.slice(0, 12) + "...")}</td>
+      <td className="py-3 max-w-[200px] truncate" title={t.title || ""}>{t.title || <span className="text-[#8E9BB0]">未命名</span>}</td>
+      <td className="py-3">{t.username || <span className="text-[#8E9BB0]">匿名</span>}</td>
+      <td className="py-3">{statusBadge(t.status)}</td>
+      <td className="py-3">{scoreCell(t)}</td>
+      <td className="py-3 text-[#4B5A72]">{t.industry_category || <span className="text-[#8E9BB0]">-</span>}</td>
+      <td className="py-3 text-[#4B5A72]">{t.created_at ? new Date(t.created_at).toLocaleString("zh-CN") : "-"}</td>
+      <td className="py-3">
+        <button onClick={() => setSelectedTask(t)} className="p-1 hover:bg-[#E5E9F4] rounded" title="查看详情">
+          <Eye className="w-4 h-4" />
+        </button>
+      </td>
+    </tr>
+  );
+
   return (
     <div className="space-y-6">
       <div className="bg-white border border-[#D8DCE8] rounded-xl p-6">
-        <div className="flex gap-4 mb-4">
-          <div className="flex-1 relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#4B5A72]" />
-            <input type="text" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="搜索用户名/档案号" className="w-full pl-10 pr-4 py-2 bg-[#EEF1F7] border border-[#D8DCE8] rounded-lg" />
+        {/* 筛选区 */}
+        <div className="space-y-3 mb-4">
+          {/* 第一行：搜索 + 状态 + 行业 */}
+          <div className="flex flex-wrap gap-3">
+            <div className="flex-1 min-w-[200px] relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#4B5A72]" />
+              <input
+                type="text"
+                value={search}
+                onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+                placeholder="搜索用户名 / 档案号 / 任务 ID / 标题"
+                className="w-full pl-10 pr-4 py-2 bg-[#EEF1F7] border border-[#D8DCE8] rounded-lg"
+              />
+            </div>
+            <select value={status} onChange={(e) => { setStatus(e.target.value); setPage(1); }} className="px-4 py-2 bg-[#EEF1F7] border border-[#D8DCE8] rounded-lg">
+              <option value="">全部状态</option>
+              <option value="running">分析中</option>
+              <option value="complete">已完成</option>
+              <option value="error">失败</option>
+              <option value="queued">排队中</option>
+            </select>
+            <select value={industry} onChange={(e) => { setIndustry(e.target.value); setPage(1); }} className="px-4 py-2 bg-[#EEF1F7] border border-[#D8DCE8] rounded-lg max-w-[220px]">
+              <option value="">全部行业</option>
+              {industries.map((i) => (
+                <option key={i.category} value={i.category}>{i.category} ({i.count})</option>
+              ))}
+            </select>
           </div>
-          <select value={status} onChange={(e) => setStatus(e.target.value)} className="px-4 py-2 bg-[#EEF1F7] border border-[#D8DCE8] rounded-lg">
-            <option value="">全部状态</option>
-            <option value="running">分析中</option>
-            <option value="complete">已完成</option>
-            <option value="error">失败</option>
-          </select>
+          {/* 第二行：日期范围 + 快捷按钮 */}
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="text-sm text-[#4B5A72]">创建日期：</span>
+            <input
+              type="date"
+              value={startDate}
+              onChange={(e) => { setStartDate(e.target.value); setPage(1); }}
+              className="px-3 py-1.5 bg-[#EEF1F7] border border-[#D8DCE8] rounded-lg text-sm"
+            />
+            <span className="text-[#8E9BB0]">至</span>
+            <input
+              type="date"
+              value={endDate}
+              onChange={(e) => { setEndDate(e.target.value); setPage(1); }}
+              className="px-3 py-1.5 bg-[#EEF1F7] border border-[#D8DCE8] rounded-lg text-sm"
+            />
+            <div className="flex gap-1">
+              <button onClick={() => applyQuickRange(0)} className="px-2 py-1 text-xs bg-[#EEF1F7] hover:bg-[#E5E9F4] rounded">今天</button>
+              <button onClick={() => applyQuickRange(7)} className="px-2 py-1 text-xs bg-[#EEF1F7] hover:bg-[#E5E9F4] rounded">近 7 天</button>
+              <button onClick={() => applyQuickRange(30)} className="px-2 py-1 text-xs bg-[#EEF1F7] hover:bg-[#E5E9F4] rounded">近 30 天</button>
+              <button onClick={() => applyQuickRange(null)} className="px-2 py-1 text-xs bg-[#EEF1F7] hover:bg-[#E5E9F4] rounded">全部</button>
+            </div>
+            {(startDate || endDate || status || industry || search) && (
+              <button
+                onClick={() => {
+                  setSearch(""); setStatus(""); setIndustry("");
+                  setStartDate(""); setEndDate(""); setPage(1);
+                }}
+                className="ml-auto text-xs text-[#1B4FD8] hover:underline"
+              >
+                清除全部筛选
+              </button>
+            )}
+          </div>
         </div>
-        <div className="overflow-x-auto">
+
+        {/* 表格 */}
+        <div className="overflow-x-auto relative">
+          {loading && (
+            <div className="absolute inset-0 bg-white/60 flex items-center justify-center z-10">
+              <Loader2 className="w-6 h-6 animate-spin text-[#1B4FD8]" />
+            </div>
+          )}
           <table className="w-full">
-            <thead><tr className="text-left text-sm text-[#4B5A72] border-b border-[#D8DCE8]"><th className="pb-3">档案号</th><th className="pb-3">用户</th><th className="pb-3">状态</th><th className="pb-3">进度</th><th className="pb-3">阶段</th><th className="pb-3">创建时间</th><th className="pb-3">操作</th></tr></thead>
-            <tbody>{tasks.map((t) => (<tr key={t.id} className="border-b border-[#D8DCE8]/50 text-sm"><td className="py-3 font-mono text-xs text-[#4B5A72]">{t.archive_number || t.id?.slice(0, 12) + "..."}</td><td className="py-3">{t.username || "匿名"}</td><td className="py-3"><span className={`px-2 py-0.5 rounded text-xs ${t.status === "complete" ? "bg-green-500/20 text-green-400" : t.status === "running" ? "bg-blue-500/20 text-blue-400" : "bg-red-500/20 text-red-400"}`}>{t.status === "complete" ? "已完成" : t.status === "running" ? "分析中" : "失败"}</span></td><td className="py-3">{t.percentage}%</td><td className="py-3 text-[#4B5A72]">{t.stage}</td><td className="py-3 text-[#4B5A72]">{new Date(t.created_at).toLocaleString("zh-CN")}</td><td className="py-3"><button onClick={() => setSelectedTask(t)} className="p-1 hover:bg-[#E5E9F4] rounded"><Eye className="w-4 h-4" /></button></td></tr>))}</tbody>
+            <thead>
+              <tr className="text-left text-sm text-[#4B5A72] border-b border-[#D8DCE8]">
+                <th className="pb-3">档案号</th>
+                <th className="pb-3">标题</th>
+                <th className="pb-3">用户</th>
+                <th className="pb-3">状态</th>
+                {headerCell("评分", "total_score")}
+                <th className="pb-3">行业</th>
+                {headerCell("创建时间", "created_at")}
+                <th className="pb-3">操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              {tasks.length === 0 && !loading && (
+                <tr><td colSpan={8} className="py-8 text-center text-[#8E9BB0]">没有匹配的记录</td></tr>
+              )}
+              {showGrouped
+                ? groupedByDate.map(([date, items]) => (
+                    <React.Fragment key={date}>
+                      <tr className="bg-[#F5F7FB]">
+                        <td colSpan={8} className="py-2 px-2 text-xs font-medium text-[#4B5A72]">
+                          📅 {date}（{items.length} 条）
+                        </td>
+                      </tr>
+                      {items.map(renderRow)}
+                    </React.Fragment>
+                  ))
+                : tasks.map(renderRow)}
+            </tbody>
           </table>
         </div>
-        {total > 20 && <div className="flex justify-center gap-2 mt-4">
-          <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1} className="px-3 py-1 bg-[#EEF1F7] rounded disabled:opacity-50">上一页</button>
-          <span className="px-3 py-1">第 {page} / {Math.ceil(total / 20)} 页</span>
-          <button onClick={() => setPage(p => p + 1)} disabled={page * 20 >= total} className="px-3 py-1 bg-[#EEF1F7] rounded disabled:opacity-50">下一页</button>
-        </div>}
+
+        {/* 分页 */}
+        <div className="flex justify-between items-center mt-4 text-sm">
+          <span className="text-[#4B5A72]">共 {total} 条</span>
+          {total > 20 && (
+            <div className="flex gap-2">
+              <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1} className="px-3 py-1 bg-[#EEF1F7] rounded disabled:opacity-50">上一页</button>
+              <span className="px-3 py-1">第 {page} / {Math.ceil(total / 20)} 页</span>
+              <button onClick={() => setPage(p => p + 1)} disabled={page * 20 >= total} className="px-3 py-1 bg-[#EEF1F7] rounded disabled:opacity-50">下一页</button>
+            </div>
+          )}
+        </div>
       </div>
       {selectedTask && <TaskDetailModal task={selectedTask} onClose={() => setSelectedTask(null)} />}
     </div>

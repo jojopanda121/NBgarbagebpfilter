@@ -289,19 +289,36 @@ const updateSettings = async (req, res, next) => {
 };
 
 // 分析记录管理
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const getAllTasks = async (req, res, next) => {
   try {
-    const { page, pageSize, status, search } = req.query;
+    const { page, pageSize, status, search, startDate, endDate, industry, sortBy, sortDir } = req.query;
     // M12: 严格 clamp pageSize，避免 ?pageSize=99999999 触发 OOM
     const safePage = Math.max(1, parseInt(page, 10) || 1);
     const safePageSize = Math.min(100, Math.max(1, parseInt(pageSize, 10) || 20));
+    // 日期格式校验：要求 YYYY-MM-DD，避免奇怪输入打到 DATE() 上
+    const safeStart = typeof startDate === "string" && ISO_DATE_RE.test(startDate) ? startDate : "";
+    const safeEnd = typeof endDate === "string" && ISO_DATE_RE.test(endDate) ? endDate : "";
     const result = adminService.getAllTasks({
       page: safePage,
       pageSize: safePageSize,
       status,
       search,
+      startDate: safeStart,
+      endDate: safeEnd,
+      industry: typeof industry === "string" ? industry : "",
+      sortBy: typeof sortBy === "string" ? sortBy : "created_at",
+      sortDir: typeof sortDir === "string" ? sortDir : "desc",
     });
     res.json(result);
+  } catch (err) {
+    next(err);
+  }
+};
+
+const getTaskIndustries = async (_req, res, next) => {
+  try {
+    res.json({ industries: adminService.getTaskIndustries() });
   } catch (err) {
     next(err);
   }
@@ -462,9 +479,12 @@ const uploadSiteImage = async (req, res, next) => {
     }
 
     // 移动文件到 uploads 目录（文件名仅由服务端生成，不含原文件名）
+    // 注意：multer 的临时目录是 os.tmpdir()（容器内 /tmp），UPLOAD_DIR 是 Docker 挂载卷，
+    // 跨文件系统时 fs.renameSync 会抛 EXDEV，必须用 copy + unlink。
     const filename = `site_${slug}_${Date.now()}${ext}`;
     const destPath = path.join(UPLOAD_DIR, filename);
-    fs.renameSync(req.file.path, destPath);
+    fs.copyFileSync(req.file.path, destPath);
+    try { fs.unlinkSync(req.file.path); } catch {}
 
     const imageUrl = `/uploads/${filename}`;
     images.push(imageUrl);
@@ -570,6 +590,7 @@ module.exports = {
   getSettings,
   updateSettings,
   getAllTasks,
+  getTaskIndustries,
   getTaskDetail,
   getTokenList,
   deleteToken,

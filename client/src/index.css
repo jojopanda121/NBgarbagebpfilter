@@ -46,6 +46,7 @@
     color: var(--text);
     font-family: var(--sans);
     -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
   }
 }
 

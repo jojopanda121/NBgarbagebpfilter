@@ -53,7 +53,7 @@ export default function Header() {
 
   return (
     <header className="border-b border-[#D8DCE8] bg-white/95 backdrop-blur-md sticky top-0 z-50" role="banner">
-      <div className="max-w-6xl mx-auto px-4 py-3 sm:px-6 sm:py-3.5 flex items-center justify-between gap-3">
+      <div className="max-w-6xl mx-auto px-3 py-2.5 sm:px-6 sm:py-3.5 flex items-center justify-between gap-2 sm:gap-3">
         <div
           className="flex items-center gap-2.5 min-w-0 cursor-pointer"
           onClick={() => { reset(); navigate(token ? "/app/dashboard" : "/"); }}
@@ -124,7 +124,7 @@ export default function Header() {
               </button>
 
               {showDropdown && (
-                <div className="absolute right-0 mt-2 w-48 bg-white border border-[#D8DCE8] rounded-[4px] shadow-[0_10px_36px_rgba(13,33,69,0.12)] overflow-hidden" role="menu">
+                <div className="absolute right-0 mt-2 w-56 max-w-[calc(100vw-1rem)] bg-white border border-[#D8DCE8] rounded-[4px] shadow-[0_10px_36px_rgba(13,33,69,0.12)] overflow-hidden" role="menu">
                   <div className="py-1">
                     <button
                       onClick={() => { setShowDropdown(false); navigate("/settings"); }}
@@ -191,16 +191,16 @@ export default function Header() {
               )}
             </div>
           ) : (
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5 sm:gap-2">
               <button
                 onClick={() => navigate("/login")}
-                className="px-3 py-1.5 text-sm text-[#4B5A72] hover:text-[#0D2145] transition-colors"
+                className="px-2 py-1.5 sm:px-3 text-sm text-[#4B5A72] hover:text-[#0D2145] transition-colors"
               >
                 登录
               </button>
               <button
                 onClick={() => navigate("/login")}
-                className="px-4 py-2 text-sm bg-[#1B4FD8] hover:bg-[#163069] text-white rounded-[3px] transition-colors font-semibold"
+                className="px-3 py-1.5 sm:px-4 sm:py-2 text-sm bg-[#1B4FD8] hover:bg-[#163069] text-white rounded-[3px] transition-colors font-semibold"
               >
                 注册
               </button>

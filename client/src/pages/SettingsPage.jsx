@@ -1007,7 +1007,7 @@ function BillingTab({ profile, orders, usage }) {
     <div className="space-y-6">
       <div className="bg-white border border-[#D8DCE8] rounded-xl p-6">
         <h3 className="text-lg font-bold mb-4">额度概览</h3>
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div className="p-4 bg-[#EEF1F7] rounded-lg text-center"><div className="text-2xl font-bold text-green-400">{profile?.quota?.free || 0}</div><div className="text-sm text-[#4B5A72]">免费额度</div></div>
           <div className="p-4 bg-[#EEF1F7] rounded-lg text-center"><div className="text-2xl font-bold text-blue-400">{profile?.quota?.paid || 0}</div><div className="text-sm text-[#4B5A72]">付费额度</div></div>
           <div className="p-4 bg-[#EEF1F7] rounded-lg text-center"><div className="text-2xl font-bold text-[#0D2145]">{profile?.quota?.total || 0}</div><div className="text-sm text-[#4B5A72]">剩余总额</div></div>
@@ -1507,7 +1507,7 @@ function VipGrantModal({ user, onClose, onConfirm }) {
 
         <div className="mb-4">
           <div className="text-xs text-[#4B5A72] mb-2">时长</div>
-          <div className="grid grid-cols-5 gap-2">
+          <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
             {PRESETS.map((p, i) => (
               <button
                 key={p.label}

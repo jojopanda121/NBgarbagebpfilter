@@ -77,7 +77,7 @@ function ProjectSummarySection({ data }) {
           {data.one_line_pitch}
         </p>
       )}
-      <div className="grid grid-cols-2 gap-2">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
         <InfoRow label="赛道" value={data.industry} />
         <InfoRow label="二级赛道" value={data.sub_industry} />
         <InfoRow label="商业模式" value={data.business_model} />
@@ -152,7 +152,7 @@ function FinancialSection({ data }) {
       {data.financial_summary && (
         <p className="text-sm text-[#0F1C36] border-l-2 border-emerald-500 pl-3">{data.financial_summary}</p>
       )}
-      <div className="grid grid-cols-2 gap-2">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
         <InfoRow label="当前收入" value={data.revenue_data?.current_arr ? `${data.revenue_data.current_arr} 亿元` : null} />
         <InfoRow label="增速" value={data.revenue_data?.growth_rate_pct ? `${data.revenue_data.growth_rate_pct}%` : null} />
         <InfoRow label="毛利率" value={data.cost_structure?.gross_margin_pct ? `${data.cost_structure.gross_margin_pct}%` : null} />
@@ -309,7 +309,7 @@ function ValuationSection({ data }) {
       {data.valuation_summary && (
         <p className="text-sm text-[#0F1C36] border-l-2 border-yellow-500 pl-3">{data.valuation_summary}</p>
       )}
-      <div className="grid grid-cols-2 gap-2">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
         <InfoRow label="声称估值" value={data.claimed_valuation_rmb ? `${data.claimed_valuation_rmb} 亿元` : "未披露"} />
         <InfoRow label="估值方法" value={data.valuation_methodology} />
         <InfoRow label="行业均PS" value={ba.industry_avg_ps_multiple ? `${ba.industry_avg_ps_multiple}x` : null} />

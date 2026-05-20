@@ -479,7 +479,7 @@ export default function WorkspaceTab({ taskId }) {
         open={capOpen}
         onToggle={() => setCapOpen((v) => !v)}
       />
-      <div className="grid grid-cols-12 gap-4 h-[min(720px,calc(100vh-260px))] min-h-[520px] overflow-hidden">
+      <div className="grid grid-cols-12 gap-4 lg:h-[min(720px,calc(100vh-260px))] lg:min-h-[520px] lg:overflow-hidden">
         <aside className="col-span-12 lg:col-span-2 space-y-2 overflow-y-auto pr-1">
           <h3 className="text-xs font-medium text-[#4B5A72] uppercase tracking-wider mb-2">AI 投资专家</h3>
           {ALL_AGENTS.map(name => {

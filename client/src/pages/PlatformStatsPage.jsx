@@ -475,7 +475,7 @@ export default function PlatformStatsPage() {
                 </p>
                 {/* 评级分布 */}
                 {sectorData.grade_distribution && (
-                  <div className="grid grid-cols-4 gap-2">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                     {["A", "B", "C", "D"].map(g => {
                       const cfg = GRADE_COLORS[g];
                       const count = sectorData.grade_distribution[g] || 0;

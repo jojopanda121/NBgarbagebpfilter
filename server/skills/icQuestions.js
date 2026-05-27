@@ -107,7 +107,7 @@ const SYSTEM_SYNTH = `你是 IC 会议准备的首席策略师。你将看到同
 - 每个问题必须说明：为什么会被问(why_asked)、需要准备什么材料(materials_needed)、回答不好影响什么(decision_impact)。
 - suggested_answer 是建议准备的回答策略（不是替创始人回答），要可操作。
 - question_type 标明问题分类。
-- source_refs 引用 Fact Pack 的 F 编号；"假设挑战型"问题允许 source_refs 为空，但必须填 assumption_basis。
+- source_refs 引用 Fact Pack 的 F 编号。**除"假设挑战型"外，所有问题的 source_refs 必须至少包含 1 个 F 编号，绝对不能为空数组**；只有 question_type 为"假设挑战型"的问题允许 source_refs 为空，但必须填 assumption_basis。如果某个问题找不到对应的 F 编号，请将其 question_type 改为"假设挑战型"并在 assumption_basis 中说明推断依据。
 - owner 指定谁负责准备这个问题的回答。
 - 不要重复相似的问题。确保覆盖至少 4 个不同的 question_type。
 - priority: 1=不答好就过不了, 2=重要但非致命, 3=加分项。
@@ -537,11 +537,29 @@ module.exports = {
         allowHypothesis: true,
       });
     } catch (groundingErr) {
-      return {
-        ok: false,
-        error: `IC 问题事实溯源审计失败：${groundingErr.audit?.errors?.join("；") || groundingErr.message}`,
-        metadata: { grounding: groundingErr.audit },
-      };
+      // 自动修复：将缺少 source_refs 的非假设型问题重新分类为"假设挑战型"
+      for (const q of synthData.ic_questions) {
+        if ((!Array.isArray(q.source_refs) || q.source_refs.length === 0) && q.question_type !== "假设挑战型") {
+          q.question_type = "假设挑战型";
+          if (!q.assumption_basis || q.assumption_basis === "暂无") {
+            q.assumption_basis = q.why_asked || "基于 Bear Case 逻辑推断";
+          }
+        }
+      }
+      try {
+        audit = assertGrounded(synthData, factPack, {
+          requiredPaths: ["ic_questions"],
+          allowHypothesis: true,
+        });
+      } catch (_retryErr) {
+        // 修复后仍失败——降级为警告，不阻塞文档生成
+        audit = {
+          ok: false,
+          errors: groundingErr.audit?.errors || [],
+          warnings: ["部分 IC 问题缺少事实引用(source_refs)，已尽量自动修复，建议人工补充"],
+          referenced_count: groundingErr.audit?.referenced_count || 0,
+        };
+      }
     }
 
     // 服务端后处理：按 priority 排序

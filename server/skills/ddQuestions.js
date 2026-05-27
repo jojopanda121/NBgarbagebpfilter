@@ -276,7 +276,7 @@ const SCHEMA = {
           status: { type: "string", enum: ["待收集", "待访谈", "待第三方验证", "已完成"] },
           source_refs: {
             type: "array",
-            minItems: 1,
+            minItems: 0,
             maxItems: 5,
             items: { type: "string" },
           },
@@ -376,10 +376,11 @@ module.exports = {
     try {
       audit = assertGrounded(data, factPack, { requiredPaths: ["questions"] });
     } catch (groundingErr) {
-      return {
+      audit = {
         ok: false,
-        error: `事实溯源审计失败：${groundingErr.audit?.errors?.join("；") || groundingErr.message}`,
-        metadata: { grounding: groundingErr.audit },
+        errors: groundingErr.audit?.errors || [],
+        warnings: ["部分尽调问题缺少事实引用(source_refs)，建议人工补充"],
+        referenced_count: groundingErr.audit?.referenced_count || 0,
       };
     }
 

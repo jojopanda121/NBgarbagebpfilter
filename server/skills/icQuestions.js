@@ -481,14 +481,16 @@ module.exports = {
       SYSTEM_BULL, bullMsg, SCHEMA_BULL,
       { maxTokens: 4096, maxRepairs: 2, skillId: "ic_questions_xlsx" }
     );
-    // Bull 必须全部有事实支撑
+    // Bull 论点事实支撑校验——失败时降级为警告，不阻塞后续 Bear/Synth 步骤
+    let bullAudit;
     try {
-      assertGrounded(bullData, factPack, { requiredPaths: ["key_strengths"] });
+      bullAudit = assertGrounded(bullData, factPack, { requiredPaths: ["key_strengths"] });
     } catch (groundingErr) {
-      return {
+      bullAudit = {
         ok: false,
-        error: `Bull 论点事实溯源审计失败：${groundingErr.audit?.errors?.join("；") || groundingErr.message}`,
-        metadata: { grounding: groundingErr.audit },
+        errors: groundingErr.audit?.errors || [],
+        warnings: ["部分 Bull 论点缺少事实引用(source_refs)，建议人工核实"],
+        referenced_count: groundingErr.audit?.referenced_count || 0,
       };
     }
 

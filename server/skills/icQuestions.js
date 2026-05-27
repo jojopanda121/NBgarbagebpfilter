@@ -625,6 +625,7 @@ module.exports = {
       metadata: {
         llm_repairs: { bull: bullRepairs, bear: bearRepairs, synth: synthRepairs, val_exit: valExitRepairs },
         grounding: audit,
+        grounding_bull: bullAudit,
         fallback: summarizeFallback(finalPayload, "ic_questions_xlsx"),
         semantic_audit: await (async () => {
           const enable = params.enable_semantic_audit === true

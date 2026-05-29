@@ -56,6 +56,33 @@ router.get("/skill-metrics", adminController.requireAdmin, (req, res) => {
   }
 });
 
+// Workspace 功能使用统计：全站功能热度排行 + 按用户下钻
+// query: ?days=30 (默认 30, 1~365)
+router.get("/feature-usage", adminController.requireAdmin, (req, res) => {
+  try {
+    const { aggregateFeatureUsage } = require("../services/featureUsageAggregator");
+    const summary = aggregateFeatureUsage({ days: req.query.days });
+    res.json(summary);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// query: ?days=30 &feature=onepager_pptx (可选过滤) &limit=50
+router.get("/feature-usage/by-user", adminController.requireAdmin, (req, res) => {
+  try {
+    const { aggregateFeatureUsageByUser } = require("../services/featureUsageAggregator");
+    const summary = aggregateFeatureUsageByUser({
+      days: req.query.days,
+      feature: req.query.feature,
+      limit: req.query.limit,
+    });
+    res.json(summary);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // 反馈管理
 router.get("/feedback", adminController.requireAdmin, adminController.getFeedbackList);
 router.post("/feedback/:id/reply", adminController.requireAdmin, adminController.replyFeedback);

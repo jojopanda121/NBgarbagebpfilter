@@ -101,7 +101,8 @@ function calculateDimension2_ProductAndMoat(TRL, Competitor_Rank_Score) {
  * @returns {number} 0-100 的整数得分
  */
 function calculateDimension3_CapitalEfficiencyAndScale(Industry_Capital_Score, Industry_Scale_Score) {
-  // 数据缺失时默认 5 分中性分，防止总分雪崩
+  // 数据缺失时默认 5 分中性分（行业属性 LLM 可查；查不到 = 赛道太冷门或不存在
+  // → 客观中性 5）。与 dim4 的 6 故意不对称，详见 dim4 注释。
   const ceVal = normalizeInput(Industry_Capital_Score, 5, 1, 10);
   const seVal = normalizeInput(Industry_Scale_Score, 5, 1, 10);
 
@@ -155,7 +156,13 @@ function calculateDimension4_Team(teamData) {
     experienceScore = Math.min(10, 2.5 * Math.log(expVal + 1));
   }
 
-  // 子因子提取（LLM 输出 1-10，缺失默认 6——能写进BP说明团队至少中等偏上）
+  // 子因子提取（LLM 输出 1-10，缺失默认 6）。
+  //
+  // 为什么 dim4 缺失默认 6，而 dim3 默认 5？—— 故意不对称，不是 bug：
+  //   数据源约束：本系统依赖 MiniMax search，团队背景信息（早期创始人、
+  //   非 LinkedIn 用户、国内民营企业）大概率检索不到——这是常态，不代表团队差。
+  //   因此 dim4 fallback = 6（中性偏上的诚实补偿），刻意高于 dim3 的客观中性 5。
+  //   修改前请先评估是否会让现有分布（多 C/D、少 A/B）进一步下移。
   const domainMatch = normalizeInput(data.Team_Domain_Match_Score, 6, 1, 10);
   const completeness = normalizeInput(data.Team_Completeness_Score, 6, 1, 10);
   const trackRecord = normalizeInput(data.Team_Track_Record_Score, 6, 1, 10);

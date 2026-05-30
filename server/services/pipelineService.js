@@ -10,6 +10,7 @@ const { scoreProject } = require("../scoring");
 const logger = require("../utils/logger");
 const trackingService = require("./trackingService");
 const orchestrator = require("../agents/orchestrator");
+const agentRuntimeRouter = require("./agentRuntimeRouter");
 const dataLakeService = require("./dataLakeService");
 const crossMatchService = require("./crossMatchService");
 const {
@@ -576,12 +577,15 @@ async function runPipeline(bpText, onProgress, taskId = null, userId = null) {
     // 主流水线：声明核查 + 评分数据 + 五维深度分析 + 深度研究
     runAgentBWithBatchingAndResearch(extractedData, truncatedText, onProgress),
 
-    // 新增：6 个 Multiagent 并行，捕获异常不影响主流程
+    // multiagent 现走 agentRuntimeRouter（Hermes 主路径，故障 fallback orchestrator）
     (async () => {
       try {
-        onProgress({ type: "progress", stage: "multiagent_start", percentage: 33, message: "6 个 AI Agent 深度分析启动中..." });
-        const { runId, multiagent: ma } = await orchestrator.runAllAgents(bpText, extractedData, taskId, userId);
-        onProgress({ type: "progress", stage: "multiagent_done", percentage: 85, message: "6 个 AI Agent 分析完成" });
+        onProgress({ type: "progress", stage: "multiagent_start", percentage: 33, message: "深度投研分析启动中..." });
+        const { runId, multiagent: ma } = await agentRuntimeRouter.runBpPipeline({
+          bpText, extractedData, taskId, userId,
+        });
+        const runtime = ma?.runtime || "legacy";
+        onProgress({ type: "progress", stage: "multiagent_done", percentage: 85, message: `投研分析完成 (${runtime})` });
         return { runId, ...ma };
       } catch (err) {
         logger.warn("[Pipeline] multiagent 全局异常，不影响主报告:", err.message);

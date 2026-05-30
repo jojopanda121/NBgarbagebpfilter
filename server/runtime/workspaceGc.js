@@ -1,4 +1,5 @@
 const { runWorkspaceMemoryGc } = require("../services/workspaceService");
+const { gcOlderThan: gcRedactionMaps } = require("../middleware/unredactor");
 
 function startWorkspaceGc() {
   const runOnce = () => {
@@ -6,6 +7,10 @@ function startWorkspaceGc() {
       const result = runWorkspaceMemoryGc();
       if (result && result.artifactsDeleted) {
         console.log(`[Cleanup] 清理 ${result.artifactsDeleted} 个过期文件`);
+      }
+      const redactCleaned = gcRedactionMaps(24);
+      if (redactCleaned > 0) {
+        console.log(`[Cleanup] 清理 ${redactCleaned} 条过期脱敏映射`);
       }
     } catch (err) {
       console.error("[Cleanup]", err.message);

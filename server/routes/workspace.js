@@ -11,6 +11,7 @@ const { requireAuth } = require("../middleware/auth");
 const { getDb } = require("../db");
 const { getTask } = require("../services/taskService");
 const ws = require("../services/workspaceService");
+const agentRuntimeRouter = require("../services/agentRuntimeRouter");
 const { persistWorkspaceUpload } = require("../services/workspaceUploads");
 const { workspaceRateLimit, getWorkspaceUsage } = require("../middleware/workspaceQuota");
 const { enforceWorkspaceUploadLimits } = require("../services/workspaceUploadLimits");
@@ -248,78 +249,24 @@ router.post("/:taskId/messages", requireAuth, workspaceRateLimit, upload.single(
     ].join("\n") : "";
     const effectiveUserMsg = `${userMsg || "请分析附件"}${attachmentPrompt}`;
 
-    // Step 1: routing
-    sendEvent("phase", { phase: "routing" });
-    const routing = await ws.runHostRouting(projectCtx, history, effectiveUserMsg);
-    sendEvent("routing", routing);
-
-    // ── Step 2: experts —— 真 thinking + 流式 ──────────────
-    // 每位专家自己有 expert_msg_id；thinking/text 都按 (run_id, agent, msg_id) 分组流给前端。
-    let expertOutputs = [];
-    const expertMsgIds = {}; // agent -> stable msg id
-    if (routing.agents?.length > 0) {
-      sendEvent("phase", { phase: "experts", agents: routing.agents, run_id: runId });
-      for (const a of routing.agents) {
-        const eid = require("crypto").randomBytes(16).toString("hex");
-        expertMsgIds[a] = eid;
-        sendEvent("expert_start", { id: eid, agent: a, run_id: runId });
-      }
-      expertOutputs = await ws.runExpertsParallel(
-        routing.agents, projectCtx, history, effectiveUserMsg,
-        (out) => {
-          const eid = expertMsgIds[out.agent] || require("crypto").randomBytes(16).toString("hex");
-          // 落库：标 internal + run_id，正文存 content，thinking 存 metadata（可大）
-          ws.appendMessage(conv.id, "agent", out.agent, out.content, {
-            internal: true,
-            run_id: runId,
-            thinking: out.thinking || "",
-            error: !!out.error,
-          });
-          sendEvent("expert_done", {
-            id: eid,
-            agent: out.agent,
-            content: out.content,
-            run_id: runId,
-            error: !!out.error,
-          });
-        },
-        {
-          taskId, userId, runId,
-          taskType: routing.task_type,
-          signal: ac.signal,
-          onEvent: (ev) => {
-            const eid = expertMsgIds[ev.agent];
-            if (!eid) return;
-            if (ev.type === "thinking") {
-              sendEvent("expert_thinking_delta", { id: eid, agent: ev.agent, run_id: runId, delta: ev.text });
-            } else if (ev.type === "text") {
-              sendEvent("expert_text_delta", { id: eid, agent: ev.agent, run_id: runId, delta: ev.text });
-            }
-          },
-        }
-      );
-    }
-
-    // ── Step 3: host —— thinking + tools 真 agentic (共享实现) ──
-    sendEvent("phase", { phase: "host", run_id: runId });
-    await ws.runHostStreamingPhase({
-      conv: { ...conv, project_id: conv.project_id || own.task.workspace_project_id || null },
-      projectCtx,
-      history: ws.listMessages(conv.id, 30),
-      userMsg: effectiveUserMsg,
-      expertOutputs,
-      runId,
-      taskId,
+    // ── Agent Runtime Router —— 主路径 Hermes，故障 fallback legacy ──
+    // 编排逻辑（routing / experts / host）全部移交 router 决定。
+    // 走 Hermes 还是 legacy 由 hermesHealth + feature flag 决定，并写 runtime_fallback_log。
+    await agentRuntimeRouter.runWorkspaceConversation({
       userId,
-      projectId: conv.project_id || own.task.workspace_project_id || null,
-      taskType: routing.task_type,
-      routing,
+      conv,
+      taskId,
+      runId,
+      userMsg,
+      effectiveUserMsg,
+      projectCtx,
+      history,
+      ownTask: own.task,
       signal: ac.signal,
       sendEvent,
     });
 
     completed = true;
-    sendEvent("done", { ok: true });
   } catch (err) {
     if (ac.signal.aborted || err?.message === "客户端取消") {
       console.warn("[Workspace] SSE 连接已取消");

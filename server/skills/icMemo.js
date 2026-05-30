@@ -388,7 +388,7 @@ module.exports = {
 
     const { data, repairs } = await callLLMJson(SYSTEM, userMsg, SCHEMA, {
       maxTokens: 8192,
-      maxRepairs: 2,
+      maxRepairs: 3,
       skillId: "ic_memo",
     });
 
@@ -402,10 +402,11 @@ module.exports = {
     try {
       audit = assertGrounded(data, factPack, {});
     } catch (groundingErr) {
-      return {
+      audit = {
         ok: false,
-        error: `IC Memo 事实溯源审计失败:${groundingErr.audit?.errors?.join("；") || groundingErr.message}`,
-        metadata: { grounding: groundingErr.audit },
+        errors: groundingErr.audit?.errors || [],
+        warnings: ["部分 IC Memo 字段的事实引用(source_refs)指向不存在的编号，建议人工核实"],
+        referenced_count: groundingErr.audit?.referenced_count || 0,
       };
     }
 

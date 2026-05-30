@@ -16,6 +16,7 @@ const { queryMemory, formatMemoryPack } = require("./memory/memoryRouter");
 const { createWorkingMemory, appendWorkingFinding } = require("./memory/workingMemoryStore");
 const keeper = require("./memory/keeperService");
 const { runMemoryGc } = require("./memory/gcService");
+const { recordFeatureUsage } = require("./featureUsageTracker");
 const config = require("../config");
 const {
   WORKSPACE_HOST_ROUTING_PROMPT,
@@ -1844,58 +1845,86 @@ function artifactRowFromSkillArtifact(artifact) {
 }
 
 async function executeWorkspaceTool({ tool, args, conversationId, messageId, projectId, userId, taskId }) {
-  // ── 单调用 guard (service 入口) ──
-  // 工具名 allowlist + PPT 禁版式字段 + legacy alias 归一. 所有路径都收口在这里:
-  // 来自 callLLMAgentic 的 native tool_use, 以及来自 executeToolCalls 的 <TOOL_CALL> 文本.
-  if (tool !== "web_search") {
-    const { guardSingleToolCall } = require("../agents/workspace/hostToolGuard");
-    const guardRes = guardSingleToolCall(tool, args);
-    if (!guardRes.ok) {
-      const reason = guardRes.errors.map((e) => e.reason).join("; ");
-      throw new Error(`[host_tool_guard] ${reason}`);
-    }
-    // alias 归一: validateToolCalls 把 generate_onepager → onepager_pptx, 这里同步.
-    if (guardRes.accepted[0] && guardRes.accepted[0].id && guardRes.accepted[0].id !== tool) {
-      tool = guardRes.accepted[0].id;
-    }
-  }
-
-  if (tool === "web_search") return executeWebSearchTool(args || {});
-  const toolDef = assertToolAllowed(tool, "host");
-
-  if (toolDef.executor === "doc_service") {
-    const artifact = await executeDocumentTool({ tool, args: args || {}, conversationId, messageId, userId });
-    return { artifact, summary: artifact.summary || `已生成 ${artifact.filename}` };
-  }
-
-  if (toolDef.executor === "skill_template") {
-    let skills = null;
+  // 功能使用埋点（fire-and-forget）：所有 host 工具调用都收口在本函数，
+  // 这里统一记一行 workspace_feature_usage，供后台"功能热度"看板聚合。
+  const startedAt = Date.now();
+  let trackedTool = tool;
+  const finish = (status) => {
     try {
-      skills = require("../skills");
-      skills.init();
-    } catch (err) {
-      throw new Error(`skill registry 不可用: ${err.message}`);
-    }
-    const skill = skills.registry.get(tool);
-    if (!skill) throw new Error(`模板 skill 未注册: ${tool}`);
-    const project = getWorkspaceToolProject({ projectId, userId, taskId });
-    const out = await skills.registry.execute({
-      skillId: tool,
-      params: args || {},
-      project,
-      userId,
-      ctx: { conversationId, messageId, userId },
-    });
-    if (!out.ok) throw new Error(out.error || `${tool} 执行失败`);
-    const artifact = artifactRowFromSkillArtifact(out.artifact) || out.artifact;
-    return {
-      artifact,
-      summary: artifact?.summary || out.artifact?.summary || `${tool} 已生成`,
-      skillRunId: out.runId,
-    };
-  }
+      recordFeatureUsage({
+        userId,
+        feature: trackedTool,
+        source: "host_tool",
+        status,
+        durationMs: Date.now() - startedAt,
+        projectId: projectId || null,
+      });
+    } catch (_) { /* never throw from tracking */ }
+  };
 
-  throw new Error(`工具尚未实现: ${tool}`);
+  try {
+    // ── 单调用 guard (service 入口) ──
+    // 工具名 allowlist + PPT 禁版式字段 + legacy alias 归一. 所有路径都收口在这里:
+    // 来自 callLLMAgentic 的 native tool_use, 以及来自 executeToolCalls 的 <TOOL_CALL> 文本.
+    if (tool !== "web_search") {
+      const { guardSingleToolCall } = require("../agents/workspace/hostToolGuard");
+      const guardRes = guardSingleToolCall(tool, args);
+      if (!guardRes.ok) {
+        const reason = guardRes.errors.map((e) => e.reason).join("; ");
+        throw new Error(`[host_tool_guard] ${reason}`);
+      }
+      // alias 归一: validateToolCalls 把 generate_onepager → onepager_pptx, 这里同步.
+      if (guardRes.accepted[0] && guardRes.accepted[0].id && guardRes.accepted[0].id !== tool) {
+        tool = guardRes.accepted[0].id;
+        trackedTool = tool;
+      }
+    }
+
+    let out;
+    if (tool === "web_search") {
+      out = await executeWebSearchTool(args || {});
+    } else {
+      const toolDef = assertToolAllowed(tool, "host");
+
+      if (toolDef.executor === "doc_service") {
+        const artifact = await executeDocumentTool({ tool, args: args || {}, conversationId, messageId, userId });
+        out = { artifact, summary: artifact.summary || `已生成 ${artifact.filename}` };
+      } else if (toolDef.executor === "skill_template") {
+        let skills = null;
+        try {
+          skills = require("../skills");
+          skills.init();
+        } catch (err) {
+          throw new Error(`skill registry 不可用: ${err.message}`);
+        }
+        const skill = skills.registry.get(tool);
+        if (!skill) throw new Error(`模板 skill 未注册: ${tool}`);
+        const project = getWorkspaceToolProject({ projectId, userId, taskId });
+        const skillOut = await skills.registry.execute({
+          skillId: tool,
+          params: args || {},
+          project,
+          userId,
+          ctx: { conversationId, messageId, userId },
+        });
+        if (!skillOut.ok) throw new Error(skillOut.error || `${tool} 执行失败`);
+        const artifact = artifactRowFromSkillArtifact(skillOut.artifact) || skillOut.artifact;
+        out = {
+          artifact,
+          summary: artifact?.summary || skillOut.artifact?.summary || `${tool} 已生成`,
+          skillRunId: skillOut.runId,
+        };
+      } else {
+        throw new Error(`工具尚未实现: ${tool}`);
+      }
+    }
+
+    finish("success");
+    return out;
+  } catch (err) {
+    finish("failed");
+    throw err;
+  }
 }
 
 /**

@@ -8,6 +8,7 @@ const { requireAuth } = require("../middleware/auth");
 const { getDb } = require("../db");
 const skills = require("../skills");
 const teaserService = require("../services/teaserService");
+const { recordFeatureUsage } = require("../services/featureUsageTracker");
 const asyncHandler = require("../utils/asyncHandler");
 
 skills.init();
@@ -86,7 +87,17 @@ router.post("/:skillId/run", requireAuth, skillRunLimiter, asyncHandler(async (r
     }
   }
 
+  const startedAt = Date.now();
   const out = await skills.registry.execute({ skillId, params, project, userId, ctx });
+  // 功能使用埋点（fire-and-forget）：技能按钮直接调用，区别于 host 对话中调用。
+  recordFeatureUsage({
+    userId,
+    feature: skillId,
+    source: "skill_button",
+    status: out.ok ? "success" : "failed",
+    durationMs: Date.now() - startedAt,
+    projectId: project?.id || null,
+  });
   if (!out.ok) return res.status(400).json(out);
   res.json(out);
 }));

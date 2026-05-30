@@ -191,7 +191,7 @@ function calculateDimension4_Team(teamData) {
  *
  * verdict 映射规则（满分10）:
  *   诚实 / 保守低估  → 10    （正面信号）
- *   存疑             →  7.5  （无罪推定，中性偏上——这是 LLM 的知识盲区，不是项目的问题）
+ *   存疑             →  6    （及格分，无罪推定但不再偏上——LLM 知识盲区不奖励）
  *   夸大             →  3    （有证据的负面信号）
  *   信息不对称       →  2    （故意隐瞒）
  *   严重夸大         →  1    （严重负面）
@@ -206,7 +206,7 @@ function calculateDimension4_Team(teamData) {
 const VERDICT_SCORE_MAP = {
   "诚实": 10,
   "保守低估": 10,
-  "存疑": 7.5,
+  "存疑": 6,
   "夸大": 3,
   "信息不对称": 2,
   "严重夸大": 1,

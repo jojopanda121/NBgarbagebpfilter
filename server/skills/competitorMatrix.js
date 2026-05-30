@@ -270,17 +270,18 @@ module.exports = {
     ].join("\n");
 
     const { data, repairs } = await callLLMJson(SYSTEM, userMsg, SCHEMA, {
-      maxTokens: 6144, maxRepairs: 2,
+      maxTokens: 6144, maxRepairs: 3,
       skillId: "competitor_matrix_xlsx",
     });
     let audit;
     try {
       audit = assertGrounded(data, factPack, { requiredPaths: ["confirmed_competitors"] });
     } catch (groundingErr) {
-      return {
+      audit = {
         ok: false,
-        error: `事实溯源审计失败：${groundingErr.audit?.errors?.join("；") || groundingErr.message}`,
-        metadata: { grounding: groundingErr.audit },
+        errors: groundingErr.audit?.errors || [],
+        warnings: ["部分竞品的事实引用(source_refs)缺失或指向不存在的编号，建议人工核实"],
+        referenced_count: groundingErr.audit?.referenced_count || 0,
       };
     }
     const artifact = await exportXlsx({

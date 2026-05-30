@@ -43,6 +43,7 @@ const ADMIN_ONLY_TABS = [
   { key: "users", label: "用户管理", icon: Users },
   { key: "tasks", label: "分析记录", icon: FileText },
   { key: "stats", label: "数据统计", icon: BarChart3 },
+  { key: "feature_usage", label: "功能使用", icon: TrendingUp },
   { key: "admin_feedback", label: "反馈管理", icon: MessageSquare },
   { key: "announcements", label: "公告管理", icon: Megaphone },
   { key: "packages", label: "套餐配置", icon: Package },
@@ -563,6 +564,8 @@ export default function SettingsPage({ adminMode = false }) {
 
       {/* 数据统计 Tab (管理员) */}
       {activeTab === "stats" && isAdmin && <StatsTab stats={stats} />}
+
+      {activeTab === "feature_usage" && isAdmin && <FeatureUsageTab />}
 
       {/* 反馈管理 Tab (管理员) */}
       {activeTab === "admin_feedback" && isAdmin && (
@@ -1886,6 +1889,224 @@ function TaskDetailModal({ task, onClose }) {
 }
 
 // 数据统计组件
+// Workspace 功能使用看板（管理员）：功能热度排行 + 按用户下钻
+const FEATURE_LABELS = {
+  web_search: "网络搜索",
+  onepager_pptx: "一页亮点 PPT",
+  investment_snapshot: "投决速览",
+  highlight_visual: "亮点视觉图",
+  project_brief: "项目简报",
+  investment_deck_pptx: "投决材料",
+  generate_docx: "Word 生成",
+  generate_xlsx: "Excel 生成",
+  dd_checklist_xlsx: "尽调清单",
+  founder_interview_docx: "创始人访谈",
+  competitor_matrix_xlsx: "竞品矩阵",
+  ic_questions_xlsx: "IC 问题清单",
+};
+const featureLabel = (id) => FEATURE_LABELS[id] || id;
+const DAYS_OPTIONS = [7, 30, 90];
+const FU_BAR_COLORS = ["#3b82f6", "#8b5cf6", "#22c55e", "#f59e0b", "#ef4444", "#06b6d4", "#ec4899", "#6b7280"];
+
+function FeatureUsageTab() {
+  const [days, setDays] = useState(30);
+  const [summary, setSummary] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [selectedFeature, setSelectedFeature] = useState(null);
+  const [drill, setDrill] = useState(null);
+  const [drillLoading, setDrillLoading] = useState(false);
+  const [Recharts, setRecharts] = useState(null);
+
+  useEffect(() => {
+    import("recharts").then((mod) => setRecharts(mod)).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setSelectedFeature(null);
+    setDrill(null);
+    api.get(`/api/admin/feature-usage?days=${days}`)
+      .then((data) => { if (!cancelled) setSummary(data); })
+      .catch((err) => { console.error("加载功能使用统计失败:", err); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [days]);
+
+  const loadDrill = (feature) => {
+    setSelectedFeature(feature);
+    setDrill(null);
+    setDrillLoading(true);
+    api.get(`/api/admin/feature-usage/by-user?days=${days}&feature=${encodeURIComponent(feature)}&limit=50`)
+      .then(setDrill)
+      .catch((err) => { console.error("加载用户下钻失败:", err); })
+      .finally(() => setDrillLoading(false));
+  };
+
+  const features = summary?.features || [];
+  const maxTotal = Math.max(...features.map((f) => f.total), 1);
+  const chartData = features.slice(0, 10).map((f) => ({ name: featureLabel(f.feature), total: f.total }));
+
+  return (
+    <div className="space-y-6">
+      {/* 顶部：时间窗口选择 + 汇总卡 */}
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <h3 className="text-base font-semibold flex items-center gap-2">
+          <TrendingUp className="w-4 h-4 text-blue-500" />Workspace 功能使用热度
+        </h3>
+        <div className="flex gap-2">
+          {DAYS_OPTIONS.map((d) => (
+            <button
+              key={d}
+              onClick={() => setDays(d)}
+              className={`px-3 py-1.5 text-sm rounded-lg border transition-colors ${
+                days === d ? "bg-[#1B4FD8] text-white border-[#1B4FD8]" : "text-[#4B5A72] border-[#D8DCE8] hover:bg-[#EEF1F7]"
+              }`}
+            >
+              近 {d} 天
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+        <div className="bg-white border border-[#D8DCE8] rounded-xl p-5 text-center">
+          <div className="text-3xl font-bold text-blue-500">{summary?.total_events ?? "—"}</div>
+          <div className="text-sm text-[#4B5A72] mt-1">总调用次数</div>
+        </div>
+        <div className="bg-white border border-[#D8DCE8] rounded-xl p-5 text-center">
+          <div className="text-3xl font-bold text-purple-500">{features.length}</div>
+          <div className="text-sm text-[#4B5A72] mt-1">使用过的功能数</div>
+        </div>
+        <div className="bg-white border border-[#D8DCE8] rounded-xl p-5 text-center">
+          <div className="text-3xl font-bold text-emerald-500">
+            {features.length > 0 ? featureLabel(features[0].feature) : "—"}
+          </div>
+          <div className="text-sm text-[#4B5A72] mt-1">最热门功能</div>
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="text-center py-12"><Loader2 className="w-6 h-6 animate-spin mx-auto text-blue-500" /></div>
+      ) : features.length === 0 ? (
+        <div className="text-center py-12 text-[#8E9BB0]">该时间窗口内暂无功能使用记录</div>
+      ) : (
+        <>
+          {/* 功能热度柱状图 */}
+          <div className="bg-white border border-[#D8DCE8] rounded-xl p-6">
+            <h4 className="text-sm font-semibold mb-4 text-[#0F1C36]">调用次数 Top 10</h4>
+            {Recharts ? (
+              <Recharts.ResponsiveContainer width="100%" height={Math.max(220, chartData.length * 34)}>
+                <Recharts.BarChart data={chartData} layout="vertical" margin={{ top: 5, right: 20, left: 10, bottom: 0 }}>
+                  <Recharts.CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.06)" horizontal={false} />
+                  <Recharts.XAxis type="number" tick={{ fill: "#94a3b8", fontSize: 12 }} allowDecimals={false} />
+                  <Recharts.YAxis type="category" dataKey="name" width={96} tick={{ fill: "#4B5A72", fontSize: 12 }} />
+                  <Recharts.Tooltip
+                    contentStyle={{ backgroundColor: "rgba(15,23,42,0.95)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, color: "#e2e8f0" }}
+                    formatter={(value) => [`${value} 次`, "调用次数"]}
+                  />
+                  <Recharts.Bar dataKey="total" radius={[0, 4, 4, 0]} barSize={20}>
+                    {chartData.map((entry, idx) => (
+                      <Recharts.Cell key={entry.name} fill={FU_BAR_COLORS[idx % FU_BAR_COLORS.length]} />
+                    ))}
+                  </Recharts.Bar>
+                </Recharts.BarChart>
+              </Recharts.ResponsiveContainer>
+            ) : (
+              /* 降级：CSS 进度条 */
+              <div className="space-y-2">
+                {chartData.map((d, idx) => (
+                  <div key={d.name} className="flex items-center gap-3">
+                    <span className="text-xs text-[#4B5A72] w-24 truncate text-right">{d.name}</span>
+                    <div className="flex-1 bg-[#EEF1F7] rounded h-5 overflow-hidden">
+                      <div className="h-full rounded" style={{ width: `${(d.total / maxTotal) * 100}%`, backgroundColor: FU_BAR_COLORS[idx % FU_BAR_COLORS.length] }} />
+                    </div>
+                    <span className="text-xs text-[#0F1C36] tabular-nums w-10">{d.total}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* 功能明细表（点击行下钻到用户） */}
+          <div className="bg-white border border-[#D8DCE8] rounded-xl p-6 overflow-x-auto">
+            <h4 className="text-sm font-semibold mb-4 text-[#0F1C36]">功能明细（点击查看用户分布）</h4>
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-[#8E9BB0] border-b border-[#EEF1F7]">
+                  <th className="py-2 pr-4 font-medium">功能</th>
+                  <th className="py-2 pr-4 font-medium text-right">调用次数</th>
+                  <th className="py-2 pr-4 font-medium text-right">成功率</th>
+                  <th className="py-2 pr-4 font-medium text-right">独立用户</th>
+                  <th className="py-2 pr-4 font-medium text-right">平均耗时</th>
+                </tr>
+              </thead>
+              <tbody>
+                {features.map((f) => (
+                  <tr
+                    key={f.feature}
+                    onClick={() => loadDrill(f.feature)}
+                    className={`border-b border-[#F4F6FA] cursor-pointer hover:bg-[#EEF1F7] ${selectedFeature === f.feature ? "bg-[#EEF1F7]" : ""}`}
+                  >
+                    <td className="py-2 pr-4 text-[#0F1C36]">
+                      {featureLabel(f.feature)}
+                      <span className="text-[#B6BFCE] text-xs ml-1">{f.feature}</span>
+                    </td>
+                    <td className="py-2 pr-4 text-right tabular-nums text-[#0F1C36]">{f.total}</td>
+                    <td className="py-2 pr-4 text-right tabular-nums text-[#4B5A72]">{f.success_rate_pct != null ? `${f.success_rate_pct}%` : "—"}</td>
+                    <td className="py-2 pr-4 text-right tabular-nums text-[#4B5A72]">{f.unique_users}</td>
+                    <td className="py-2 pr-4 text-right tabular-nums text-[#4B5A72]">{f.avg_duration_ms != null ? `${(f.avg_duration_ms / 1000).toFixed(1)}s` : "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* 用户下钻面板 */}
+          {selectedFeature && (
+            <div className="bg-white border border-[#D8DCE8] rounded-xl p-6 overflow-x-auto">
+              <div className="flex items-center justify-between mb-4">
+                <h4 className="text-sm font-semibold text-[#0F1C36]">
+                  「{featureLabel(selectedFeature)}」用户分布（Top 50）
+                </h4>
+                <button onClick={() => { setSelectedFeature(null); setDrill(null); }} className="text-[#8E9BB0] hover:text-[#4B5A72]">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              {drillLoading ? (
+                <div className="text-center py-8"><Loader2 className="w-5 h-5 animate-spin mx-auto text-blue-500" /></div>
+              ) : (drill?.users?.length || 0) === 0 ? (
+                <div className="text-center py-8 text-[#8E9BB0]">暂无数据</div>
+              ) : (
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-[#8E9BB0] border-b border-[#EEF1F7]">
+                      <th className="py-2 pr-4 font-medium">用户</th>
+                      <th className="py-2 pr-4 font-medium text-right">调用次数</th>
+                      <th className="py-2 pr-4 font-medium text-right">成功</th>
+                      <th className="py-2 pr-4 font-medium text-right">失败</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {drill.users.map((u) => (
+                      <tr key={`${u.user_id}`} className="border-b border-[#F4F6FA]">
+                        <td className="py-2 pr-4 text-[#0F1C36]">{u.username}</td>
+                        <td className="py-2 pr-4 text-right tabular-nums text-[#0F1C36]">{u.total}</td>
+                        <td className="py-2 pr-4 text-right tabular-nums text-emerald-600">{u.success}</td>
+                        <td className="py-2 pr-4 text-right tabular-nums text-red-500">{u.failed}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 function StatsTab({ stats }) {
   if (!stats) return <div className="text-center py-8"><Loader2 className="w-6 h-6 animate-spin mx-auto" /></div>;
 

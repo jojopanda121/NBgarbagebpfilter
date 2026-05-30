@@ -252,10 +252,11 @@ module.exports = {
       // 仅校验所有出现的 source_refs 都真实指向 Fact Pack 编号。
       audit = assertGrounded(data, factPack, {});
     } catch (groundingErr) {
-      return {
+      audit = {
         ok: false,
-        error: `Deal Screening 事实溯源审计失败:${groundingErr.audit?.errors?.join("；") || groundingErr.message}`,
-        metadata: { grounding: groundingErr.audit },
+        errors: groundingErr.audit?.errors || [],
+        warnings: ["部分事实引用(source_refs)指向不存在的编号，建议人工核实"],
+        referenced_count: groundingErr.audit?.referenced_count || 0,
       };
     }
 

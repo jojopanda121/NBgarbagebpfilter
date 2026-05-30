@@ -1,5 +1,5 @@
 -- ============================================================
--- 054_shared_skill_approvals.sql
+-- 055_shared_skill_approvals.sql
 --
 -- 跨用户共享学习审核队列。Hermes-first plan §8。
 --

@@ -1,5 +1,5 @@
 -- ============================================================
--- 051_runtime_fallback_log.sql
+-- 052_runtime_fallback_log.sql
 --
 -- Hermes-first Runtime with Legacy Backup —— fallback 审计表。
 --

@@ -1,5 +1,5 @@
 -- ============================================================
--- 053_tool_call_audit.sql
+-- 054_tool_call_audit.sql
 --
 -- Hermes 通过 POST /api/hermes/tools/call 反向调用北京工具的审计表。
 --

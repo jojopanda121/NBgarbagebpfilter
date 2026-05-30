@@ -26,8 +26,10 @@ function str(name, defaultValue) {
 
 const flags = {
   // Runtime 主开关
-  agentRuntime: str("AGENT_RUNTIME", "hermes"),         // 'hermes' | 'legacy'
-  hermesEnabled: bool("HERMES_ENABLED", true),
+  // 默认 legacy + disabled，因为 hermes 端点是可选的运维资源。
+  // 生产 .env 显式 opt-in：AGENT_RUNTIME=hermes / HERMES_ENABLED=1 / 配上 HERMES_BASE_URL+HERMES_API_KEY。
+  agentRuntime: str("AGENT_RUNTIME", "legacy"),         // 'hermes' | 'legacy'
+  hermesEnabled: bool("HERMES_ENABLED", false),
   hermesFallbackToLegacy: bool("HERMES_FALLBACK_TO_LEGACY", true),
 
   // Hermes 接入

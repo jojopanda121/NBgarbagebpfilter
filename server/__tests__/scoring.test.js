@@ -7,6 +7,7 @@ const {
   calculateTotalScore,
   getGrade,
   scoreProject,
+  VERDICT_SCORE_MAP,
 } = require("../scoring");
 
 describe("calculateDimension1_TimingAndCeiling (S1)", () => {
@@ -142,14 +143,14 @@ describe("calculateDimension5_Integrity (S5)", () => {
     expect(calculateDimension5_Integrity(verdicts)).toBe(0);
   });
 
-  test("all uncertain verdicts gives 75 (v4.1: raised from 60)", () => {
+  test("all uncertain verdicts gives 60 (存疑=6)", () => {
     const verdicts = Array(10).fill({ verdict: "存疑" });
-    expect(calculateDimension5_Integrity(verdicts)).toBe(75);
+    expect(calculateDimension5_Integrity(verdicts)).toBe(60);
   });
 
-  test("unknown verdicts treated as uncertain (7.5)", () => {
+  test("unknown verdicts treated as uncertain (6)", () => {
     const verdicts = [{ verdict: "未知类型" }];
-    expect(calculateDimension5_Integrity(verdicts)).toBe(75);
+    expect(calculateDimension5_Integrity(verdicts)).toBe(60);
   });
 
   test("mixed verdicts produce expected average", () => {
@@ -162,7 +163,7 @@ describe("calculateDimension5_Integrity (S5)", () => {
   });
 
   test("verdict score map has correct values (v4.1)", () => {
-    expect(VERDICT_SCORE_MAP["存疑"]).toBe(7.5);
+    expect(VERDICT_SCORE_MAP["存疑"]).toBe(6);
     expect(VERDICT_SCORE_MAP["诚实"]).toBe(10);
     expect(VERDICT_SCORE_MAP["保守低估"]).toBe(10);
     expect(VERDICT_SCORE_MAP["夸大"]).toBe(3);
@@ -174,14 +175,14 @@ describe("calculateDimension5_Integrity (S5)", () => {
     // Typical good BP: 40% honest, 35% uncertain, 20% exaggerated, 5% info asymmetry
     const verdicts = [
       ...Array(8).fill({ verdict: "诚实" }),       // 8 × 10 = 80
-      ...Array(7).fill({ verdict: "存疑" }),       // 7 × 7.5 = 52.5
+      ...Array(7).fill({ verdict: "存疑" }),       // 7 × 6 = 42
       ...Array(4).fill({ verdict: "夸大" }),       // 4 × 3 = 12
       ...Array(1).fill({ verdict: "信息不对称" }), // 1 × 2 = 2
     ];
     const score = calculateDimension5_Integrity(verdicts);
-    // avg = (80 + 52.5 + 12 + 2) / 20 = 146.5 / 20 = 7.325 → 73
-    expect(score).toBeGreaterThanOrEqual(70);
-    expect(score).toBeLessThanOrEqual(76);
+    // avg = (80 + 42 + 12 + 2) / 20 = 136 / 20 = 6.8 → 68
+    expect(score).toBeGreaterThanOrEqual(65);
+    expect(score).toBeLessThanOrEqual(71);
   });
 });
 

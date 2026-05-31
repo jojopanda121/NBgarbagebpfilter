@@ -171,13 +171,31 @@ async function runHermes(args) {
 
   sendEvent("phase", { phase: "hermes", run_id: runId });
 
-  // 1. 拼最小上下文
+  // 1. 拼上下文。
+  //
+  //   workspace.js 已经用 ws.buildEnhancedProjectContext() 拼好了
+  //   富 BP 上下文（BP 快照、五维、claim_verdicts、深度研究、上传材料正文/BM25）。
+  //   不调用方传入的 projectCtx 视为冷启动 / 老用户 fallback ——
+  //   现场用同一函数补一份，确保 Hermes 永远不"瞎"。
+  //
+  //   contextBuilder 在此之上再叠加 memory 层（最近对话/用户偏好/skills/沉淀知识）。
+  let projectContext = args.projectCtx;
+  if (!projectContext) {
+    try {
+      projectContext = ws.buildEnhancedProjectContext(taskId, conversationId, userMsg);
+    } catch (err) {
+      console.warn("[router] buildEnhancedProjectContext fallback failed:", err.message);
+      projectContext = null;
+    }
+  }
+
   const ctx = contextBuilder.build({
     userId,
     taskId,
     conversationId,
     userMsg,
     industry: args.industry || null,
+    projectContext,
   });
 
   // 2. 出境前分级脱敏 —— PIPL 硬约束
@@ -185,10 +203,11 @@ async function runHermes(args) {
   const redactedInput = redactor.redactText(ctx.text);
   redactor.flush();
 
-  // 出境字节统计（监控用）
+  // 出境字节统计（监控用 + 排障 Hermes 是否拿到 BP 上下文）
   sendEvent("hermes_context_stats", {
     run_id: runId,
     bytes: Buffer.byteLength(redactedInput, "utf8"),
+    project_context_bytes: ctx.stats.projectContextBytes || 0,
     history: ctx.stats.historyCount,
     skills: ctx.stats.skillCount,
     longterm: ctx.stats.longtermCount,

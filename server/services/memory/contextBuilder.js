@@ -110,18 +110,33 @@ function safeInstitutional(industry, limit) {
  * @param {string} args.conversationId
  * @param {string} args.userMsg
  * @param {string} [args.industry]
- * @returns {{ text: string, stats: { historyCount, skillCount, longtermCount, institutionalCount, projectSummaryPresent, bytesEstimate } }}
+ * @param {string} [args.projectContext] —— 调用方已用 workspaceService.buildEnhancedProjectContext()
+ *   构造好的完整 BP 项目上下文（BP 快照 / 五维 / claim_verdicts / 深度研究 / 上传材料）。
+ *   如果传入，**优先**使用，跳过这里的 mini "# 项目概要"。
+ *   这是 Hermes 路径的主要数据通道——legacy 路径走自己的链路，不调本函数。
+ * @returns {{ text: string, stats: { historyCount, skillCount, longtermCount, institutionalCount, projectSummaryPresent, projectContextBytes, bytesEstimate } }}
  */
-function build({ userId, taskId, conversationId, userMsg, industry }) {
+function build({ userId, taskId, conversationId, userMsg, industry, projectContext }) {
   const lines = [];
   let bytes = 0;
+  let projectContextBytes = 0;
+  let summaryUsed = false;
 
-  // 1. 项目概要
-  const summary = safeProjectSummary(taskId);
-  if (summary) {
-    lines.push("# 项目概要");
-    lines.push(summary.slice(0, 600));
+  // 1. 项目上下文 —— 优先用调用方传入的 full context（Hermes 路径），
+  //    退化到 mini summary（被其他路径调用时）。
+  if (projectContext && typeof projectContext === "string" && projectContext.trim()) {
+    lines.push(projectContext.trim());
     lines.push("");
+    projectContextBytes = Buffer.byteLength(projectContext, "utf8");
+    summaryUsed = true; // 满足 projectSummaryPresent 语义
+  } else {
+    const summary = safeProjectSummary(taskId);
+    if (summary) {
+      lines.push("# 项目概要");
+      lines.push(summary.slice(0, 600));
+      lines.push("");
+      summaryUsed = true;
+    }
   }
 
   // 2. 历史（精简）
@@ -180,7 +195,8 @@ function build({ userId, taskId, conversationId, userMsg, industry }) {
       skillCount: skills.length,
       longtermCount: prefs.length,
       institutionalCount: inst.length,
-      projectSummaryPresent: !!summary,
+      projectSummaryPresent: summaryUsed,
+      projectContextBytes,
       bytesEstimate: bytes,
     },
   };

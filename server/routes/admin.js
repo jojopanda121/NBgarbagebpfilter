@@ -109,6 +109,9 @@ router.delete("/tokens/:token", adminController.requireAdmin, adminController.de
 // 审计日志
 router.get("/audit-logs", adminController.requireAdmin, adminController.getAuditLogs);
 
+// 共享技能/知识审核（Hermes curator → reviewer → admin）
+router.use("/skill-review", require("./skillReview"));
+
 // ── 追踪数据看板（管理员）──
 router.get("/tracking/dashboard", adminController.requireAdmin, trackingController.getDashboard);
 router.get("/tracking/companies", adminController.requireAdmin, trackingController.getCompanies);

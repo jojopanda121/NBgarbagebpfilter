@@ -106,6 +106,24 @@ function markRunFinished(runId) {
 }
 
 /**
+ * 标记整个工作流顶层崩溃（catch 不住的致命 throw）。
+ * 与 markRunFinished 的区别：crashed 表示 orchestrator 主流程异常退出，
+ * 下游拿到的 multiagent 必然是 partial，前端应展示"执行中断"而不是"完成"。
+ * 内部捕获自身写入异常，永不抛——避免 orchestrator finally 块再炸一次。
+ */
+function markRunCrashed(runId, errorMessage) {
+  try {
+    const db = getDb();
+    const msg = String(errorMessage == null ? "unknown error" : errorMessage).slice(0, 2000);
+    db.prepare(
+      `UPDATE agent_runs SET status='crashed', error=?, finished_at=CURRENT_TIMESTAMP WHERE run_id=?`
+    ).run(msg, runId);
+  } catch (err) {
+    logger.error("[agentRunService] markRunCrashed failed", { runId, err: err.message });
+  }
+}
+
+/**
  * 查询工作流状态 + 各 Agent 状态摘要（轻量版，用于进度轮询）
  */
 function getRunStatus(runId, userId) {
@@ -175,6 +193,7 @@ module.exports = {
   markAgentDone,
   markAgentFailed,
   markRunFinished,
+  markRunCrashed,
   getRunStatus,
   getFullReport,
   runBelongsToUser,

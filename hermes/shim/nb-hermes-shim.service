@@ -1,0 +1,23 @@
+[Unit]
+Description=NB-Hermes Shim — Beijing NBgarbagebpfilter to Hermes bridge
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/nb-hermes-shim
+EnvironmentFile=/home/ubuntu/nb-hermes-shim/.env
+ExecStart=/home/ubuntu/nb-hermes-shim/venv/bin/python /home/ubuntu/nb-hermes-shim/main.py
+Restart=on-failure
+RestartSec=3
+StandardOutput=append:/home/ubuntu/nb-hermes-shim/shim.log
+StandardError=append:/home/ubuntu/nb-hermes-shim/shim.log
+LimitNOFILE=65536
+# Don't kill child hermes subprocess on shim restart
+KillMode=mixed
+TimeoutStopSec=10
+
+[Install]
+WantedBy=multi-user.target

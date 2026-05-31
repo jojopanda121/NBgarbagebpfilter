@@ -1,0 +1,85 @@
+# ============================================================
+# hermes/config.example.yaml
+#
+# 新加坡 Hermes 实例的 profile 示例。把它同步到 Hermes 配置目录
+# （通常 ~/.hermes/config.yaml）后按你的真值改占位符。
+#
+# ⚠️ 字段名以 Hermes 官方文档为准——本文件是「概念映射 + 必填项清单」，
+#    不同 Hermes 版本字段命名可能略有差异。core 概念有三块：
+#      1. SOUL + roles + skills  →  "workspace agents = Hermes 子 agent"
+#      2. function endpoint       →  Hermes 反向调北京生成 artifact
+#      3. memory / 租户隔离        →  避免不同用户 deal 上下文互串
+# ============================================================
+
+# ── 1. host 人格 + 子 agent（roles）+ skills ──────────────
+#
+# host SOUL 是投资负责人主人格；roles 是它「按需加载的专家视角」，
+# 不是独立进程。北京 workspace 里那几个 agent 就对应这里的 roles。
+profile:
+  soul: ./SOUL_v2.md            # host 投资负责人系统人格
+  roles:                        # ← 北京 workspace 的「子 agent」
+    - ./roles/market_deal.md            # 市场 & 交易
+    - ./roles/finance_valuation.md      # 财务 & 估值
+    - ./roles/product_team_risk.md      # 产品 / 团队 / 风险
+  skills:
+    - ./skills/bp_pipeline_playbook.md
+    - ./skills/memory_curator.md
+    - ./skills/skill_reviewer.md
+
+# ── 2. 反向工具调用：把北京 gateway 注册成 function endpoint ──
+#
+# 这是让 Hermes 能调北京生成 PPT/Excel/Word 等 artifact 的关键。
+# Hermes 决定调工具 → HTTP POST 到下面 url → 北京 hostToolGuard 八道校验后执行。
+#
+# 约定（务必遵守，否则北京侧 gateway 会拒）：
+#   - Authorization 用与 shim 同一把 SHIM_API_KEY（北京 HERMES_API_KEY 同值）
+#   - 请求体: { tool, args, caller, conversation_id, call_id }
+#   - caller 取值必须 ∈ {host, market_deal, finance_valuation, product_team_risk}
+#   - conversation_id 回传**裸 id**即可；带 "nb_<userId>_" 前缀北京也能容错剥掉
+tools:
+  transport: http
+  endpoint: http://<北京-Tailscale-IP>:<北京端口>/api/hermes/tools/call
+  auth:
+    type: bearer
+    token: ${SHIM_API_KEY}      # 与 ~/nb-hermes-shim/.env 里同一个值
+  # 允许 Hermes 主动调的工具白名单——必须与北京 workspaceRegistry 对齐。
+  # caller=host 才能调的工具（artifact 类）：
+  allow:
+    - web_search                # caller: host / market_deal / product_team_risk
+    - onepager_pptx             # caller: host
+    - investment_snapshot       # caller: host
+    - highlight_visual          # caller: host
+    - project_brief             # caller: host
+    - investment_deck_pptx      # caller: host
+    - generate_docx             # caller: host
+    - generate_xlsx             # caller: host
+    - dd_checklist_xlsx         # caller: host
+    - founder_interview_docx    # caller: host
+    - competitor_matrix_xlsx    # caller: host
+    - ic_questions_xlsx         # caller: host
+
+# ── 2b. （可选）共享学习回调：curator / reviewer ──────────
+#
+# 仅当北京 HERMES_SHARED_LEARNING=on 时启用；默认 off，北京会返回 403。
+curator:
+  submit_endpoint: http://<北京-Tailscale-IP>:<北京端口>/api/hermes/curator/submit
+  review_endpoint: http://<北京-Tailscale-IP>:<北京端口>/api/hermes/curator/review
+  auth:
+    type: bearer
+    token: ${SHIM_API_KEY}
+
+# ── 3. memory / 租户隔离 ──────────────────────────────────
+#
+# 每个 conversation（北京发的 nb_<userId>_<convId>）已映射到独立 hermes
+# session，会话历史天然隔离。但**长期记忆**若跨 session 共享，会导致 A 用户的
+# deal 信息渗到 B 用户。投研场景这是红线：
+#   - 不要开启会跨 session 写全局记忆的 skill
+#   - 多租户强隔离 = 每租户独立 profile（Phase 2）
+memory:
+  long_term: off               # 上多用户前保持 off，避免 deal 上下文互串
+  per_conversation_session: true
+
+# ── 4. 上游大模型（按你的实际接入填）────────────────────
+# model:
+#   provider: minimax
+#   ...

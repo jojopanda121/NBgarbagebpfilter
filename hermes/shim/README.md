@@ -87,13 +87,23 @@ HERMES_HEALTH_CHECK_INTERVAL_MS=30000
 HERMES_HEALTH_CACHE_MS=10000
 ```
 
-## 已知限制（MVP）
+## 行为说明（v0.3.0）
 
-- **假流式**：等 hermes 跑完才一次性 emit delta。真流式 = Phase 2。
-- **单租户**：所有用户共享同一个 Hermes 大脑/记忆。多租户隔离 = Phase 2，用 `hermes profile`。
+- **真流式**：增量读 `hermes -z` 的 stdout，边产边经 SSE 推到北京（用
+  incremental UTF-8 decoder，中文不会在 chunk 边界被切坏）。北京端
+  `HERMES_STREAMING=1` 现在能拿到真增量。
+- **工具调用走反向 HTTP，不走 SSE**：Hermes 内部调工具（生成 PPT/文档等）
+  时，是 Hermes → 北京 `POST /api/hermes/tools/call` 直连执行，**不经过本
+  shim 的 stdout**。所以 SSE 流里看不到 `function_call` 是设计如此，不是缺陷。
+  要让这条通道生效，需在 Hermes profile 里把北京 gateway 注册成 function
+  endpoint（见 `hermes/DEPLOY_BEIJING.md` / `config.example.yaml`）。
 - **session_id 探测**：跑完 `hermes -z` 后读 `~/.hermes/sessions/` 最新文件。
   全局锁保证安全，但首次创建串行（~7s/请求）。
-- **不转发 function_call**：Hermes 内部用工具时北京暂时看不到中间步骤。
+- **租户隔离**：每个 `conversation`（北京发的 `nb_<userId>_<convId>`）映射到
+  独立的 hermes session，会话历史天然隔离。跨会话的**长期记忆**是否隔离取决
+  于 Hermes profile：保持 `HERMES_SHARED_LEARNING=off`，且不要在 profile 里
+  开启会跨 session 写全局记忆的 skill，否则不同用户的 deal 上下文会串。多租户
+  强隔离（每租户独立 `hermes profile`）= Phase 2。
 
 ## 重启 / 查看日志
 

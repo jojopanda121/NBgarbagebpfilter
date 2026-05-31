@@ -23,6 +23,7 @@ Hermes session_id 是它自动生成的（格式 YYYYMMDD_HHMMSS_hash），
     避免两条不同 conv 并行创建时把 session id 张冠李戴
 """
 import asyncio
+import codecs
 import json
 import logging
 import os
@@ -30,7 +31,7 @@ import secrets
 import time
 import uuid
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Awaitable, Callable, Optional
 
 from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import StreamingResponse
@@ -57,7 +58,7 @@ logging.basicConfig(
 )
 log = logging.getLogger("shim")
 
-app = FastAPI(title="NB-Hermes Shim", version="0.2.0")
+app = FastAPI(title="NB-Hermes Shim", version="0.3.0")
 
 
 # ── auth ────────────────────────────────────────────
@@ -123,7 +124,18 @@ def newest_session_id() -> Optional[str]:
 
 
 # ── hermes call ─────────────────────────────────────
-async def run_hermes_raw(prompt: str, resume_id: Optional[str]) -> str:
+# on_delta: 每读到一段 stdout 就回调一次（真流式）。可为 None（非流式调用方）。
+DeltaCb = Optional[Callable[[str], Awaitable[None]]]
+
+
+async def run_hermes_stream(
+    prompt: str, resume_id: Optional[str], on_delta: DeltaCb
+) -> str:
+    """跑 `hermes -z`，stdout 边产边通过 on_delta 推送；返回完整文本。
+
+    真流式：增量读 stdout，用 incremental UTF-8 decoder 避免多字节字符
+    （中文）在 chunk 边界被切坏。stderr 并发 drain，防止管道写满导致死锁。
+    """
     args = [HERMES_BIN, "-z", prompt]
     if resume_id:
         args += ["--resume", resume_id]
@@ -138,36 +150,75 @@ async def run_hermes_raw(prompt: str, resume_id: Optional[str]) -> str:
         stderr=asyncio.subprocess.PIPE,
         env={**os.environ, "HERMES_ACCEPT_HOOKS": "1"},
     )
+
+    decoder = codecs.getincrementaldecoder("utf-8")("replace")
+    parts: list[str] = []
+    stderr_chunks: list[bytes] = []
+
+    async def drain_stderr() -> None:
+        while True:
+            chunk = await proc.stderr.read(2048)
+            if not chunk:
+                break
+            stderr_chunks.append(chunk)
+
+    async def pump_stdout() -> None:
+        while True:
+            chunk = await proc.stdout.read(1024)
+            if not chunk:
+                break
+            text = decoder.decode(chunk)
+            if text:
+                parts.append(text)
+                if on_delta:
+                    await on_delta(text)
+        tail = decoder.decode(b"", final=True)
+        if tail:
+            parts.append(tail)
+            if on_delta:
+                await on_delta(tail)
+
+    stderr_task = asyncio.create_task(drain_stderr())
     try:
-        stdout, stderr = await asyncio.wait_for(
-            proc.communicate(), timeout=HERMES_TIMEOUT
-        )
+        await asyncio.wait_for(pump_stdout(), timeout=HERMES_TIMEOUT)
+        await asyncio.wait_for(proc.wait(), timeout=10)
     except asyncio.TimeoutError:
         proc.kill()
+        stderr_task.cancel()
         raise HTTPException(504, "hermes timeout")
+    finally:
+        await stderr_task
+
     if proc.returncode != 0:
-        msg = (stderr or b"").decode("utf-8", "replace")[:500]
+        msg = b"".join(stderr_chunks).decode("utf-8", "replace")[:500]
         log.warning("hermes exit %d: %s", proc.returncode, msg)
         raise HTTPException(502, f"hermes exit {proc.returncode}: {msg}")
-    return (stdout or b"").decode("utf-8", "replace").rstrip()
+
+    return "".join(parts).rstrip()
 
 
-async def call_hermes(prompt: str, conv_id: Optional[str]) -> tuple[str, Optional[str]]:
-    """返回 (text, session_id)。无 conv_id 时不维护 session。"""
+async def call_hermes_stream(
+    prompt: str, conv_id: Optional[str], on_delta: DeltaCb
+) -> Optional[str]:
+    """流式跑 hermes，返回 session_id。无 conv_id 时不维护 session。
+
+    会话锁覆盖整段流式过程，保证同一 conv 的请求严格串行（hermes session
+    不可并发 resume）。首次创建会话时在全局锁内探测新 session_id。
+    """
     if not conv_id:
-        text = await run_hermes_raw(prompt, resume_id=None)
-        return text, None
+        await run_hermes_stream(prompt, None, on_delta)
+        return None
 
     conv_lock = get_conv_lock(conv_id)
     async with conv_lock:
         existing = _session_map.get(conv_id)
         if existing:
-            text = await run_hermes_raw(prompt, resume_id=existing)
-            return text, existing
+            await run_hermes_stream(prompt, existing, on_delta)
+            return existing
 
         # 第一次见这个 conv，全局锁内创建 + 探测
         async with _new_session_lock:
-            text = await run_hermes_raw(prompt, resume_id=None)
+            await run_hermes_stream(prompt, None, on_delta)
             new_id = newest_session_id()
             if new_id:
                 async with _state_lock:
@@ -176,7 +227,18 @@ async def call_hermes(prompt: str, conv_id: Optional[str]) -> tuple[str, Optiona
                 log.info("conv=%s → session=%s", conv_id, new_id)
             else:
                 log.warning("conv=%s: 没探测到新 session_id", conv_id)
-            return text, new_id
+            return new_id
+
+
+async def call_hermes(prompt: str, conv_id: Optional[str]) -> tuple[str, Optional[str]]:
+    """非流式：跑完后一次性返回 (text, session_id)。"""
+    parts: list[str] = []
+
+    async def collect(t: str) -> None:
+        parts.append(t)
+
+    session_id = await call_hermes_stream(prompt, conv_id, collect)
+    return "".join(parts).rstrip(), session_id
 
 
 # ── endpoints ───────────────────────────────────────
@@ -192,7 +254,7 @@ async def health(authorization: Optional[str] = Header(None)):
     return {
         "ok": True,
         "service": "nb-hermes-shim",
-        "version": "0.2.0",
+        "version": "0.3.0",
         "tracked_conversations": len(_session_map),
         "ts": int(time.time()),
     }
@@ -247,18 +309,42 @@ async def responses(
 
     async def stream_gen():
         yield sse("response.created", {"response": {"id": response_id}})
-        await asyncio.sleep(0)
+
+        # 真流式：hermes stdout 边产边经 queue 推到 SSE。
+        queue: asyncio.Queue = asyncio.Queue()
+
+        async def on_delta(text: str) -> None:
+            await queue.put(("delta", text))
+
+        async def runner() -> None:
+            try:
+                await call_hermes_stream(prompt, body.conversation, on_delta)
+                await queue.put(("done", None))
+            except HTTPException as e:
+                await queue.put(("error", str(e.detail)))
+            except Exception as e:  # noqa: BLE001
+                log.exception("stream runner failed")
+                await queue.put(("error", str(e)))
+
+        task = asyncio.create_task(runner())
         try:
-            text, _ = await call_hermes(prompt, body.conversation)
-        except HTTPException as e:
-            yield sse("response.error", {"error": {"message": str(e.detail)}})
-            return
-        if text:
-            yield sse(
-                "response.output_text.delta",
-                {"delta": text, "response_id": response_id},
-            )
-        yield sse("response.completed", {"response": {"id": response_id}})
+            while True:
+                kind, payload = await queue.get()
+                if kind == "delta":
+                    yield sse(
+                        "response.output_text.delta",
+                        {"delta": payload, "response_id": response_id},
+                    )
+                elif kind == "error":
+                    yield sse("response.error", {"error": {"message": payload}})
+                    break
+                else:  # done
+                    yield sse("response.completed", {"response": {"id": response_id}})
+                    break
+        finally:
+            if not task.done():
+                # 客户端断开：让子进程跑完（session 会被正常记录），不强杀
+                await task
 
     return StreamingResponse(
         stream_gen(),

@@ -1,11 +1,11 @@
 // ============================================================
 // server/services/memory/contextBuilder.js
 //
-// 给 Hermes 拼装"最小必要上下文"。Hermes-first plan §7：
-//   "整份 BP 全文永不出境"——只发必要片段。
-//   Hermes 需要更多上下文时通过 tool call (fetch_bp_section) 主动拉取。
+// 给 Hermes 拼装上下文。
+//   Hermes 需要更多上下文时也可通过 tool call (fetch_bp_section) 主动拉取。
 //
-// 输出的对象交给 redactor 处理，再走 Hermes API。
+// 输出的对象原文直接走 Hermes API —— 不脱敏，保证联网检索 / 竞品对比质量
+// （见 agentRuntimeRouter 文件头）。
 //
 // 当前 MVP 上下文片段：
 //   1. 项目概要（一句话标的描述）—— 来自 workspace_memory_shared 'project_summary'

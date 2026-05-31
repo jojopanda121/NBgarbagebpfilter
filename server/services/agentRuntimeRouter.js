@@ -13,10 +13,10 @@
 //   - SSE event name 与 legacy 完全兼容，前端无感
 //   - 每次决策写 runtime_fallback_log
 //
-// Phase 1 Week 1 状态：
-//   - contextBuilder / redactor 还没写（Week 2 任务），目前 Hermes 路径
-//     用最简化上下文：仅当前 user 消息 + 项目摘要文本
-//   - 等 Week 2 完成后这里替换为 contextBuilder + redactor 链路
+// 出境数据策略：
+//   上下文原文出境，**不做脱敏**。脱敏会把公司名 / 创始人 / 财务数字等
+//   替换成占位符，Hermes 就无法联网做竞品检索与横向对比，返回质量会塌。
+//   合规由网络层（专线 / VPN）与 Hermes 侧访问控制兜底，不在应用层削数据。
 // ============================================================
 
 const { flags, useHermes, canFallback } = require("../config/featureFlags");
@@ -25,8 +25,6 @@ const hermes = require("./hermesClient");
 const fallbackLogger = require("./fallbackLogger");
 const ws = require("./workspaceService");
 const contextBuilder = require("./memory/contextBuilder");
-const { Redactor } = require("../middleware/redactor");
-const { unredact } = require("../middleware/unredactor");
 
 const { TARGETS, REASONS, PHASES } = fallbackLogger;
 
@@ -198,15 +196,13 @@ async function runHermes(args) {
     projectContext,
   });
 
-  // 2. 出境前分级脱敏 —— PIPL 硬约束
-  const redactor = new Redactor(conversationId);
-  const redactedInput = redactor.redactText(ctx.text);
-  redactor.flush();
+  // 2. 上下文原文出境，不脱敏（理由见文件头）。
+  const input = ctx.text;
 
   // 出境字节统计（监控用 + 排障 Hermes 是否拿到 BP 上下文）
   sendEvent("hermes_context_stats", {
     run_id: runId,
-    bytes: Buffer.byteLength(redactedInput, "utf8"),
+    bytes: Buffer.byteLength(input, "utf8"),
     project_context_bytes: ctx.stats.projectContextBytes || 0,
     history: ctx.stats.historyCount,
     skills: ctx.stats.skillCount,
@@ -215,31 +211,23 @@ async function runHermes(args) {
   });
 
   // 3. 调用 Hermes，流式收事件
-  let deltaBuf = "";
-  const flushUnredacted = () => {
-    if (!deltaBuf) return;
-    const out = unredact(deltaBuf, conversationId);
-    sendEvent("host_text_delta", { run_id: runId, delta: out });
-    assistantText += out;
-    deltaBuf = "";
+  const emitDelta = (text) => {
+    if (!text) return;
+    sendEvent("host_text_delta", { run_id: runId, delta: text });
+    assistantText += text;
   };
 
   const result = await hermes.streamResponse({
     userId,
     conversationId,
-    input: redactedInput,
+    input,
     signal,
     onEvent: (evt) => {
       switch (evt.type) {
         case "delta":
-          // 占位符可能跨 chunk 分割，遇到 "[" 之后未闭合时暂存
-          deltaBuf += evt.text || "";
-          if (!deltaBuf.includes("[") || /\][^[]*$/.test(deltaBuf)) {
-            flushUnredacted();
-          }
+          emitDelta(evt.text || "");
           break;
         case "tool_call":
-          flushUnredacted();
           sendEvent("tool_call", {
             run_id: runId,
             call_id: evt.call_id,
@@ -259,18 +247,13 @@ async function runHermes(args) {
           });
           break;
         case "completed":
-          flushUnredacted();
           sendEvent("phase", { phase: "host_done", run_id: runId, response_id: evt.response_id });
           break;
         case "error":
-          flushUnredacted();
           break;
       }
     },
   });
-
-  // 兜底 flush
-  flushUnredacted();
 
   // 落库
   if (assistantText) {
@@ -442,21 +425,14 @@ async function runBpPipeline({ bpText, extractedData, taskId, userId, signal }) 
 
 async function runHermesBpPipeline({ bpText, extractedData, taskId, userId, signal }) {
   const bpPipelineSchema = require("./bpPipelineSchema");
-  const { Redactor } = require("../middleware/redactor");
 
-  // 整份 BP 文本出境前必须脱敏 PII
-  const sessionId = `bp:${taskId}`;
-  const redactor = new Redactor(sessionId);
-  const redactedBp = redactor.redactText(bpText || "");
-  const redactedSummary = redactor.redactText(JSON.stringify(extractedData || {}));
-  redactor.flush();
-
+  // BP 全文 + 抽取数据原文出境，不脱敏（理由见文件头）。
   const input = [
-    "# BP 全文（已分级脱敏，PII 占位符无需还原）",
-    redactedBp,
+    "# BP 全文",
+    bpText || "",
     "",
     "# Agent A 抽取的结构化数据",
-    redactedSummary,
+    JSON.stringify(extractedData || {}),
     "",
     "# 任务",
     "请按 bp_pipeline_playbook skill 的 schema 返回完整 6 字段 JSON。",

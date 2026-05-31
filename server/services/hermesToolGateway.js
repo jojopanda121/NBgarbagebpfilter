@@ -25,6 +25,7 @@ const {
 const { guardSingleToolCall } = require("../agents/workspace/hostToolGuard");
 const { deductQuota, refundQuota } = require("../middleware/quota");
 const { executeWorkspaceTool } = require("./workspaceService");
+const { parseConversationName } = require("./hermesClient");
 
 // ── 速率限制（内存版；多实例上线时换 Redis）──
 const RATE_LIMIT_WINDOW_MS = 60_000;
@@ -87,7 +88,7 @@ function findConversation(conversationId) {
   try {
     const db = getDb();
     return db.prepare(`
-      SELECT id, task_id, user_id FROM workspace_conversations WHERE id = ?
+      SELECT id, task_id, project_id, user_id FROM workspace_conversations WHERE id = ?
     `).get(conversationId);
   } catch {
     return null;
@@ -110,7 +111,9 @@ async function invoke(req) {
   const tool = String(req.tool || "");
   const args = req.args || {};
   const caller = String(req.caller || "host");
-  const conversationId = String(req.conversation_id || "");
+  // Hermes 回传的可能是带前缀的会话名 "nb_<userId>_<id>"，也可能已是裸 id。
+  // 统一归一为 workspace_conversations.id，否则 session 校验必然 not_found。
+  const conversationId = parseConversationName(req.conversation_id || "");
   const callId = req.call_id || null;
   const ctx = {
     call_id: callId,

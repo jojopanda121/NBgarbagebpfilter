@@ -48,12 +48,15 @@ git pull origin main
 - `server/services/hermesHealth.js`（新）
 - `server/services/hermesToolGateway.js`（新）
 - `server/routes/hermesTools.js`（新）
-- `server/middleware/redactor.js` / `unredactor.js`（新）
 - `server/config/featureFlags.js`（新，默认 `legacy`，需要显式 opt-in）
 - `server/db/migrations/052-055_*.sql`（4 条新 migration）
 - `server/routes/workspace.js`（改：走 `agentRuntimeRouter`）
 - `server/services/pipelineService.js`（改：BP pipeline 走 router）
 - `hermes/shim/*`（新加坡用的，北京不用管）
+
+> **出境策略：不脱敏。** 上下文 / BP 全文原文出境，让 Hermes 能联网做竞品
+> 检索与对比。`redaction_maps` 表仍由 migration 创建但不再写入（留空无害）。
+> 合规由网络层（专线 / VPN）+ Hermes 侧访问控制兜底。
 
 ### 3. 跑新 migration
 

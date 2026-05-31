@@ -18,8 +18,8 @@
 //   4. 工具调用 (function_call) 由 Hermes 主动反向 HTTP 调北京
 //      /api/hermes/tools/call —— 不在这里处理，这里只透传事件
 //
-// 不在本文件做：脱敏（redactor）、上下文拼装（contextBuilder）、
-// fallback 决策（agentRuntimeRouter）
+// 不在本文件做：上下文拼装（contextBuilder）、fallback 决策（agentRuntimeRouter）
+// 数据出境不脱敏（见 agentRuntimeRouter 文件头说明）
 // ============================================================
 
 const { flags } = require("../config/featureFlags");
@@ -50,6 +50,21 @@ function buildHeaders() {
 
 function conversationName(userId, conversationId) {
   return `nb_${userId}_${conversationId}`;
+}
+
+/**
+ * conversationName 的逆操作。
+ *
+ * Hermes 反向调工具时只知道自己那侧的 conversation 名
+ * （我们发过去的 "nb_<userId>_<conversationId>"），但北京 gateway 要用裸
+ * conversationId（= workspace_conversations.id）查会话做 session 合法性校验。
+ * 这里把前缀剥掉。传入不带前缀的串则原样返回（容错 / 幂等）。
+ *
+ * 注意 userId 段一定是数字，conversationId 段可含下划线，所以用非贪婪锚定。
+ */
+function parseConversationName(name) {
+  const m = /^nb_\d+_(.+)$/.exec(String(name || ""));
+  return m ? m[1] : String(name || "");
 }
 
 /**
@@ -330,6 +345,7 @@ module.exports = {
   streamResponse,
   completeResponse,
   conversationName,
+  parseConversationName,
   HermesPreStreamError,
   HermesMidStreamError,
 };

@@ -65,6 +65,37 @@ describe("calculateDimension2_ProductAndMoat (S2)", () => {
     const clamped = calculateDimension2_ProductAndMoat(9, 10);
     expect(score).toBe(clamped);
   });
+
+  // 供应链咽喉护城河信号（可选第三参数）
+  test("chokepoint score absent => identical to base (backward compatible)", () => {
+    const base = calculateDimension2_ProductAndMoat(5, 5);
+    expect(calculateDimension2_ProductAndMoat(5, 5, undefined)).toBe(base);
+    expect(calculateDimension2_ProductAndMoat(5, 5, NaN)).toBe(base);
+    expect(calculateDimension2_ProductAndMoat(5, 5, null)).toBe(base);
+  });
+
+  test("strong chokepoint lifts a mediocre moat score (7:3 blend)", () => {
+    const base = calculateDimension2_ProductAndMoat(5, 5); // ~50
+    const withCp = calculateDimension2_ProductAndMoat(5, 5, 100);
+    expect(withCp).toBeGreaterThan(base);
+    expect(withCp).toBe(Math.round(0.7 * base + 0.3 * 100));
+  });
+
+  test("weak chokepoint drags a high moat score down", () => {
+    const base = calculateDimension2_ProductAndMoat(9, 10); // 100
+    const withCp = calculateDimension2_ProductAndMoat(9, 10, 0);
+    expect(withCp).toBeLessThan(base);
+    expect(withCp).toBe(Math.round(0.7 * base));
+  });
+
+  test("chokepoint score is clamped to 0-100 before blending", () => {
+    expect(calculateDimension2_ProductAndMoat(5, 5, 999)).toBe(
+      calculateDimension2_ProductAndMoat(5, 5, 100)
+    );
+    expect(calculateDimension2_ProductAndMoat(5, 5, -50)).toBe(
+      calculateDimension2_ProductAndMoat(5, 5, 0)
+    );
+  });
 });
 
 describe("calculateDimension3_CapitalEfficiencyAndScale (S3)", () => {

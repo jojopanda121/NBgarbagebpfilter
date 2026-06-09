@@ -59,7 +59,7 @@ function calculateDimension1_TimingAndCeiling(TAM_Million_RMB, CAGR) {
 }
 
 /**
- * 计算模块2: 产品与壁垒 (S2, 权重 25%, 满分 100)
+ * 计算模块2: 产品与壁垒 (S2, 权重 20%, 满分 100)
  *
  * Agent Prompt 约束:
  *   大模型检索行业内真实竞品及该产品的行业排名，输出 Competitor_Rank_Score (1-10 整数)。
@@ -67,21 +67,43 @@ function calculateDimension1_TimingAndCeiling(TAM_Million_RMB, CAGR) {
  *   4-7 分: 腰部或细分第一
  *   1-3 分: 红海同质化跟风者
  *
- * 公式: S2 = round(0.4 × (TRL / 9 × 100) + 0.6 × (Rank × 10))
+ * 基础公式: S2_base = round(0.4 × (TRL / 9 × 100) + 0.6 × (Rank × 10))
+ *
+ * 【供应链咽喉护城河信号(可选)】
+ *   传统 TRL + 竞品排名只衡量「技术成熟度 + 相对位次」，看不出「下游大玩家是否
+ *   绕不开它」这种结构性护城河。chokepoint_analysis skill 产出的咽喉分
+ *   (Chokepoint_Score, 0-100) 正是补这一块——它把「不可替代性 / 供给集中度 /
+ *   大客户依赖 / 价值捕获 / 战略锁定」量化成一个护城河信号。
+ *
+ *   当 chokepointScore 提供时，按 7:3 混入：
+ *     S2 = round(0.7 × S2_base + 0.3 × chokepointScore)
+ *   未提供（undefined/NaN）时 S2 完全等于 S2_base —— **向后兼容，不打乱历史分布**。
+ *   权重设为 0.3 是刻意克制：咽喉分是加分项/护城河透镜，不喧宾夺主，也避免单一
+ *   skill 失败或缺失就大幅扰动总分。
  *
  * @param {number} TRL - 技术就绪水平 (1-9 级)
  * @param {number} Competitor_Rank_Score - 竞品排名评分 (1-10 整数)
+ * @param {number} [chokepointScore] - 可选，供应链咽喉综合分 (0-100)，来自 chokepoint_analysis skill
  * @returns {number} 0-100 的整数得分
  */
-function calculateDimension2_ProductAndMoat(TRL, Competitor_Rank_Score) {
+function calculateDimension2_ProductAndMoat(TRL, Competitor_Rank_Score, chokepointScore) {
   // TRL 缺失默认 3（早期概念阶段），Rank 缺失默认 5（行业中游）
   const trlVal = normalizeInput(TRL, 3, 1, 9);
   const rankVal = normalizeInput(Competitor_Rank_Score, 5, 1, 10);
 
   const trlComponent = (trlVal / 9) * 100;   // 归一化到 0-100
   const rankComponent = rankVal * 10;          // 映射到 0-100
+  const baseScore = clampScore(0.4 * trlComponent + 0.6 * rankComponent);
 
-  return clampScore(0.4 * trlComponent + 0.6 * rankComponent);
+  // 咽喉护城河信号缺失 → 直接返回基础分（向后兼容）。
+  // 注意：null/""/undefined 都视为"无数据"——Number(null)===0 会被误当成咽喉分 0，
+  // 必须先显式拦掉，否则历史项目会被凭空拖分。
+  if (chokepointScore == null || chokepointScore === "") return baseScore;
+  const cp = Number(chokepointScore);
+  if (isNaN(cp)) return baseScore;
+
+  const cpVal = Math.max(0, Math.min(100, cp));
+  return clampScore(0.7 * baseScore + 0.3 * cpVal);
 }
 
 /**
@@ -298,6 +320,7 @@ function getGrade(totalScore) {
  *   CAGR                   → S1
  *   TRL                    → S2
  *   Competitor_Rank_Score  → S2
+ *   Chokepoint_Score       → S2 (可选，供应链咽喉护城河信号，来自 chokepoint_analysis skill)
  *   Industry_Capital_Score → S3
  *   Industry_Scale_Score   → S3
  *   Founder_Exp_Years      → S4
@@ -307,8 +330,12 @@ function scoreProject(data) {
   // 第一维度: 时机与天花板
   const S1 = calculateDimension1_TimingAndCeiling(data.TAM_Million_RMB, data.CAGR);
 
-  // 第二维度: 产品与壁垒
-  const S2 = calculateDimension2_ProductAndMoat(data.TRL, data.Competitor_Rank_Score);
+  // 第二维度: 产品与壁垒（含可选的供应链咽喉护城河信号）
+  const S2 = calculateDimension2_ProductAndMoat(
+    data.TRL,
+    data.Competitor_Rank_Score,
+    data.Chokepoint_Score
+  );
 
   // 第三维度: 资本效率与规模效应
   const S3 = calculateDimension3_CapitalEfficiencyAndScale(
@@ -344,13 +371,25 @@ function scoreProject(data) {
         weight: 20,
         inputs: { TAM_Million_RMB: data.TAM_Million_RMB, CAGR: data.CAGR },
       },
-      product_moat: {
-        score: S2,
-        label: "产品与壁垒",
-        subtitle: "TRL + 竞品排名",
-        weight: 20,
-        inputs: { TRL: data.TRL, Competitor_Rank_Score: data.Competitor_Rank_Score },
-      },
+      product_moat: (() => {
+        // 与 calculateDimension2 一致：null/""/undefined/NaN 均视为"无咽喉数据"
+        const hasChokepoint =
+          data.Chokepoint_Score != null &&
+          data.Chokepoint_Score !== "" &&
+          !isNaN(Number(data.Chokepoint_Score));
+        return {
+          score: S2,
+          label: "产品与壁垒",
+          subtitle: hasChokepoint ? "TRL + 竞品排名 + 供应链咽喉护城河" : "TRL + 竞品排名",
+          weight: 20,
+          inputs: {
+            TRL: data.TRL,
+            Competitor_Rank_Score: data.Competitor_Rank_Score,
+            // 仅在有咽喉分时透出，避免历史项目凭空多出 null 字段
+            ...(hasChokepoint ? { Chokepoint_Score: Number(data.Chokepoint_Score) } : {}),
+          },
+        };
+      })(),
       business_validation: {
         score: S3,
         label: "资本效率与规模效应",

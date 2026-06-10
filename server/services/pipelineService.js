@@ -13,6 +13,8 @@ const trackingService = require("./trackingService");
 const agentRuntime = require("./agentRuntime");
 const dataLakeService = require("./dataLakeService");
 const crossMatchService = require("./crossMatchService");
+const { PIPELINE_VERSION } = require("../config/versions");
+const { scoringHarnessMode } = require("../config/featureFlags");
 const {
   AGENT_A_PROMPT,
   CLAIM_VERDICT_BATCH_PROMPT,
@@ -804,6 +806,7 @@ async function runPipeline(bpText, onProgress, taskId = null, userId = null) {
 
   return {
     success: true,
+    pipeline_version: PIPELINE_VERSION,
     elapsed_seconds: parseFloat(elapsed),
     extracted_data: extractedData,
     validated_data: scoringInput,

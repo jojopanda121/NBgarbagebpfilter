@@ -9,154 +9,215 @@ const { extractDocText } = require("../services/extractionService");
 const { runPipeline } = require("../services/pipelineService");
 const { createTask, updateTask } = require("../services/taskService");
 const { deductQuota, refundQuota } = require("../middleware/quota");
+const { PIPELINE_VERSION } = require("../config/versions");
+const inflightTasks = require("../runtime/inflightTasks");
 
-/** 计算文件内容的 SHA256 哈希 */
+/** 计算文件内容的 SHA256 哈希（流式，避免 readFileSync 大文件阻塞事件循环） */
 function computeFileHash(filePath) {
-  const content = fs.readFileSync(filePath);
-  return crypto.createHash("sha256").update(content).digest("hex");
+  return new Promise((resolve, reject) => {
+    const hash = crypto.createHash("sha256");
+    const stream = fs.createReadStream(filePath);
+    stream.on("data", (chunk) => hash.update(chunk));
+    stream.on("end", () => resolve(hash.digest("hex")));
+    stream.on("error", reject);
+  });
 }
 
-/** 查找同一用户已完成的相同文件分析结果 */
-function findExistingResult(userId, fileHash) {
+/**
+ * Magic number 校验：扩展名/MIME 可伪造，读文件头交叉验证真实格式。
+ *   PDF  → "%PDF"
+ *   PPTX → ZIP 容器局部文件头 "PK\x03\x04"
+ */
+async function verifyFileMagic(filePath, fileMode) {
+  const fd = await fs.promises.open(filePath, "r");
   try {
-    const db = getDb();
-    const row = db.prepare(
-      "SELECT id, result FROM tasks WHERE user_id = ? AND file_hash = ? AND status = 'complete' ORDER BY created_at DESC LIMIT 1"
-    ).get(userId, fileHash);
-    if (row && row.result) {
-      try { row.result = JSON.parse(row.result); } catch (e) {
-        console.warn("[Analyze] Failed to parse cached result JSON:", e.message);
-      }
-      return row;
-    }
-  } catch (err) {
-    console.warn("[Analyze] findExistingResult error:", err.message);
+    const buf = Buffer.alloc(4);
+    const { bytesRead } = await fd.read(buf, 0, 4, 0);
+    if (bytesRead < 4) return false;
+    if (fileMode === "pdf") return buf.toString("latin1") === "%PDF";
+    if (fileMode === "pptx") return buf[0] === 0x50 && buf[1] === 0x4b && buf[2] === 0x03 && buf[3] === 0x04;
+    return false;
+  } finally {
+    await fd.close();
   }
-  return null;
+}
+
+/**
+ * 查找同一用户已完成的相同文件分析结果。
+ * 仅复用 pipeline_version 与当前一致的结果——算法/prompt/模型升级后旧结果作废。
+ */
+function findExistingResult(db, userId, fileHash) {
+  const row = db.prepare(
+    "SELECT id, result FROM tasks WHERE user_id = ? AND file_hash = ? AND status = 'complete' ORDER BY created_at DESC LIMIT 1"
+  ).get(userId, fileHash);
+  if (!row || !row.result) return null;
+  let parsed;
+  try {
+    parsed = JSON.parse(row.result);
+  } catch (e) {
+    console.warn("[Analyze] Failed to parse cached result JSON:", e.message);
+    return null; // 解析不了的结果不复用
+  }
+  if (parsed?.pipeline_version !== PIPELINE_VERSION) return null; // 版本不一致不复用
+  return { id: row.id, result: parsed };
 }
 
 /** 查找同一用户正在运行中的相同文件分析任务 */
-function findRunningTask(userId, fileHash) {
-  try {
-    const db = getDb();
-    const row = db.prepare(
-      "SELECT id FROM tasks WHERE user_id = ? AND file_hash = ? AND status = 'running' ORDER BY created_at DESC LIMIT 1"
-    ).get(userId, fileHash);
-    return row || null;
-  } catch (err) {
-    console.warn("[Analyze] findRunningTask error:", err.message);
-  }
-  return null;
+function findRunningTask(db, userId, fileHash) {
+  return db.prepare(
+    "SELECT id FROM tasks WHERE user_id = ? AND file_hash = ? AND status = 'running' ORDER BY created_at DESC LIMIT 1"
+  ).get(userId, fileHash) || null;
+}
+
+/**
+ * 准入事务：去重检查 → 扣额度 → 建任务（含 file_hash），单事务原子执行。
+ * 消除"并发上传同文件双扣额度 / 扣了额度任务没建出来"两类竞态。
+ *
+ * @returns {{ kind: "resuming"|"cached"|"no_quota"|"created", ... }}
+ */
+function admitAnalysis({ userId, isAdmin, fileHash }) {
+  const db = getDb();
+  return db.transaction(() => {
+    if (userId && fileHash) {
+      const running = findRunningTask(db, userId, fileHash);
+      if (running) return { kind: "resuming", taskId: running.id };
+
+      const existing = findExistingResult(db, userId, fileHash);
+      if (existing) return { kind: "cached", existing };
+    }
+
+    let quotaDeductType = null;
+    if (!isAdmin && userId) {
+      const deductResult = deductQuota(userId); // 内部事务 → 此处自动降级为 savepoint
+      if (!deductResult.success) return { kind: "no_quota" };
+      quotaDeductType = deductResult.type; // "free" 或 "paid"
+    }
+
+    const task = createTask(userId);
+    if (fileHash) {
+      db.prepare("UPDATE tasks SET file_hash = ? WHERE id = ?").run(fileHash, task.id);
+    }
+    return { kind: "created", task, quotaDeductType };
+  })();
 }
 
 /** POST /api/analyze — 上传文件并启动分析 */
-function analyze(req, res) {
+async function analyze(req, res) {
   // 输入验证
   if (!req.file && !(req.body && req.body.text)) {
     return res.status(400).json({ error: "请上传 PDF 文件或提供文本" });
   }
 
+  const cleanupUpload = () => {
+    if (req.file) fs.promises.unlink(req.file.path).catch(() => {});
+  };
+
+  // 文件类型：扩展名/MIME 初判 + fileMode 严格白名单
+  let fileMode = null;
   if (req.file) {
     const mime = req.file.mimetype || "";
     const name = (req.file.originalname || "").toLowerCase();
     const isPdf = mime === "application/pdf" || name.endsWith(".pdf");
     const isPptx = mime === "application/vnd.openxmlformats-officedocument.presentationml.presentation" || name.endsWith(".pptx");
     if (!isPdf && !isPptx) {
-      fs.promises.unlink(req.file.path).catch(() => {});
+      cleanupUpload();
       return res.status(400).json({ error: "请上传 PDF 或 PPTX 格式的文件" });
+    }
+    if (name.endsWith(".pptx")) fileMode = "pptx";
+    else if (name.endsWith(".pdf")) fileMode = "pdf";
+    if (!fileMode) {
+      cleanupUpload();
+      return res.status(400).json({ error: "不支持的文件类型" });
     }
   }
 
-  // 扣减额度（原子操作）；管理员无限次使用，跳过扣减
+  // 用户角色查询；用户不存在（如已被删除）时直接拒绝，避免给"幽灵用户"扣额度
   const userId = req.user?.id || null;
   let isAdmin = false;
   if (userId) {
-    const db = getDb();
-    const userRow = db.prepare("SELECT role FROM users WHERE id = ?").get(userId);
-    // H5: 用户不存在（如已被删除）时直接拒绝，避免给"幽灵用户"扣额度
+    let userRow = null;
+    try {
+      userRow = getDb().prepare("SELECT role FROM users WHERE id = ?").get(userId);
+    } catch (err) {
+      console.error("[Analyze] 用户查询失败:", err.message);
+      cleanupUpload();
+      return res.status(500).json({ error: "服务器内部错误，请重试" });
+    }
     if (!userRow) {
-      if (req.file) fs.promises.unlink(req.file.path).catch(() => {});
+      cleanupUpload();
       return res.status(401).json({ error: "用户不存在或已被删除，请重新登录" });
     }
     isAdmin = userRow.role === "admin";
   }
 
-  // 文件去重：计算哈希，检查是否有已完成的相同文件结果
+  // Magic number 校验 + 文件哈希（均为异步流式，不阻塞事件循环）
   let fileHash = null;
   if (req.file) {
     try {
-      fileHash = computeFileHash(req.file.path);
-      if (userId && fileHash) {
-        // 检查是否有正在运行中的相同文件任务
-        const running = findRunningTask(userId, fileHash);
-        if (running) {
-          // 相同文件正在分析中，直接返回已有的 taskId（不扣额度）
-          fs.promises.unlink(req.file.path).catch(() => {});
-          return res.json({ taskId: running.id, cached: false, resuming: true });
-        }
-
-        const existing = findExistingResult(userId, fileHash);
-        if (existing) {
-          // 相同文件已分析过，直接返回之前的结果（不扣额度）
-          fs.promises.unlink(req.file.path).catch(() => {});
-          // 创建一个新任务记录指向旧结果，方便历史记录追踪
-          const task = createTask(userId);
-          updateTask(task.id, {
-            status: "complete",
-            percentage: 100,
-            stage: "complete",
-            message: "检测到相同文件，已复用之前的分析结果",
-            result: existing.result,
-            file_hash: fileHash,
-          });
-          return res.json({ taskId: task.id, cached: true });
-        }
+      const magicOk = await verifyFileMagic(req.file.path, fileMode);
+      if (!magicOk) {
+        cleanupUpload();
+        return res.status(400).json({ error: "文件内容与格式不符，请上传真实的 PDF / PPTX 文件" });
       }
+      fileHash = await computeFileHash(req.file.path);
     } catch (err) {
-      console.warn("[Analyze] File dedup check error:", err.message);
+      console.warn("[Analyze] 文件校验/哈希失败:", err.message);
+      cleanupUpload();
+      return res.status(400).json({ error: "文件读取失败，请重试" });
     }
   }
 
-  let quotaDeductType = null;
-  if (!isAdmin && userId) {
-    const deductResult = deductQuota(userId);
-    if (!deductResult.success) {
-      if (req.file) fs.promises.unlink(req.file.path).catch(() => {});
-      return res.status(403).json({
-        error: "额度不足，请充值",
-        code: 4032,
-        require_payment: true,
-      });
-    }
-    quotaDeductType = deductResult.type; // "free" 或 "paid"
+  // 准入事务：去重 → 扣额度 → 建任务（原子）
+  let admission;
+  try {
+    admission = admitAnalysis({ userId, isAdmin, fileHash });
+  } catch (err) {
+    console.error("[Analyze] 准入事务失败:", err.message);
+    cleanupUpload();
+    return res.status(500).json({ error: "服务器内部错误，请重试" });
   }
+
+  if (admission.kind === "resuming") {
+    // 相同文件正在分析中，直接返回已有的 taskId（不扣额度）
+    cleanupUpload();
+    return res.json({ taskId: admission.taskId, cached: false, resuming: true });
+  }
+
+  if (admission.kind === "cached") {
+    // 相同文件 + 相同管线版本已分析过，复用结果（不扣额度）
+    cleanupUpload();
+    const task = createTask(userId);
+    updateTask(task.id, {
+      status: "complete",
+      percentage: 100,
+      stage: "complete",
+      message: "检测到相同文件，已复用之前的分析结果",
+      result: admission.existing.result,
+      file_hash: fileHash,
+    });
+    return res.json({ taskId: task.id, cached: true });
+  }
+
+  if (admission.kind === "no_quota") {
+    cleanupUpload();
+    return res.status(403).json({
+      error: "额度不足，请充值",
+      code: 4032,
+      require_payment: true,
+    });
+  }
+
+  const { task, quotaDeductType } = admission;
 
   // 在响应前提取所有需要的 req 数据（响应后 req 对象可能被 GC）
   const filePath = req.file ? req.file.path : null;
-  // M21: fileMode 严格白名单，禁止从扩展名推断未知模式
-  const ALLOWED_FILE_MODES = new Set(["pdf", "pptx"]);
-  let fileMode = null;
-  if (req.file) {
-    const lower = (req.file.originalname || "").toLowerCase();
-    if (lower.endsWith(".pptx")) fileMode = "pptx";
-    else if (lower.endsWith(".pdf")) fileMode = "pdf";
-    if (!ALLOWED_FILE_MODES.has(fileMode)) {
-      fs.promises.unlink(req.file.path).catch(() => {});
-      return res.status(400).json({ error: "不支持的文件类型" });
-    }
-  }
   const directText = req.body?.text || null;
   const clientIp = req.headers?.["x-forwarded-for"]?.split(",")[0]?.trim() || req.ip || req.socket?.remoteAddress || null;
 
-  // 创建任务并立即返回
-  const task = createTask(userId);
-  // 提前写入 file_hash，这样重复文件检测能发现正在分析中的任务
-  if (fileHash) {
-    try { updateTask(task.id, { file_hash: fileHash }); } catch {}
-  }
   res.json({ taskId: task.id });
 
   // H1: 立即链式注册 .catch，确保 IIFE 任何同步/异步异常都不会触发 unhandledRejection
+  inflightTasks.register(task.id);
   (async () => {
     let bpText = "";
     try {
@@ -235,15 +296,18 @@ function analyze(req, res) {
       if (userId && !isAdmin && quotaDeductType) {
         refundQuota(userId, quotaDeductType);
       }
+    } finally {
+      inflightTasks.unregister(task.id);
     }
   })().catch((err) => {
     // H1 兜底：链式注册，确保即便 IIFE 在 await 之前同步抛出也能被捕获
     console.error(`[任务 ${task.id.slice(0, 8)}] 未捕获异常:`, err && err.stack ? err.stack : err);
     try {
+      inflightTasks.unregister(task.id);
       updateTask(task.id, { status: "error", error: "服务器内部错误" });
       if (userId && !isAdmin && quotaDeductType) refundQuota(userId, quotaDeductType);
     } catch (_) { /* ignore */ }
   });
 }
 
-module.exports = { analyze };
+module.exports = { analyze, computeFileHash, verifyFileMagic, admitAnalysis };

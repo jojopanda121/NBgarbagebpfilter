@@ -11,8 +11,10 @@ const {
 } = require("../scoring");
 
 describe("calculateDimension1_TimingAndCeiling (S1)", () => {
-  test("returns 0 when TAM=0 and CAGR=0", () => {
-    expect(calculateDimension1_TimingAndCeiling(0, 0)).toBe(0);
+  // v4.3: TAM 缺失（0/NaN/undefined）不再得 0 分，改为中性 30 分——
+  // 信息缺失 ≠ 市场小，与 S3/S4 的中性兜底哲学对齐
+  test("TAM missing (=0) gives neutral 30, not 0", () => {
+    expect(calculateDimension1_TimingAndCeiling(0, 0)).toBe(30);
   });
 
   test("TAM=3000 gives about 61 tamScore", () => {
@@ -21,19 +23,20 @@ describe("calculateDimension1_TimingAndCeiling (S1)", () => {
     expect(score).toBeLessThanOrEqual(62);
   });
 
-  test("CAGR is capped at 40", () => {
+  test("CAGR is capped at 40 (on top of neutral TAM fallback)", () => {
+    // TAM=1 → log10(1)=0 分；CAGR 封顶 40
     const score = calculateDimension1_TimingAndCeiling(1, 100);
-    expect(score).toBeLessThanOrEqual(40);
+    expect(score).toBe(40);
   });
 
   test("total is capped at 100", () => {
     expect(calculateDimension1_TimingAndCeiling(1e9, 100)).toBe(100);
   });
 
-  test("handles NaN/undefined inputs gracefully", () => {
-    expect(calculateDimension1_TimingAndCeiling(undefined, undefined)).toBe(0);
-    expect(calculateDimension1_TimingAndCeiling(NaN, NaN)).toBe(0);
-    expect(calculateDimension1_TimingAndCeiling(null, null)).toBe(0);
+  test("handles NaN/undefined inputs gracefully (neutral 30)", () => {
+    expect(calculateDimension1_TimingAndCeiling(undefined, undefined)).toBe(30);
+    expect(calculateDimension1_TimingAndCeiling(NaN, NaN)).toBe(30);
+    expect(calculateDimension1_TimingAndCeiling(null, null)).toBe(30);
   });
 
   test("negative CAGR treated as 0", () => {
@@ -191,19 +194,22 @@ describe("calculateTotalScore", () => {
     expect(calculateTotalScore(80, 80, 80, 80, 80)).toBe(80);
   });
 
-  test("S5=0 defaults to 70, so all-zero gives 14", () => {
-    // S5 defaults to 70 when falsy (0 is falsy)
-    expect(calculateTotalScore(0, 0, 0, 0, 0)).toBe(14);
+  // v4.3 回归：S5 合法得 0 分（所有声明被证伪）必须按 0 计入，
+  // 不能被 `|| 70` 顶成 70——否则最严重的造假 BP 反而拿中性诚信分
+  test("S5=0 counts as 0 (regression: must NOT default to 70)", () => {
+    expect(calculateTotalScore(0, 0, 0, 0, 0)).toBe(0);
+    expect(calculateTotalScore(50, 50, 50, 50, 0)).toBe(40);
+  });
+
+  test("S5 missing (undefined/NaN) defaults to neutral 70", () => {
+    expect(calculateTotalScore(50, 50, 50, 50, undefined)).toBe(
+      Math.round((50 + 50 + 50 + 50 + 70) / 5)
+    );
+    expect(calculateTotalScore(50, 50, 50, 50, NaN)).toBe(54);
   });
 
   test("capped at 100", () => {
     expect(calculateTotalScore(100, 100, 100, 100, 100)).toBe(100);
-  });
-
-  test("S5 defaults to 70 when falsy (v4.1)", () => {
-    expect(calculateTotalScore(50, 50, 50, 50, 0)).toBe(
-      Math.round((50 + 50 + 50 + 50 + 70) / 5)
-    );
   });
 });
 

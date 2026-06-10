@@ -52,18 +52,18 @@ function makeSchema(modules) {
       },
       open_questions: {
         type: "array",
-        maxItems: 12,
+        maxItems: 8,
         items: { type: "string", minLength: 4, maxLength: 240 },
-        description: "搜不到/时效存疑/需进一步核实的点",
+        description: "可选：真正重大、值得持续跟踪的关键变量/不确定性；没有就空数组，不要堆没查到的数据",
       },
     },
   };
 }
 
+// 正文 bullet 走干净研报行文：只出要点本身，不堆 [分层]/来源 标签。
+// （来源/分层留在结构化 payload 与 metadata 里，不污染成品观感。）
 function _formatPoint(p) {
-  const tier = p.data_tier ? `[${p.data_tier}] ` : "";
-  const srcs = Array.isArray(p.sources) && p.sources.length ? `〔来源: ${p.sources.join("；")}〕` : "〔来源: 待核实〕";
-  return `${tier}${p.point} ${srcs}`;
+  return typeof p === "string" ? p : String(p.point || "");
 }
 
 /** JSON → generate_docx 的 sections（按模块定义的规范顺序） */
@@ -73,19 +73,23 @@ function buildSections(payload, modules) {
   for (const def of modules) {
     const m = byKey.get(def.key);
     if (!m) continue; // schema 已锁死覆盖，这里只是防御
-    const bullets = (m.key_points || []).map(_formatPoint);
+    const bullets = (m.key_points || []).map(_formatPoint).filter(Boolean);
     sections.push({
       heading: m.heading || def.heading,
       paragraphs: m.analysis ? [m.analysis] : [],
       bullets,
     });
   }
-  const oq = payload.open_questions || [];
-  sections.push({
-    heading: "数据来源与局限（待核实）",
-    paragraphs: ["本报告仅以联网检索（MiniMax web_search）为数据源，无专业金融数据库支撑；下列为搜索未能确证、需进一步核实的点。"],
-    bullets: oq.length ? oq : ["（无显著待核实项）"],
-  });
+  // open_questions 仅在确有"值得持续跟踪的关键变量"时才作为一节正常研报内容呈现，
+  // 不再用"数据来源与局限/待核实"这种半成品式免责堆。空则不加这一节。
+  const oq = (payload.open_questions || []).filter(Boolean);
+  if (oq.length) {
+    sections.push({
+      heading: "需持续跟踪的关键变量",
+      paragraphs: [],
+      bullets: oq,
+    });
+  }
   return sections;
 }
 
@@ -100,9 +104,10 @@ async function runOnepager({ subject, subjectLabel, system, modules, docTitle, s
   const userMsg = [
     `${subjectLabel}：${subject}`,
     "",
-    "请先用 web_search 充分检索，再严格按 schema 输出 JSON。",
-    `modules 必须严格包含全部 ${modules.length} 个模块（key: ${modules.map((m) => m.key).join("、")}），缺一即失败。`,
-    "每个 key_point 必须标 data_tier（原始/计算/推理）并尽量挂 sources；搜不到的放进 open_questions 标待核实，不要编造。",
+    "请先用 web_search 充分检索，再严格按 schema 输出 JSON，产出一份完整、像样的买方投研报告。",
+    `modules 必须严格包含全部 ${modules.length} 个模块（key: ${modules.map((m) => m.key).join("、")}），缺一即失败；每个模块都要写满写实，不许留空。`,
+    "查得到的硬数据直接用、可顺带提及出处(sources)；查不到的用'据行业估算约/我们测算/X–Y区间'等措辞给合理判断，不要留'待核实'、也不要假造精确数字。",
+    "open_questions 只放真正重大、值得持续跟踪的关键变量（可选，没有就空数组）——不是用来堆没查到的东西。",
   ].join("\n");
 
   const { data, repairs, searchUsed } = await callLLMJson(system, userMsg, schema, {

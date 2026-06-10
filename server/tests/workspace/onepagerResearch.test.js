@@ -22,14 +22,14 @@ describe("makeSchema — 强制模块覆盖", () => {
   });
 });
 
-describe("_formatPoint — 分层 + 来源标注", () => {
-  test("有来源", () => {
-    expect(_formatPoint({ point: "市占率36.8%", data_tier: "原始", sources: ["2024年报", "券商A"] }))
-      .toBe("[原始] 市占率36.8% 〔来源: 2024年报；券商A〕");
+describe("_formatPoint — 干净研报行文（无标签/无待核实）", () => {
+  test("只出要点本身，不堆分层/来源标签", () => {
+    expect(_formatPoint({ point: "市占率约37%", data_tier: "原始", sources: ["2024年报"] }))
+      .toBe("市占率约37%");
   });
-  test("无来源 → 待核实", () => {
+  test("无来源也不写'待核实'", () => {
     expect(_formatPoint({ point: "渗透率有望提升", data_tier: "推理", sources: [] }))
-      .toBe("[推理] 渗透率有望提升 〔来源: 待核实〕");
+      .toBe("渗透率有望提升");
   });
 });
 
@@ -40,30 +40,28 @@ describe("buildSections — JSON → docx sections", () => {
       { key: "definition", heading: "行业定义与边界", analysis: "数据交通枢纽。", key_points: [{ point: "覆盖全层级连接", data_tier: "原始", sources: ["研报X"] }] },
       { key: "market_size", heading: "市场规模与空间", analysis: "空间巨大。", key_points: [] },
     ],
-    open_questions: ["国产SerDes量产时点待核实"],
+    open_questions: ["国产SerDes量产时点"],
   };
 
-  test("按模块定义顺序渲染 + 末尾追加来源局限节", () => {
+  test("按模块定义顺序渲染；open_questions 作为'需持续跟踪的关键变量'节", () => {
     const sections = buildSections(payload, INDUSTRY_MODULES);
-    // definition 在 market_size 前（规范顺序）
     const headings = sections.map((s) => s.heading);
     expect(headings[0]).toBe("行业定义与边界");
     expect(headings).toContain("市场规模与空间");
-    // 缺失模块被防御性跳过（payload 只给了 2 个），但末节一定在
-    expect(headings[headings.length - 1]).toBe("数据来源与局限（待核实）");
-    expect(sections[sections.length - 1].bullets).toContain("国产SerDes量产时点待核实");
+    expect(headings[headings.length - 1]).toBe("需持续跟踪的关键变量");
+    expect(sections[sections.length - 1].bullets).toContain("国产SerDes量产时点");
   });
 
-  test("analysis → paragraphs，key_points → bullets", () => {
+  test("analysis → paragraphs，key_points → 干净 bullets", () => {
     const sections = buildSections(payload, INDUSTRY_MODULES);
     const def = sections.find((s) => s.heading === "行业定义与边界");
     expect(def.paragraphs).toEqual(["数据交通枢纽。"]);
-    expect(def.bullets[0]).toContain("[原始] 覆盖全层级连接");
+    expect(def.bullets).toEqual(["覆盖全层级连接"]);
   });
 
-  test("open_questions 为空时给占位", () => {
+  test("open_questions 为空 → 不追加该节（不留半成品免责堆）", () => {
     const sections = buildSections({ subject: "x", modules: [], open_questions: [] }, INDUSTRY_MODULES);
-    expect(sections[sections.length - 1].bullets).toEqual(["（无显著待核实项）"]);
+    expect(sections.map((s) => s.heading)).not.toContain("需持续跟踪的关键变量");
   });
 });
 

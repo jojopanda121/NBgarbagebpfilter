@@ -9,7 +9,6 @@ const { extractJson, extractJsonArray, extractPartialResult, ensureStringArray }
 const { scoreProject } = require("../scoring");
 const logger = require("../utils/logger");
 const trackingService = require("./trackingService");
-const orchestrator = require("../agents/orchestrator");
 const agentRuntimeRouter = require("./agentRuntimeRouter");
 const dataLakeService = require("./dataLakeService");
 const crossMatchService = require("./crossMatchService");
@@ -517,6 +516,10 @@ function calculateScoring(validatedData, claimVerdicts, onProgress) {
     CAGR: rawScoringData.CAGR ?? 0,
     TRL: rawScoringData.TRL ?? 5,
     Competitor_Rank_Score: rawScoringData.Competitor_Rank_Score ?? 5,
+    // S2 harness 输入（可选；缺失时 scoreProject 自动退回 legacy TRL/Rank）
+    TRL_Evidence: rawScoringData.TRL_Evidence,
+    Moat_Rubric: rawScoringData.Moat_Rubric,
+    Chokepoint_Score: rawScoringData.Chokepoint_Score,
     Industry_Capital_Score: rawScoringData.Industry_Capital_Score ?? 5,
     Industry_Scale_Score: rawScoringData.Industry_Scale_Score ?? 5,
     Founder_Exp_Years: rawScoringData.Founder_Exp_Years ?? 3,

@@ -9,7 +9,15 @@
 //   1. 量纲不一致 → 统一 TAM 为百万人民币
 //   2. 粗暴惩罚 → 废除股权结构惩罚、0.5 一刀切死刑
 //   3. 数据缺失雪崩 → 中性默认值兜底
+//
+// v4.2 新增：S2「产品与壁垒」harness 化（见 scoringHarness.js）。
+//   旧 S2 的 TRL/Rank 是两个裸 LLM 整数；harness 把它们拆成带证据分层的子因子，
+//   JS 复算，并把供应链咽喉作为护城河子因子收编。通过 SCORING_HARNESS 灰度开关
+//   (off/shadow/on) 控制是否生效，shadow 模式下新旧分并存供校准。
 // ============================================================
+
+const { scoreS2Harness, trlGapVerdict } = require("./scoringHarness");
+const { scoringHarnessMode } = require("./config/featureFlags");
 
 /** 将分数钳制到 0-100 整数 */
 function clampScore(score) {
@@ -59,7 +67,7 @@ function calculateDimension1_TimingAndCeiling(TAM_Million_RMB, CAGR) {
 }
 
 /**
- * 计算模块2: 产品与壁垒 (S2, 权重 20%, 满分 100)
+ * 计算模块2: 产品与壁垒 (S2, 权重 20%, 满分 100) —— legacy 路径
  *
  * Agent Prompt 约束:
  *   大模型检索行业内真实竞品及该产品的行业排名，输出 Competitor_Rank_Score (1-10 整数)。
@@ -67,43 +75,25 @@ function calculateDimension1_TimingAndCeiling(TAM_Million_RMB, CAGR) {
  *   4-7 分: 腰部或细分第一
  *   1-3 分: 红海同质化跟风者
  *
- * 基础公式: S2_base = round(0.4 × (TRL / 9 × 100) + 0.6 × (Rank × 10))
+ * 公式: S2 = round(0.4 × (TRL / 9 × 100) + 0.6 × (Rank × 10))
  *
- * 【供应链咽喉护城河信号(可选)】
- *   传统 TRL + 竞品排名只衡量「技术成熟度 + 相对位次」，看不出「下游大玩家是否
- *   绕不开它」这种结构性护城河。chokepoint_analysis skill 产出的咽喉分
- *   (Chokepoint_Score, 0-100) 正是补这一块——它把「不可替代性 / 供给集中度 /
- *   大客户依赖 / 价值捕获 / 战略锁定」量化成一个护城河信号。
- *
- *   当 chokepointScore 提供时，按 7:3 混入：
- *     S2 = round(0.7 × S2_base + 0.3 × chokepointScore)
- *   未提供（undefined/NaN）时 S2 完全等于 S2_base —— **向后兼容，不打乱历史分布**。
- *   权重设为 0.3 是刻意克制：咽喉分是加分项/护城河透镜，不喧宾夺主，也避免单一
- *   skill 失败或缺失就大幅扰动总分。
+ * 注：这是 TRL/Rank 两个裸 LLM 整数的旧打分法，作为 harness 路径的兜底与
+ * shadow 对照基线保留。harness 路径见 scoringHarness.js（拆因子+证据分层+
+ * JS 复算，咽喉作为护城河子因子收编于此，不再外挂混入）。
  *
  * @param {number} TRL - 技术就绪水平 (1-9 级)
  * @param {number} Competitor_Rank_Score - 竞品排名评分 (1-10 整数)
- * @param {number} [chokepointScore] - 可选，供应链咽喉综合分 (0-100)，来自 chokepoint_analysis skill
  * @returns {number} 0-100 的整数得分
  */
-function calculateDimension2_ProductAndMoat(TRL, Competitor_Rank_Score, chokepointScore) {
+function calculateDimension2_ProductAndMoat(TRL, Competitor_Rank_Score) {
   // TRL 缺失默认 3（早期概念阶段），Rank 缺失默认 5（行业中游）
   const trlVal = normalizeInput(TRL, 3, 1, 9);
   const rankVal = normalizeInput(Competitor_Rank_Score, 5, 1, 10);
 
   const trlComponent = (trlVal / 9) * 100;   // 归一化到 0-100
   const rankComponent = rankVal * 10;          // 映射到 0-100
-  const baseScore = clampScore(0.4 * trlComponent + 0.6 * rankComponent);
 
-  // 咽喉护城河信号缺失 → 直接返回基础分（向后兼容）。
-  // 注意：null/""/undefined 都视为"无数据"——Number(null)===0 会被误当成咽喉分 0，
-  // 必须先显式拦掉，否则历史项目会被凭空拖分。
-  if (chokepointScore == null || chokepointScore === "") return baseScore;
-  const cp = Number(chokepointScore);
-  if (isNaN(cp)) return baseScore;
-
-  const cpVal = Math.max(0, Math.min(100, cp));
-  return clampScore(0.7 * baseScore + 0.3 * cpVal);
+  return clampScore(0.4 * trlComponent + 0.6 * rankComponent);
 }
 
 /**
@@ -310,105 +300,42 @@ function getGrade(totalScore) {
 }
 
 /**
- * 主评分函数
- *
- * 输入: 从 Agent B 验证后的结构化数据
- * 输出: 5 个维度的得分 + 总分 + 评级
- *
- * 字段映射 (新 Schema):
- *   TAM_Million_RMB        → S1 (百万人民币)
- *   CAGR                   → S1
- *   TRL                    → S2
- *   Competitor_Rank_Score  → S2
- *   Chokepoint_Score       → S2 (可选，供应链咽喉护城河信号，来自 chokepoint_analysis skill)
- *   Industry_Capital_Score → S3
- *   Industry_Scale_Score   → S3
- *   Founder_Exp_Years      → S4
- *   claim_verdicts         → S5 (BP诚信度，基于声明核查结果)
+ * 是否具备 harness 输入（任一存在即可触发 harness 计算）
  */
-function scoreProject(data) {
-  // 第一维度: 时机与天花板
-  const S1 = calculateDimension1_TimingAndCeiling(data.TAM_Million_RMB, data.CAGR);
-
-  // 第二维度: 产品与壁垒（含可选的供应链咽喉护城河信号）
-  const S2 = calculateDimension2_ProductAndMoat(
-    data.TRL,
-    data.Competitor_Rank_Score,
-    data.Chokepoint_Score
+function _hasHarnessInputs(data) {
+  return !!(
+    (data.TRL_Evidence && typeof data.TRL_Evidence === "object") ||
+    (data.Moat_Rubric && typeof data.Moat_Rubric === "object") ||
+    (data.Chokepoint_Score != null && data.Chokepoint_Score !== "" && !isNaN(Number(data.Chokepoint_Score)))
   );
+}
 
-  // 第三维度: 资本效率与规模效应
-  const S3 = calculateDimension3_CapitalEfficiencyAndScale(
-    data.Industry_Capital_Score,
-    data.Industry_Scale_Score
-  );
-
-  // 第四维度: 团队基因（多因子评分模型）
-  const S4 = calculateDimension4_Team({
-    Founder_Exp_Years: data.Founder_Exp_Years,
-    Team_Experience_Score: data.Team_Experience_Score,
-    Team_Domain_Match_Score: data.Team_Domain_Match_Score,
-    Team_Completeness_Score: data.Team_Completeness_Score,
-    Team_Track_Record_Score: data.Team_Track_Record_Score,
-    Team_Education_Score: data.Team_Education_Score,
-  });
-
-  // 第五维度: BP诚信度（纯 JS 计算，基于声明核查结果，无需 LLM 再次判断）
-  const S5 = calculateDimension5_Integrity(data.claim_verdicts);
-
-  // 计算总分（五维简单平均）
+/**
+ * 组装最终结果对象（给定 5 维分 + S2 展示元数据 + 声明数）
+ */
+function _assemble(S1, S2, S3, S4, S5, data, s2meta) {
   const totalScore = calculateTotalScore(S1, S2, S3, S4, S5);
-
-  // 获取纯分数评级
   const grading = getGrade(totalScore);
-
   return {
     dimensions: {
       timing_ceiling: {
-        score: S1,
-        label: "时机与天花板",
-        subtitle: "TAM（百万人民币） + CAGR",
-        weight: 20,
+        score: S1, label: "时机与天花板", subtitle: "TAM（百万人民币） + CAGR", weight: 20,
         inputs: { TAM_Million_RMB: data.TAM_Million_RMB, CAGR: data.CAGR },
       },
-      product_moat: (() => {
-        // 与 calculateDimension2 一致：null/""/undefined/NaN 均视为"无咽喉数据"
-        const hasChokepoint =
-          data.Chokepoint_Score != null &&
-          data.Chokepoint_Score !== "" &&
-          !isNaN(Number(data.Chokepoint_Score));
-        return {
-          score: S2,
-          label: "产品与壁垒",
-          subtitle: hasChokepoint ? "TRL + 竞品排名 + 供应链咽喉护城河" : "TRL + 竞品排名",
-          weight: 20,
-          inputs: {
-            TRL: data.TRL,
-            Competitor_Rank_Score: data.Competitor_Rank_Score,
-            // 仅在有咽喉分时透出，避免历史项目凭空多出 null 字段
-            ...(hasChokepoint ? { Chokepoint_Score: Number(data.Chokepoint_Score) } : {}),
-          },
-        };
-      })(),
+      product_moat: {
+        score: S2, label: "产品与壁垒", weight: 20,
+        subtitle: s2meta.subtitle, inputs: s2meta.inputs,
+      },
       business_validation: {
-        score: S3,
-        label: "资本效率与规模效应",
-        subtitle: "行业资本效率 + 行业规模效应",
-        weight: 20,
+        score: S3, label: "资本效率与规模效应", subtitle: "行业资本效率 + 行业规模效应", weight: 20,
         inputs: { Industry_Capital_Score: data.Industry_Capital_Score, Industry_Scale_Score: data.Industry_Scale_Score },
       },
       team: {
-        score: S4,
-        label: "团队基因",
-        subtitle: "创始人赛道经验年数",
-        weight: 20,
+        score: S4, label: "团队基因", subtitle: "创始人赛道经验年数", weight: 20,
         inputs: { Founder_Exp_Years: data.Founder_Exp_Years },
       },
       external_risk: {
-        score: S5,
-        label: "BP诚信度",
-        subtitle: "声明核查结果",
-        weight: 20,
+        score: S5, label: "BP诚信度", subtitle: "声明核查结果", weight: 20,
         inputs: { claim_count: Array.isArray(data.claim_verdicts) ? data.claim_verdicts.length : 0 },
       },
     },
@@ -418,6 +345,106 @@ function scoreProject(data) {
     grade_action: grading.action,
     grade_color: grading.color,
   };
+}
+
+const _S2_LEGACY_META = (data) => ({
+  subtitle: "TRL + 竞品排名",
+  inputs: { TRL: data.TRL, Competitor_Rank_Score: data.Competitor_Rank_Score },
+});
+
+function _s2HarnessMeta(detail) {
+  const t = detail.trl_detail || {};
+  const m = detail.moat_detail || {};
+  return {
+    subtitle: "TRL实证 + 护城河(差异化/转换成本/落地/竞争密度/咽喉)",
+    inputs: {
+      effective_trl: t.effective_trl,
+      trl_verified: t.trl_verified,
+      trl_claimed: t.trl_claimed,
+      moat_score: m.moat_score,
+      moat_subfactors: m.subfactors,
+      moat_coverage: m.coverage,
+    },
+  };
+}
+
+/**
+ * 主评分函数
+ *
+ * 输入: 从 Agent B 验证后的结构化数据
+ * 输出: 5 个维度的得分 + 总分 + 评级（shadow 模式下附 scoring_shadow 对照块）
+ *
+ * 字段映射:
+ *   TAM_Million_RMB        → S1 (百万人民币)
+ *   CAGR                   → S1
+ *   TRL / Competitor_Rank_Score        → S2 (legacy 裸分路径 / harness 兜底)
+ *   TRL_Evidence / Moat_Rubric / Chokepoint_Score → S2 (harness 路径，见 scoringHarness.js)
+ *   Industry_Capital_Score / Industry_Scale_Score → S3
+ *   Founder_Exp_Years + Team_*          → S4
+ *   claim_verdicts                      → S5 (BP诚信度；harness on 时叠加 TRL gap verdict)
+ */
+function scoreProject(data) {
+  const mode = scoringHarnessMode(); // off | shadow | on
+  const harnessAvailable = mode !== "off" && _hasHarnessInputs(data);
+
+  // 三维共用（不受 harness 影响）
+  const S1 = calculateDimension1_TimingAndCeiling(data.TAM_Million_RMB, data.CAGR);
+  const S3 = calculateDimension3_CapitalEfficiencyAndScale(data.Industry_Capital_Score, data.Industry_Scale_Score);
+  const S4 = calculateDimension4_Team({
+    Founder_Exp_Years: data.Founder_Exp_Years,
+    Team_Experience_Score: data.Team_Experience_Score,
+    Team_Domain_Match_Score: data.Team_Domain_Match_Score,
+    Team_Completeness_Score: data.Team_Completeness_Score,
+    Team_Track_Record_Score: data.Team_Track_Record_Score,
+    Team_Education_Score: data.Team_Education_Score,
+  });
+
+  // legacy 路径（始终算，作为 shadow 基线/兜底）
+  const S2legacy = calculateDimension2_ProductAndMoat(data.TRL, data.Competitor_Rank_Score);
+  const S5legacy = calculateDimension5_Integrity(data.claim_verdicts);
+
+  // 没有 harness 数据或开关 off → 纯 legacy
+  if (!harnessAvailable) {
+    return _assemble(S1, S2legacy, S3, S4, S5legacy, data, _S2_LEGACY_META(data));
+  }
+
+  // harness 路径
+  const h = scoreS2Harness({
+    trlEvidence: data.TRL_Evidence,
+    moatRubric: data.Moat_Rubric,
+    chokepointScore: data.Chokepoint_Score,
+    legacyTrl: data.TRL,
+    legacyRank: data.Competitor_Rank_Score,
+  });
+  // TRL 自报 vs 实证 gap → 追加一条 claim_verdict 喂 S5（反注水）
+  const gapVerdict = trlGapVerdict(h.trl_detail);
+  const harnessVerdicts = gapVerdict
+    ? [...(Array.isArray(data.claim_verdicts) ? data.claim_verdicts : []), gapVerdict]
+    : data.claim_verdicts;
+  const S5harness = calculateDimension5_Integrity(harnessVerdicts);
+
+  if (mode === "on") {
+    const result = _assemble(S1, h.S2, S3, S4, S5harness, data, _s2HarnessMeta(h));
+    result.scoring_basis = "harness";
+    return result;
+  }
+
+  // shadow：旧分生效，附 harness 对照块（供校准）
+  const live = _assemble(S1, S2legacy, S3, S4, S5legacy, data, _S2_LEGACY_META(data));
+  const shadow = _assemble(S1, h.S2, S3, S4, S5harness, data, _s2HarnessMeta(h));
+  live.scoring_basis = "legacy";
+  live.scoring_shadow = {
+    S2: h.S2,
+    S5: S5harness,
+    total_score: shadow.total_score,
+    grade: shadow.grade,
+    trl_gap_verdict: gapVerdict || null,
+    trl_detail: h.trl_detail,
+    moat_detail: h.moat_detail,
+    delta_total: shadow.total_score - live.total_score,
+    delta_S2: h.S2 - S2legacy,
+  };
+  return live;
 }
 
 module.exports = {

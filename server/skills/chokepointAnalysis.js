@@ -6,9 +6,11 @@
 // 节点。输出 5 因子打分 + is_chokepoint 判定 + 综合咽喉分(chokepoint_score)
 // + thesis + 关键风险 + 红旗 + 待核实清单,全部 source_refs 溯源到 Fact Pack。
 //
-// 与 scoring.js 的关系:本 skill 产出的 chokepoint_score(0-100)可作为
-// 「产品与壁垒」(S2)维度的护城河信号回灌评分系统(见 scoring.js
-// calculateDimension2_ProductAndMoat 的第三参数),让结构性护城河被量化进总分。
+// 与 scoring.js 的关系:本 skill 产出的 chokepoint_score(0-100)作为「产品与壁垒」
+// (S2)的 moat harness 里的一个子因子(占护城河权重 0.15,见 scoringHarness.js 的
+// computeMoat),与差异化/转换成本/落地/竞争密度并列。调用方把它作为
+// data.Chokepoint_Score 喂给 scoreProject 即可参与 S2 harness 计算。
+// 注:咽喉只是护城河的一种形状,故权重克制,避免误杀网络效应/转换成本型软件壁垒。
 //
 // 设计原则(与 scoring.js / dealScreening.js 一致):
 //   - LLM 只输出客观因子分(0-100 枚举式判断)+ 事实判定,**综合分在 JS 端

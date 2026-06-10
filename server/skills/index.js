@@ -19,6 +19,8 @@ const builtins = [
   require("./icMemo"),
   require("./dealScreening"),
   require("./chokepointAnalysis"),
+  require("./industryOnepager"),
+  require("./companyOnepager"),
   require("./unitEconomicsReview"),
   require("./riskRegister"),
   require("./teaserGenerate"),

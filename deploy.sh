@@ -75,6 +75,12 @@ setup_env() {
   sed -i "s|JWT_SECRET=.*|JWT_SECRET=${JWT}|" .env
   info "JWT Secret 已自动生成"
 
+  # doc-service 共享密钥 + PII 盐（生产必配，自动生成）
+  echo "" >> .env
+  echo "DOC_SERVICE_TOKEN=$(random_string 48)" >> .env
+  echo "PII_SALT=$(random_string 32)" >> .env
+  info "DOC_SERVICE_TOKEN / PII_SALT 已自动生成"
+
   # 管理员账号
   echo ""
   read -p "管理员用户名 (默认 admin): " ADMIN_USER
@@ -103,12 +109,20 @@ setup_env() {
 }
 
 # 备份数据库
+# 注意：WAL 模式下对热库直接 cp 会丢失 WAL 中未 checkpoint 的写入，
+# 必须使用 sqlite3 .backup（在线一致性备份，与 compose 备份容器同一方式）。
 backup_db() {
   if [ -f ./data/app.db ]; then
     mkdir -p ./data/backups
     BACKUP_FILE="./data/backups/app_$(date +%Y%m%d_%H%M%S)_pre_update.db"
-    cp ./data/app.db "$BACKUP_FILE"
-    info "数据库已备份到: ${BACKUP_FILE}"
+    if command -v sqlite3 >/dev/null 2>&1; then
+      sqlite3 ./data/app.db ".backup ${BACKUP_FILE}"
+      info "数据库已备份到: ${BACKUP_FILE}"
+    elif docker ps --format '{{.Names}}' 2>/dev/null | grep -q '^bp-filter-backup$'; then
+      docker exec bp-filter-backup /usr/local/bin/do-backup.sh && info "已通过备份容器完成备份"
+    else
+      warn "未找到 sqlite3，跳过更新前备份（请安装 sqlite3 或启用 --profile production 备份容器）"
+    fi
   fi
 }
 
@@ -127,6 +141,12 @@ deploy() {
   for i in $(seq 1 30); do
     if curl -sf http://localhost:3001/api/health >/dev/null 2>&1; then
       echo ""
+      # 管理员账号已在首次启动时写入数据库（bcrypt 哈希），
+      # 清除 .env 中的明文密码，避免长期驻留磁盘
+      if grep -q "^ADMIN_PASSWORD=.\+" .env 2>/dev/null; then
+        sed -i "s|^ADMIN_PASSWORD=.*|ADMIN_PASSWORD=|" .env
+        info "管理员账号已初始化，.env 中的明文 ADMIN_PASSWORD 已清除"
+      fi
       info "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
       info "  部署成功！"
       info "  访问: http://localhost:3001"

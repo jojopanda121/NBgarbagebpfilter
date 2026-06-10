@@ -1967,7 +1967,7 @@ async function executeDocumentTool({ tool, args, conversationId, messageId, user
       try {
         const r = await fetch(url, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: require("./docServiceAuth").docServiceHeaders({ "Content-Type": "application/json" }),
           body: JSON.stringify(body),
           signal: controller.signal,
         });

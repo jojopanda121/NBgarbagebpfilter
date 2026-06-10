@@ -8,6 +8,7 @@
 const path = require("path");
 const { spawn } = require("child_process");
 const config = require("../config");
+const { docServiceHeaders } = require("./docServiceAuth");
 
 /**
  * 提取文档文本
@@ -45,6 +46,7 @@ async function extractViaService(filePath, mode) {
       try {
         resp = await fetch(`${config.docServiceUrl}/extract`, {
           method: "POST",
+          headers: docServiceHeaders(),
           body: formData,
           signal: ctrl.signal,
         });

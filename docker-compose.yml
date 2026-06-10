@@ -50,6 +50,7 @@ services:
       - NODE_ENV=production
       - PORT=3001
       - DOC_SERVICE_URL=http://doc-service:8001
+      - DOC_SERVICE_TOKEN=${DOC_SERVICE_TOKEN:-}
       - DB_PATH=/app/data/app.db
       - UPLOADS_DIR=/app/data/uploads   # 头像/站点图持久化目录（容器重建不丢失）
     volumes:
@@ -73,6 +74,8 @@ services:
       dockerfile: Dockerfile
     container_name: bp-filter-doc
     restart: always
+    environment:
+      - DOC_SERVICE_TOKEN=${DOC_SERVICE_TOKEN:-}
     expose:
       - "8001"
     # M15: 为 doc-service 增加资源限制，避免大 PDF 解析吃光宿主机内存

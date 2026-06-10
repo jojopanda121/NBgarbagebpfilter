@@ -16,6 +16,63 @@ const anthropic = new Anthropic({
   baseURL: resolveAnthropicBaseURL(config.minimaxApiHost),
 });
 
+// ── LLM 调用计量（成本可观测最小实现）────────────────────────
+// 在 SDK 入口处统一拦截 messages.create：每次调用记录结构化日志
+// （model / token 用量 / 耗时），并维护进程级累计计数（getLlmStats 可查）。
+// 商业化定价、用户级成本归集等再演进为落库方案。
+const _llmStats = {
+  calls: 0,
+  errors: 0,
+  input_tokens: 0,
+  output_tokens: 0,
+  total_latency_ms: 0,
+};
+
+function getLlmStats() {
+  return { ..._llmStats, since: _llmStats.since || (_llmStats.since = new Date().toISOString()) };
+}
+
+// 测试环境 mock SDK 可能没有 messages.create，跳过计量包装
+if (anthropic && anthropic.messages && typeof anthropic.messages.create === "function") {
+  const _origCreate = anthropic.messages.create.bind(anthropic.messages);
+  anthropic.messages.create = async function instrumentedCreate(body, ...rest) {
+    const start = Date.now();
+    try {
+      const resp = await _origCreate(body, ...rest);
+      const latency = Date.now() - start;
+      _llmStats.calls += 1;
+      _llmStats.total_latency_ms += latency;
+      // 流式调用返回 Stream 对象，usage 不在此处；仅非流式记录 token
+      const usage = resp && resp.usage ? resp.usage : null;
+      if (usage) {
+        _llmStats.input_tokens += usage.input_tokens || 0;
+        _llmStats.output_tokens += usage.output_tokens || 0;
+      }
+      console.log(JSON.stringify({
+        evt: "llm_call",
+        model: body?.model,
+        max_tokens: body?.max_tokens,
+        input_tokens: usage?.input_tokens ?? null,
+        output_tokens: usage?.output_tokens ?? null,
+        latency_ms: latency,
+        stream: !!body?.stream,
+      }));
+      return resp;
+    } catch (err) {
+      _llmStats.calls += 1;
+      _llmStats.errors += 1;
+      console.warn(JSON.stringify({
+        evt: "llm_call_error",
+        model: body?.model,
+        latency_ms: Date.now() - start,
+        status: err?.status ?? null,
+        message: (err?.message || "").slice(0, 200),
+      }));
+      throw err;
+    }
+  };
+}
+
 const MODEL = config.minimaxModel;
 
 // ── P2-4 per-skill 模型路由 ─────────────────────────────────
@@ -959,4 +1016,5 @@ module.exports = {
   LLMJsonValidationError,
   getModelName,
   getModelTier,
+  getLlmStats,
 };

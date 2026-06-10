@@ -72,15 +72,19 @@ const analyzeLimiter = rateLimit({
   keyGenerator: (req) => (req.user && req.user.id ? `u:${req.user.id}` : `ip:${req.ip}`),
 });
 
-router.post("/", authMiddleware, analyzeLimiter, handleUpload, (req, res, _next) => {
+// analyze 为 async 控制器，必须经 asyncHandler 包装，异常才能进 errorHandler
+const { asyncHandler } = require("../middleware/errorHandler");
+const analyzeAsync = asyncHandler(analyze);
+
+router.post("/", authMiddleware, analyzeLimiter, handleUpload, (req, res, next) => {
   // 如果用户已登录，检查额度
   if (req.user) {
-    return checkQuota(req, res, () => analyze(req, res));
+    return checkQuota(req, res, () => analyzeAsync(req, res, next));
   }
   if (!ALLOW_ANON) {
     return res.status(401).json({ error: "未登录，请先登录" });
   }
-  analyze(req, res);
+  analyzeAsync(req, res, next);
 });
 
 module.exports = router;

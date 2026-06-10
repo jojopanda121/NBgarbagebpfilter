@@ -67,10 +67,8 @@ export default function ContactBindingModal() {
     setLoading(true);
 
     try {
-      // 先验证验证码
-      await api.post("/api/verify/check", { email, code: emailCode });
-      // 再绑定邮箱
-      await api.post("/api/auth/bind-contact", { email });
+      // 验证码随绑定请求一起提交，由后端原子验证（验证码一次性消费）
+      await api.post("/api/auth/bind-contact", { email, code: emailCode });
       setUser({ ...user, contact_bound: true, email });
       setRequireContactBinding(false);
     } catch (err) {

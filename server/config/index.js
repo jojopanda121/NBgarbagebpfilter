@@ -65,6 +65,9 @@ const config = {
   docServiceUrl:
     process.env.DOC_SERVICE_URL ||
     ((process.env.NODE_ENV || "development") === "development" ? "http://localhost:8001" : ""),
+  // doc-service 共享密钥：两端同时配置后，所有 doc-service 端点要求
+  // Authorization: Bearer <token>，防止端口误暴露时被白嫖解析/渲染算力
+  docServiceToken: process.env.DOC_SERVICE_TOKEN || "",
 
   // Object Storage (OSS/S3)
   ossEndpoint: process.env.OSS_ENDPOINT || "",
@@ -142,10 +145,13 @@ if (config.env === "production") {
       console.error("\n[FATAL] ENABLE_PII_ENCRYPTION=1 但 ENCRYPTION_KEY 缺失或过短（要求 ≥ 32 字符）。\n");
       process.exit(1);
     }
-    if (!config.piiSalt || config.piiSalt.length < 16) {
-      console.error("\n[FATAL] ENABLE_PII_ENCRYPTION=1 但 PII_SALT 缺失或过短（要求 ≥ 16 字符）。\n");
-      process.exit(1);
-    }
+  }
+
+  // PII_SALT 生产环境必配：founderAgent / 数据沉淀对手机号/邮箱做加盐 hash，
+  // 默认盐等于没有盐（彩虹表可逆）。生成: openssl rand -hex 16
+  if (!config.piiSalt || config.piiSalt.length < 16) {
+    console.error("\n[FATAL] 生产环境必须设置 PII_SALT（≥ 16 字符）！\n  生成: PII_SALT=$(openssl rand -hex 16)\n");
+    process.exit(1);
   }
 }
 

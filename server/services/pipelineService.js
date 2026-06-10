@@ -10,9 +10,11 @@ const { scoreProject } = require("../scoring");
 const { mergeSpecialistEvidence } = require("../scoringEvidence");
 const logger = require("../utils/logger");
 const trackingService = require("./trackingService");
-const agentRuntimeRouter = require("./agentRuntimeRouter");
+const agentRuntime = require("./agentRuntime");
 const dataLakeService = require("./dataLakeService");
 const crossMatchService = require("./crossMatchService");
+const { PIPELINE_VERSION } = require("../config/versions");
+const { scoringHarnessMode } = require("../config/featureFlags");
 const {
   AGENT_A_PROMPT,
   CLAIM_VERDICT_BATCH_PROMPT,
@@ -605,12 +607,16 @@ function buildValuationComparison(validatedData, extractedData, scoringInput, sc
     const bpValuation = extractedData.BP_Valuation || 0;
     const bpRevenue = extractedData.BP_Revenue || 0;
     const bpMultiple = (bpValuation && bpRevenue) ? Math.round(bpValuation / bpRevenue) : 0;
+    // 兜底路径没有行业对标数据，溢价无法计算——如实标注数据不足，
+    // 不再伪装成"AI 知识库分析"输出恒为 0 的溢价百分比。
     valuationComparison = {
       bp_multiple: bpMultiple,
       industry_avg_multiple: 0,
-      overvalued_pct: scoringInput.Valuation_Gap ? Math.round((scoringInput.Valuation_Gap - 1) * 100) : 0,
+      overvalued_pct: 0,
       industry_name: extractedData.industry || "",
-      data_source: "MiniMax AI 知识库分析",
+      data_source: bpMultiple
+        ? "按 BP 自述估值/收入推算倍数；行业对标数据不足，溢价未计算"
+        : "估值/收入数据不足，无法计算",
       analysis: scoringResult.grade_action,
     };
   }
@@ -637,11 +643,11 @@ async function runPipeline(bpText, onProgress, taskId = null, userId = null) {
     // 主流水线：声明核查 + 评分数据 + 五维深度分析 + 深度研究
     runAgentBWithBatchingAndResearch(extractedData, truncatedText, onProgress),
 
-    // multiagent 现走 agentRuntimeRouter（Hermes 主路径，故障 fallback orchestrator）
+    // multiagent：本地 orchestrator 并行执行
     (async () => {
       try {
         onProgress({ type: "progress", stage: "multiagent_start", percentage: 33, message: "深度投研分析启动中..." });
-        const { runId, multiagent: ma } = await agentRuntimeRouter.runBpPipeline({
+        const { runId, multiagent: ma } = await agentRuntime.runBpPipeline({
           bpText, extractedData, taskId, userId,
         });
         const runtime = ma?.runtime || "legacy";
@@ -656,9 +662,21 @@ async function runPipeline(bpText, onProgress, taskId = null, userId = null) {
 
   const { claimVerdicts, structuralResult, thinking, dimensionAnalysisResult, deepResearch } = agentBResult;
 
+  // ── 报告质量标记：降级不再静默，最终结果携带 quality.flags ──
+  const qualityFlags = [];
+  if (!deepResearch) qualityFlags.push("deep_research_unavailable");
+  if (!multiagent || multiagent.error || Object.keys(multiagent).length === 0) {
+    qualityFlags.push("multiagent_unavailable");
+  }
+  const failedVerifyCount = (claimVerdicts || []).filter(
+    (v) => v && v.ai_research === "核查失败，无法验证"
+  ).length;
+  if (failedVerifyCount > 0) qualityFlags.push(`claim_verify_partial:${failedVerifyCount}`);
+
   // Agent A 数据兜底：如果结构化评分 3 层 + 抢救全部失败，用 Agent A 提取的数据直接评分
   let validatedData;
   if (!structuralResult || !structuralResult.validated_data) {
+    qualityFlags.push("scoring_fallback_agent_a");
     logger.warn("[Pipeline] 结构化评分全部失败，启用 Agent A 数据兜底");
     onProgress({ type: "progress", stage: "scoring_fallback", percentage: 86, message: "正在整合分析数据..." });
     validatedData = {
@@ -697,6 +715,7 @@ async function runPipeline(bpText, onProgress, taskId = null, userId = null) {
     dimensionAnalysis = validatedData.dimension_analysis;
     logger.info("[Pipeline] 使用评分调用中的 dimension_analysis");
   } else {
+    qualityFlags.push("dimension_analysis_supplemented");
     // 兜底：补充调用（仅在两路都失败时触发）
     logger.warn("[Pipeline] dimension_analysis 两路均未获取，执行补充分析...");
     onProgress({ type: "progress", stage: "dim_analysis", percentage: 88, message: "正在生成维度详细分析..." });
@@ -718,6 +737,9 @@ async function runPipeline(bpText, onProgress, taskId = null, userId = null) {
       }
     } catch (err) {
       logger.warn("[Pipeline] dimension_analysis 补充调用失败:", err.message);
+    }
+    if (Object.keys(dimensionAnalysis).length === 0) {
+      qualityFlags.push("dimension_analysis_missing");
     }
   }
 
@@ -778,7 +800,6 @@ async function runPipeline(bpText, onProgress, taskId = null, userId = null) {
   // isAnonymized 默认 1，未来可通过用户设置控制
   (async () => {
     try {
-      const userId = null; // 此处无法获取 userId，由 analyzeController 传递
       dataLakeService.sinkAllAgentData({
         taskId,
         userId,
@@ -801,6 +822,10 @@ async function runPipeline(bpText, onProgress, taskId = null, userId = null) {
 
   return {
     success: true,
+    pipeline_version: PIPELINE_VERSION,
+    // 降级显式化：degraded=true 表示报告部分内容由兜底路径生成，
+    // flags 枚举具体降级点（前端/管理端可据此提示用户或排查）
+    quality: { degraded: qualityFlags.length > 0, flags: qualityFlags },
     elapsed_seconds: parseFloat(elapsed),
     extracted_data: extractedData,
     validated_data: scoringInput,

@@ -1,13 +1,14 @@
 import DOMPurify from "dompurify";
-import { getGrade, getGradeLabel, getGradeAction, getScoreBg } from "./scoreHelpers";
+import { getScoreBg } from "./scoreHelpers";
 import { dimLabelsMap } from "../constants";
 
 // ── PDF 报告下载（打开新窗口触发浏览器打印/另存为PDF）──
 export function downloadReportAsPdf(result) {
   const verdict = result.verdict;
   const totalScore = verdict.total_score ?? 0;
-  const grade = verdict.grade || getGrade(totalScore);
-  const gradeAction = verdict.grade_action || getGradeAction(grade);
+  // 评级与文案以后端 verdict 为唯一权威（buildVerdictResponse 必含这些字段）
+  const grade = verdict.grade || "";
+  const gradeAction = verdict.grade_action || "";
   const dims = verdict.dimensions || {};
 
   // 估值温度计 HTML
@@ -91,7 +92,7 @@ export function downloadReportAsPdf(result) {
   <div class="score-card">
     <div class="score">${totalScore}</div>
     <div class="grade">${grade}</div>
-    <div class="grade-label">${verdict.grade_label || getGradeLabel(grade)}</div>
+    <div class="grade-label">${verdict.grade_label || ""}</div>
     <div class="verdict-text">${gradeAction}</div>
     ${verdict.strengths?.length > 0 ? `<div class="tags">${verdict.strengths.map((s) => `<span class="tag-green">${s}</span>`).join("")}</div>` : ""}
     ${verdict.risk_flags?.length > 0 ? `<div class="tags" style="margin-top:8px">${verdict.risk_flags.map((r) => `<span class="tag-red">${r}</span>`).join("")}</div>` : ""}

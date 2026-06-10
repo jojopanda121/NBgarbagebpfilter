@@ -162,9 +162,9 @@ function getMe(req, res) {
   });
 }
 
-/** POST /api/auth/bind-contact — 绑定邮箱（渐进式认证） */
+/** POST /api/auth/bind-contact — 绑定邮箱（渐进式认证，需邮箱验证码） */
 function bindContact(req, res) {
-  const { email } = req.body;
+  const { email, code } = req.body;
 
   if (!email) {
     return res.status(400).json({ error: "请提供邮箱地址" });
@@ -172,6 +172,14 @@ function bindContact(req, res) {
 
   if (!isValidEmail(email)) {
     return res.status(400).json({ error: "邮箱格式不正确" });
+  }
+
+  // 必须通过该邮箱收到的验证码证明所有权——否则可绑定他人邮箱刷邀请奖励
+  if (!code) {
+    return res.status(400).json({ error: "请输入邮箱验证码" });
+  }
+  if (!verifyEmailCode(email, code)) {
+    return res.status(400).json({ error: "验证码错误或已过期" });
   }
 
   // 检查邮箱是否已被其他用户绑定

@@ -8,9 +8,12 @@ const { extractJson } = require("../utils/jsonParser");
 const MAX_BP_CHARS = 20000;
 
 // PRIVACY: SHA256 + salt 单向 hash
+// PII_SALT 未配置时拒绝产出 hash（写 null）——硬编码默认盐等于没有盐，
+// 彩虹表可直接逆推手机号/邮箱。生产环境 config 已强制要求 PII_SALT。
 function hashPII(value) {
   if (!value) return null;
-  const salt = process.env.PII_SALT || "nbgbpf_default_salt";
+  const salt = process.env.PII_SALT;
+  if (!salt) return null;
   return crypto.createHash("sha256").update(String(value) + salt).digest("hex");
 }
 

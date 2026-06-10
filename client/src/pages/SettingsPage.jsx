@@ -358,8 +358,7 @@ export default function SettingsPage({ adminMode = false }) {
     setLoading(true);
     setMessage(null);
     try {
-      await api.post("/api/verify/check", { email, code: emailCode });
-      await api.post("/api/auth/bind-contact", { email });
+      await api.post("/api/auth/bind-contact", { email, code: emailCode });
       setMessage({ type: "success", text: "邮箱绑定成功" });
       setEmailCode("");
       const data = await api.get("/api/user/profile");

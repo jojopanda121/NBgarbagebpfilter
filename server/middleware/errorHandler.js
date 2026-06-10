@@ -40,4 +40,13 @@ function errorHandler(err, _req, res, _next) {
   });
 }
 
-module.exports = { errorHandler };
+/**
+ * async 路由包装器：Express 4 不会捕获 async handler 的 rejection
+ * （会变成 unhandledRejection 并触发进程级处理）。
+ * async 控制器一律用本函数包装，把异常导入 errorHandler。
+ */
+function asyncHandler(fn) {
+  return (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
+}
+
+module.exports = { errorHandler, asyncHandler };

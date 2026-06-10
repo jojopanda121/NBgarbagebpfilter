@@ -30,8 +30,6 @@ const apiRoutes = [
   ["/api/workspace-projects", "./routes/workspaceProjects"],
   ["/api/skills", "./routes/skills"],
   ["/api/teaser", "./routes/teaser"],
-  ["/api/hermes", "./routes/hermesTools"],
-  ["/api/hermes/curator", "./routes/hermesCurator"],
 ];
 
 function buildCorsOptions() {
@@ -88,9 +86,11 @@ function mountHealthRoute(app, getShutdownState) {
       });
     }
 
+    const { getLlmStats } = require("./services/llmService");
     return res.status(ok ? 200 : 503).json({
       status,
       model: getModelName(),
+      llm_stats: getLlmStats(),
       search: {
         provider: "minimax_coding_plan",
         configured: !!(config.minimaxCodePlanKey || config.minimaxApiKey),
@@ -141,7 +141,10 @@ function createApp({ getShutdownState = () => false } = {}) {
     contentSecurityPolicy: {
       directives: {
         defaultSrc: ["'self'"],
-        scriptSrc: ["'self'", "'unsafe-inline'"],
+        // script-src 不放行 unsafe-inline：CRA 构建已设 INLINE_RUNTIME_CHUNK=false
+        // （见 client/package.json build 脚本），无内联脚本。styleSrc 保留
+        // unsafe-inline——framer-motion / Recharts 运行时写内联样式，去掉会白屏。
+        scriptSrc: ["'self'"],
         styleSrc: ["'self'", "'unsafe-inline'"],
         imgSrc: ["'self'", "data:", "blob:"],
         connectSrc: ["'self'"],

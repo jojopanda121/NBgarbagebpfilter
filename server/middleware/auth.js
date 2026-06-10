@@ -7,7 +7,12 @@ const jwt = require("jsonwebtoken");
 const config = require("../config");
 const { getDb } = require("../db");
 
-/** 检查 jti 是否在吊销黑名单中（启动失败时返回 false，避免锁死） */
+// 安全检查 fail-closed：吊销/封禁检查依赖 DB，DB 故障时如果静默放行，
+// 等于"数据库一挂、所有已吊销 token 和被封禁用户全部复活"。
+// 故 DB 异常时抛出 DbCheckUnavailable，由调用方返回 503（拒绝而非放行）。
+class DbCheckUnavailable extends Error {}
+
+/** 检查 jti 是否在吊销黑名单中（DB 异常 → fail-closed 抛出） */
 function isRevoked(jti) {
   if (!jti) return false;
   try {
@@ -15,20 +20,22 @@ function isRevoked(jti) {
       .prepare("SELECT 1 FROM revoked_tokens WHERE jti = ? AND expires_at > datetime('now')")
       .get(jti);
     return !!row;
-  } catch {
-    return false;
+  } catch (err) {
+    console.error("[Auth] 吊销检查 DB 异常（fail-closed）:", err.message);
+    throw new DbCheckUnavailable(err.message);
   }
 }
 
-/** 查询用户基本状态（is_banned/role），DB 异常时返回 null 不锁死 */
+/** 查询用户基本状态（is_banned/role），DB 异常 → fail-closed 抛出 */
 function loadUserState(userId) {
   if (!userId) return null;
   try {
     return getDb()
       .prepare("SELECT id, is_banned, role FROM users WHERE id = ?")
       .get(userId);
-  } catch {
-    return null;
+  } catch (err) {
+    console.error("[Auth] 用户状态检查 DB 异常（fail-closed）:", err.message);
+    throw new DbCheckUnavailable(err.message);
   }
 }
 
@@ -58,6 +65,9 @@ function requireAuth(req, res, next) {
     };
     next();
   } catch (err) {
+    if (err instanceof DbCheckUnavailable) {
+      return res.status(503).json({ error: "服务暂时不可用，请稍后重试" });
+    }
     if (err.name === "TokenExpiredError") {
       return res.status(401).json({ error: "登录已过期，请重新登录" });
     }

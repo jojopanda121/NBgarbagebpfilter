@@ -86,9 +86,11 @@ function mountHealthRoute(app, getShutdownState) {
       });
     }
 
+    const { getLlmStats } = require("./services/llmService");
     return res.status(ok ? 200 : 503).json({
       status,
       model: getModelName(),
+      llm_stats: getLlmStats(),
       search: {
         provider: "minimax_coding_plan",
         configured: !!(config.minimaxCodePlanKey || config.minimaxApiKey),

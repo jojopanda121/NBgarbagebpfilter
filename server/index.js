@@ -45,9 +45,24 @@ function gracefulShutdown(signal) {
   shuttingDown = true;
 
   console.log(`${signal} received, shutting down gracefully (timeout=${GRACEFUL_TIMEOUT_MS}ms)...`);
+
+  // 1. 停止接收新连接；2. 等待在途后台分析收尾（LLM 成本已花，
+  //    腰斩=用户看到失败+平台白付钱）；3. 超时则放弃，由下次启动的
+  //    recoverStaleTasks 标记失败并退款。
   server.close(() => {
-    console.log("All connections closed, exiting...");
-    cleanupAndExit(0);
+    const inflightTasks = require("./runtime/inflightTasks");
+    const pending = inflightTasks.count();
+    if (pending === 0) {
+      console.log("All connections closed, exiting...");
+      return cleanupAndExit(0);
+    }
+    console.log(`等待 ${pending} 个在途分析任务收尾...`);
+    inflightTasks.waitForDrain(GRACEFUL_TIMEOUT_MS - 10_000).then((drained) => {
+      if (!drained) {
+        console.warn(`仍有 ${inflightTasks.count()} 个任务未完成，由下次启动恢复退款`);
+      }
+      cleanupAndExit(drained ? 0 : 1);
+    });
   });
 
   setTimeout(() => {
@@ -62,6 +77,9 @@ process.on("SIGINT", () => gracefulShutdown("SIGINT"));
 process.on("unhandledRejection", (reason) => {
   const err = reason instanceof Error ? reason : new Error(String(reason));
   console.error("[FATAL] Unhandled Rejection:", err.stack || err.message);
+  // 未处理的 Promise 拒绝意味着进程状态已不可信，按未捕获异常同等处理：
+  // 优雅收尾后退出，交由 PM2/Docker 重启。仅记日志会留下僵尸进程慢性劣化。
+  gracefulShutdown("unhandledRejection");
 });
 
 process.on("uncaughtException", (err) => {

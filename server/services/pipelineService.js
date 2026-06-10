@@ -662,9 +662,21 @@ async function runPipeline(bpText, onProgress, taskId = null, userId = null) {
 
   const { claimVerdicts, structuralResult, thinking, dimensionAnalysisResult, deepResearch } = agentBResult;
 
+  // ── 报告质量标记：降级不再静默，最终结果携带 quality.flags ──
+  const qualityFlags = [];
+  if (!deepResearch) qualityFlags.push("deep_research_unavailable");
+  if (!multiagent || multiagent.error || Object.keys(multiagent).length === 0) {
+    qualityFlags.push("multiagent_unavailable");
+  }
+  const failedVerifyCount = (claimVerdicts || []).filter(
+    (v) => v && v.ai_research === "核查失败，无法验证"
+  ).length;
+  if (failedVerifyCount > 0) qualityFlags.push(`claim_verify_partial:${failedVerifyCount}`);
+
   // Agent A 数据兜底：如果结构化评分 3 层 + 抢救全部失败，用 Agent A 提取的数据直接评分
   let validatedData;
   if (!structuralResult || !structuralResult.validated_data) {
+    qualityFlags.push("scoring_fallback_agent_a");
     logger.warn("[Pipeline] 结构化评分全部失败，启用 Agent A 数据兜底");
     onProgress({ type: "progress", stage: "scoring_fallback", percentage: 86, message: "正在整合分析数据..." });
     validatedData = {
@@ -703,6 +715,7 @@ async function runPipeline(bpText, onProgress, taskId = null, userId = null) {
     dimensionAnalysis = validatedData.dimension_analysis;
     logger.info("[Pipeline] 使用评分调用中的 dimension_analysis");
   } else {
+    qualityFlags.push("dimension_analysis_supplemented");
     // 兜底：补充调用（仅在两路都失败时触发）
     logger.warn("[Pipeline] dimension_analysis 两路均未获取，执行补充分析...");
     onProgress({ type: "progress", stage: "dim_analysis", percentage: 88, message: "正在生成维度详细分析..." });
@@ -724,6 +737,9 @@ async function runPipeline(bpText, onProgress, taskId = null, userId = null) {
       }
     } catch (err) {
       logger.warn("[Pipeline] dimension_analysis 补充调用失败:", err.message);
+    }
+    if (Object.keys(dimensionAnalysis).length === 0) {
+      qualityFlags.push("dimension_analysis_missing");
     }
   }
 
@@ -807,6 +823,9 @@ async function runPipeline(bpText, onProgress, taskId = null, userId = null) {
   return {
     success: true,
     pipeline_version: PIPELINE_VERSION,
+    // 降级显式化：degraded=true 表示报告部分内容由兜底路径生成，
+    // flags 枚举具体降级点（前端/管理端可据此提示用户或排查）
+    quality: { degraded: qualityFlags.length > 0, flags: qualityFlags },
     elapsed_seconds: parseFloat(elapsed),
     extracted_data: extractedData,
     validated_data: scoringInput,

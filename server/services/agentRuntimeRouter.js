@@ -19,7 +19,7 @@
 //   合规由网络层（专线 / VPN）与 Hermes 侧访问控制兜底，不在应用层削数据。
 // ============================================================
 
-const { flags, useHermes, canFallback } = require("../config/featureFlags");
+const { useHermes, canFallback } = require("../config/featureFlags");
 const hermesHealth = require("./hermesHealth");
 const hermes = require("./hermesClient");
 const fallbackLogger = require("./fallbackLogger");
@@ -45,7 +45,7 @@ const { TARGETS, REASONS, PHASES } = fallbackLogger;
  * @param {Function} args.sendEvent      —— (event, data) => bool
  */
 async function runWorkspaceConversation(args) {
-  const { userId, conv, signal, sendEvent } = args;
+  const { userId, conv, signal: _signal, sendEvent } = args;
   const conversationId = conv.id;
 
   // 1. 检查主开关

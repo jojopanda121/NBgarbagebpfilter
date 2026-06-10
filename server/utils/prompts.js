@@ -194,6 +194,10 @@ function buildStructuralPrompt(projectContext) {
 *第一维度：时机与天花板*
 - 客观检索 ${industry} 赛道的真实市场规模（TAM）和 CAGR
 - TAM 统一转换为百万人民币
+- 额外输出 TAM_Source 交代 TAM 怎么来的（让系统可复算/可分层）：
+  - type 从 {研报, 自下而上, 模型估计} **严格选一个**
+  - 若 type=自下而上：必须分别给 customer_count(目标客户数) 和 arpu(客单价,元/年) 两个数，系统会自己相乘
+  - 若 type=研报：给 source(报告名+年份)
 
 *第二维度：产品与壁垒*
 - 检索 ${industry} 行业内 ${product_name} 的真实竞品及行业排名
@@ -204,11 +208,32 @@ function buildStructuralPrompt(projectContext) {
   - 1-3：红海同质化，缺乏差异化
 - 基于核查的技术真实性重新评定 TRL 级别
 
+【harness 强约束 — 不要只报一个数，要给"带证据分层"的拆解】
+为了让 JS 端能复算、压制 BP 自报注水，除了上面两个整数，还必须额外输出：
+
+1) TRL_Evidence —— TRL 证据阶梯（逐级标注证据强度，不是只报终值）
+   - bp_claimed_trl：BP 自己声称/暗示的 TRL 级别（看不出就给 null）
+   - ladder：对关键里程碑逐条评估，每条 { level(1-9), status, evidence }
+     status 三档（**这是核心：必须如实区分"有证据"和"BP自吹"**）：
+       · verified —— 有第三方检索证据 / 上传材料（检测报告、交付验收、量产证据、客户实装）支撑
+       · claimed  —— 仅 BP 自报、无可核实证据
+       · absent   —— 该级未达成或无任何信息
+     evidence：≤80字写明依据或缺口。**禁止把仅 BP 自报的级别标成 verified。**
+   TRL 阶梯参考：L1-2 原理/概念，L3-4 实验室验证，L5-6 相关环境/中试，L7 真实环境/试点客户，L8-9 鉴定/首批商用/量产。
+
+2) Moat_Rubric —— 护城河拆成 4 个子因子（供应链咽喉由独立 skill 另算，这里不重复）
+   每个子因子 { score(0-100), evidence_tier(verified/claimed/absent), note(≤60字) }：
+     · differentiation     差异化/IP/独家数据：专利权利要求、独占数据、难复制的工程 know-how
+     · switching_cost      转换成本/客户锁定：迁移代价、深度集成、长约
+     · traction_position   已验证的客户/落地相对竞品的位置（以核查过的事实为准，非BP自报）
+     · competitive_density 竞争密度：检索到的竞品数量与强度，越不拥挤/越占位给越高分
+   evidence_tier 同上三档；无可核实证据时给 claimed 或 absent，**不要硬凑 verified**。
+
 *第三维度：资本效率与规模效应*
-- 输出 Industry_Capital_Score 和 Industry_Scale_Score（1-10）
-  - Capital: 8-10=纯软件/SaaS/轻资产, 5-7=软硬结合/中等资产, 1-4=重资产制造
-  - Scale: 8-10=强网络效应/平台效应, 5-7=规模经济明显, 1-4=线性增长/人力密集
-- 缺失时默认 6（能写进BP说明商业模式至少中等以上）
+- 不要直接打 1-10 分，改为判断"这是哪一类生意"（闭集枚举，系统按表换算成分数，更稳定）：
+  - Capital_Archetype 从 {纯软件SaaS, 平台双边市场, 软硬结合, 服务密集型, 硬件fab-lite, 重资产制造} **严格选一个**
+  - Scale_Mechanism 从 {双边网络效应, 数据飞轮, 规模经济, 品牌渠道复利, 线性人力交付} **严格选一个**
+- 仍保留 Industry_Capital_Score / Industry_Scale_Score（1-10）作兜底，但优先保证上面两个枚举准确
 
 *第四维度：团队基因（多因子评分）*
 - Founder_Exp_Years: 核心创始人赛道相关经验年数
@@ -242,7 +267,24 @@ function buildStructuralPrompt(projectContext) {
   "one_line_summary": "赛道+阶段+核心判断",
   "validated_data": {
     "TAM_Million_RMB": 5000, "CAGR": 20, "TRL": 6,
+    "TAM_Source": { "type": "自下而上", "customer_count": 500000, "arpu": 1200, "source": null },
+    "Capital_Archetype": "纯软件SaaS",
+    "Scale_Mechanism": "数据飞轮",
     "Competitor_Rank_Score": 6,
+    "TRL_Evidence": {
+      "bp_claimed_trl": 8,
+      "ladder": [
+        { "level": 4, "status": "verified", "evidence": "已有实验室原型，第三方报道证实" },
+        { "level": 7, "status": "claimed", "evidence": "BP 称已试点客户，但无可核实交付证据" },
+        { "level": 8, "status": "absent", "evidence": "未见量产/鉴定证据" }
+      ]
+    },
+    "Moat_Rubric": {
+      "differentiation":     { "score": 70, "evidence_tier": "verified", "note": "持有3项核心专利" },
+      "switching_cost":      { "score": 55, "evidence_tier": "claimed",  "note": "BP称深度集成，待核实" },
+      "traction_position":   { "score": 60, "evidence_tier": "verified", "note": "已签2家标杆客户" },
+      "competitive_density": { "score": 50, "evidence_tier": "verified", "note": "检索到约6家同类竞品" }
+    },
     "Industry_Capital_Score": 7, "Industry_Scale_Score": 7,
     "Founder_Exp_Years": 8,
     "Team_Experience_Score": 7,

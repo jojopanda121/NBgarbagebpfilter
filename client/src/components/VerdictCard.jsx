@@ -1,9 +1,9 @@
 import React, { memo } from "react";
 import {
-  getGradeInfo,
+  getGradeColor,
+  getGradeStyle,
   getScoreColor,
   getScoreBg,
-  getVerdict,
 } from "../utils/scoreHelpers";
 import ensureStringArray from "../utils/ensureStringArray";
 
@@ -11,10 +11,12 @@ const VerdictCard = memo(function VerdictCard({ result }) {
   if (!result?.verdict) return null;
   const verdict = result.verdict;
   const totalScore = verdict.total_score ?? 0;
-  const gradeInfo = getGradeInfo(totalScore);
-  const grade = verdict.grade || gradeInfo.grade;
-  const displayLabel = verdict.grade_label || gradeInfo.label;
-  const displayAction = verdict.grade_action || gradeInfo.action;
+  // 评级与文案以后端为唯一权威，前端只做样式映射
+  const grade = verdict.grade || "";
+  const gradeColor = getGradeColor(grade);
+  const gradeStyle = getGradeStyle(grade);
+  const displayLabel = verdict.grade_label || "";
+  const displayAction = verdict.grade_action || "";
 
   return (
     <div className="bg-white border border-[#D8DCE8] rounded-2xl p-5 sm:p-8">
@@ -36,18 +38,18 @@ const VerdictCard = memo(function VerdictCard({ result }) {
               <span className="text-xs text-[#8E9BB0]">/ 100</span>
             </div>
           </div>
-          <div className={`text-3xl font-black mt-2 ${gradeInfo.color}`}>{grade}</div>
+          <div className={`text-3xl font-black mt-2 ${gradeColor}`}>{grade}</div>
         </div>
 
         <div className="flex-1 text-center md:text-left">
           <h3 className="text-xl font-bold mb-2">评分结果</h3>
-          <div className={`text-2xl font-bold mb-2 ${gradeInfo.color}`}>
+          <div className={`text-2xl font-bold mb-2 ${gradeColor}`}>
             {grade} - {displayLabel}
           </div>
           <p className="text-base text-[#0F1C36] mb-3">
-            {verdict.verdict_summary || getVerdict(totalScore)}
+            {verdict.verdict_summary || ""}
           </p>
-          <div className={`p-4 rounded-xl text-sm leading-relaxed border ${gradeInfo.bg} ${gradeInfo.border} ${gradeInfo.color}`}>
+          <div className={`p-4 rounded-xl text-sm leading-relaxed border ${gradeStyle.bg} ${gradeStyle.border} ${gradeColor}`}>
             <span className="font-bold mr-2">行动建议:</span>
             {displayAction}
           </div>

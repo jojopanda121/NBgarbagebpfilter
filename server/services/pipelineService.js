@@ -7,6 +7,7 @@ const pLimit = require("p-limit");
 const { callLLM, callLLMWithThinking, callLLMWithSearch } = require("./llmService");
 const { extractJson, extractJsonArray, extractPartialResult, ensureStringArray } = require("../utils/jsonParser");
 const { scoreProject } = require("../scoring");
+const { mergeSpecialistEvidence } = require("../scoringEvidence");
 const logger = require("../utils/logger");
 const trackingService = require("./trackingService");
 const agentRuntimeRouter = require("./agentRuntimeRouter");
@@ -507,31 +508,87 @@ async function extractBPData(bpText, onProgress) {
  * @param {object} validatedData - LLM 结构化输出（含 validated_data）
  * @param {Array}  claimVerdicts - Agent B 声明核查结果数组（用于 S5 诚信度计算）
  */
-function calculateScoring(validatedData, claimVerdicts, onProgress) {
+// 把 validated_data 映射成 scoreProject 入参（原始与合并共用）
+function _toScoringInput(d, claimVerdicts) {
+  return {
+    TAM_Million_RMB: d.TAM_Million_RMB ?? d.TAM ?? 0,
+    CAGR: d.CAGR ?? 0,
+    TRL: d.TRL ?? 5,
+    Competitor_Rank_Score: d.Competitor_Rank_Score ?? 5,
+    TRL_Evidence: d.TRL_Evidence,
+    Moat_Rubric: d.Moat_Rubric,
+    Chokepoint_Score: d.Chokepoint_Score,
+    Industry_Capital_Score: d.Industry_Capital_Score ?? 5,
+    Industry_Scale_Score: d.Industry_Scale_Score ?? 5,
+    Founder_Exp_Years: d.Founder_Exp_Years ?? 3,
+    Team_Experience_Score: d.Team_Experience_Score,
+    Team_Domain_Match_Score: d.Team_Domain_Match_Score,
+    Team_Completeness_Score: d.Team_Completeness_Score,
+    Team_Track_Record_Score: d.Team_Track_Record_Score,
+    Team_Education_Score: d.Team_Education_Score,
+    claim_verdicts: d.claim_verdicts || claimVerdicts || [],
+  };
+}
+
+function calculateScoring(validatedData, claimVerdicts, onProgress, multiagent = null) {
   onProgress({ type: "progress", stage: "ai_done", percentage: 82, message: "AI研究完成，计算五维评分..." });
 
   const rawScoringData = validatedData.validated_data || {};
-  const scoringInput = {
-    TAM_Million_RMB: rawScoringData.TAM_Million_RMB ?? rawScoringData.TAM ?? 0,
-    CAGR: rawScoringData.CAGR ?? 0,
-    TRL: rawScoringData.TRL ?? 5,
-    Competitor_Rank_Score: rawScoringData.Competitor_Rank_Score ?? 5,
-    // S2 harness 输入（可选；缺失时 scoreProject 自动退回 legacy TRL/Rank）
-    TRL_Evidence: rawScoringData.TRL_Evidence,
-    Moat_Rubric: rawScoringData.Moat_Rubric,
-    Chokepoint_Score: rawScoringData.Chokepoint_Score,
-    Industry_Capital_Score: rawScoringData.Industry_Capital_Score ?? 5,
-    Industry_Scale_Score: rawScoringData.Industry_Scale_Score ?? 5,
-    Founder_Exp_Years: rawScoringData.Founder_Exp_Years ?? 3,
-    Team_Experience_Score: rawScoringData.Team_Experience_Score,
-    Team_Domain_Match_Score: rawScoringData.Team_Domain_Match_Score,
-    Team_Completeness_Score: rawScoringData.Team_Completeness_Score,
-    Team_Track_Record_Score: rawScoringData.Team_Track_Record_Score,
-    Team_Education_Score: rawScoringData.Team_Education_Score,
-    // S5 诚信度：直接传入声明核查结果，JS 端纯计算，不依赖 LLM 输出 Policy_Risk / Valuation_Gap
-    claim_verdicts: claimVerdicts || [],
-  };
-  const scoringResult = scoreProject(scoringInput);
+  const mode = scoringHarnessMode(); // off | shadow | on
+
+  // Plan A：把 orchestrator 5 专家已产的事实，用 JS 推导并双路合并进评分输入。
+  // 任一专家缺失/{} → 合并器逐字段 no-op 回退 Agent B，绝不 fail。
+  let enrichedData = null;
+  let specialistAudit = null;
+  if (mode !== "off" && multiagent && !multiagent.error) {
+    try {
+      const merged = mergeSpecialistEvidence({
+        agentBData: rawScoringData,
+        claimVerdicts: claimVerdicts || [],
+        specialists: {
+          founder_profile: multiagent.founder_profile,
+          competitor_analysis: multiagent.competitor_analysis,
+          financial_analysis: multiagent.financial_analysis,
+          valuation_analysis: multiagent.valuation_analysis,
+        },
+        // 主管线默认无 skill 咽喉分；workspace 路径运行 chokepoint_analysis 后才注入
+      });
+      enrichedData = merged.enrichedInput;
+      specialistAudit = merged.specialist_audit;
+    } catch (err) {
+      logger.warn("[Pipeline] 专家证据合并异常，回退 Agent B 原始评分:", err.message);
+    }
+  }
+
+  let scoringInput;
+  let scoringResult;
+  if (mode === "on" && enrichedData) {
+    // on：全量新分生效（harness S2 + 专家合并五维）
+    scoringInput = _toScoringInput(enrichedData, claimVerdicts);
+    scoringResult = scoreProject(scoringInput, { modeOverride: "on" });
+  } else {
+    // off / shadow / 无专家：live 走纯 legacy（force off 避免嵌套 shadow）
+    scoringInput = _toScoringInput(rawScoringData, claimVerdicts);
+    scoringResult = scoreProject(scoringInput, { modeOverride: "off" });
+    // shadow：把"全量新分"作为对照块附上，不影响 live
+    if (mode === "shadow" && enrichedData) {
+      const full = scoreProject(_toScoringInput(enrichedData, claimVerdicts), { modeOverride: "on" });
+      scoringResult.scoring_shadow = {
+        total_score: full.total_score,
+        grade: full.grade,
+        dimensions: {
+          timing_ceiling: full.dimensions.timing_ceiling.score,
+          product_moat: full.dimensions.product_moat.score,
+          business_validation: full.dimensions.business_validation.score,
+          team: full.dimensions.team.score,
+          external_risk: full.dimensions.external_risk.score,
+        },
+        delta_total: full.total_score - scoringResult.total_score,
+        specialist_audit: specialistAudit,
+      };
+    }
+  }
+  if (specialistAudit && !scoringResult.scoring_shadow) scoringResult.specialist_audit = specialistAudit;
 
   onProgress({ type: "progress", stage: "scoring", percentage: 86, message: `评分完成（${scoringResult.total_score}分 / ${scoringResult.grade}），生成报告...` });
 
@@ -623,7 +680,7 @@ async function runPipeline(bpText, onProgress, taskId = null, userId = null) {
   }
 
   // Step 3: 评分计算（CPU，瞬间完成）
-  const { scoringInput, scoringResult } = calculateScoring(validatedData, claimVerdicts, onProgress);
+  const { scoringInput, scoringResult } = calculateScoring(validatedData, claimVerdicts, onProgress, multiagent);
 
   // Step 4: 整合维度分析数据
   // 优先使用并行获取的专用维度分析结果，其次使用结构化评分中附带的，最后才用兜底

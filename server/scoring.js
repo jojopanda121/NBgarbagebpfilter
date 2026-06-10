@@ -383,8 +383,10 @@ function _s2HarnessMeta(detail) {
  *   Founder_Exp_Years + Team_*          → S4
  *   claim_verdicts                      → S5 (BP诚信度；harness on 时叠加 TRL gap verdict)
  */
-function scoreProject(data) {
-  const mode = scoringHarnessMode(); // off | shadow | on
+function scoreProject(data, opts = {}) {
+  // modeOverride 让调用方(如 pipeline 的专家合并 A/B)显式指定 off/shadow/on，
+  // 绕过全局 env，避免多层 shadow 嵌套。缺省时读全局开关。
+  const mode = opts.modeOverride || scoringHarnessMode(); // off | shadow | on
   const harnessAvailable = mode !== "off" && _hasHarnessInputs(data);
 
   // 三维共用（不受 harness 影响）

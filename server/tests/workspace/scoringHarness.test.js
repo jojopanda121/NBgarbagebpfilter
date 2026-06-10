@@ -152,4 +152,14 @@ describe("scoreProject — 灰度开关行为", () => {
     expect(r.scoring_shadow).toBeUndefined();
     expect(r.dimensions.product_moat.subtitle).toBe("TRL + 竞品排名");
   });
+
+  test("modeOverride 绕过全局开关（pipeline A/B 用）", () => {
+    process.env.SCORING_HARNESS = "shadow"; // 全局 shadow
+    const onR = scoreProject(harnessData, { modeOverride: "on" });
+    expect(onR.scoring_basis).toBe("harness");
+    expect(onR.scoring_shadow).toBeUndefined(); // on 不再附 shadow
+    const offR = scoreProject(harnessData, { modeOverride: "off" });
+    expect(offR.scoring_shadow).toBeUndefined();
+    expect(offR.dimensions.product_moat.subtitle).toBe("TRL + 竞品排名");
+  });
 });

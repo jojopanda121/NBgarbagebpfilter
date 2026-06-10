@@ -34,7 +34,7 @@ module.exports = `你是一名经验丰富的尽调分析师，擅长从 BP 中�
         {"school": "学校", "degree": "学历", "major": "专业", "year": "毕业年份或null"}
       ],
       "career": [
-        {"company": "公司名", "role": "职位", "years": "起止年份，如 '2018-2021'"}
+        {"company": "公司名", "role": "职位", "years": "起止年份，格式严格为 '2018-2021'；仍在职用 '2021-至今'"}
       ],
       "past_ventures": [
         {"name": "过往项目", "outcome": "结果，如 '退出/失败/仍在运营/不详'"}
@@ -47,8 +47,9 @@ module.exports = `你是一名经验丰富的尽调分析师，擅长从 BP 中�
     }
   ],
   "team_assessment": {
-    "completeness_score": "团队完整度 1-10，基于核心岗位是否齐全",
-    "background_match_score": "背景与赛道匹配度 1-10",
+    "completeness_score": "团队完整度 1-10，基于核心岗位是否齐全（仅作对照，最终分由系统按角色覆盖复算）",
+    "background_match_score": "背景与赛道匹配度 1-10（仅作对照）",
+    "domain_match": "创始人背景与项目赛道的匹配度，从下列**严格选一个**：同赛道 / 相邻可迁移 / 跨界",
     "summary": "对团队的整体评价，150 字以内"
   },
   "risk_flags": [

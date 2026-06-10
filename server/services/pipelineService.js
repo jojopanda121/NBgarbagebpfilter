@@ -605,12 +605,16 @@ function buildValuationComparison(validatedData, extractedData, scoringInput, sc
     const bpValuation = extractedData.BP_Valuation || 0;
     const bpRevenue = extractedData.BP_Revenue || 0;
     const bpMultiple = (bpValuation && bpRevenue) ? Math.round(bpValuation / bpRevenue) : 0;
+    // 兜底路径没有行业对标数据，溢价无法计算——如实标注数据不足，
+    // 不再伪装成"AI 知识库分析"输出恒为 0 的溢价百分比。
     valuationComparison = {
       bp_multiple: bpMultiple,
       industry_avg_multiple: 0,
-      overvalued_pct: scoringInput.Valuation_Gap ? Math.round((scoringInput.Valuation_Gap - 1) * 100) : 0,
+      overvalued_pct: 0,
       industry_name: extractedData.industry || "",
-      data_source: "MiniMax AI 知识库分析",
+      data_source: bpMultiple
+        ? "按 BP 自述估值/收入推算倍数；行业对标数据不足，溢价未计算"
+        : "估值/收入数据不足，无法计算",
       analysis: scoringResult.grade_action,
     };
   }
@@ -778,7 +782,6 @@ async function runPipeline(bpText, onProgress, taskId = null, userId = null) {
   // isAnonymized 默认 1，未来可通过用户设置控制
   (async () => {
     try {
-      const userId = null; // 此处无法获取 userId，由 analyzeController 传递
       dataLakeService.sinkAllAgentData({
         taskId,
         userId,

@@ -45,7 +45,8 @@ function normalizeInput(val, fallback, min, max) {
  *   因此对数函数设定在 TAM = 3000 时即可拿满 60 分（17.5 × log10(3000) ≈ 60.8），
  *   避免用百亿大市场的旧 TMT 时代标准误杀垂直赛道的优质项目。
  *
- * 公式: S1 = min(60, round(17.5 × log10(max(1, TAM)))) + min(40, CAGR)
+ * 公式: S1 = TAM分 + min(40, CAGR)
+ *   TAM分 = TAM 缺失时取中性 30，否则 min(60, round(17.5 × log10(TAM)))
  *
  * @param {number} TAM_Million_RMB - 目标可触达市场规模（百万人民币）
  * @param {number} CAGR - 行业预期年复合增长率（百分比数字，如 25 表示 25%）
@@ -55,15 +56,25 @@ function calculateDimension1_TimingAndCeiling(TAM_Million_RMB, CAGR) {
   const rawTAM = Number(TAM_Million_RMB);
   const rawCAGR = Number(CAGR);
 
-  // 数据缺失兜底：TAM 默认 1（对数安全），CAGR 默认 0
-  const tamVal = isNaN(rawTAM) || rawTAM < 1 ? 1 : rawTAM;
+  // 数据缺失兜底：
+  //   TAM 缺失（NaN 或 <1，含上游 `?? 0` 的占位 0）→ 中性 30 分（满分 60 的一半），
+  //   与 S3 缺失=50、S4 缺失≈60 的"中性兜底"哲学对齐。
+  //   旧实现 TAM 缺失按 1 计 → log10(1)=0 分，等于把"信息少"系统性判成"市场小"。
+  //   CAGR 缺失默认 0（增速无证据不给分，CAGR 是加分项而非基础盘）。
+  const tamMissing = isNaN(rawTAM) || rawTAM < 1;
   const cagrVal = isNaN(rawCAGR) ? 0 : Math.max(0, rawCAGR);
 
   // 对数压缩市场规模分（满分 60），线性增速分（满分 40）
-  const tamScore = Math.min(60, Math.round(17.5 * Math.log10(tamVal)));
+  const tamScore = tamMissing ? 30 : Math.min(60, Math.round(17.5 * Math.log10(rawTAM)));
   const cagrScore = Math.min(40, cagrVal);
 
   return clampScore(tamScore + cagrScore);
+}
+
+/** TAM 是否缺失（与 calculateDimension1 的判定保持一致，用于结果标记） */
+function isTamMissing(TAM_Million_RMB) {
+  const n = Number(TAM_Million_RMB);
+  return isNaN(n) || n < 1;
 }
 
 /**
@@ -97,7 +108,7 @@ function calculateDimension2_ProductAndMoat(TRL, Competitor_Rank_Score) {
 }
 
 /**
- * 计算模块3: 资本效率与规模效应 (S3, 权重 35%, 满分 100)
+ * 计算模块3: 资本效率与规模效应 (S3, 权重 20%, 满分 100)
  *
  * Agent Prompt 约束:
  *   针对早期项目缺乏财务数据的问题，改由模型基于顶级 VC 框架评估该"赛道/行业"的宏观属性。
@@ -245,11 +256,14 @@ function calculateDimension5_Integrity(claimVerdicts) {
  * Total_Score = (S1 + S2 + S3 + S4 + S5) / 5
  */
 function calculateTotalScore(S1, S2, S3, S4, S5) {
-  const s1 = Number(S1) || 0;
-  const s2 = Number(S2) || 0;
-  const s3 = Number(S3) || 0;
-  const s4 = Number(S4) || 0;
-  const s5 = Number(S5) || 70; // 无数据默认中性偏上
+  const num = (v, fallback) => (Number.isFinite(Number(v)) ? Number(v) : fallback);
+  const s1 = num(S1, 0);
+  const s2 = num(S2, 0);
+  const s3 = num(S3, 0);
+  const s4 = num(S4, 0);
+  // 注意：必须用 isFinite 判断而非 `|| 70`——S5 合法得 0 分（所有声明被证伪）
+  // 时绝不能被顶成 70。仅在 S5 缺失（undefined/NaN）时才取中性默认 70。
+  const s5 = num(S5, 70);
   return clampScore((s1 + s2 + s3 + s4 + s5) / 5);
 }
 
@@ -320,7 +334,10 @@ function _assemble(S1, S2, S3, S4, S5, data, s2meta) {
     dimensions: {
       timing_ceiling: {
         score: S1, label: "时机与天花板", subtitle: "TAM（百万人民币） + CAGR", weight: 20,
-        inputs: { TAM_Million_RMB: data.TAM_Million_RMB, CAGR: data.CAGR },
+        inputs: {
+          TAM_Million_RMB: data.TAM_Million_RMB, CAGR: data.CAGR,
+          ...(isTamMissing(data.TAM_Million_RMB) ? { TAM_missing: true } : {}),
+        },
       },
       product_moat: {
         score: S2, label: "产品与壁垒", weight: 20,

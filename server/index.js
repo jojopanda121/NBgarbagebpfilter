@@ -4,8 +4,6 @@ const { closeDb } = require("./db");
 const { getModelName } = require("./services/llmService");
 const { checkPythonDeps, bootDocServiceIfLocal } = require("./runtime/docService");
 const { startWorkspaceGc } = require("./runtime/workspaceGc");
-const hermesHealth = require("./services/hermesHealth");
-const { flags, useHermes } = require("./config/featureFlags");
 
 let shuttingDown = false;
 
@@ -24,17 +22,8 @@ const server = app.listen(PORT, () => {
   console.log(`  模型: ${getModelName()}`);
   console.log(`  数据库: ${config.dbPath}`);
   console.log(`  环境: ${config.env}`);
-  console.log(`  Agent runtime: ${flags.agentRuntime} (Hermes ${flags.hermesEnabled ? "enabled" : "disabled"}, fallback ${flags.hermesFallbackToLegacy ? "on" : "off"})`);
-  if (useHermes()) {
-    console.log(`  Hermes endpoint: ${flags.hermesBaseUrl}`);
-  }
   console.log("  通信模式: 异步任务轮询\n");
 });
-
-// Hermes 后台心跳（仅在启用时）
-if (flags.hermesEnabled) {
-  hermesHealth.start();
-}
 
 const HTTP_TIMEOUT = 2 * 60 * 1000;
 server.timeout = HTTP_TIMEOUT;
@@ -46,7 +35,6 @@ const GRACEFUL_TIMEOUT_MS = parseInt(process.env.GRACEFUL_SHUTDOWN_TIMEOUT_MS, 1
 
 function cleanupAndExit(code) {
   try { stopWorkspaceGc(); } catch {}
-  try { hermesHealth.stop(); } catch {}
   try { docService.stop(); } catch {}
   try { closeDb(); } catch {}
   process.exit(code);

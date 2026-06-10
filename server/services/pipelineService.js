@@ -10,7 +10,7 @@ const { scoreProject } = require("../scoring");
 const { mergeSpecialistEvidence } = require("../scoringEvidence");
 const logger = require("../utils/logger");
 const trackingService = require("./trackingService");
-const agentRuntimeRouter = require("./agentRuntimeRouter");
+const agentRuntime = require("./agentRuntime");
 const dataLakeService = require("./dataLakeService");
 const crossMatchService = require("./crossMatchService");
 const {
@@ -637,11 +637,11 @@ async function runPipeline(bpText, onProgress, taskId = null, userId = null) {
     // 主流水线：声明核查 + 评分数据 + 五维深度分析 + 深度研究
     runAgentBWithBatchingAndResearch(extractedData, truncatedText, onProgress),
 
-    // multiagent 现走 agentRuntimeRouter（Hermes 主路径，故障 fallback orchestrator）
+    // multiagent：本地 orchestrator 并行执行
     (async () => {
       try {
         onProgress({ type: "progress", stage: "multiagent_start", percentage: 33, message: "深度投研分析启动中..." });
-        const { runId, multiagent: ma } = await agentRuntimeRouter.runBpPipeline({
+        const { runId, multiagent: ma } = await agentRuntime.runBpPipeline({
           bpText, extractedData, taskId, userId,
         });
         const runtime = ma?.runtime || "legacy";

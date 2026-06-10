@@ -11,7 +11,7 @@ const { requireAuth } = require("../middleware/auth");
 const { getDb } = require("../db");
 const { getTask } = require("../services/taskService");
 const ws = require("../services/workspaceService");
-const agentRuntimeRouter = require("../services/agentRuntimeRouter");
+const agentRuntime = require("../services/agentRuntime");
 const { persistWorkspaceUpload } = require("../services/workspaceUploads");
 const { workspaceRateLimit, getWorkspaceUsage } = require("../middleware/workspaceQuota");
 const { enforceWorkspaceUploadLimits } = require("../services/workspaceUploadLimits");
@@ -249,10 +249,8 @@ router.post("/:taskId/messages", requireAuth, workspaceRateLimit, upload.single(
     ].join("\n") : "";
     const effectiveUserMsg = `${userMsg || "请分析附件"}${attachmentPrompt}`;
 
-    // ── Agent Runtime Router —— 主路径 Hermes，故障 fallback legacy ──
-    // 编排逻辑（routing / experts / host）全部移交 router 决定。
-    // 走 Hermes 还是 legacy 由 hermesHealth + feature flag 决定，并写 runtime_fallback_log。
-    await agentRuntimeRouter.runWorkspaceConversation({
+    // ── Agent Runtime —— routing / experts / host 三步链路 ──
+    await agentRuntime.runWorkspaceConversation({
       userId,
       conv,
       taskId,

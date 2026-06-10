@@ -139,7 +139,10 @@ function createApp({ getShutdownState = () => false } = {}) {
     contentSecurityPolicy: {
       directives: {
         defaultSrc: ["'self'"],
-        scriptSrc: ["'self'", "'unsafe-inline'"],
+        // script-src 不放行 unsafe-inline：CRA 构建已设 INLINE_RUNTIME_CHUNK=false
+        // （见 client/package.json build 脚本），无内联脚本。styleSrc 保留
+        // unsafe-inline——framer-motion / Recharts 运行时写内联样式，去掉会白屏。
+        scriptSrc: ["'self'"],
         styleSrc: ["'self'", "'unsafe-inline'"],
         imgSrc: ["'self'", "data:", "blob:"],
         connectSrc: ["'self'"],

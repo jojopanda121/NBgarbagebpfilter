@@ -145,10 +145,13 @@ if (config.env === "production") {
       console.error("\n[FATAL] ENABLE_PII_ENCRYPTION=1 但 ENCRYPTION_KEY 缺失或过短（要求 ≥ 32 字符）。\n");
       process.exit(1);
     }
-    if (!config.piiSalt || config.piiSalt.length < 16) {
-      console.error("\n[FATAL] ENABLE_PII_ENCRYPTION=1 但 PII_SALT 缺失或过短（要求 ≥ 16 字符）。\n");
-      process.exit(1);
-    }
+  }
+
+  // PII_SALT 生产环境必配：founderAgent / 数据沉淀对手机号/邮箱做加盐 hash，
+  // 默认盐等于没有盐（彩虹表可逆）。生成: openssl rand -hex 16
+  if (!config.piiSalt || config.piiSalt.length < 16) {
+    console.error("\n[FATAL] 生产环境必须设置 PII_SALT（≥ 16 字符）！\n  生成: PII_SALT=$(openssl rand -hex 16)\n");
+    process.exit(1);
   }
 }
 

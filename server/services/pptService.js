@@ -594,7 +594,7 @@ async function renderOnePagerPptx(onepagerJson) {
     try {
       const resp = await fetch(`${config.docServiceUrl}/generate/onepager`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: require("./docServiceAuth").docServiceHeaders({ "Content-Type": "application/json" }),
         body: JSON.stringify(renderJson),
       });
       if (resp.ok) return Buffer.from(await resp.arrayBuffer());

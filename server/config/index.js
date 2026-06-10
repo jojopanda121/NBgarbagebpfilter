@@ -65,6 +65,9 @@ const config = {
   docServiceUrl:
     process.env.DOC_SERVICE_URL ||
     ((process.env.NODE_ENV || "development") === "development" ? "http://localhost:8001" : ""),
+  // doc-service 共享密钥：两端同时配置后，所有 doc-service 端点要求
+  // Authorization: Bearer <token>，防止端口误暴露时被白嫖解析/渲染算力
+  docServiceToken: process.env.DOC_SERVICE_TOKEN || "",
 
   // Object Storage (OSS/S3)
   ossEndpoint: process.env.OSS_ENDPOINT || "",

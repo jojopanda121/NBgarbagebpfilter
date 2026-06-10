@@ -19,11 +19,31 @@ import tempfile
 from pathlib import Path
 from typing import List, Optional
 
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
 app = FastAPI(title="GarbageBPFilter Doc Service", version="1.0.0")
+
+# ── 共享密钥认证 ─────────────────────────────────────────────
+# Node 主服务与本服务两端配置同一 DOC_SERVICE_TOKEN 后，
+# 除 /health 外的所有端点要求 Authorization: Bearer <token>。
+# 未配置时跳过校验（向后兼容本地开发），生产建议必配。
+DOC_SERVICE_TOKEN = os.environ.get("DOC_SERVICE_TOKEN", "")
+
+# 资源保护上限（可通过环境变量覆盖）
+MAX_UPLOAD_BYTES = int(os.environ.get("DOC_MAX_UPLOAD_BYTES", str(50 * 1024 * 1024)))  # 与 Node 侧 50MB 对齐
+MAX_PDF_PAGES = int(os.environ.get("DOC_MAX_PDF_PAGES", "300"))
+MAX_OCR_PAGES = int(os.environ.get("DOC_MAX_OCR_PAGES", "40"))  # OCR 远贵于文本提取，单独限制
+
+
+@app.middleware("http")
+async def _require_token(request: Request, call_next):
+    if DOC_SERVICE_TOKEN and request.url.path != "/health":
+        auth = request.headers.get("authorization", "")
+        if auth != f"Bearer {DOC_SERVICE_TOKEN}":
+            return JSONResponse(status_code=401, content={"detail": "unauthorized"})
+    return await call_next(request)
 
 # 在应用启动时初始化 OCR 引擎（避免每次请求重新加载模型）
 _ocr_engine = None
@@ -42,6 +62,13 @@ def extract_pdf_text(file_path: str) -> str:
     import fitz  # PyMuPDF
 
     doc = fitz.open(file_path)
+    if doc.page_count > MAX_PDF_PAGES:
+        page_count = doc.page_count
+        doc.close()
+        raise HTTPException(
+            status_code=422,
+            detail=f"PDF 页数过多（{page_count} 页，上限 {MAX_PDF_PAGES} 页），请精简后重新上传",
+        )
     pages_text = []
 
     for page in doc:
@@ -60,14 +87,17 @@ def extract_pdf_text(file_path: str) -> str:
 
 
 def extract_pdf_ocr(file_path: str) -> str:
-    """OCR 提取 PDF 文本"""
+    """OCR 提取 PDF 文本（OCR 成本远高于文本提取，仅处理前 MAX_OCR_PAGES 页）"""
     import fitz
 
     ocr = _get_ocr()
     doc = fitz.open(file_path)
     pages_text = []
 
-    for page in doc:
+    for idx, page in enumerate(doc):
+        if idx >= MAX_OCR_PAGES:
+            pages_text.append(f"...（扫描件 OCR 仅处理前 {MAX_OCR_PAGES} 页，其余页已跳过）")
+            break
         pix = page.get_pixmap(dpi=200)
         img_bytes = pix.tobytes("png")
 
@@ -189,12 +219,31 @@ async def extract_text(
     if mode not in ("pdf", "pptx", "docx", "xlsx", "csv"):
         raise HTTPException(status_code=400, detail="不支持的文件类型，仅支持 pdf/pptx/docx/xlsx/csv")
 
-    # 保存到临时文件
+    # 流式落盘 + 大小上限：不把整个文件读进内存，超限立即终止
     suffix = f".{mode}"
+    size = 0
+    too_large = False
     with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-        content = await file.read()
-        tmp.write(content)
         tmp_path = tmp.name
+        while True:
+            chunk = await file.read(1024 * 1024)
+            if not chunk:
+                break
+            size += len(chunk)
+            if size > MAX_UPLOAD_BYTES:
+                too_large = True
+                break
+            tmp.write(chunk)
+
+    if too_large:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        raise HTTPException(
+            status_code=413,
+            detail=f"文件过大（上限 {MAX_UPLOAD_BYTES // (1024 * 1024)}MB）",
+        )
 
     try:
         if mode == "pptx":

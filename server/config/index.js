@@ -42,20 +42,17 @@ const config = {
   // Uploads (公开上传：头像、站点图片)。容器中映射到 /app/data/uploads，与数据卷一同持久化。
   uploadsDir: process.env.UPLOADS_DIR || require("path").join(__dirname, "..", "..", "data", "uploads"),
 
-  // MiniMax LLM
-  minimaxApiKey: process.env.MINIMAX_API_KEY || "",
-  minimaxModel: process.env.MINIMAX_MODEL || "MiniMax-M2.7",
+  // Kimi / Moonshot LLM
+  kimiApiKey: process.env.KIMI_API_KEY || process.env.MOONSHOT_API_KEY || "",
+  kimiModel: process.env.KIMI_MODEL || "kimi-k2.6",
   // P2-4 per-skill 模型路由 (可选)：
   //   heavy  → deck / memo / investmentDeckPptx / icQuestions 等重任务
   //   light  → snapshot / brief / one-pager / 语义抽样审计 等轻任务
   //   default→ 其他所有 skill（兜底）
-  // 任一字段未配置时回落到 minimaxModel，保持单模型行为不变。
-  minimaxModelHeavy: process.env.MINIMAX_MODEL_HEAVY || "",
-  minimaxModelLight: process.env.MINIMAX_MODEL_LIGHT || "",
-  minimaxImageModel: process.env.MINIMAX_IMAGE_MODEL || "image-01",
-  minimaxCodePlanKey: process.env.MINIMAX_CODE_PLAN_KEY || process.env.MINIMAX_CODING_API_KEY || "",
-  minimaxApiHost: process.env.MINIMAX_API_HOST || "https://api.minimaxi.com",
-  minimaxSearchRegion: process.env.MINIMAX_SEARCH_REGION || "",
+  // 任一字段未配置时回落到 kimiModel，保持单模型行为不变。
+  kimiModelHeavy: process.env.KIMI_MODEL_HEAVY || "",
+  kimiModelLight: process.env.KIMI_MODEL_LIGHT || "",
+  kimiApiHost: process.env.KIMI_API_HOST || process.env.MOONSHOT_BASE_URL || "https://api.moonshot.ai/v1",
 
   // 企查查 Agent（企业追踪数据源）
   qccApiKey: process.env.QCC_API_KEY || "",
@@ -122,9 +119,9 @@ if (config.env === "production") {
     process.exit(1);
   }
 
-  if (!config.minimaxApiKey) {
+  if (!config.kimiApiKey) {
     console.error(
-      "\n[FATAL] 生产环境必须设置 MINIMAX_API_KEY 环境变量！\n"
+      "\n[FATAL] 生产环境必须设置 KIMI_API_KEY 或 MOONSHOT_API_KEY 环境变量！\n"
     );
     process.exit(1);
   }

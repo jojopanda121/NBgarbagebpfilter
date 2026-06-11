@@ -20,12 +20,27 @@ class CompetitorAgent extends BaseAgent {
     ].join("");
   }
 
+  buildSearchQueries({ extractedData }) {
+    const company = extractedData?.company_name || "";
+    const industry = extractedData?.industry || "";
+    const product = extractedData?.product_name || "";
+    return [
+      `${industry} ${product} 竞品 融资 估值 市场份额`,
+      `${industry} 上市公司 竞品 PS PE EV EBITDA`,
+      company ? `${company} 竞品 对标 替代方案 融资` : "",
+    ].filter(Boolean);
+  }
+
   parseResponse(rawText) {
     const parsed = extractJson(rawText);
     if (!parsed) throw new Error("CompetitorAgent JSON 解析失败");
     return {
       userOutput: parsed,
-      dataPayload: { competitors: parsed.competitors || [], track_definition: parsed.track_definition },
+      dataPayload: {
+        competitors: parsed.competitors || [],
+        public_company_benchmarks: parsed.public_company_benchmarks || [],
+        track_definition: parsed.track_definition,
+      },
     };
   }
 }

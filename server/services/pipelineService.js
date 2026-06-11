@@ -75,6 +75,72 @@ function classifyIndustry(industryStr) {
   return classifyIndustryMulti(industryStr)[0];
 }
 
+function buildDefaultVerificationHarness(claim = {}, extractedData = {}) {
+  const category = String(claim.category || "other").toLowerCase();
+  const company = extractedData.company_name || "目标公司";
+  const industry = extractedData.industry || "所在赛道";
+  const claimText = claim.claim || claim.original_claim || "";
+
+  let preferredSources = ["web_search", "uploaded_material"];
+  let expectedFields = ["来源", "年份", "口径"];
+  let sourceType = claim.source_type || "bp_self_report";
+
+  if (["financial", "valuation"].includes(category)) {
+    preferredSources = ["ifind", "annual_report", "exchange_filing", "web_search", "uploaded_material"];
+    expectedFields = ["收入", "毛利率", "净利润", "融资金额", "估值", "年份", "口径"];
+    sourceType = category === "financial" ? "financial_statement" : "market_report";
+  } else if (["legal_compliance", "team"].includes(category)) {
+    preferredSources = ["tianyancha", "business_registry", "law", "patent", "web_search"];
+    expectedFields = ["注册资本", "法定代表人", "股东", "司法风险", "行政处罚", "知识产权"];
+    sourceType = category === "legal_compliance" ? "legal" : "public_registry";
+  } else if (["tech", "product"].includes(category)) {
+    preferredSources = ["scholar", "arxiv", "patent", "web_search", "uploaded_material"];
+    expectedFields = ["技术指标", "专利", "论文", "客户案例", "产品参数"];
+    sourceType = "academic_or_patent";
+  } else if (["market", "competition", "macro_academic"].includes(category)) {
+    preferredSources = ["ifind", "imf", "world_bank", "scholar", "web_search"];
+    expectedFields = ["市场规模", "CAGR", "竞品名单", "政策", "统计口径", "年份"];
+    sourceType = category === "macro_academic" ? "news_or_policy" : "market_report";
+  }
+
+  return {
+    preferred_sources: preferredSources,
+    kimi_research_prompt:
+      `请核验 ${company}（${industry}）BP 声明：“${claimText}”。` +
+      "优先尝试同花顺/iFinD、天眼查、工商信息、财报、IMF、Scholar、arXiv、元典法律等可用能力；" +
+      "若专业数据不可用，请用公开网页/用户材料/自身知识辅助，并明确标注缺口和置信度。",
+    expected_fields: expectedFields,
+    failure_mode: "标注为 BP 自报或待核实，进入尽调清单，不得编造。",
+    _generated: true,
+    source_type: sourceType,
+  };
+}
+
+function normalizeKeyClaimsForResearch(extractedData = {}) {
+  const claims = Array.isArray(extractedData.key_claims) ? extractedData.key_claims : [];
+  extractedData.key_claims = claims.map((claim) => {
+    const normalized = { ...claim };
+    if (!normalized.priority) {
+      normalized.priority = /估值|收入|ARR|毛利|利润|注册|诉讼|处罚|专利|第一|唯一|市占率|融资|客户/i.test(normalized.claim || "")
+        ? "high"
+        : "medium";
+    }
+    if (!normalized.verification_harness || typeof normalized.verification_harness !== "object") {
+      const harness = buildDefaultVerificationHarness(normalized, extractedData);
+      normalized.verification_harness = {
+        preferred_sources: harness.preferred_sources,
+        kimi_research_prompt: harness.kimi_research_prompt,
+        expected_fields: harness.expected_fields,
+        failure_mode: harness.failure_mode,
+        _generated: true,
+      };
+      normalized.source_type = normalized.source_type || harness.source_type;
+    }
+    return normalized;
+  });
+  return extractedData;
+}
+
 /** 压缩声明核查结果 */
 function compressVerdicts(verdicts) {
   if (!Array.isArray(verdicts)) return [];
@@ -83,8 +149,12 @@ function compressVerdicts(verdicts) {
     (a, b) => (severityOrder[a.severity] ?? 1) - (severityOrder[b.severity] ?? 1)
   );
   return sorted.slice(0, 15).map(
-    ({ category, original_claim, verdict, diff, severity, score_impact }) => ({
+    ({
       category, original_claim, verdict, diff, severity, score_impact,
+      evidence_status, attempted_sources, source_boundary, missing_fields, next_dd_action,
+    }) => ({
+      category, original_claim, verdict, diff, severity, score_impact,
+      evidence_status, attempted_sources, source_boundary, missing_fields, next_dd_action,
     })
   );
 }
@@ -310,7 +380,7 @@ async function runAgentBWithBatchingAndResearch(extractedData, bpText, onProgres
       }
     })(), "五维分析"),
 
-    // Task C: 深度研究报告（启用 MiniMax M2 web_search 工具，失败自动降级；并加 8min 任务级超时）
+    // Task C: 深度研究报告（启用 Kimi web_search 工具，失败自动降级；并加 8min 任务级超时）
     withTaskTimeout((async () => {
       try {
         const { text, searchUsed } = await callLLMWithSearch(
@@ -498,6 +568,7 @@ async function extractBPData(bpText, onProgress) {
       category: q.dimension || "other", claim: q.query || "", source_in_bp: "BP中",
     }));
   }
+  normalizeKeyClaimsForResearch(extractedData);
 
   const claimCount = (extractedData.key_claims || []).length;
   onProgress({ type: "progress", stage: "data_done", percentage: 28, message: `数据提取完成，共 ${claimCount} 条声明，启动AI研究...` });
@@ -600,8 +671,38 @@ function calculateScoring(validatedData, claimVerdicts, onProgress, multiagent =
 /**
  * Step 3: 构建估值对比数据
  */
-function buildValuationComparison(validatedData, extractedData, scoringInput, scoringResult) {
+function buildValuationComparison(validatedData, extractedData, scoringInput, scoringResult, multiagent = null) {
   let valuationComparison = validatedData.valuation_comparison;
+  const valuationAgent = multiagent?.valuation_analysis || null;
+  const valuationTemp = valuationAgent?.valuation_temperature || null;
+  const peerCompanies = Array.isArray(valuationAgent?.peer_public_companies)
+    ? valuationAgent.peer_public_companies
+    : [];
+  const finiteNumber = (value) => {
+    if (value === null || value === undefined || value === "") return null;
+    const n = Number(value);
+    return Number.isFinite(n) ? n : null;
+  };
+
+  if (valuationTemp || peerCompanies.length > 0) {
+    const subjectPs = finiteNumber(valuationTemp?.subject_ps_multiple);
+    const medianPs = finiteNumber(valuationTemp?.industry_median_ps);
+    const overvaluedPct = subjectPs != null && medianPs != null && medianPs > 0
+      ? Math.round(((subjectPs - medianPs) / medianPs) * 100)
+      : 0;
+    return {
+      ...(valuationComparison || {}),
+      bp_multiple: subjectPs != null ? subjectPs : (valuationComparison?.bp_multiple || 0),
+      industry_avg_multiple: medianPs != null ? medianPs : (valuationComparison?.industry_avg_multiple || 0),
+      overvalued_pct: overvaluedPct,
+      industry_name: extractedData.industry || valuationComparison?.industry_name || "",
+      comparable_companies: peerCompanies,
+      temperature: valuationTemp?.temperature || null,
+      temperature_reason: valuationTemp?.temperature_reason || null,
+      data_source: valuationTemp?.source_boundary || "ValuationAgent Kimi 估值温度计",
+      analysis: valuationAgent?.verdict?.summary || valuationComparison?.analysis || scoringResult.grade_action,
+    };
+  }
 
   if (!valuationComparison || !valuationComparison.bp_multiple) {
     const bpValuation = extractedData.BP_Valuation || 0;
@@ -743,7 +844,7 @@ async function runPipeline(bpText, onProgress, taskId = null, userId = null) {
     }
   }
 
-  const valuationComparison = buildValuationComparison(validatedData, extractedData, scoringInput, scoringResult);
+  const valuationComparison = buildValuationComparison(validatedData, extractedData, scoringInput, scoringResult, multiagent);
   const verdict = buildVerdictResponse(scoringResult, structuralResult, validatedData, dimensionAnalysis, valuationComparison);
 
   const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
@@ -840,7 +941,7 @@ async function runPipeline(bpText, onProgress, taskId = null, userId = null) {
     project_location: projectLocation,
     search_summary: {
       enabled: true, mock: false, total_results: 0,
-      queries_count: (extractedData.key_claims || []).length, provider: "minimax_builtin_knowledge",
+      queries_count: (extractedData.key_claims || []).length, provider: "kimi_web_search",
     },
   };
 }

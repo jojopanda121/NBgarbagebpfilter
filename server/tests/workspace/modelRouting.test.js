@@ -12,25 +12,17 @@ describe("P2-4 per-skill 模型路由", () => {
   beforeEach(() => {
     jest.resetModules();
     jest.doMock("../../config", () => ({
-      minimaxApiKey: "test-key",
-      minimaxApiHost: "https://api.minimax.test",
-      minimaxModel: "default-model",
-      minimaxModelHeavy: "heavy-model",
-      minimaxModelLight: "light-model",
+      kimiApiKey: "test-key",
+      kimiApiHost: "https://api.moonshot.test/v1",
+      kimiModel: "default-model",
+      kimiModelHeavy: "heavy-model",
+      kimiModelLight: "light-model",
     }));
-    jest.doMock("@anthropic-ai/sdk", () => {
-      class Anthropic {
-        constructor() { this.messages = { create: async () => ({ content: [] }), stream: () => null }; }
-      }
-      Anthropic.default = Anthropic;
-      return Anthropic;
-    });
     llm = require("../../services/llmService");
   });
 
   afterEach(() => {
     jest.dontMock("../../config");
-    jest.dontMock("@anthropic-ai/sdk");
     jest.resetModules();
   });
 
@@ -73,21 +65,15 @@ describe("P2-4 模型路由 · 未配置 heavy/light 时回落 default", () => {
   beforeEach(() => {
     jest.resetModules();
     jest.doMock("../../config", () => ({
-      minimaxApiKey: "test-key",
-      minimaxApiHost: "https://api.minimax.test",
-      minimaxModel: "only-default",
-      minimaxModelHeavy: "", // 未配
-      minimaxModelLight: "", // 未配
+      kimiApiKey: "test-key",
+      kimiApiHost: "https://api.moonshot.test/v1",
+      kimiModel: "only-default",
+      kimiModelHeavy: "", // 未配
+      kimiModelLight: "", // 未配
     }));
-    jest.doMock("@anthropic-ai/sdk", () => {
-      class Anthropic { constructor() { this.messages = { create: async () => ({ content: [] }) }; } }
-      Anthropic.default = Anthropic;
-      return Anthropic;
-    });
   });
   afterEach(() => {
     jest.dontMock("../../config");
-    jest.dontMock("@anthropic-ai/sdk");
     jest.resetModules();
   });
 

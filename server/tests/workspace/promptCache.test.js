@@ -82,33 +82,29 @@ describe("P2-3 prompt caching · llmService cache_control 注入", () => {
   beforeEach(() => {
     capturedRequests = [];
     jest.resetModules();
-    jest.doMock("@anthropic-ai/sdk", () => {
-      class Anthropic {
-        constructor() {
-          this.messages = {
-            create: async (req) => {
-              capturedRequests.push(req);
-              return { content: [{ type: "text", text: "{}" }] };
-            },
-            stream: () => { throw new Error("not used"); },
-          };
-        }
-      }
-      Anthropic.default = Anthropic;
-      return Anthropic;
-    });
-    // 用 fake config 跳过 ensureMinimaxConfigured 校验
+    jest.doMock("../../utils/kimiClient", () => ({
+      createKimiCompatClient: () => ({
+        messages: {
+          create: async (req) => {
+            capturedRequests.push(req);
+            return { content: [{ type: "text", text: "{}" }] };
+          },
+          stream: () => { throw new Error("not used"); },
+        },
+      }),
+    }));
+    // 用 fake config 跳过 ensureKimiConfigured 校验
     jest.doMock("../../config", () => ({
-      minimaxApiKey: "test-key",
-      minimaxApiHost: "https://api.minimax.test",
-      minimaxModel: "test-model",
+      kimiApiKey: "test-key",
+      kimiApiHost: "https://api.moonshot.test/v1",
+      kimiModel: "test-model",
     }));
     llmService = require("../../services/llmService");
   });
 
   afterEach(() => {
     jest.resetModules();
-    jest.dontMock("@anthropic-ai/sdk");
+    jest.dontMock("../../utils/kimiClient");
     jest.dontMock("../../config");
   });
 

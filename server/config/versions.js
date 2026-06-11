@@ -13,6 +13,6 @@
 // 用户重新分析会按新逻辑重跑（正常消耗额度）。
 // ============================================================
 
-const PIPELINE_VERSION = "v4.3.0";
+const PIPELINE_VERSION = "v4.4.0";
 
 module.exports = { PIPELINE_VERSION };

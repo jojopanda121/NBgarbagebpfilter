@@ -1,13 +1,13 @@
 // ============================================================
 // server/services/webSearchService.js
 //
-// Server-side MiniMax Coding Plan search for workspace agents.
+// Server-side Kimi official $web_search builtin tool for workspace agents.
 // Keep search execution outside model-visible text so agents do not leak
 // "I will call the search tool" messages into the chat.
 // ============================================================
 
 const config = require("../config");
-const { resolveMinimaxSearchEndpoint: buildMinimaxSearchEndpoint } = require("../utils/minimaxEndpoints");
+const { resolveKimiChatEndpoint } = require("../utils/kimiEndpoints");
 
 function cleanQuery(q = "") {
   return String(q)
@@ -36,69 +36,72 @@ function buildSearchQueries(agentName, userMsg = "", projectCtx = "") {
   ].map(cleanQuery).filter(Boolean);
 }
 
-function getMinimaxSearchKey() {
-  const key = (config.minimaxCodePlanKey || "").trim();
-  if (key) return key;
-  // OpenClaw documents MINIMAX_API_KEY as a compatibility fallback when it
-  // already points at a coding-plan token.
-  return (config.minimaxApiKey || "").trim();
+function getKimiSearchKey() {
+  return (config.kimiApiKey || "").trim();
 }
 
-function resolveMinimaxSearchEndpoint() {
-  return buildMinimaxSearchEndpoint(config.minimaxApiHost);
+function resolveKimiWebSearchEndpoint() {
+  return resolveKimiChatEndpoint(config.kimiApiHost);
 }
 
-function normalizeMinimaxResults(data) {
-  const baseResp = data?.base_resp;
-  if (baseResp && baseResp.status_code != null && baseResp.status_code !== 0) {
-    throw new Error(`MiniMax Search API 错误 ${baseResp.status_code}: ${baseResp.status_msg || "unknown"}`);
-  }
-  const organic = Array.isArray(data?.organic)
-    ? data.organic
-    : Array.isArray(data?.results)
-      ? data.results
-      : Array.isArray(data?.data?.organic)
-        ? data.data.organic
-        : [];
-  return organic.slice(0, 8).map((item) => ({
-    title: item.title || item.name || "",
-    url: item.link || item.url || "",
-    snippet: item.snippet || item.summary || item.description || "",
-    source: "minimax",
-    date: item.date || item.published_at || "",
-  }));
+function normalizeKimiResult(query, output, usage = null) {
+  if (!output) return [];
+  return [{
+    title: "Kimi $web_search result",
+    url: "",
+    snippet: String(output),
+    source: "kimi_web_search",
+    usage,
+    date: "",
+    query,
+  }];
 }
 
-async function searchWithMinimax(query, count = 5) {
-  const key = getMinimaxSearchKey();
+async function searchWithKimi(query) {
+  const key = getKimiSearchKey();
   if (!key || /你的|your|example|placeholder/i.test(key)) return [];
-  const endpoint = resolveMinimaxSearchEndpoint();
-  const headers = {
-    Authorization: `Bearer ${key}`,
-    "Content-Type": "application/json",
-    "MM-API-Source": "GarbageBPFilter-Workspace",
-  };
+  const endpoint = resolveKimiWebSearchEndpoint();
+  const headers = { Authorization: `Bearer ${key}`, "Content-Type": "application/json" };
+  const tools = [{ type: "builtin_function", function: { name: "$web_search" } }];
+  const messages = [
+    { role: "system", content: "你是 Kimi。请使用联网搜索核验用户问题，并返回中文、可用于投研判断的简洁事实摘要。" },
+    { role: "user", content: query },
+  ];
 
-  let resp = await fetch(endpoint, {
-    method: "POST",
-    headers,
-    body: JSON.stringify({ q: query }),
-  });
-  // Some MiniMax Coding Plan-compatible tools accept "query"; retry once for
-  // compatibility without introducing a second provider.
-  if (resp.status === 400 || resp.status === 422) {
-    resp = await fetch(endpoint, {
+  for (let round = 0; round < 3; round++) {
+    const resp = await fetch(endpoint, {
       method: "POST",
       headers,
-      body: JSON.stringify({ query, count }),
+      body: JSON.stringify({
+        model: config.kimiModel || "kimi-k2.6",
+        messages,
+        tools,
+        thinking: { type: "disabled" },
+        max_tokens: 4096,
+      }),
     });
+    if (!resp.ok) {
+      const text = await resp.text().catch(() => "");
+      throw new Error(`Kimi $web_search 失败 (${resp.status}): ${text.slice(0, 160)}`);
+    }
+    const data = await resp.json();
+    const choice = data?.choices?.[0] || {};
+    const message = choice.message || {};
+    if (choice.finish_reason !== "tool_calls") {
+      return normalizeKimiResult(query, message.content || "", data.usage || null);
+    }
+    messages.push(message);
+    for (const toolCall of message.tool_calls || []) {
+      messages.push({
+        role: "tool",
+        tool_call_id: toolCall.id,
+        name: toolCall.function?.name || "$web_search",
+        content: toolCall.function?.arguments || "{}",
+      });
+    }
   }
-  if (!resp.ok) {
-    const text = await resp.text().catch(() => "");
-    throw new Error(`MiniMax Search 失败 (${resp.status}): ${text.slice(0, 160)}`);
-  }
-  const data = await resp.json();
-  return normalizeMinimaxResults(data);
+
+  throw new Error("Kimi $web_search 未在 3 轮内返回最终结果");
 }
 
 async function runWebSearch(queries = []) {
@@ -106,7 +109,7 @@ async function runWebSearch(queries = []) {
   const results = [];
   for (const query of unique) {
     try {
-      const items = await searchWithMinimax(query, 5);
+      const items = await searchWithKimi(query);
       for (const item of items) results.push({ query, ...item });
     } catch (err) {
       console.warn("[WebSearch] 查询失败:", query, err.message);
@@ -118,8 +121,8 @@ async function runWebSearch(queries = []) {
 function formatSearchContext(results = []) {
   if (!results.length) return "";
   return [
-    "# 后端实时检索结果",
-    "以下结果由服务端搜索工具取得。请只把可核实事实融入结论，不要向用户描述工具调用过程。",
+    "# 后端实时检索结果（Kimi web_search）",
+    "以下结果由服务端 Kimi 官方 $web_search 内置工具取得。请综合成投研判断，不要向用户描述工具调用过程。",
     ...results.map((r, idx) => [
       `## 结果 ${idx + 1}`,
       `查询: ${r.query}`,
@@ -134,5 +137,6 @@ module.exports = {
   buildSearchQueries,
   runWebSearch,
   formatSearchContext,
-  resolveMinimaxSearchEndpoint,
+  resolveKimiWebSearchEndpoint,
+  searchWithKimi,
 };

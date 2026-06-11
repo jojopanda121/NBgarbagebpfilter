@@ -21,7 +21,21 @@ function getIndustryBenchmarks(industry, stage) {
 
 class ValuationAgent extends BaseAgent {
   constructor() {
-    super({ name: "valuation", systemPrompt: PROMPT, maxTokens: 6144 });
+    super({ name: "valuation", systemPrompt: PROMPT, maxTokens: 10000, useSearch: true });
+  }
+
+  buildSearchQueries({ extractedData }) {
+    const company = extractedData?.company_name || "";
+    const industry = extractedData?.industry || "";
+    const stage = extractedData?.funding_round || "";
+    const revenue = extractedData?.BP_Revenue || "";
+    return [
+      `${industry} 上市公司 估值 PS PE EV EBITDA 市值 收入 同花顺`,
+      `${industry} 可比公司 2024 2025 财报 收入 毛利率 市值 PS`,
+      `${industry} ${stage} 融资 估值 同赛道 可比案例`,
+      revenue ? `${industry} ARR revenue multiple PS 估值 倍数` : "",
+      company ? `${company} 融资 估值 收入 ARR` : "",
+    ].filter(Boolean);
   }
 
   buildUserMessage({ bpFullText, extractedData }) {
@@ -36,6 +50,12 @@ class ValuationAgent extends BaseAgent {
       `- BP 声称估值：${extractedData?.BP_Valuation || 0} 亿元`,
       `- BP 声称收入/ARR：${extractedData?.BP_Revenue || 0} 亿元`,
       `- TAM：${extractedData?.TAM_Million_RMB || 0} 百万元`,
+      `\n\n【Kimi 估值温度计 Harness】`,
+      `请优先尝试使用 Kimi 可用的同花顺/iFinD、上市公司财报、交易所公告、融资新闻和公开网页能力，寻找同赛道上市公司或可比交易的 PS、PE、EV/EBITDA、收入、市值/估值。`,
+      `如果 BP 披露估值和收入，必须计算本项目隐含 PS/ARR multiple，并与同行中位数对比。`,
+      `如果 BP 披露估值但没有收入，必须用融资阶段 + 同赛道可比融资案例给区间，不要硬算 PS。`,
+      `如果 BP 没披露估值，必须输出同行业估值区间和建议估值锚点，temperature 填 "信息不足" 或基于可比公司给参考判断。`,
+      `如果专业数据不可用，必须在 source_boundary 里说明，不得编造同花顺/财报数据。`,
       `\n\n【行业 Benchmark 数据（平台历史数据，${benchmarks.length} 条）】`,
       benchmarks.length > 0
         ? JSON.stringify(benchmarks, null, 2)
@@ -54,6 +74,8 @@ class ValuationAgent extends BaseAgent {
         implied_dilution: parsed.implied_dilution,
         consensus_range: parsed.consensus_range || null,
         verdict_position: parsed.verdict?.position || null,
+        valuation_temperature: parsed.valuation_temperature || null,
+        peer_public_companies: parsed.peer_public_companies || [],
       },
     };
   }

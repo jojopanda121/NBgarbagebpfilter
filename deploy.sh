@@ -61,14 +61,14 @@ setup_env() {
   echo "  GarbageBPFilter 部署配置向导"
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-  # MiniMax API Key
+  # Kimi / Moonshot API Key
   echo ""
-  read -p "请输入 MiniMax API Key (必填): " MINIMAX_KEY
-  if [ -z "$MINIMAX_KEY" ]; then
-    error "MiniMax API Key 不能为空！"
+  read -p "请输入 Kimi / Moonshot API Key (必填): " KIMI_KEY
+  if [ -z "$KIMI_KEY" ]; then
+    error "Kimi / Moonshot API Key 不能为空！"
     exit 1
   fi
-  sed -i "s|MINIMAX_API_KEY=.*|MINIMAX_API_KEY=${MINIMAX_KEY}|" .env
+  sed -i "s|KIMI_API_KEY=.*|KIMI_API_KEY=${KIMI_KEY}|" .env
 
   # JWT Secret
   JWT=$(random_string 48)

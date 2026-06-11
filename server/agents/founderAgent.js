@@ -35,7 +35,18 @@ function encryptName(name) {
 
 class FounderAgent extends BaseAgent {
   constructor() {
-    super({ name: "founder", systemPrompt: PROMPT, maxTokens: 6144 });
+    super({ name: "founder", systemPrompt: PROMPT, maxTokens: 8192, useSearch: true });
+  }
+
+  buildSearchQueries({ extractedData }) {
+    const company = extractedData?.company_name || "";
+    const industry = extractedData?.industry || "";
+    return [
+      company ? `${company} 工商 注册资本 法定代表人 股东 天眼查` : "",
+      company ? `${company} 创始人 团队 融资 新闻` : "",
+      company ? `${company} 诉讼 行政处罚 司法风险 知识产权` : "",
+      industry ? `${industry} 创始团队 背景 核心岗位` : "",
+    ].filter(Boolean);
   }
 
   buildUserMessage({ bpFullText, extractedData }) {
@@ -59,7 +70,13 @@ class FounderAgent extends BaseAgent {
     }));
 
     return {
-      userOutput: { founders, team_assessment: parsed.team_assessment, risk_flags: parsed.risk_flags || [] },
+      userOutput: {
+        founders,
+        team_assessment: parsed.team_assessment,
+        registry_check: parsed.registry_check || null,
+        legal_risk_check: parsed.legal_risk_check || null,
+        risk_flags: parsed.risk_flags || [],
+      },
       dataPayload: {
         founders: founders.map((f) => ({
           name_display: f.name,
@@ -68,6 +85,8 @@ class FounderAgent extends BaseAgent {
           phone_hash: f.phone_hash,
           past_ventures: f.past_ventures || [],
         })),
+        registry_check: parsed.registry_check || null,
+        legal_risk_check: parsed.legal_risk_check || null,
         risk_flags: parsed.risk_flags || [],
       },
     };

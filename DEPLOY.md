@@ -49,7 +49,7 @@ cp .env.example .env
 
 | 变量 | 校验规则 | 说明 |
 | --- | --- | --- |
-| `MINIMAX_API_KEY` | 不为空 | MiniMax LLM API key |
+| `KIMI_API_KEY` / `MOONSHOT_API_KEY` | 不为空 | Kimi / Moonshot LLM API key |
 | `JWT_SECRET` | 长度 ≥ 32，不含 "请修改 / change me / placeholder / example" 等占位文案 | JWT 签名密钥，用 `openssl rand -hex 32` 生成 |
 | `ALLOWED_ORIGINS` | 不为空、**不能是 `*`** | CORS 白名单，逗号分隔多个域名 |
 
@@ -72,13 +72,11 @@ cp .env.example .env
 
 | 变量 | 用途 |
 | --- | --- |
-| `MINIMAX_MODEL` | 默认模型名，默认 `MiniMax-M2.7` |
-| `MINIMAX_MODEL_HEAVY` | 重型任务（IC 问题、Deck）模型 |
-| `MINIMAX_MODEL_LIGHT` | 轻型任务（一页纸、快照）模型 |
-| `MINIMAX_CODE_PLAN_KEY` / `MINIMAX_CODING_API_KEY` | 启用 MiniMax 内置 `web_search` 工具的 token |
-| `MINIMAX_API_HOST` | 默认 `https://api.minimaxi.com`（国内 Token Plan）。**不要带 `/anthropic` 后缀** |
-| `MINIMAX_IMAGE_MODEL` | 默认 `image-01`，图片生成 |
-| `MINIMAX_SEARCH_REGION` | 默认 `global` |
+| `KIMI_MODEL` | 默认模型名，默认 `kimi-k2.6` |
+| `KIMI_MODEL_HEAVY` | 重型任务（IC 问题、Deck）模型 |
+| `KIMI_MODEL_LIGHT` | 轻型任务（一页纸、快照）模型 |
+| `KIMI_API_HOST` / `MOONSHOT_BASE_URL` | 默认 `https://api.moonshot.ai/v1` |
+| Kimi `$web_search` | 无需额外环境变量；通过 Chat Completion 内置工具调用。Kimi API 不开放同花顺/天眼查等内部数据源直连。 |
 
 ### 3.4 第三方集成（按需）
 
@@ -115,7 +113,7 @@ cd /opt/NBgarbagebpfilter
 
 bash deploy.sh
 # 脚本会交互式询问：
-#   - MiniMax API Key
+#   - Kimi / Moonshot API Key
 #   - 管理员用户名 / 密码（≥6位）
 #   - 前端域名（用于 ALLOWED_ORIGINS，可跳过）
 # 自动：生成 JWT_SECRET、写 .env、创建 ./data ./logs ./nginx-certs、docker-compose up -d --build、轮询 /api/health
@@ -129,7 +127,7 @@ bash deploy.sh
 cd /opt/NBgarbagebpfilter
 
 cp .env.example .env
-# 编辑 .env，至少填上 MINIMAX_API_KEY / JWT_SECRET / ALLOWED_ORIGINS / ADMIN_USERNAME / ADMIN_PASSWORD
+# 编辑 .env，至少填上 KIMI_API_KEY / JWT_SECRET / ALLOWED_ORIGINS / ADMIN_USERNAME / ADMIN_PASSWORD
 
 mkdir -p ./data ./logs ./data/backups ./nginx-certs
 
@@ -367,7 +365,7 @@ npm start               # 等价于：pm2 start ecosystem.config.js --env produc
 
 | 现象 | 检查 |
 | --- | --- |
-| 启动立刻 exit(1) | 看日志最后一行 `[BOOT]` / `[Security]`：通常是 `JWT_SECRET`、`MINIMAX_API_KEY`、`ALLOWED_ORIGINS` 校验失败 |
+| 启动立刻 exit(1) | 看日志最后一行 `[BOOT]` / `[Security]`：通常是 `JWT_SECRET`、`KIMI_API_KEY`、`ALLOWED_ORIGINS` 校验失败 |
 | `/api/health` 503 | 数据库无法访问，多半是 `./data` 权限问题。`chown -R 999:999 ./data ./logs` 或 `chmod -R u+rwX ./data ./logs` |
 | 上传 BP 报「文档解析失败」 | doc-service 没起来或健康检查没通过：`docker-compose logs doc-service`。本地 PM2 模式下还可能是 Python 依赖缺失：`npm run install:python` |
 | 邮件验证码发不出去 | 检查 `TENCENT_SES_*` 五项是否齐全，发信域名是否已在腾讯云 SES 控制台验证 |

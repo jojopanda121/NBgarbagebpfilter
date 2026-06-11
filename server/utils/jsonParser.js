@@ -75,8 +75,8 @@ function repairTruncatedJson(str) {
 }
 
 /**
- * 预处理 MiniMax DeepThink 输出：
- * 移除 <minimax:tool_call> 等 XML 工具调用标签。
+ * 预处理历史 Provider 输出：
+ * 移除旧 MiniMax <minimax:tool_call> 等 XML 工具调用标签。
  */
 function preprocessMinimaxOutput(raw) {
   if (!raw || typeof raw !== "string") return raw;

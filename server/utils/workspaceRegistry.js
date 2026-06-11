@@ -9,10 +9,10 @@ const HOST_DEFINITION = {
   name: "host",
   label: "投资负责人",
   role: "Investment Lead / Host",
-  description: "拆解任务、制定执行计划、调度专家和 MiniMax 工具、选择模板产物，并把专家意见收敛成投不投、什么条件投、下一步怎么做。",
+  description: "拆解任务、制定执行计划、调度专家和 Kimi 工具、选择模板产物，并把专家意见收敛成投不投、什么条件投、下一步怎么做。",
   skills: ["task_decomposition", "expert_orchestration", "template_selection", "investment_synthesis"],
   tools: [
-    "web_search", "onepager_pptx", "investment_snapshot", "highlight_visual",
+    "web_search", "kimi_professional_research", "onepager_pptx", "investment_snapshot", "highlight_visual",
     "project_brief", "investment_deck_pptx", "generate_docx", "generate_xlsx",
     "dd_checklist_xlsx", "founder_interview_docx", "competitor_matrix_xlsx",
     "ic_questions_xlsx",
@@ -54,10 +54,19 @@ const TOOL_REGISTRY = {
   web_search: {
     label: "公开信息检索",
     category: "research",
-    executor: "minimax_coding_plan",
+    executor: "kimi_builtin_web_search",
     callableByModel: true,
     allowedCallers: ["host", "market_deal", "product_team_risk"],
-    description: "通过 MiniMax Token Plan / Coding Plan web_search 执行公开网络检索，用于最新市场、政策、竞品、监管、负面新闻核验。",
+    description: "通过 Kimi 官方 $web_search 内置工具执行公开网络检索，用于最新市场、政策、竞品、监管、负面新闻核验。Kimi API 不能直接调用同花顺/天眼查等内部专业数据源。",
+  },
+  kimi_professional_research: {
+    label: "Kimi 间接专业数据研究",
+    category: "research",
+    executor: "kimi_chat_indirect_research",
+    callableByModel: true,
+    allowedCallers: ["host"],
+    argShape: '{"query":"查询贵州茅台 2024 年年报财务报表和盈利能力指标","ticker":"600519.SH","data_domains":["ifind"],"expected_fields":["营收","净利润","ROE"]}',
+    description: "通过普通 Kimi Chat API 间接请求 Kimi 尝试使用其可用的内部专业数据能力，返回自然语言研究摘要。它不是同花顺/天眼查等专业数据库的结构化 API；结果必须保留可用性与置信度边界。",
   },
   extract_document: {
     label: "文档解析",
@@ -97,7 +106,7 @@ const TOOL_REGISTRY = {
     callableByModel: true,
     allowedCallers: ["host"],
     argShape: '{"materials":"<可选，公司原始材料；留空则用项目上下文>","company_hint":"<可选，公司全称>"}',
-    description: "调用 MiniMax image-01 生成 1 页投资亮点视觉信息图 JPEG。适合微信、邮件、FA 批量转发的视觉化项目摘要。",
+    description: "调用视觉生成服务生成 1 页投资亮点视觉信息图 JPEG。适合微信、邮件、FA 批量转发的视觉化项目摘要。",
   },
   project_brief: {
     label: "项目简报 3 页 deck",

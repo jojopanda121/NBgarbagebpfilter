@@ -7,6 +7,7 @@ const { callLLM, callLLMWithSearch } = require("../services/llmService");
 const agentRunService = require("../services/agentRunService");
 const { publishAgentEvent } = require("../services/sseService");
 const { extractJson } = require("../utils/jsonParser");
+const { UNTRUSTED_DOC_GUARD } = require("../utils/prompts");
 const logger = require("../utils/logger");
 
 class BaseAgent {
@@ -20,7 +21,8 @@ class BaseAgent {
    */
   constructor({ name, systemPrompt, maxRetries = 2, maxTokens = 6144, useSearch = false }) {
     this.name = name;
-    this.systemPrompt = systemPrompt;
+    // 所有专家 Agent 都直接消费 BP 原文（不可信第三方输入），统一附加注入防线
+    this.systemPrompt = systemPrompt + UNTRUSTED_DOC_GUARD;
     this.maxRetries = maxRetries;
     this.maxTokens = maxTokens;
     this.useSearch = useSearch;

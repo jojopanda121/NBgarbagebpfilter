@@ -220,7 +220,17 @@ function calculateDimension4_Team(teamData) {
  *   严重夸大         →  1    （严重负面）
  *   证伪             →  0    （声明明显错误）
  *
- * 公式: S5 = round(所有声明得分的平均值 × 10)
+ * v4.5 反稀释重构（修复"造假项目堆诚实声明洗分"漏洞）：
+ *   1. 声明按 materiality 分组：financial / valuation / legal_compliance 为
+ *      "重大组"（直接影响投资决策与资金安全），其余为"一般组"。
+ *      S5 = 0.7 × 重大组均值 + 0.3 × 一般组均值（缺一组则用另一组）。
+ *      → 核心财务声明的问题不再被 20 条"公司成立于某年"式真话摊薄。
+ *   2. Integrity Veto（hard cap）：重大组出现"证伪"，或"严重夸大"且
+ *      severity ∈ {严重, 高} → S5 封顶 INTEGRITY_VETO_CAP(25)，
+ *      且评级封顶 C（见 scoreProject）。一票否决不可被任何数量的
+ *      正面声明稀释——这是真实投委会的工作方式。
+ *   3. 无 category 的旧数据全部落入一般组，行为与 v4.4 简单平均一致，向后兼容。
+ *
  * 无数据兜底: 70（中性偏上，不误杀——没有声明可核查不代表不诚信）
  *
  * @param {Array} claimVerdicts - Agent B 输出的声明核查结果数组
@@ -236,18 +246,69 @@ const VERDICT_SCORE_MAP = {
   "证伪": 0,
 };
 
+// 重大声明类别：造假直接威胁资金安全（财务/估值/合规）
+const MATERIAL_CLAIM_CATEGORIES = new Set(["financial", "valuation", "legal_compliance"]);
+const MATERIAL_GROUP_WEIGHT = 0.7;
+const INTEGRITY_VETO_CAP = 25;
+// veto 触发的 verdict：证伪无条件触发；严重夸大需 severity 佐证（避免误杀）
+const VETO_SEVERITIES = new Set(["严重", "高"]);
+
+function _isMaterialClaim(v) {
+  return MATERIAL_CLAIM_CATEGORIES.has(String(v?.category || "").toLowerCase());
+}
+
+function _verdictScore(v) {
+  return VERDICT_SCORE_MAP[v?.verdict] ?? VERDICT_SCORE_MAP["存疑"];
+}
+
+/**
+ * Integrity Veto 判定：重大类别声明被证伪/严重夸大（高严重度）→ 一票否决。
+ * @returns {{ triggered: boolean, reasons: string[] }}
+ */
+function assessIntegrityVeto(claimVerdicts) {
+  if (!Array.isArray(claimVerdicts)) return { triggered: false, reasons: [] };
+  const reasons = [];
+  for (const v of claimVerdicts) {
+    if (!v || !_isMaterialClaim(v)) continue;
+    const isVeto =
+      v.verdict === "证伪" ||
+      (v.verdict === "严重夸大" && VETO_SEVERITIES.has(String(v.severity || "")));
+    if (isVeto) {
+      const claimText = String(v.original_claim || v.claim || v.bp_claim || "").slice(0, 80);
+      reasons.push(`[${v.category}] ${v.verdict}：${claimText}`);
+    }
+  }
+  return { triggered: reasons.length > 0, reasons: reasons.slice(0, 5) };
+}
+
 function calculateDimension5_Integrity(claimVerdicts) {
   if (!Array.isArray(claimVerdicts) || claimVerdicts.length === 0) {
     return 70; // 无数据 → 中性偏上，没有声明可核查不代表不诚信
   }
 
-  const total = claimVerdicts.reduce((sum, v) => {
-    // 未知 verdict 按"存疑"处理
-    const score = VERDICT_SCORE_MAP[v.verdict] ?? VERDICT_SCORE_MAP["存疑"];
-    return sum + score;
-  }, 0);
+  const material = [];
+  const general = [];
+  for (const v of claimVerdicts) {
+    (_isMaterialClaim(v) ? material : general).push(v);
+  }
+  const groupAvg = (list) =>
+    list.length === 0
+      ? null
+      : (list.reduce((sum, v) => sum + _verdictScore(v), 0) / list.length) * 10;
 
-  return clampScore((total / claimVerdicts.length) * 10);
+  const m = groupAvg(material);
+  const g = groupAvg(general);
+  let s5;
+  if (m == null) s5 = g;
+  else if (g == null) s5 = m;
+  else s5 = MATERIAL_GROUP_WEIGHT * m + (1 - MATERIAL_GROUP_WEIGHT) * g;
+
+  // hard cap：重大造假不可被正面声明数量稀释
+  if (assessIntegrityVeto(claimVerdicts).triggered) {
+    s5 = Math.min(s5, INTEGRITY_VETO_CAP);
+  }
+
+  return clampScore(s5);
 }
 
 /**
@@ -322,6 +383,28 @@ function _hasHarnessInputs(data) {
     (data.Moat_Rubric && typeof data.Moat_Rubric === "object") ||
     (data.Chokepoint_Score != null && data.Chokepoint_Score !== "" && !isNaN(Number(data.Chokepoint_Score)))
   );
+}
+
+/**
+ * Integrity Veto → 评级封顶。
+ * 总分照实输出（保持分数可解释），但 A/B 的"推进"建议在重大造假面前必须收回：
+ * 投资人最不能接受的是系统对一个已证伪核心财务声明的项目说"立刻推进尽调"。
+ */
+function _applyIntegrityVeto(result, vetoInfo) {
+  if (!vetoInfo || !vetoInfo.triggered) return result;
+  result.integrity_veto = { triggered: true, reasons: vetoInfo.reasons };
+  if (result.grade === "A" || result.grade === "B") {
+    result.grade_overridden_from = result.grade;
+    result.grade = "C";
+    result.grade_label = "重大诚信红旗 (Integrity Veto)";
+    result.grade_action =
+      "核查发现重大类别声明（财务/估值/合规）被证伪或严重夸大，已触发一票否决：" +
+      "评级强制降至 C，禁止按原始分数推进。建议优先要求公司就被证伪声明提供原始凭证" +
+      "（审计报告、银行流水、合同原件），核实清楚前不进入投资流程。" +
+      (vetoInfo.reasons.length ? ` 触发依据：${vetoInfo.reasons.join("；")}` : "");
+    result.grade_color = "#f59e0b";
+  }
+  return result;
 }
 
 /**
@@ -424,7 +507,11 @@ function scoreProject(data, opts = {}) {
 
   // 没有 harness 数据或开关 off → 纯 legacy
   if (!harnessAvailable) {
-    return _assemble(S1, S2legacy, S3, S4, S5legacy, data, _S2_LEGACY_META(data));
+    const legacyVeto = assessIntegrityVeto(data.claim_verdicts);
+    return _applyIntegrityVeto(
+      _assemble(S1, S2legacy, S3, S4, S5legacy, data, _S2_LEGACY_META(data)),
+      legacyVeto
+    );
   }
 
   // harness 路径
@@ -442,14 +529,22 @@ function scoreProject(data, opts = {}) {
     : data.claim_verdicts;
   const S5harness = calculateDimension5_Integrity(harnessVerdicts);
 
+  const harnessVeto = assessIntegrityVeto(harnessVerdicts);
+
   if (mode === "on") {
-    const result = _assemble(S1, h.S2, S3, S4, S5harness, data, _s2HarnessMeta(h));
+    const result = _applyIntegrityVeto(
+      _assemble(S1, h.S2, S3, S4, S5harness, data, _s2HarnessMeta(h)),
+      harnessVeto
+    );
     result.scoring_basis = "harness";
     return result;
   }
 
   // shadow：旧分生效，附 harness 对照块（供校准）
-  const live = _assemble(S1, S2legacy, S3, S4, S5legacy, data, _S2_LEGACY_META(data));
+  const live = _applyIntegrityVeto(
+    _assemble(S1, S2legacy, S3, S4, S5legacy, data, _S2_LEGACY_META(data)),
+    assessIntegrityVeto(data.claim_verdicts)
+  );
   const shadow = _assemble(S1, h.S2, S3, S4, S5harness, data, _s2HarnessMeta(h));
   live.scoring_basis = "legacy";
   live.scoring_shadow = {
@@ -473,9 +568,12 @@ module.exports = {
   calculateDimension3_CapitalEfficiencyAndScale,
   calculateDimension4_Team,
   calculateDimension5_Integrity,
+  assessIntegrityVeto,
   calculateTotalScore,
   getGrade,
   clampScore,
   normalizeInput,
   VERDICT_SCORE_MAP,
+  MATERIAL_CLAIM_CATEGORIES,
+  INTEGRITY_VETO_CAP,
 };

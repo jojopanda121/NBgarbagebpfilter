@@ -7,7 +7,8 @@ const pLimit = require("p-limit");
 const { callLLM, callLLMWithThinking, callLLMWithSearch, getModelName } = require("./llmService");
 const { extractJson, extractJsonArray, extractPartialResult, ensureStringArray } = require("../utils/jsonParser");
 const { scoreProject, assessIntegrityVeto } = require("../scoring");
-const { mergeSpecialistEvidence } = require("../scoringEvidence");
+const { mergeSpecialistEvidence, financialToVerdicts, valuationToVerdicts } = require("../scoringEvidence");
+const { runWebSearch, formatSearchContext } = require("./webSearchService");
 const logger = require("../utils/logger");
 const trackingService = require("./trackingService");
 const agentRuntime = require("./agentRuntime");
@@ -55,6 +56,39 @@ function detectInjectionHints(bpText) {
     if (m) hits.push(m[0].slice(0, 60));
   }
   return hits;
+}
+
+// ── 评分接地检索：给"评分数据"调用注入真实外部证据 ─────────────
+// 投资人要的是"BP 说技术牛逼 → AI 客观发现市场上很多类似的"。
+// 该能力的前提是产出 TRL/竞品排名/护城河/TAM 的那次调用见过真实检索结果，
+// 而不是只凭模型记忆+BP 自报。查询聚焦竞品格局与市场规模两类客观事实。
+function buildScoringSearchQueries(extractedData = {}) {
+  const industry = String(extractedData.industry || "").trim();
+  const product = String(extractedData.product_name || "").trim();
+  const company = String(extractedData.company_name || "").trim();
+  return [
+    industry || product ? [industry, product, "竞品 同类产品 公司 对比"].filter(Boolean).join(" ") : "",
+    industry ? `${industry} 市场规模 CAGR 增速 研报` : "",
+    company ? [company, product, "融资 客户 技术"].filter(Boolean).join(" ") : "",
+  ].filter(Boolean);
+}
+
+async function fetchScoringEvidence(extractedData) {
+  try {
+    const rows = await runWebSearch(buildScoringSearchQueries(extractedData));
+    if (!rows.length) return "";
+    return [
+      "\n\n【服务端联网检索证据】",
+      formatSearchContext(rows),
+      "",
+      "重要：评定 TRL、Competitor_Rank_Score、Moat_Rubric、竞争密度、TAM、CAGR 时，",
+      "必须优先依据上方检索证据与微观声明核查报告；检索证据与 BP 自报冲突时，以检索证据为准并压低对应评分。",
+      "检索发现同类竞品较多/技术非独家时，competitive_density 与 differentiation 不得给高分。",
+    ].join("\n");
+  } catch (err) {
+    logger.warn("[B.scoring] 评分接地检索失败，评分将退回模型知识:", err.message);
+    return "";
+  }
 }
 
 function withTaskTimeout(promise, label) {
@@ -212,6 +246,9 @@ async function verifySingleClaim(claim, bpContext, batchLabel) {
 async function runAgentBWithBatchingAndResearch(extractedData, bpText, onProgress) {
   const claims = extractedData.key_claims || [];
 
+  // 评分接地检索与 Phase 1 并行启动（不阻塞声明核查），Phase 2 评分前就绪
+  const scoringEvidencePromise = fetchScoringEvidence(extractedData);
+
   // Phase 1: 微观声明核查 — 每批最多 MAX_CLAIMS_PER_BATCH 条，防止输出过长被截断
   const batches = [];
   for (let i = 0; i < claims.length; i += MAX_CLAIMS_PER_BATCH) {
@@ -320,11 +357,15 @@ async function runAgentBWithBatchingAndResearch(extractedData, bpText, onProgres
   const scoringPrompt = buildStructuralPrompt(extractedData);
   const dimAnalysisPrompt = buildDimensionAnalysisPrompt(extractedData);
 
+  // 评分接地证据（与 Phase 1 并行检索，此处就绪；失败返回空串不阻塞）
+  const scoringEvidence = await scoringEvidencePromise;
+
   // 评分和维度分析共用同一组输入（BP 原文必须包裹不可信文档边界）
   const structuralInput = [
     `【BP提取数据（原始）】\n${JSON.stringify(extractedData, null, 2)}`,
     `\n\n【微观声明核查报告】\n${JSON.stringify(compressedVerdicts, null, 2)}`,
     `\n\n【BP原文节选（前3000字）】\n${wrapBpDocument(bpText.slice(0, 3000))}`,
+    scoringEvidence,
   ].join("");
 
   // 深度研究使用更多原文
@@ -466,6 +507,7 @@ async function runAgentBWithBatchingAndResearch(extractedData, bpText, onProgres
     thinking: structuralOutcome.thinking,
     dimensionAnalysisResult,
     deepResearch,
+    scoringEvidenceUsed: !!scoringEvidence,
   };
 }
 
@@ -660,6 +702,25 @@ function calculateScoring(validatedData, claimVerdicts, onProgress, multiagent =
   const rawScoringData = validatedData.validated_data || {};
   const mode = scoringHarnessMode(); // off | shadow | on
 
+  // F-10: 财务/估值专家的确定性结论并入 live 声明集。
+  // 这些 verdict 是纯 JS 查表推导（数学矛盾→证伪、估值远高于→夸大等），
+  // 已在 scoringEvidence 里封顶防淹没——专家查到"财务自相矛盾"必须能拖分、
+  // 能触发诚信一票否决，而不是只躺在 multiagent 标签页的文字里。
+  // 注意：仅用于 live/legacy 路径；harness 合并路径(mergeSpecialistEvidence)
+  // 自带同样的注入逻辑，传原始 claimVerdicts 避免重复计入。
+  let liveVerdicts = claimVerdicts || [];
+  if (multiagent && !multiagent.error) {
+    try {
+      const extra = [
+        ...financialToVerdicts(multiagent.financial_analysis),
+        ...valuationToVerdicts(multiagent.valuation_analysis),
+      ].map((v) => ({ ...v, original_claim: v.original_claim || v.claim }));
+      if (extra.length > 0) liveVerdicts = [...liveVerdicts, ...extra];
+    } catch (err) {
+      logger.warn("[Pipeline] 专家 verdict 注入 live 评分失败（忽略）:", err.message);
+    }
+  }
+
   // Plan A：把 orchestrator 5 专家已产的事实，用 JS 推导并双路合并进评分输入。
   // 任一专家缺失/{} → 合并器逐字段 no-op 回退 Agent B，绝不 fail。
   let enrichedData = null;
@@ -687,12 +748,13 @@ function calculateScoring(validatedData, claimVerdicts, onProgress, multiagent =
   let scoringInput;
   let scoringResult;
   if (mode === "on" && enrichedData) {
-    // on：全量新分生效（harness S2 + 专家合并五维）
+    // on：全量新分生效（harness S2 + 专家合并五维；专家 verdict 已由合并器注入）
     scoringInput = _toScoringInput(enrichedData, claimVerdicts);
     scoringResult = scoreProject(scoringInput, { modeOverride: "on" });
   } else {
-    // off / shadow / 无专家：live 走纯 legacy（force off 避免嵌套 shadow）
-    scoringInput = _toScoringInput(rawScoringData, claimVerdicts);
+    // off / shadow / 无专家：live 走纯 legacy（force off 避免嵌套 shadow），
+    // 但专家确定性 verdict 计入 live S5（liveVerdicts）
+    scoringInput = _toScoringInput(rawScoringData, liveVerdicts);
     scoringResult = scoreProject(scoringInput, { modeOverride: "off" });
     // shadow：把"全量新分"作为对照块附上，不影响 live
     if (mode === "shadow" && enrichedData) {
@@ -718,6 +780,7 @@ function calculateScoring(validatedData, claimVerdicts, onProgress, multiagent =
 
   return { scoringInput, scoringResult };
 }
+
 
 /**
  * Step 3: 构建估值对比数据
@@ -812,7 +875,7 @@ async function runPipeline(bpText, onProgress, taskId = null, userId = null) {
     })(),
   ]);
 
-  const { claimVerdicts, structuralResult, thinking, dimensionAnalysisResult, deepResearch } = agentBResult;
+  const { claimVerdicts, structuralResult, thinking, dimensionAnalysisResult, deepResearch, scoringEvidenceUsed } = agentBResult;
 
   // ── 报告质量标记：降级不再静默，最终结果携带 quality.flags ──
   const qualityFlags = [];
@@ -823,6 +886,7 @@ async function runPipeline(bpText, onProgress, taskId = null, userId = null) {
     logger.warn("[Pipeline] BP 文本疑似包含 Prompt 注入指令", { hits: injectionHits });
   }
   if (!deepResearch) qualityFlags.push("deep_research_unavailable");
+  if (!scoringEvidenceUsed) qualityFlags.push("scoring_search_unavailable");
   if (!multiagent || multiagent.error || Object.keys(multiagent).length === 0) {
     qualityFlags.push("multiagent_unavailable");
   }
@@ -881,6 +945,12 @@ async function runPipeline(bpText, onProgress, taskId = null, userId = null) {
 
   // Step 3: 评分计算（CPU，瞬间完成）
   const { scoringInput, scoringResult } = calculateScoring(validatedData, claimVerdicts, onProgress, multiagent);
+
+  // 所见即所评：报告展示的声明核查列表与实际计入 S5 的声明集保持一致
+  // （含专家注入的"财务数学矛盾→证伪"等确定性结论，投资人必须看得到）
+  if (Array.isArray(scoringInput.claim_verdicts) && scoringInput.claim_verdicts.length > 0) {
+    validatedData.claim_verdicts = scoringInput.claim_verdicts;
+  }
 
   // Step 4: 整合维度分析数据
   // 优先使用并行获取的专用维度分析结果，其次使用结构化评分中附带的，最后才用兜底
@@ -1055,8 +1125,10 @@ module.exports = {
   runPipeline,
   classifyIndustry,
   classifyIndustryMulti,
-  // 导出供测试与复用（注入防线/降级文案的回归测试依赖这些纯函数）
+  // 导出供测试与复用（注入防线/降级文案/评分接地的回归测试依赖这些函数）
   wrapBpDocument,
   detectInjectionHints,
   buildIntegrityDimAnalysis,
+  buildScoringSearchQueries,
+  calculateScoring,
 };

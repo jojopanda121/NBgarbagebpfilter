@@ -26,6 +26,10 @@ const QUALITY_FLAG_COPY = {
     level: "warn",
     text: "深度研究报告生成失败，本报告缺少联网深度研究内容",
   },
+  scoring_search_unavailable: {
+    level: "warn",
+    text: "评分接地检索未取得结果，竞品/市场评分主要依赖 AI 知识库而非实时检索，可信度下降",
+  },
   dimension_analysis_supplemented: {
     level: "info",
     text: "五维详细分析由降级路径补充生成，深度可能不及完整版",

@@ -20,6 +20,8 @@ const {
   wrapBpDocument,
   detectInjectionHints,
   buildIntegrityDimAnalysis,
+  buildScoringSearchQueries,
+  calculateScoring,
 } = require("../services/pipelineService");
 
 const {
@@ -239,5 +241,78 @@ describe("Prompt Injection 防线（F-03）", () => {
     // 正常 BP 语料不应误报
     const normalBp = "本公司专注于工业软件赛道，2024 年收入 3000 万元，团队 45 人，已服务 120 家客户。市场规模预计 2027 年达 500 亿元。";
     expect(detectInjectionHints(normalBp)).toEqual([]);
+  });
+});
+
+describe("评分接地检索（S1/S2 不再只凭模型记忆）", () => {
+  test("有行业/产品信息时生成竞品+市场两类客观事实查询", () => {
+    const queries = buildScoringSearchQueries({
+      industry: "工业软件 · CAE 仿真",
+      product_name: "某仿真平台",
+      company_name: "某科技",
+    });
+    expect(queries.length).toBe(3);
+    expect(queries[0]).toContain("竞品");
+    expect(queries[1]).toContain("市场规模");
+  });
+
+  test("无任何项目信息时不发无意义的泛查询", () => {
+    expect(buildScoringSearchQueries({})).toEqual([]);
+    expect(buildScoringSearchQueries({ industry: "  " })).toEqual([]);
+  });
+});
+
+describe("F-10: 专家确定性结论计入 live 评分", () => {
+  const noopProgress = () => {};
+  const baseValidated = {
+    validated_data: {
+      TAM_Million_RMB: 5000, CAGR: 25, TRL: 8, Competitor_Rank_Score: 8,
+      Industry_Capital_Score: 8, Industry_Scale_Score: 8,
+      Team_Experience_Score: 8, Team_Domain_Match_Score: 8,
+      Team_Completeness_Score: 8, Team_Track_Record_Score: 7, Team_Education_Score: 8,
+    },
+  };
+
+  test("财务专家发现数学矛盾（证伪）→ 拖低 live S5 并触发一票否决", () => {
+    const honestClaims = Array(10).fill(null).map(() => ({ verdict: "诚实", category: "market" }));
+    const multiagent = {
+      financial_analysis: {
+        consistency_check: {
+          math_errors: [{ description: "收入×毛利率与毛利对不上，差 3 倍", evidence: "BP 第 12 页" }],
+        },
+      },
+    };
+    const withSpecialist = calculateScoring(baseValidated, honestClaims, noopProgress, multiagent);
+    const without = calculateScoring(baseValidated, honestClaims, noopProgress, null);
+
+    // 专家证伪进入了实际计分的声明集
+    expect(withSpecialist.scoringInput.claim_verdicts.some((v) => v.verdict === "证伪")).toBe(true);
+    // 触发诚信一票否决：评级封顶 C，行动建议收回
+    expect(withSpecialist.scoringResult.integrity_veto?.triggered).toBe(true);
+    expect(["C", "D"]).toContain(withSpecialist.scoringResult.grade);
+    // 对照组：没有专家发现时正常评级
+    expect(without.scoringResult.integrity_veto).toBeUndefined();
+    expect(withSpecialist.scoringResult.dimensions.external_risk.score).toBeLessThan(
+      without.scoringResult.dimensions.external_risk.score
+    );
+  });
+
+  test("估值专家判'远高于'→ 计入 live S5（夸大）", () => {
+    const claims = Array(5).fill(null).map(() => ({ verdict: "诚实", category: "market" }));
+    const multiagent = {
+      valuation_analysis: {
+        verdict: { position: "远高于", summary: "估值显著超出同业区间" },
+      },
+    };
+    const r = calculateScoring(baseValidated, claims, noopProgress, multiagent);
+    expect(r.scoringInput.claim_verdicts.some((v) => v.category === "valuation" && v.verdict === "夸大")).toBe(true);
+    expect(r.scoringResult.integrity_veto).toBeUndefined(); // 夸大≠veto，不误杀
+  });
+
+  test("multiagent 失败/缺失时 live 评分不受影响", () => {
+    const claims = [{ verdict: "诚实", category: "market" }];
+    const a = calculateScoring(baseValidated, claims, noopProgress, { error: "执行失败" });
+    const b = calculateScoring(baseValidated, claims, noopProgress, null);
+    expect(a.scoringResult.total_score).toBe(b.scoringResult.total_score);
   });
 });

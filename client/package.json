@@ -14,6 +14,7 @@
     "lucide-react": "^0.469.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
+    "react-helmet-async": "^2.0.5",
     "react-router-dom": "^6.30.3",
     "react-scripts": "5.0.1",
     "recharts": "^2.15.0",
@@ -22,11 +23,29 @@
   "devDependencies": {
     "autoprefixer": "^10.4.20",
     "postcss": "^8.4.49",
+    "react-snap": "^1.23.0",
     "tailwindcss": "^3.4.17"
   },
   "scripts": {
     "start": "react-scripts start",
-    "build": "INLINE_RUNTIME_CHUNK=false react-scripts build"
+    "build": "INLINE_RUNTIME_CHUNK=false react-scripts build",
+    "postbuild": "react-snap || echo '[react-snap] 预渲染跳过（不影响构建产物）'"
+  },
+  "reactSnap": {
+    "source": "build",
+    "include": [
+      "/",
+      "/demo",
+      "/login",
+      "/about",
+      "/privacy",
+      "/terms"
+    ],
+    "inlineCss": false,
+    "puppeteerArgs": [
+      "--no-sandbox",
+      "--disable-setuid-sandbox"
+    ]
   },
   "browserslist": {
     "production": [

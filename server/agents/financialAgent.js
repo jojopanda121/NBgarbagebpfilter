@@ -7,7 +7,18 @@ const MAX_BP_CHARS = 20000;
 
 class FinancialAgent extends BaseAgent {
   constructor() {
-    super({ name: "financial", systemPrompt: PROMPT, maxTokens: 6144 });
+    super({ name: "financial", systemPrompt: PROMPT, maxTokens: 8192, useSearch: true });
+  }
+
+  buildSearchQueries({ extractedData }) {
+    const company = extractedData?.company_name || "";
+    const industry = extractedData?.industry || "";
+    const businessModel = extractedData?.Business_Model || "";
+    return [
+      `${industry} ${businessModel} 上市公司 毛利率 销售费用率 研发费用率 财报`,
+      `${industry} 同行业 公司 收入倍数 PS 毛利率 2024 2025`,
+      company ? `${company} 收入 毛利率 融资 财务 数据` : "",
+    ].filter(Boolean);
   }
 
   buildUserMessage({ bpFullText, extractedData }) {
@@ -28,6 +39,8 @@ class FinancialAgent extends BaseAgent {
       dataPayload: {
         anomalies: parsed.anomalies || [],
         overall_credibility: parsed.overall_credibility,
+        external_benchmark: parsed.external_benchmark || null,
+        evidence_status: parsed.evidence_status || null,
         industry: null, // 由 orchestrator 补充
       },
     };

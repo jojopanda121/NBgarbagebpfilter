@@ -16,7 +16,7 @@ class BaseAgent {
    * @param {string} opts.systemPrompt — LLM system prompt
    * @param {number} [opts.maxRetries=2]
    * @param {number} [opts.maxTokens=6144]
-   * @param {boolean} [opts.useSearch=false] — 是否启用 web_search（仅 CompetitorAgent 用）
+   * @param {boolean} [opts.useSearch=false] — 是否启用 Kimi web_search 预检索
    */
   constructor({ name, systemPrompt, maxRetries = 2, maxTokens = 6144, useSearch = false }) {
     this.name = name;
@@ -36,6 +36,14 @@ class BaseAgent {
   }
 
   /**
+   * 子类可覆盖：为 callLLMWithSearch 提供服务端预检索 query。
+   * 这些 query 会先用 Kimi $web_search 执行，再注入 LLM 上下文。
+   */
+  buildSearchQueries(_context) {
+    return [];
+  }
+
+  /**
    * 子类必须实现：把 LLM 原始文本解析为结构化输出
    * 容错：LLM 可能返回 ```json 包裹，extractJson 会自动处理
    * @param {string} rawText
@@ -50,12 +58,15 @@ class BaseAgent {
   /**
    * 调用 LLM（带重试）
    */
-  async callLLMWithRetry(userMessage) {
+  async callLLMWithRetry(userMessage, context = {}) {
     let lastErr;
     for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
       try {
         if (this.useSearch) {
-          const { text } = await callLLMWithSearch(this.systemPrompt, userMessage, { maxTokens: this.maxTokens });
+          const { text } = await callLLMWithSearch(this.systemPrompt, userMessage, {
+            maxTokens: this.maxTokens,
+            preSearchQueries: this.buildSearchQueries(context),
+          });
           return text;
         }
         const text = await callLLM(this.systemPrompt, userMessage, this.maxTokens);
@@ -84,7 +95,7 @@ class BaseAgent {
 
     try {
       const userMessage = this.buildUserMessage(context);
-      const rawText = await this.callLLMWithRetry(userMessage);
+      const rawText = await this.callLLMWithRetry(userMessage, context);
       const { userOutput, dataPayload } = this.parseResponse(rawText);
 
       const durationMs = Date.now() - startedAt;

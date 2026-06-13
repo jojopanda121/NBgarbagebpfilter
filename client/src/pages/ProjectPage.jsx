@@ -21,6 +21,7 @@ import IMemoTab from "../components/IMemoTab";
 import ProjectNotesTab from "../components/ProjectNotesTab";
 import WorkspaceTab from "../components/Workspace/WorkspaceTab";
 import LogoE from "../components/LogoE";
+import Seo from "../components/Seo";
 
 const STAGE_CONFIG = {
   new:            { label: "新建",     color: "bg-slate-500/20 text-[#4B5A72] border-slate-500/30" },
@@ -138,6 +139,7 @@ export default function ProjectPage() {
 
   return (
     <div className="app-shell min-h-screen bg-[#F6F7FA]">
+      <Seo title="项目详情" noindex />
       {/* Header */}
       <header className="border-b border-[#D8DCE8] bg-[#F6F7FA]/80 backdrop-blur-sm sticky top-0 z-50">
         <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">

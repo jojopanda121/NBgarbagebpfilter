@@ -3,7 +3,7 @@
 //
 // 流程：
 //   1) 聚合 multi-agent 已产出的分析结果（extracted_data + verdict + deep_research）
-//   2) 调 LLM（启用 MiniMax M2 web_search 工具）按 schema 抽取一份 onepager JSON
+//   2) 调 LLM（启用 Kimi web_search 工具）按 schema 抽取一份 onepager JSON
 //   3) 严格 schema 校验 + 兜底"暂无"
 //   4) 缓存到 tasks.onepager_cache
 //   5) 渲染：调 doc-service POST /generate/onepager → 返回 .pptx 二进制流

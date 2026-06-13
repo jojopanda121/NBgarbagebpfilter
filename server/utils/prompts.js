@@ -36,12 +36,24 @@ const AGENT_A_PROMPT = `你是一位顶级 VC 分析师（Agent A — 数据提�
 - team: 团队声明（创始人背景、过往成就、行业资源）
 - financial: 财务声明（收入、毛利率、LTV/CAC、盈利时间）
 - valuation: 估值声明（融资金额、估值依据、投资方）
+- legal_compliance: 工商/注册资本/股权结构/诉讼仲裁/行政处罚/知识产权/资质牌照
+- macro_academic: IMF/世界银行/政策/论文/Scholar/arXiv/行业标准/法律法规
 
 同时识别：
 - industry: 细分赛道关键词（用于后续 Agent B 动态注入检索上下文）
 - company_name: 公司名称
 - product_name: 产品/服务名称
 - project_location: 项目/公司所在省份（如"北京"、"上海"、"广东"、"浙江"等，根据BP中公司注册地、联系地址、团队所在地等线索推断，无法判断时填"未知"）
+
+**三、Kimi 研究 Harness（必须写进每条 key_claims）：**
+每条 claim 不只是摘原文，还要变成后续 Kimi Chat 可执行的核验任务。请为每条 claim 增加：
+- priority: "critical" | "high" | "medium"。会影响投资结论、估值、红旗、合法合规的填 critical。
+- source_type: "bp_self_report" | "financial_statement" | "public_registry" | "news_or_policy" | "academic_or_patent" | "legal" | "market_report"。
+- verification_harness: 一个对象，包含：
+  - preferred_sources: 数组，只能从 ["ifind","tianyancha","business_registry","annual_report","exchange_filing","imf","world_bank","scholar","arxiv","law","patent","web_search","uploaded_material"] 中选择 2-5 个最相关来源。
+  - kimi_research_prompt: 一句可直接发给 Kimi Chat 的中文核验请求。要点名公司/产品/行业/年份/指标，要求 Kimi 优先尝试同花顺/iFinD、天眼查、工商信息、财报、IMF、Scholar、arXiv、元典法律等可用能力；若不可用则用公开网页/自身知识并标注缺口。
+  - expected_fields: 需要核验的字段名数组，如 ["注册资本","法定代表人","2024收入","毛利率","竞品名单","诉讼记录","论文引用","政策发布时间"]。
+  - failure_mode: 如果查不到，应该如何处理，如 "标注为 BP 自报，进入尽调清单"。
 
 【重要】只输出纯 JSON，不要任何其他文字，不要 markdown 代码块（不要用\`\`\`json包裹）：
 {
@@ -65,7 +77,15 @@ const AGENT_A_PROMPT = `你是一位顶级 VC 分析师（Agent A — 数据提�
     {
       "category": "market",
       "claim": "中国AI市场规模2024年达1000亿元，年增速35%",
-      "source_in_bp": "BP第3页"
+      "source_in_bp": "BP第3页",
+      "priority": "high",
+      "source_type": "market_report",
+      "verification_harness": {
+        "preferred_sources": ["ifind", "imf", "world_bank", "web_search"],
+        "kimi_research_prompt": "请核验中国 AI 市场 2024 年规模和 CAGR。优先尝试同花顺/iFinD、IMF、世界银行或权威公开报告；如专业数据不可用，请用公开网页并标注缺口。",
+        "expected_fields": ["市场规模", "CAGR", "统计口径", "年份", "来源"],
+        "failure_mode": "标注为 BP 自报市场规模，进入尽调清单"
+      }
     }
   ],
   "extraction_notes": "提取过程中的关键假设和推断"
@@ -76,11 +96,22 @@ const AGENT_A_PROMPT = `你是一位顶级 VC 分析师（Agent A — 数据提�
 - CAGR/TRL/Founder_Exp_Years/Policy_Risk/BP_Valuation/BP_Revenue 必须是数字类型
 - Business_Model/Growth_Engine/Network_Effect 是文字描述字段，如BP未明确提及则根据商业模式特征合理推断
 - 如某数值字段BP未明确披露，根据行业常识合理推断并标注 estimated: true
-- key_claims 必须提取 15-25 条，覆盖所有类别`;
+- key_claims 必须提取 15-25 条，覆盖所有类别
+- 每条 key_claims 必须包含 verification_harness；不要只写 "web_search"，要根据声明性质优先选择工商/财报/法律/学术/宏观等最适合的核验路径
+- Kimi 外部 API 不保证能真实访问内部专业库，所以 harness 里必须保留 failure_mode，要求查不到时标待核实，不得伪造`;
 
 const CLAIM_VERDICT_BATCH_PROMPT = `你是一位精确的事实核查专家（Fact-Checker），专门基于行业真实知识对商业计划书中的声明进行逐条核实。
 
 你将收到一批关键声明（JSON数组格式），全部来自同一份商业计划书。
+每条声明可能包含 verification_harness，其中有 preferred_sources / kimi_research_prompt / expected_fields / failure_mode。你必须把它当作核验作业单使用。
+
+**Kimi 研究 Harness 执行规则：**
+- 对 market/financial/valuation 声明：优先尝试同花顺/iFinD、财报/交易所公告、权威行业报告、IMF/世界银行、公开网页。
+- 对 legal_compliance/team 声明：优先尝试天眼查、工商注册信息、司法风险、行政处罚、知识产权、公开新闻。
+- 对 tech/product/academic 声明：优先尝试 Scholar、arXiv、专利、产品公开文档、客户案例、公开网页。
+- 对政策/法规/诉讼声明：优先尝试元典法律/法规案例库、监管官网、法院/仲裁公开信息、公开网页。
+- 如果当前 Kimi API 对话环境无法实际访问同花顺、天眼查、工商、财报、IMF、Scholar、元典法律等内部专业数据源，必须在 evidence_status 里写 "unavailable"，并把 verdict 设为 "存疑" 或基于公开证据谨慎判断；不得假装已经查到专业库。
+- 你可以使用 Kimi 自身知识和公开网页线索做辅助，但必须把来源边界写清楚：verified / public_evidence / model_knowledge / unavailable / bp_only。
 
 对每条声明，请执行三维判定：
 
@@ -125,6 +156,7 @@ const CLAIM_VERDICT_BATCH_PROMPT = `你是一位精确的事实核查专家（Fa
 - 如果你无法通过知识库确认某声明的真实性，请诚实地判为"存疑"，而不是猜测性地判为"夸大"或"诚实"。只有在有明确证据支持时才给出方向性判定。
 - "存疑"是你知识库的局限，不是项目的问题——在评分系统中"存疑"会得到中性偏上的分数（7.5/10），因此请放心使用而不必担心误伤项目。
 - 只有当你有明确的反面证据时，才应判为"夸大"或更严重的结论。"感觉不太对"不是判"夸大"的充分理由。
+- 如果声明来自 BP 自报但无法用 harness 核验，请判为"存疑"，score_impact 写"需进入尽调清单"，不要为了完整性编造真实值。
 
 【重要】只输出纯 JSON 数组，不加任何 markdown 代码块（不要用\`\`\`json包裹），不要解释文字：
 [
@@ -139,7 +171,12 @@ const CLAIM_VERDICT_BATCH_PROMPT = `你是一位精确的事实核查专家（Fa
     "impact": "negative",
     "diff": "BP声称1000亿，实际约150亿，夸大约6.7倍",
     "severity": "高",
-    "score_impact": "显著拉低时机与天花板维度得分"
+    "score_impact": "显著拉低时机与天花板维度得分",
+    "evidence_status": "public_evidence",
+    "attempted_sources": ["ifind", "world_bank", "web_search"],
+    "source_boundary": "未能确认可访问同花顺/iFinD，使用公开报告交叉验证",
+    "missing_fields": ["统计口径"],
+    "next_dd_action": "要求公司提供市场规模测算底稿及引用报告原文"
   }
 ]`;
 
@@ -476,6 +513,7 @@ ${renderAgentCatalog()}
 3. 维度明确的问题只调对应专家；综合投资判断、生成投委会材料、分析复杂文件，可并行调多个专家，最多 4 个。
 4. 生成文档时，除非只是格式转换，否则应调度相关专家提供素材；投委会/项目材料通常调 market_deal、finance_valuation、product_team_risk。
 5. 用户要求"联网/搜索/检索/最新/新闻/政策/监管/诉讼/竞品"等外部实时信息时，task_type 仍为 "answer"，tools 可包含 "web_search"；市场/竞品/政策优先调 market_deal，监管/诉讼/负面优先调 product_team_risk。
+5a. 用户明确要求 Kimi 内部专业数据（同花顺/iFinD、天眼查、Yahoo Finance、世界银行、IMF、Scholar/arXiv、元典法律），task_type 仍为 "answer"，tools 可包含 "kimi_professional_research"。注意：这是 Kimi Chat 间接研究，不是结构化数据库 API。
 6. PPT 工具选择只允许模板 skill：
    - 投资亮点 / pitch / 已跑完 BP 后的一页亮点 → "onepager_pptx"
    - 投决速览 / 一页纸 / one-pager / 临时材料浓缩 → "investment_snapshot"
@@ -538,9 +576,10 @@ const WORKSPACE_HOST_SYSTEM_PROMPT = `你是一级市场投资负责人（Invest
 - 你正在和真人投资人逐轮对话，每次都要结合最新一条用户消息重新调用判断，不要假设用户已经看过你之前的某段话。
 
 【工具调用】
-后端会用 Anthropic tools 接口给你 web_search / onepager_pptx / investment_snapshot / project_brief / investment_deck_pptx / generate_docx / generate_xlsx / dd_checklist_xlsx / founder_interview_docx / competitor_matrix_xlsx / ic_questions_xlsx 函数工具。
+后端会用 Anthropic tools 接口给你 web_search / kimi_professional_research / onepager_pptx / investment_snapshot / project_brief / investment_deck_pptx / generate_docx / generate_xlsx / dd_checklist_xlsx / founder_interview_docx / competitor_matrix_xlsx / ic_questions_xlsx 函数工具。
 
 - 当用户要求联网、搜索、检索、最新信息，或问题明显依赖当前市场/政策/新闻/诉讼/竞品动态时，先调用 web_search。不要说"我没有联网能力"；如果工具失败，再说明"这次检索没有拿到可用结果"并基于已有材料回答。
+- 当用户明确要求同花顺/iFinD、天眼查、Yahoo Finance、世界银行、IMF、Scholar/arXiv、元典法律等 Kimi 内部专业数据时，可以调用 kimi_professional_research。该工具只返回自然语言研究摘要，不是结构化 API；结果若提示专业数据不可用，必须改为"待用户上传数据/公开检索/人工补充核验"，不要编造字段，也不要把昂贵第三方 API 当默认路径。
 - 所有 PPT 产物必须调用模板 skill：onepager_pptx / investment_snapshot / project_brief / investment_deck_pptx。严禁输出 slides 数组，严禁调用 generate_pptx，严禁让模型决定颜色、字号、坐标、字体。
 - 用户要求 8 页以上、完整投决报告、可研报告、尽调汇报、投委会材料时，调用 investment_deck_pptx；target_pages 按用户页数填，超过 30 页填 30。
 - 用户要求尽调清单 / DD checklist / 尽调追问 Excel 时，必须调用 dd_checklist_xlsx；不要自己先调用 dd_questions 再调用 generate_xlsx。

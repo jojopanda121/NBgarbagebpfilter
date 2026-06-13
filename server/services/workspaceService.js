@@ -591,9 +591,17 @@ async function runHostRouting(projectCtx, history, userMsg) {
     obj.task_type = "generate_pptx_template";
     obj.tools = ["investment_deck_pptx"];
   }
+  if (isProfessionalResearchRequest(userMsg) && (!Array.isArray(obj.tools) || obj.tools.length === 0)) {
+    obj.task_type = "answer";
+    obj.tools = ["kimi_professional_research"];
+  }
   obj.agents = obj.agents.filter(a => VALID_AGENTS.includes(a)).slice(0, 4);
   if (!obj.task_type) obj.task_type = inferRoutingFromText(userMsg).task_type;
   return obj;
+}
+
+function isProfessionalResearchRequest(userMsg = "") {
+  return /同花顺|ifind|天眼查|工商|注册资本|法定代表人|股东|司法风险|知识产权|yahoo\s*finance|世界银行|world\s*bank|imf|scholar|arxiv|元典|法条|法规|案例检索|专业数据|专业数据库/i.test(userMsg);
 }
 
 function inferRoutingFromText(userMsg = "", reason = "heuristic") {
@@ -643,6 +651,9 @@ function inferRoutingFromText(userMsg = "", reason = "heuristic") {
   if (/附件|材料|文件|分析.*(docx|xlsx|pdf|pptx|csv)/.test(text)) {
     return { task_type: "analyze_file", agents: ["market_deal", "finance_valuation", "product_team_risk"], tools: [], reason };
   }
+  if (isProfessionalResearchRequest(userMsg)) {
+    return { task_type: "answer", agents: ["market_deal", "finance_valuation", "product_team_risk"], tools: ["kimi_professional_research"], reason };
+  }
   return { task_type: "answer", agents: [], tools: [], reason };
 }
 
@@ -663,7 +674,7 @@ function formatHistory(history, max) {
 
 // ── 专家并行调用 ───────────────────────────────────────────
 
-// 由 registry 声明哪些专家可使用服务端 MiniMax web_search 预检索。
+// 由 registry 声明哪些专家可使用服务端 Kimi web_search 预检索。
 const SEARCH_ENABLED_AGENTS = getSearchEnabledAgents();
 
 function stripModelToolCalls(text = "") {
@@ -790,7 +801,7 @@ async function runExpertsParallel(agents, projectCtx, history, userMsg, onExpert
 const HOST_TOOL_SCHEMAS = [
   {
     name: "web_search",
-    description: "联网检索公开信息。用户要求联网/搜索/检索/最新信息, 或需要近期市场、政策、竞品、监管、诉讼、负面新闻时使用。返回 MiniMax Coding Plan web_search 的结构化搜索结果。",
+    description: "联网检索公开信息。用户要求联网/搜索/检索/最新信息, 或需要近期市场、政策、竞品、监管、诉讼、负面新闻时使用。返回 Kimi web_search 的检索结果。",
     input_schema: {
       type: "object",
       properties: {
@@ -799,6 +810,36 @@ const HOST_TOOL_SCHEMAS = [
           type: "array",
           items: { type: "string" },
           description: "可选的多个查询词。优先使用 query；需要覆盖市场/政策/负面等角度时使用 queries。",
+        },
+      },
+      required: ["query"],
+    },
+  },
+  {
+    name: "kimi_professional_research",
+    description:
+      "通过 Kimi Chat API 间接请求 Kimi 尝试使用其可用的内部专业数据能力。适合用户明确要求同花顺、天眼查、Yahoo Finance、世界银行、IMF、Scholar/arXiv、元典法律等 Kimi 内部数据；返回自然语言研究摘要，不是结构化数据库 API。",
+    input_schema: {
+      type: "object",
+      properties: {
+        query: {
+          type: "string",
+          description: "完整研究问题，例如：查询贵州茅台 2024 年年报财务报表和盈利能力指标。",
+        },
+        company_name: { type: "string", description: "可选，公司全称或简称。" },
+        ticker: { type: "string", description: "可选，股票代码，如 600519.SH / AAPL。" },
+        data_domains: {
+          type: "array",
+          items: {
+            type: "string",
+            enum: ["ifind", "tianyancha", "yahoo_finance", "world_bank", "imf", "scholar", "arxiv", "law", "web"],
+          },
+          description: "希望 Kimi 优先尝试的数据域。",
+        },
+        expected_fields: {
+          type: "array",
+          items: { type: "string" },
+          description: "希望返回的字段或指标，如 注册资本、股东、营收、净利润、ROE、诉讼风险。",
         },
       },
       required: ["query"],
@@ -839,7 +880,7 @@ const HOST_TOOL_SCHEMAS = [
   },
   {
     name: "highlight_visual",
-    description: "调用 MiniMax image-01 生成【1 页】投资亮点视觉信息图 JPEG。适合用户明确要求视觉图、信息图、图片、海报、转发图。不是 PPT；不要传 slides、颜色、字体、坐标。",
+    description: "调用视觉生成服务生成【1 页】投资亮点视觉信息图 JPEG。适合用户明确要求视觉图、信息图、图片、海报、转发图。不是 PPT；不要传 slides、颜色、字体、坐标。",
     input_schema: {
       type: "object",
       properties: {
@@ -1021,8 +1062,9 @@ async function runHostAgentic({
     `2a. PPT 硬规则：任何 PPT 都必须走模板 skill。可用模板只有 onepager_pptx（1 页投资亮点 pitch）、investment_snapshot（1 页 A4 投决速览）、project_brief（3 页项目简报）、investment_deck_pptx（8-30 页投决/可研/尽调 deck）。用户要求视觉图/信息图/图片/海报时调用 highlight_visual，它输出 PNG，不是 PPT。严禁输出 slides 数组，严禁调用 generate_pptx，严禁传颜色/字号/坐标/字体。`,
     `2b. 如果用户要 5 页、10 页、路演完整 deck、竞品地图等当前没有模板的 PPT，不要硬凑；直接说明当前模板库只支持上述模板，并建议按 harness 范式新增对应模板。`,
     `2c. 标准化投研工具硬规则：尽调清单用 dd_checklist_xlsx；创始人访谈提纲用 founder_interview_docx；竞品对比矩阵用 competitor_matrix_xlsx；IC/投委问题清单/左右脑互搏用 ic_questions_xlsx。不要用 generate_xlsx/generate_docx 临时拼这些标准产物。`,
+    `2d. 数据源边界：Kimi 外部 API 不能直接调用同花顺、天眼查、Yahoo Finance、世界银行、IMF、Scholar/arXiv、元典法律等 Kimi 内部数据源。用户明确要求这些专业数据时，可以调用 kimi_professional_research 做 Kimi Chat 间接研究；它返回自然语言摘要，不是结构化数据库 API。若该工具结果显示专业数据不可用，不要编造，改用 web_search、用户上传材料或人工补充字段，并标注待核实。`,
     `3. 工具返回 tool_result 后，写最终答复给用户：投资备忘录口吻，不复述上下文，不复读专家原话，必须给出核心矛盾、决策结论和杀手级问题。`,
-    `4. 如果只是普通问答且不需要联网/最新信息，跳过工具直接写答复；如果用户要求搜索或问题依赖近期外部信息，最多调用一次 web_search，拿到 tool_result 后必须直接综合成最终答复，不要继续搜索。`,
+    `4. 如果只是普通问答且不需要联网/最新信息，跳过工具直接写答复；如果用户要求搜索或问题依赖近期外部公开信息，最多调用一次 web_search，拿到 tool_result 后必须直接综合成最终答复，不要继续搜索。`,
   ].join("\n");
 
   const artifacts = [];
@@ -1687,6 +1729,24 @@ function buildFallbackToolCall({ routing, userMsg, cleanContent, expertOutputs }
 
   const title = inferTitle(userMsg);
 
+  if (tool === "kimi_professional_research") {
+    const domains = [];
+    if (/同花顺|ifind|财报|财务报表|财务指标|股票|行情|公告|业绩预告/i.test(userMsg)) domains.push("ifind");
+    if (/天眼查|工商|注册资本|法定代表人|股东|司法风险|知识产权/i.test(userMsg)) domains.push("tianyancha");
+    if (/yahoo\s*finance|美股|海外股票|期权|分析师评级/i.test(userMsg)) domains.push("yahoo_finance");
+    if (/世界银行|world\s*bank|imf|gdp|通胀|汇率|利率|宏观/i.test(userMsg)) domains.push(/imf/i.test(userMsg) ? "imf" : "world_bank");
+    if (/scholar|arxiv|论文|学术|引用/i.test(userMsg)) domains.push(/arxiv/i.test(userMsg) ? "arxiv" : "scholar");
+    if (/元典|法条|法规|案例|合规|监管/i.test(userMsg)) domains.push("law");
+    return {
+      tool,
+      args: {
+        query: userMsg,
+        company_name: inferCompanyNameFromMsg(userMsg) || undefined,
+        data_domains: [...new Set(domains)],
+      },
+    };
+  }
+
   if (tool === "onepager_pptx") {
     return { tool, args: {} };
   }
@@ -1813,6 +1873,54 @@ async function executeWebSearchTool(input = {}) {
   };
 }
 
+async function executeKimiProfessionalResearchTool(input = {}) {
+  assertToolAllowed("kimi_professional_research", "host");
+  const query = String(input.query || input.question || "").trim();
+  if (!query) throw new Error("kimi_professional_research 需要 query");
+
+  const domains = Array.isArray(input.data_domains) ? input.data_domains.filter(Boolean) : [];
+  const fields = Array.isArray(input.expected_fields) ? input.expected_fields.filter(Boolean) : [];
+  const userPrompt = [
+    "# 研究任务",
+    query,
+    "",
+    input.company_name ? `公司: ${input.company_name}` : "",
+    input.ticker ? `股票代码: ${input.ticker}` : "",
+    domains.length ? `希望优先尝试的数据域: ${domains.join(", ")}` : "",
+    fields.length ? `希望返回字段/指标: ${fields.join(", ")}` : "",
+    "",
+    "# 输出要求",
+    "请尝试使用你在 Kimi Chat 环境中可用的内部专业数据能力或联网能力完成研究。",
+    "如果当前 API 对话环境不能访问同花顺、天眼查、Yahoo Finance、世界银行、IMF、Scholar/arXiv、元典法律等内部数据源，必须明确写出“专业数据不可用”，不要伪造数据。",
+    "返回中文 Markdown，固定包含：",
+    "1. 数据可用性判断：说明实际使用了哪些来源；若只是网页/模型知识，也要明说。",
+    "2. 关键事实：列出和投资/BP 尽调直接相关的事实、数字、时间、主体。",
+    "3. 缺口与置信度：哪些字段没拿到、哪些需要用户上传材料、公开网页或人工补充后复核。",
+    "4. 对 BP 分析的影响：用投资尽调口吻说明该事实如何影响市场、财务、团队、产品或风险判断。",
+  ].filter(Boolean).join("\n");
+
+  const systemPrompt = [
+    "你是 Kimi 专业数据研究代理，服务于 VC/PE 的 BP 尽调分析。",
+    "你的第一优先级是事实边界和来源诚实：能查到就说明来源，查不到就说明不可用或待核实。",
+    "不得编造来自同花顺、天眼查、IMF、Scholar 等专业数据库的数据；只有在当前环境实际能取得时才可引用。",
+    "输出只给后端 Host 综合使用，不要寒暄。",
+  ].join("\n");
+
+  const startedAt = Date.now();
+  console.info("[Workspace/KimiProfessionalResearch] start", { query: query.slice(0, 120), domains });
+  const text = await callLLM(systemPrompt, userPrompt, { maxTokens: 3000, modelTier: "heavy" });
+  console.info("[Workspace/KimiProfessionalResearch] done", { durationMs: Date.now() - startedAt });
+  return {
+    summary: "Kimi 间接专业研究完成（自然语言结果）",
+    results: [{ query, data_domains: domains, text }],
+    context: [
+      "# Kimi 间接专业研究结果",
+      "说明：这是通过 Kimi Chat API 间接请求得到的自然语言研究摘要，不是同花顺/天眼查等专业数据库的结构化 API 返回。",
+      text,
+    ].join("\n\n"),
+  };
+}
+
 function getWorkspaceToolProject({ projectId, userId, taskId }) {
   const db = getDb();
   if (projectId && userId) {
@@ -1883,6 +1991,8 @@ async function executeWorkspaceTool({ tool, args, conversationId, messageId, pro
     let out;
     if (tool === "web_search") {
       out = await executeWebSearchTool(args || {});
+    } else if (tool === "kimi_professional_research") {
+      out = await executeKimiProfessionalResearchTool(args || {});
     } else {
       const toolDef = assertToolAllowed(tool, "host");
 
@@ -2075,6 +2185,7 @@ async function executeToolCalls(calls, { conversationId, messageId, projectId, u
       }
 
       if ([
+        "kimi_professional_research",
         "onepager_pptx", "investment_snapshot", "highlight_visual", "project_brief",
         "investment_deck_pptx", "generate_docx", "generate_xlsx", "dd_checklist_xlsx",
         "founder_interview_docx", "competitor_matrix_xlsx", "ic_questions_xlsx",

@@ -1,6 +1,27 @@
 import React, { useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
+import ParticlesBackground from "../components/ParticlesBackground";
+import Seo from "../components/Seo";
+import { SITE_URL, SITE_NAME, DEFAULT_DESCRIPTION } from "../seo/siteMeta";
 import "./LandingPage.css";
+
+const LANDING_JSON_LD = {
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  name: SITE_NAME,
+  alternateName: "BP过滤机",
+  applicationCategory: "BusinessApplication",
+  operatingSystem: "Web",
+  url: SITE_URL,
+  description: DEFAULT_DESCRIPTION,
+  offers: { "@type": "Offer", category: "SaaS" },
+  publisher: {
+    "@type": "Organization",
+    name: SITE_NAME,
+    url: SITE_URL,
+    email: "hello@garbagebpfilter.cn",
+  },
+};
 
 const LogoE = ({ size = 32 }) => (
   <svg width={size} height={size} viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -198,6 +219,8 @@ export default function LandingPage() {
 
   return (
     <div className="lp-root">
+      <Seo path="/" jsonLd={LANDING_JSON_LD} />
+      {/* 原有网状背景：铺满全页，向下滚动时可见 */}
       <canvas ref={canvasRef} id="bg-canvas" />
       <div className="lp-bg-grid" />
       <div className="lp-bg-orbs">
@@ -205,6 +228,8 @@ export default function LandingPage() {
         <div className="lp-bg-orb o2" />
         <div className="lp-bg-orb o3" />
       </div>
+      {/* 粒子背景：仅覆盖首屏，叠在网状背景之上 */}
+      <ParticlesBackground />
 
       {/* NAV */}
       <nav className="lp-nav">
@@ -871,9 +896,9 @@ export default function LandingPage() {
           <div className="lp-footer-col">
             <h4>公司</h4>
             <ul>
-              <li><a href="#features">关于我们</a></li>
-              <li><a href="#pricing">隐私政策</a></li>
-              <li><a href="#pricing">服务条款</a></li>
+              <li><a href="/about">关于我们</a></li>
+              <li><a href="/privacy">隐私政策</a></li>
+              <li><a href="/terms">服务条款</a></li>
               <li><a href="mailto:hello@garbagebpfilter.cn">联系我们</a></li>
             </ul>
           </div>

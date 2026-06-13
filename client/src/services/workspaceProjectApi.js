@@ -4,27 +4,8 @@
 // ============================================================
 
 import api from "./api";
-import useAuthStore from "../store/useAuthStore";
-import { API_BASE } from "../constants";
 
 const BASE = "/api/workspace-projects";
-
-async function patch(url, data) {
-  const token = useAuthStore.getState().token;
-  const resp = await fetch(`${API_BASE}${url}`, {
-    method: "PATCH",
-    headers: {
-      "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-    body: JSON.stringify(data || {}),
-  });
-  if (!resp.ok) {
-    const err = await resp.json().catch(() => ({ error: "请求失败" }));
-    throw new Error(err.error || `HTTP ${resp.status}`);
-  }
-  return resp.json();
-}
 
 export const workspaceProjectApi = {
   list({ status, industry, includeArchived } = {}) {
@@ -41,11 +22,11 @@ export const workspaceProjectApi = {
   },
 
   update(id, patchBody) {
-    return patch(`${BASE}/${id}`, patchBody);
+    return api.patch(`${BASE}/${id}`, patchBody);
   },
 
   updateStatus(id, status) {
-    return patch(`${BASE}/${id}/status`, { status });
+    return api.patch(`${BASE}/${id}/status`, { status });
   },
 
   diffVersions(id, versionA, versionB) {

@@ -79,6 +79,13 @@ class ApiService {
     });
   }
 
+  patch(url, data) {
+    return this.request(url, {
+      method: "PATCH",
+      body: JSON.stringify(data || {}),
+    });
+  }
+
   delete(url, data) {
     const options = { method: "DELETE" };
     if (data) options.body = JSON.stringify(data);

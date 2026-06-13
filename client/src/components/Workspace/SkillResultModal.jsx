@@ -6,6 +6,7 @@
 // ============================================================
 
 import React from "react";
+import { downloadBase64File } from "../../utils/downloadFile";
 
 export default function SkillResultModal({ skill, runId, artifact, onClose }) {
   return (
@@ -32,7 +33,7 @@ export default function SkillResultModal({ skill, runId, artifact, onClose }) {
         <footer className="px-5 py-3 border-t border-[#EEF1F7] flex justify-end gap-2">
           {artifact?.kind === "pptx" && artifact.bufferBase64 && (
             <button
-              onClick={() => downloadBase64(artifact.bufferBase64, artifact.filename, artifact.mimeType)}
+              onClick={() => downloadBase64File(artifact.bufferBase64, artifact.filename, artifact.mimeType)}
               className="px-3 py-1.5 text-sm rounded bg-emerald-600 text-white hover:bg-emerald-700"
             >
               下载 PPT
@@ -98,19 +99,4 @@ function JsonPreview({ value }) {
 {JSON.stringify(value, null, 2)}
     </pre>
   );
-}
-
-function downloadBase64(base64, filename, mimeType) {
-  const bin = atob(base64);
-  const bytes = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-  const blob = new Blob([bytes], { type: mimeType || "application/octet-stream" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename || "download.pptx";
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
 }

@@ -15,9 +15,8 @@ import {
   Brain, Wrench, FileText, Presentation, ClipboardList, Table2,
 } from "lucide-react";
 import api from "../../services/api";
-import useAuthStore from "../../store/useAuthStore";
-import { API_BASE } from "../../constants";
 import { streamChatMessage } from "../../services/workspaceStream";
+import { downloadAuthenticatedBlob } from "../../utils/downloadFile";
 
 const AGENT_META = {
   host:    { label: "主持人",   icon: MessageSquare, color: "text-blue-700",   ring: "ring-blue-300",   bg: "bg-blue-50" },
@@ -384,15 +383,10 @@ export default function WorkspaceTab({ taskId }) {
   };
 
   const downloadArtifact = (art) => {
-    const token = useAuthStore.getState().token;
-    fetch(`${API_BASE}/api/workspace/${taskId}/artifacts/${art.id}/download`, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-    }).then(r => r.blob()).then(blob => {
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url; a.download = art.filename; a.click();
-      URL.revokeObjectURL(url);
-    }).catch(err => alert("下载失败：" + err.message));
+    downloadAuthenticatedBlob(
+      `/api/workspace/${taskId}/artifacts/${art.id}/download`,
+      art.filename || "artifact"
+    ).catch(err => alert("下载失败：" + err.message));
   };
 
   const deleteArtifact = async (art) => {

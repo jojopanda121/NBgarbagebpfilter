@@ -1,0 +1,21 @@
+# https://www.garbagebpfilter.cn robots
+User-agent: *
+Allow: /$
+Allow: /demo
+Allow: /login
+Allow: /forgot-password
+Allow: /about
+Allow: /privacy
+Allow: /terms
+
+# 私有 / 登录后区域与个性化内容，不收录
+Disallow: /app/
+Disallow: /admin
+Disallow: /settings
+Disallow: /report/
+Disallow: /project/
+Disallow: /teaser/
+Disallow: /uploads/
+Disallow: /api/
+
+Sitemap: https://www.garbagebpfilter.cn/sitemap.xml

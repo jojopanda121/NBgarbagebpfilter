@@ -6,6 +6,7 @@
 import React, { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { API_BASE } from "../constants";
+import Seo from "../components/Seo";
 
 export default function PublicTeaserPage() {
   const { token } = useParams();
@@ -105,6 +106,7 @@ function TeaserView({ data }) {
   const t = data.payload || {};
   return (
     <div className="min-h-screen bg-[#FAF7F2] py-10 px-4">
+      <Seo title="项目 Teaser" noindex />
       <div className="max-w-3xl mx-auto bg-white rounded-lg border border-[#EEF1F7] shadow-sm relative overflow-hidden">
         {data.watermark && (
           <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
@@ -217,6 +219,7 @@ function KV({ k, v }) {
 function Centered({ children }) {
   return (
     <div className="min-h-screen bg-[#FAF7F2] flex items-center justify-center px-4">
+      <Seo title="项目 Teaser" noindex />
       <div className="text-center">{children}</div>
     </div>
   );

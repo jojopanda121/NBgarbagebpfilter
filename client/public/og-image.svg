@@ -1,0 +1,50 @@
+<svg width="1200" height="1200" viewBox="0 0 1200 1200" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="285" x2="1200" y2="915" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#0F1C36"/>
+      <stop offset="1" stop-color="#0D2145"/>
+    </linearGradient>
+    <radialGradient id="orb" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#1B4FD8" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#1B4FD8" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <!-- 整个方形填充深色，便于裁切中间 1200x630 -->
+  <rect width="1200" height="1200" fill="#0D2145"/>
+  <!-- 中间 1200x630 内容带（y: 285 ~ 915） -->
+  <rect y="285" width="1200" height="630" fill="url(#bg)"/>
+  <circle cx="980" cy="405" r="360" fill="url(#orb)"/>
+  <circle cx="120" cy="845" r="280" fill="url(#orb)"/>
+
+  <!-- 品牌标记 -->
+  <g transform="translate(90,371)">
+    <rect width="84" height="84" rx="16" fill="#1B4FD8"/>
+    <circle cx="24" cy="24" r="6.3" fill="white" opacity="0.2"/>
+    <circle cx="60" cy="24" r="6.3" fill="white" opacity="0.2"/>
+    <circle cx="24" cy="60" r="6.3" fill="white" opacity="0.2"/>
+    <circle cx="60" cy="60" r="6.3" fill="white" opacity="0.2"/>
+    <circle cx="42" cy="42" r="7.7" fill="white" opacity="0.92"/>
+    <circle cx="42" cy="42" r="3.5" fill="#C9A84C"/>
+  </g>
+  <text x="194" y="427" font-family="'PingFang SC','Noto Serif SC',sans-serif" font-size="40" font-weight="700" fill="#FFFFFF" letter-spacing="1">垃圾BP过滤机</text>
+
+  <!-- 主标题 -->
+  <text x="90" y="605" font-family="'PingFang SC','Noto Sans SC',sans-serif" font-size="76" font-weight="800" fill="#FFFFFF">让每一个投资判断</text>
+  <text x="90" y="697" font-family="'PingFang SC','Noto Sans SC',sans-serif" font-size="76" font-weight="800" fill="#C9A84C">有据可依</text>
+
+  <!-- 副标题 -->
+  <text x="92" y="771" font-family="'PingFang SC','Noto Sans SC',sans-serif" font-size="30" fill="#B7C2D6">一级市场投资人的 AI 尽调工作台</text>
+
+  <!-- 卖点徽标 -->
+  <g font-family="'PingFang SC','Noto Sans SC',sans-serif" font-size="24" fill="#E3E9F4">
+    <rect x="90" y="813" width="270" height="56" rx="28" fill="#1B4FD8" opacity="0.18"/>
+    <text x="120" y="849">量化评分体系</text>
+    <rect x="384" y="813" width="290" height="56" rx="28" fill="#1B4FD8" opacity="0.18"/>
+    <text x="414" y="849">虚假陈述逐条击破</text>
+    <rect x="698" y="813" width="270" height="56" rx="28" fill="#1B4FD8" opacity="0.18"/>
+    <text x="728" y="849">多 Agent 协同</text>
+  </g>
+
+  <text x="1110" y="885" text-anchor="end" font-family="'JetBrains Mono',monospace" font-size="22" fill="#6B7A94">garbagebpfilter.cn</text>
+</svg>

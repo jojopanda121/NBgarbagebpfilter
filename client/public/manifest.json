@@ -1,0 +1,25 @@
+{
+  "name": "垃圾BP过滤机 — AI 尽调工作台",
+  "short_name": "BP过滤机",
+  "description": "一级市场投资人的 AI 工作台：量化评分评估 BP、逐条击破虚假陈述、多 Agent 覆盖分析尽调与投资备忘录。",
+  "lang": "zh-CN",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#F6F7FA",
+  "theme_color": "#0F1C36",
+  "icons": [
+    {
+      "src": "/logo/logo-e-icon.svg",
+      "type": "image/svg+xml",
+      "sizes": "any",
+      "purpose": "any"
+    },
+    {
+      "src": "/logo/logo-e-favicon.svg",
+      "type": "image/svg+xml",
+      "sizes": "any",
+      "purpose": "maskable"
+    }
+  ]
+}

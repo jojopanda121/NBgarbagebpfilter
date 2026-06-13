@@ -396,3 +396,50 @@ npm start               # 等价于：pm2 start ecosystem.config.js --env produc
 - 直接覆盖 ./data/app.db
 - 修改 server/db/migrations/ 下任何已有 SQL 文件
 ```
+
+---
+
+## SEO / 预渲染
+
+本项目是 CRA 单页应用，纯客户端渲染对百度 / 微信分享卡片等不执行 JS 的爬虫不友好。
+为此构建阶段引入 **react-snap 预渲染** + **react-helmet（`<Seo>` 组件）逐路由 meta**。
+
+### 工作原理
+
+- `npm run build` 后会自动执行 `postbuild`（即 `react-snap`），把公开路由渲染成带真实
+  HTML 与 meta 的静态文件（`client/build/<route>/index.html`）。
+- 预渲染失败不会中断构建（`postbuild` 末尾有 `|| echo` 兜底），仅退化为普通 CSR，需关注构建日志。
+- 逐路由的 `title / description / canonical / OG / Twitter / JSON-LD` 由
+  `client/src/components/Seo.jsx` 注入；`public/index.html` 只保留全局兜底（图标、manifest、
+  theme-color、默认 title），**不要再往模板里加 description / canonical / og:\***，否则会与
+  helmet 注入的标签在子页面重复或冲突。
+
+### 需要预渲染的公开路由
+
+在 `client/package.json` 的 `reactSnap.include` 中维护。新增公开营销页时，记得同步：
+1. `reactSnap.include`
+2. `client/public/sitemap.xml`
+3. `client/public/robots.txt`（如需精确放行）
+
+私有 / 登录后页面（`/app/**`、`/admin`、`/report/**` 等）已通过 `<Seo noindex>` 与
+`robots.txt` 的 `Disallow` 双重排除。
+
+### 规范域名
+
+`<Seo>` 生成的 canonical / og:url 默认用 `https://www.garbagebpfilter.cn`，可在构建期用
+环境变量覆盖：`REACT_APP_SITE_URL=https://your-domain npm run build`。
+换域名后需同步更新 `sitemap.xml` / `robots.txt` 中的硬编码地址。
+
+### 搜索引擎站长平台（上线后手动一次）
+
+1. **Google Search Console** 与 **百度搜索资源平台** 各添加站点。
+2. 验证方式二选一：
+   - 文件验证：把平台给的校验文件（如 `baidu_verify_xxx.html`、`googleXXXX.html`）放到
+     `client/public/`，会原样进入 `build/` 根目录被访问到。
+   - meta 验证：在 `public/index.html` 的 `<head>` 加平台给的 `<meta name="..." content="...">`。
+3. 提交 `https://www.garbagebpfilter.cn/sitemap.xml`，并在百度做一次主动推送。
+
+### 社交分享图
+
+`client/public/og-image.png`（1200×630）由同目录 `og-image.svg` 生成。改设计后重新导出 PNG
+（保持 1200×630、文件 < 1MB）即可。

@@ -2,12 +2,14 @@ import React from "react";
 import { useNavigate } from "react-router-dom";
 import { Brain, ArrowLeft } from "lucide-react";
 import ForgotPasswordForm from "../components/auth/ForgotPasswordForm";
+import Seo from "../components/Seo";
 
 export default function ForgotPasswordPage() {
   const navigate = useNavigate();
 
   return (
     <div className="min-h-screen bg-[#F6F7FA] text-[#0D2145] flex flex-col items-center justify-center px-4">
+      <Seo title="找回密码" path="/forgot-password" noindex />
       <button
         onClick={() => navigate("/login")}
         className="absolute top-4 left-4 flex items-center gap-2 text-[#4B5A72] hover:text-[#0D2145] transition-colors"

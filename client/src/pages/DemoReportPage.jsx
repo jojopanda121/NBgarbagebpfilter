@@ -5,6 +5,7 @@ import VerdictCard from "../components/VerdictCard";
 import ScoreVisualizer from "../components/ScoreVisualizer";
 import DetailedReport from "../components/DetailedReport";
 import LogoE from "../components/LogoE";
+import Seo from "../components/Seo";
 
 // 预设的示例报告数据
 const DEMO_RESULT = {
@@ -293,6 +294,11 @@ export default function DemoReportPage() {
 
   return (
     <div className="min-h-screen bg-[#F6F7FA]">
+      <Seo
+        title="演示报告 — 看 AI 如何拆解一份 BP"
+        description="一份真实的 BP 智能尽调演示报告：量化评分、虚假陈述逐条击破、五维评估与投资建议，直观感受垃圾BP过滤机的分析深度。"
+        path="/demo"
+      />
       {/* Header */}
       <header className="border-b border-[#D8DCE8] bg-[#F6F7FA]/80 backdrop-blur-sm sticky top-0 z-50">
         <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">

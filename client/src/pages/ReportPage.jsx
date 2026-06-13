@@ -7,6 +7,7 @@ import VerdictCard from "../components/VerdictCard";
 import ScoreVisualizer from "../components/ScoreVisualizer";
 import DetailedReport from "../components/DetailedReport";
 import LogoE from "../components/LogoE";
+import Seo from "../components/Seo";
 
 export default function ReportPage() {
   const { taskId, shareToken } = useParams();
@@ -131,6 +132,7 @@ export default function ReportPage() {
 
   return (
     <div className="min-h-screen bg-[#F6F7FA]">
+      <Seo title="尽调报告" noindex />
       {/* Header */}
       <header className="border-b border-[#D8DCE8] bg-[#F6F7FA]/80 backdrop-blur-sm sticky top-0 z-50">
         <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">

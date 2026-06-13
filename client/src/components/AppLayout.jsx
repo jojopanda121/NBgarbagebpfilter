@@ -2,6 +2,7 @@ import React from "react";
 import { Outlet } from "react-router-dom";
 import Header from "./layout/Header";
 import AnnouncementBanner from "./AnnouncementBanner";
+import Seo from "./Seo";
 
 /**
  * AppLayout - 核心区域布局
@@ -10,6 +11,7 @@ import AnnouncementBanner from "./AnnouncementBanner";
 export default function AppLayout() {
   return (
     <div className="app-shell min-h-screen">
+      <Seo title="工作台" noindex />
       <Header />
       <AnnouncementBanner />
       <Outlet />

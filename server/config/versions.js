@@ -13,6 +13,9 @@
 // 用户重新分析会按新逻辑重跑（正常消耗额度）。
 // ============================================================
 
-const PIPELINE_VERSION = "v4.4.0";
+// v4.5.0: S5 反稀释重构（materiality 分组 + Integrity Veto 一票否决）、
+//         关键声明核查接入真实联网检索、BP 原文不可信边界（注入防线）、
+//         estimated 推断值打折、scoring_shadow 落库、降级报告显式警告。
+const PIPELINE_VERSION = "v4.5.0";
 
 module.exports = { PIPELINE_VERSION };

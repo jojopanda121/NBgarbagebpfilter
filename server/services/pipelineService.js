@@ -4,10 +4,11 @@
 // ============================================================
 
 const pLimit = require("p-limit");
-const { callLLM, callLLMWithThinking, callLLMWithSearch } = require("./llmService");
+const { callLLM, callLLMWithThinking, callLLMWithSearch, getModelName } = require("./llmService");
 const { extractJson, extractJsonArray, extractPartialResult, ensureStringArray } = require("../utils/jsonParser");
-const { scoreProject } = require("../scoring");
-const { mergeSpecialistEvidence } = require("../scoringEvidence");
+const { scoreProject, assessIntegrityVeto } = require("../scoring");
+const { mergeSpecialistEvidence, financialToVerdicts, valuationToVerdicts } = require("../scoringEvidence");
+const { runWebSearch, formatSearchContext, kimiAgenticChatWithSearch } = require("./webSearchService");
 const logger = require("../utils/logger");
 const trackingService = require("./trackingService");
 const agentRuntime = require("./agentRuntime");
@@ -28,6 +29,67 @@ const {
 const MAX_CLAIMS_PER_BATCH = 6; // 每批最多6条声明，防止输出截断导致JSON解析失败
 const MAX_CONCURRENT_BATCHES = 5; // 最多5个并发批次
 const PARALLEL_TASK_TIMEOUT_MS = 8 * 60 * 1000; // 单路并行任务上限 8min，避免一路 hang 拖死整个分析
+
+// ── 不可信文档边界（与 prompts.js 的 UNTRUSTED_DOC_GUARD 配对）──────
+// BP 原文进入任何 prompt 前必须包裹，防止文档内指令越权成为模型指令。
+function wrapBpDocument(text) {
+  const cleaned = String(text || "").replace(/<\/?BP_DOCUMENT>/g, "");
+  return `<BP_DOCUMENT>\n${cleaned}\n</BP_DOCUMENT>`;
+}
+
+// 高置信注入特征预扫（保守的高精度模式，宁缺毋滥——命中即打质量旗+风险旗）
+const INJECTION_PATTERNS = [
+  /忽略(之前|以上|前面|上面)的?(所有|全部)?(指令|提示|规则|要求)/,
+  /ignore\s+(all\s+)?(previous|prior|above)\s+(instructions?|prompts?|rules?)/i,
+  /(请|必须)?给?(本|该|此)项目(打)?\s*(满分|高分|100\s*分|[9八九]\d\s*分以上)/,
+  /verdict\s*[=:：]\s*["']?(诚实|保守低估)/,
+  /(不要|无需|跳过|禁止)(核查|核实|验证)(以下|这些|上述)?(声明|内容|数据)/,
+  /\bsystem\s*(prompt|message)\s*[:：]/i,
+  /你(现在)?是.{0,12}(系统|管理员|开发者模式)/,
+];
+
+function detectInjectionHints(bpText) {
+  const text = String(bpText || "");
+  const hits = [];
+  for (const re of INJECTION_PATTERNS) {
+    const m = text.match(re);
+    if (m) hits.push(m[0].slice(0, 60));
+  }
+  return hits;
+}
+
+// ── 评分接地检索：给"评分数据"调用注入真实外部证据 ─────────────
+// 投资人要的是"BP 说技术牛逼 → AI 客观发现市场上很多类似的"。
+// 该能力的前提是产出 TRL/竞品排名/护城河/TAM 的那次调用见过真实检索结果，
+// 而不是只凭模型记忆+BP 自报。查询聚焦竞品格局与市场规模两类客观事实。
+function buildScoringSearchQueries(extractedData = {}) {
+  const industry = String(extractedData.industry || "").trim();
+  const product = String(extractedData.product_name || "").trim();
+  const company = String(extractedData.company_name || "").trim();
+  return [
+    industry || product ? [industry, product, "竞品 同类产品 公司 对比"].filter(Boolean).join(" ") : "",
+    industry ? `${industry} 市场规模 CAGR 增速 研报` : "",
+    company ? [company, product, "融资 客户 技术"].filter(Boolean).join(" ") : "",
+  ].filter(Boolean);
+}
+
+async function fetchScoringEvidence(extractedData) {
+  try {
+    const rows = await runWebSearch(buildScoringSearchQueries(extractedData));
+    if (!rows.length) return "";
+    return [
+      "\n\n【服务端联网检索证据】",
+      formatSearchContext(rows),
+      "",
+      "重要：评定 TRL、Competitor_Rank_Score、Moat_Rubric、竞争密度、TAM、CAGR 时，",
+      "必须优先依据上方检索证据与微观声明核查报告；检索证据与 BP 自报冲突时，以检索证据为准并压低对应评分。",
+      "检索发现同类竞品较多/技术非独家时，competitive_density 与 differentiation 不得给高分。",
+    ].join("\n");
+  } catch (err) {
+    logger.warn("[B.scoring] 评分接地检索失败，评分将退回模型知识:", err.message);
+    return "";
+  }
+}
 
 function withTaskTimeout(promise, label) {
   return Promise.race([
@@ -184,6 +246,9 @@ async function verifySingleClaim(claim, bpContext, batchLabel) {
 async function runAgentBWithBatchingAndResearch(extractedData, bpText, onProgress) {
   const claims = extractedData.key_claims || [];
 
+  // 评分接地检索与 Phase 1 并行启动（不阻塞声明核查），Phase 2 评分前就绪
+  const scoringEvidencePromise = fetchScoringEvidence(extractedData);
+
   // Phase 1: 微观声明核查 — 每批最多 MAX_CLAIMS_PER_BATCH 条，防止输出过长被截断
   const batches = [];
   for (let i = 0; i < claims.length; i += MAX_CLAIMS_PER_BATCH) {
@@ -197,17 +262,51 @@ async function runAgentBWithBatchingAndResearch(extractedData, bpText, onProgres
   const bpContext = `请对处于 ${extractedData.industry || "未知"} 赛道的 ${extractedData.company_name || "未知公司"} 进行核查。产品：${extractedData.product_name || "未知"}。`;
 
   const limit = pLimit(MAX_CONCURRENT_BATCHES);
+  // 含 critical/high 声明的批次走真实联网检索，让"事实核查"对关键声明有
+  // 外部证据，而不是纯模型记忆自我背书。三级降级：
+  //   ① Kimi 原生 agentic 检索（builtin $web_search，Kimi 按每条声明自主
+  //     决定搜什么、搜几轮——检索针对性最强，深挖 Kimi 自带能力）
+  //   ② 服务端预检索注入（callLLMWithSearch + verification_harness 查询）
+  //   ③ 纯模型知识（callLLM，verdict 受证据纪律约束只能给存疑）
+  const verifyBatch = async (batch, batchIdx) => {
+    const sysPrompt = CLAIM_VERDICT_BATCH_PROMPT + "\n\n【重要】请严格只输出 JSON 数组，不要使用 markdown 代码块。";
+    const userInput = `${bpContext}\n\n待核查声明批次 ${batchIdx + 1}/${batchCount}：\n${JSON.stringify(batch, null, 2)}`;
+    const hasPriorityClaim = batch.some((c) =>
+      ["critical", "high"].includes(String(c?.priority || "").toLowerCase())
+    );
+    if (!hasPriorityClaim) return callLLM(sysPrompt, userInput, 6144);
+
+    // ① Kimi 原生自主检索
+    try {
+      const r = await kimiAgenticChatWithSearch({
+        system: sysPrompt +
+          "\n\n你拥有联网搜索工具。对每条 critical/high 声明，按其 verification_harness.kimi_research_prompt 主动检索核验；" +
+          "ai_research 中必须写明检索到的来源（媒体/机构名 + URL + 日期）。",
+        user: userInput,
+        maxTokens: 6144,
+      });
+      logger.info(`[B.1] 批次 ${batchIdx + 1} Kimi 原生检索完成`, { searchRounds: r.searchRounds });
+      return r.text;
+    } catch (err) {
+      logger.warn(`[B.1] 批次 ${batchIdx + 1} Kimi 原生检索失败，降级预检索: ${err.message}`);
+    }
+    // ② 服务端预检索注入
+    const preSearchQueries = batch
+      .filter((c) => ["critical", "high"].includes(String(c?.priority || "").toLowerCase()))
+      .map((c) => c?.verification_harness?.kimi_research_prompt)
+      .filter(Boolean)
+      .slice(0, 3);
+    return callLLMWithSearch(sysPrompt, userInput, { maxTokens: 6144, preSearchQueries })
+      .then((r) => r.text);
+  };
+
   // M8: 外层 try/catch 兜底 Promise.all 内部不可达异常（如 p-limit 自身错误）
   let batchResults;
   try {
     batchResults = await Promise.all(
       batches.map((batch, batchIdx) =>
         limit(() =>
-          callLLM(
-            CLAIM_VERDICT_BATCH_PROMPT + "\n\n【重要】请严格只输出 JSON 数组，不要使用 markdown 代码块。",
-            `${bpContext}\n\n待核查声明批次 ${batchIdx + 1}/${batchCount}：\n${JSON.stringify(batch, null, 2)}`,
-            6144
-          ).then((raw) => {
+          verifyBatch(batch, batchIdx).then((raw) => {
             const parsed = extractJsonArray(raw);
             if (!parsed) {
               return { failed: true, batch, batchIdx };
@@ -276,16 +375,20 @@ async function runAgentBWithBatchingAndResearch(extractedData, bpText, onProgres
   const scoringPrompt = buildStructuralPrompt(extractedData);
   const dimAnalysisPrompt = buildDimensionAnalysisPrompt(extractedData);
 
-  // 评分和维度分析共用同一组输入
+  // 评分接地证据（与 Phase 1 并行检索，此处就绪；失败返回空串不阻塞）
+  const scoringEvidence = await scoringEvidencePromise;
+
+  // 评分和维度分析共用同一组输入（BP 原文必须包裹不可信文档边界）
   const structuralInput = [
     `【BP提取数据（原始）】\n${JSON.stringify(extractedData, null, 2)}`,
     `\n\n【微观声明核查报告】\n${JSON.stringify(compressedVerdicts, null, 2)}`,
-    `\n\n【BP原文节选（前3000字）】\n${bpText.slice(0, 3000)}`,
+    `\n\n【BP原文节选（前3000字）】\n${wrapBpDocument(bpText.slice(0, 3000))}`,
+    scoringEvidence,
   ].join("");
 
   // 深度研究使用更多原文
   const earlyDeepResearchInput = [
-    `【商业计划书原文节选（前12000字）】\n${bpText.slice(0, 12000)}`,
+    `【商业计划书原文节选（前12000字）】\n${wrapBpDocument(bpText.slice(0, 12000))}`,
     `\n\n【项目基本信息】\n公司：${extractedData.company_name || "未知"}，赛道：${extractedData.industry || "未知"}`,
     `\n\n【声明核查结果】\n${JSON.stringify(compressedVerdicts, null, 2)}`,
     `\n\n【BP提取数据】\n${JSON.stringify(extractedData, null, 2)}`,
@@ -380,8 +483,24 @@ async function runAgentBWithBatchingAndResearch(extractedData, bpText, onProgres
       }
     })(), "五维分析"),
 
-    // Task C: 深度研究报告（启用 Kimi web_search 工具，失败自动降级；并加 8min 任务级超时）
+    // Task C: 深度研究报告。三级降级：
+    // Kimi 原生 agentic 检索（自主多轮搜市场/竞品/政策/创始人）→ 兼容层
+    // web_search → 纯模型。原生路径要求报告中的外部事实带来源 URL+日期。
     withTaskTimeout((async () => {
+      try {
+        const r = await kimiAgenticChatWithSearch({
+          system: DEEP_RESEARCH_PROMPT +
+            "\n\n你拥有联网搜索工具。撰写前请主动检索：行业规模与增速、主要竞品及其融资、相关政策、公司与创始人公开信息。" +
+            "报告中引用的外部事实必须标注来源（媒体/机构名 + URL + 日期）；检索不到的写明待核实。",
+          user: earlyDeepResearchInput,
+          maxTokens: 16000,
+          maxRounds: 10,
+        });
+        logger.info("[B.deep] 深度研究 Kimi 原生检索完成", { searchRounds: r.searchRounds });
+        return r.text;
+      } catch (nativeErr) {
+        logger.warn("[B.deep] Kimi 原生检索失败，降级兼容层 web_search:", nativeErr.message);
+      }
       try {
         const { text, searchUsed } = await callLLMWithSearch(
           DEEP_RESEARCH_PROMPT,
@@ -422,6 +541,7 @@ async function runAgentBWithBatchingAndResearch(extractedData, bpText, onProgres
     thinking: structuralOutcome.thinking,
     dimensionAnalysisResult,
     deepResearch,
+    scoringEvidenceUsed: !!scoringEvidence,
   };
 }
 
@@ -434,8 +554,8 @@ function buildIntegrityDimAnalysis(claimVerdicts) {
   if (!Array.isArray(claimVerdicts) || claimVerdicts.length === 0) {
     return {
       finding: "暂无声明核查数据",
-      comprehensive_analysis: "暂无声明核查数据，诚信度取默认及格分。",
-      score_rationale: "无核查数据，取中性默认分 60",
+      comprehensive_analysis: "暂无声明核查数据，诚信度取中性偏上默认分（没有声明可核查不代表不诚信）。",
+      score_rationale: "无核查数据，取中性默认分 70",
       risk_factors: [],
       positive_signals: [],
     };
@@ -467,13 +587,17 @@ function buildIntegrityDimAnalysis(claimVerdicts) {
   if (exaggeratedCount > 0) riskFactors.push(`${exaggeratedCount} 条声明存在夸大`);
   if (falseCount > 0) riskFactors.push(`${falseCount} 条声明被证伪`);
   if (counts["信息不对称"] > 0) riskFactors.push(`${counts["信息不对称"]} 条声明涉嫌信息不对称`);
+  const veto = assessIntegrityVeto(claimVerdicts);
+  if (veto.triggered) {
+    riskFactors.unshift(`触发诚信一票否决（重大类别声明被证伪/严重夸大）：${veto.reasons[0]}`);
+  }
   if (honestCount > 0) positiveSignals.push(`${honestCount} 条声明（${honestPct}%）经核查属实或保守`);
   if (dishonestPct === 0) positiveSignals.push("未发现明显夸大或造假迹象");
 
   return {
     finding,
-    comprehensive_analysis: `${finding} 诚实/保守声明占比 ${honestPct}%，存在问题声明占比 ${dishonestPct}%。存疑声明为 LLM 知识库覆盖不足所致，不代表项目问题。`,
-    score_rationale: `按 verdict 加权均值计算：诚实/保守=10分，存疑=6分，夸大=3分，信息不对称=2分，严重夸大=1分，证伪=0分`,
+    comprehensive_analysis: `${finding} 诚实/保守声明占比 ${honestPct}%，存在问题声明占比 ${dishonestPct}%。存疑声明为 LLM 知识库覆盖不足所致，不代表项目问题。${veto.triggered ? " ⚠ 重大类别（财务/估值/合规）声明被证伪或严重夸大，已触发诚信一票否决，评级被强制限制。" : ""}`,
+    score_rationale: `verdict 映射（诚实/保守=10，存疑=6，夸大=3，信息不对称=2，严重夸大=1，证伪=0）后分组加权：财务/估值/合规等重大声明占 70%，其余声明占 30%；重大声明被证伪或严重夸大时 S5 封顶 25 分且评级封顶 C（不可被其他声明稀释）`,
     risk_factors: riskFactors,
     positive_signals: positiveSignals,
   };
@@ -524,6 +648,9 @@ function buildVerdictResponse(scoringResult, structuralResult, validatedData, di
     grade_label: scoringResult.grade_label,
     grade_action: scoringResult.grade_action,
     grade_color: scoringResult.grade_color,
+    // 诚信一票否决：触发时前端必须醒目展示（grade 已被 scoring 层封顶 C）
+    integrity_veto: scoringResult.integrity_veto || null,
+    grade_overridden_from: scoringResult.grade_overridden_from || null,
     verdict_summary: structuralResult?.one_line_summary || scoringResult.grade_label,
     dimensions,
     risk_flags: ensureStringArray(validatedData.risk_flags),
@@ -547,7 +674,7 @@ async function extractBPData(bpText, onProgress) {
 
   let extractionRaw = await callLLM(
     AGENT_A_PROMPT,
-    `以下是商业计划书全文（共 ${truncatedText.length} 字符）：\n\n${truncatedText}`,
+    `以下是商业计划书全文（共 ${truncatedText.length} 字符）：\n\n${wrapBpDocument(truncatedText)}`,
     8192
   );
   let extractedData = extractJson(extractionRaw);
@@ -556,7 +683,7 @@ async function extractBPData(bpText, onProgress) {
   if (!extractedData || !extractedData.key_claims) {
     onProgress({ type: "progress", stage: "data_extract_retry", percentage: 18, message: "数据提取重试中..." });
     const retryPrompt = AGENT_A_PROMPT + "\n\n【紧急提醒】只输出 JSON 对象。";
-    extractionRaw = await callLLM(retryPrompt, `以下是商业计划书全文：\n\n${truncatedText}`, 8192);
+    extractionRaw = await callLLM(retryPrompt, `以下是商业计划书全文：\n\n${wrapBpDocument(truncatedText)}`, 8192);
     extractedData = extractJson(extractionRaw);
   }
 
@@ -609,6 +736,25 @@ function calculateScoring(validatedData, claimVerdicts, onProgress, multiagent =
   const rawScoringData = validatedData.validated_data || {};
   const mode = scoringHarnessMode(); // off | shadow | on
 
+  // F-10: 财务/估值专家的确定性结论并入 live 声明集。
+  // 这些 verdict 是纯 JS 查表推导（数学矛盾→证伪、估值远高于→夸大等），
+  // 已在 scoringEvidence 里封顶防淹没——专家查到"财务自相矛盾"必须能拖分、
+  // 能触发诚信一票否决，而不是只躺在 multiagent 标签页的文字里。
+  // 注意：仅用于 live/legacy 路径；harness 合并路径(mergeSpecialistEvidence)
+  // 自带同样的注入逻辑，传原始 claimVerdicts 避免重复计入。
+  let liveVerdicts = claimVerdicts || [];
+  if (multiagent && !multiagent.error) {
+    try {
+      const extra = [
+        ...financialToVerdicts(multiagent.financial_analysis),
+        ...valuationToVerdicts(multiagent.valuation_analysis),
+      ].map((v) => ({ ...v, original_claim: v.original_claim || v.claim }));
+      if (extra.length > 0) liveVerdicts = [...liveVerdicts, ...extra];
+    } catch (err) {
+      logger.warn("[Pipeline] 专家 verdict 注入 live 评分失败（忽略）:", err.message);
+    }
+  }
+
   // Plan A：把 orchestrator 5 专家已产的事实，用 JS 推导并双路合并进评分输入。
   // 任一专家缺失/{} → 合并器逐字段 no-op 回退 Agent B，绝不 fail。
   let enrichedData = null;
@@ -636,12 +782,13 @@ function calculateScoring(validatedData, claimVerdicts, onProgress, multiagent =
   let scoringInput;
   let scoringResult;
   if (mode === "on" && enrichedData) {
-    // on：全量新分生效（harness S2 + 专家合并五维）
+    // on：全量新分生效（harness S2 + 专家合并五维；专家 verdict 已由合并器注入）
     scoringInput = _toScoringInput(enrichedData, claimVerdicts);
     scoringResult = scoreProject(scoringInput, { modeOverride: "on" });
   } else {
-    // off / shadow / 无专家：live 走纯 legacy（force off 避免嵌套 shadow）
-    scoringInput = _toScoringInput(rawScoringData, claimVerdicts);
+    // off / shadow / 无专家：live 走纯 legacy（force off 避免嵌套 shadow），
+    // 但专家确定性 verdict 计入 live S5（liveVerdicts）
+    scoringInput = _toScoringInput(rawScoringData, liveVerdicts);
     scoringResult = scoreProject(scoringInput, { modeOverride: "off" });
     // shadow：把"全量新分"作为对照块附上，不影响 live
     if (mode === "shadow" && enrichedData) {
@@ -667,6 +814,7 @@ function calculateScoring(validatedData, claimVerdicts, onProgress, multiagent =
 
   return { scoringInput, scoringResult };
 }
+
 
 /**
  * Step 3: 构建估值对比数据
@@ -761,11 +909,18 @@ async function runPipeline(bpText, onProgress, taskId = null, userId = null) {
     })(),
   ]);
 
-  const { claimVerdicts, structuralResult, thinking, dimensionAnalysisResult, deepResearch } = agentBResult;
+  const { claimVerdicts, structuralResult, thinking, dimensionAnalysisResult, deepResearch, scoringEvidenceUsed } = agentBResult;
 
   // ── 报告质量标记：降级不再静默，最终结果携带 quality.flags ──
   const qualityFlags = [];
+  // Prompt Injection 预扫：BP 文本含操纵 AI 的指令特征 → 整份报告打可疑标记
+  const injectionHits = detectInjectionHints(bpText);
+  if (injectionHits.length > 0) {
+    qualityFlags.push("prompt_injection_suspected");
+    logger.warn("[Pipeline] BP 文本疑似包含 Prompt 注入指令", { hits: injectionHits });
+  }
   if (!deepResearch) qualityFlags.push("deep_research_unavailable");
+  if (!scoringEvidenceUsed) qualityFlags.push("scoring_search_unavailable");
   if (!multiagent || multiagent.error || Object.keys(multiagent).length === 0) {
     qualityFlags.push("multiagent_unavailable");
   }
@@ -782,8 +937,10 @@ async function runPipeline(bpText, onProgress, taskId = null, userId = null) {
     onProgress({ type: "progress", stage: "scoring_fallback", percentage: 86, message: "正在整合分析数据..." });
     validatedData = {
       validated_data: {
-        TAM_Million_RMB: extractedData.TAM_Million_RMB ?? 0,
-        CAGR: extractedData.CAGR ?? 0,
+        // F-06: Agent A 标注 estimated 的推断值按缺失处理（S1 走中性 30），
+        // 不得让模型"行业常识猜的 TAM"冒充已验证市场规模进入评分
+        TAM_Million_RMB: extractedData.TAM_estimated === true ? 0 : (extractedData.TAM_Million_RMB ?? 0),
+        CAGR: extractedData.CAGR_estimated === true ? 0 : (extractedData.CAGR ?? 0),
         TRL: extractedData.TRL ?? 5,
         Competitor_Rank_Score: 5,
         Industry_Capital_Score: 5,
@@ -796,10 +953,38 @@ async function runPipeline(bpText, onProgress, taskId = null, userId = null) {
     };
   } else {
     validatedData = { ...structuralResult, claim_verdicts: claimVerdicts };
+    // F-06: Agent B 如果只是原样照抄 Agent A 的推断值（既没给独立 TAM_Source
+    // 依据、数值也没变），该值仍是模型猜测——按缺失打折，并打质量旗
+    const vd = validatedData.validated_data || {};
+    if (
+      extractedData.TAM_estimated === true &&
+      Number(vd.TAM_Million_RMB) === Number(extractedData.TAM_Million_RMB)
+    ) {
+      const src = vd.TAM_Source;
+      const hasIndependentBasis =
+        src && typeof src === "object" && ["研报", "自下而上"].includes(String(src.type));
+      if (!hasIndependentBasis) {
+        vd.TAM_Million_RMB = 0; // isTamMissing → 中性 30 + inputs.TAM_missing 标记
+        qualityFlags.push("tam_estimated_discounted");
+      }
+    }
+    if (
+      extractedData.CAGR_estimated === true &&
+      Number(vd.CAGR) === Number(extractedData.CAGR)
+    ) {
+      vd.CAGR = 0; // CAGR 是加分项，推断增速不给分
+      qualityFlags.push("cagr_estimated_discounted");
+    }
   }
 
   // Step 3: 评分计算（CPU，瞬间完成）
   const { scoringInput, scoringResult } = calculateScoring(validatedData, claimVerdicts, onProgress, multiagent);
+
+  // 所见即所评：报告展示的声明核查列表与实际计入 S5 的声明集保持一致
+  // （含专家注入的"财务数学矛盾→证伪"等确定性结论，投资人必须看得到）
+  if (Array.isArray(scoringInput.claim_verdicts) && scoringInput.claim_verdicts.length > 0) {
+    validatedData.claim_verdicts = scoringInput.claim_verdicts;
+  }
 
   // Step 4: 整合维度分析数据
   // 优先使用并行获取的专用维度分析结果，其次使用结构化评分中附带的，最后才用兜底
@@ -846,6 +1031,22 @@ async function runPipeline(bpText, onProgress, taskId = null, userId = null) {
 
   const valuationComparison = buildValuationComparison(validatedData, extractedData, scoringInput, scoringResult, multiagent);
   const verdict = buildVerdictResponse(scoringResult, structuralResult, validatedData, dimensionAnalysis, valuationComparison);
+
+  // 注入嫌疑 → 风险旗置顶，投资人必须看到"这份 BP 试图操纵 AI 分析"
+  if (injectionHits.length > 0) {
+    verdict.risk_flags = [
+      `BP 文本疑似包含操纵 AI 分析的指令（prompt injection），本报告所有结论请人工复核：${injectionHits[0]}`,
+      ...(verdict.risk_flags || []),
+    ];
+  }
+
+  // 评分全降级 → "行动建议"必须收回，绝不能拿默认兜底分指导投资动作
+  if (qualityFlags.includes("scoring_fallback_agent_a")) {
+    verdict.grade_label = `${verdict.grade_label}（兜底估算，不可作为决策依据）`;
+    verdict.grade_action =
+      "本次评分模型多次调用失败，当前分数基于系统默认中性值估算，不具备投资参考价值。" +
+      "请重新发起分析；若多次失败请联系管理员排查 LLM 服务。原行动建议已撤回。";
+  }
 
   const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
   onProgress({ type: "progress", stage: "finalizing", percentage: 98, message: "报告生成完成，整理结果..." });
@@ -924,6 +1125,14 @@ async function runPipeline(bpText, onProgress, taskId = null, userId = null) {
   return {
     success: true,
     pipeline_version: PIPELINE_VERSION,
+    // 评分审计三件套：本次实际使用的模型、live 分数依据、shadow 对照块。
+    // scoring_shadow 落库是 harness 灰度校准的前提——没有新旧分对照数据，
+    // SCORING_HARNESS 永远无法安全切到 on。
+    model_id: getModelName(),
+    scoring_basis: scoringResult.scoring_basis || "legacy",
+    scoring_shadow: scoringResult.scoring_shadow || null,
+    specialist_audit:
+      scoringResult.specialist_audit || scoringResult.scoring_shadow?.specialist_audit || null,
     // 降级显式化：degraded=true 表示报告部分内容由兜底路径生成，
     // flags 枚举具体降级点（前端/管理端可据此提示用户或排查）
     quality: { degraded: qualityFlags.length > 0, flags: qualityFlags },
@@ -946,4 +1155,14 @@ async function runPipeline(bpText, onProgress, taskId = null, userId = null) {
   };
 }
 
-module.exports = { runPipeline, classifyIndustry, classifyIndustryMulti };
+module.exports = {
+  runPipeline,
+  classifyIndustry,
+  classifyIndustryMulti,
+  // 导出供测试与复用（注入防线/降级文案/评分接地的回归测试依赖这些函数）
+  wrapBpDocument,
+  detectInjectionHints,
+  buildIntegrityDimAnalysis,
+  buildScoringSearchQueries,
+  calculateScoring,
+};

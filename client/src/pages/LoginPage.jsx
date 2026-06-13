@@ -2,6 +2,7 @@ import React from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
 import LoginForm from "../components/auth/LoginForm";
+import Seo from "../components/Seo";
 
 const LogoE = ({ size = 48 }) => (
   <svg width={size} height={size} viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -28,6 +29,7 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen bg-[#F6F7FA] text-[#0F1C36] flex flex-col items-center justify-center px-4 relative">
+      <Seo title="登录 / 注册" description="登录垃圾BP过滤机，开始用 AI 量化评分与多 Agent 协同完成 BP 分析与尽职调查。" path="/login" />
       <div className="absolute -top-[100px] -right-[60px] w-[700px] h-[700px] pointer-events-none"
            style={{ background: "radial-gradient(ellipse, rgba(27,79,216,.08) 0%, transparent 65%)" }} />
       <div className="absolute -bottom-[80px] -left-[80px] w-[400px] h-[400px] pointer-events-none"

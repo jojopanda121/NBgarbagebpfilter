@@ -20,6 +20,9 @@ const TrackingDashboardPage = lazy(() => import("../pages/TrackingDashboardPage"
 const WorkspaceProjectListPage = lazy(() => import("../pages/WorkspaceProjectListPage"));
 const WorkspaceProjectPage = lazy(() => import("../pages/WorkspaceProjectPage"));
 const PublicTeaserPage = lazy(() => import("../pages/PublicTeaserPage"));
+const AboutPage = lazy(() => import("../pages/AboutPage"));
+const PrivacyPage = lazy(() => import("../pages/PrivacyPage"));
+const TermsPage = lazy(() => import("../pages/TermsPage"));
 
 export default function AppRoutes() {
   return (
@@ -29,6 +32,9 @@ export default function AppRoutes() {
         <Route path="/login" element={<LoginPage />} />
         <Route path="/forgot-password" element={<ForgotPasswordPage />} />
         <Route path="/demo" element={<DemoReportPage />} />
+        <Route path="/about" element={<AboutPage />} />
+        <Route path="/privacy" element={<PrivacyPage />} />
+        <Route path="/terms" element={<TermsPage />} />
         <Route path="/report/:taskId" element={<ReportPage />} />
         <Route path="/report/s/:shareToken" element={<ReportPage />} />
         <Route path="/project/:taskId" element={<ProjectPage />} />

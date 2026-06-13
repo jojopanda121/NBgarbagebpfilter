@@ -3,9 +3,21 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>垃圾BP过滤机 — AI 尽调工具</title>
+  <meta name="theme-color" content="#0F1C36" />
+
+  <!-- 标题为兜底默认值；逐路由的 title / description / canonical / OG / Twitter
+       全部由 react-helmet（<Seo> 组件）注入，预渲染时烘焙进静态 HTML。
+       这里不要再放 description / canonical / og:* / twitter:*，否则会与 helmet
+       注入的标签在子页面重复甚至冲突（例如把首页 canonical 泄漏到 /demo）。 -->
+  <title>垃圾BP过滤机 — 一级市场投资人的 AI 尽调工作台</title>
+
+  <!-- 图标 / PWA -->
+  <link rel="icon" href="%PUBLIC_URL%/logo/logo-e-favicon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="%PUBLIC_URL%/logo/logo-e-icon.svg" />
+  <link rel="manifest" href="%PUBLIC_URL%/manifest.json" />
 </head>
 <body>
+  <noscript>本站需要启用 JavaScript 才能完整运行。垃圾BP过滤机是面向一级市场投资人的 AI 尽调工作台。</noscript>
   <div id="root"></div>
 </body>
 </html>

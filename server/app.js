@@ -1,5 +1,6 @@
 const express = require("express");
 const helmet = require("helmet");
+const compression = require("compression");
 const cors = require("cors");
 const path = require("path");
 const fs = require("fs");
@@ -119,8 +120,24 @@ function mountStaticAssets(app) {
 
   const clientBuildDir = path.join(__dirname, "..", "client", "build");
   if (fs.existsSync(clientBuildDir)) {
-    app.use(express.static(clientBuildDir));
+    // 带内容 hash 的构建产物（/static/**）可长期强缓存；HTML 与预渲染页
+    // 不缓存，确保 meta / 部署更新即时生效。
+    app.use(
+      express.static(clientBuildDir, {
+        // react-snap 预渲染产物可能为 /demo.html；extensions 让 /demo 命中它，
+        // 目录式 /demo/index.html 由默认 index 行为覆盖。
+        extensions: ["html"],
+        setHeaders(res, filePath) {
+          if (/\.html$/i.test(filePath)) {
+            res.setHeader("Cache-Control", "no-cache");
+          } else if (filePath.includes(`${path.sep}static${path.sep}`)) {
+            res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+          }
+        },
+      })
+    );
     app.get("*", (_req, res) => {
+      res.setHeader("Cache-Control", "no-cache");
       res.sendFile(path.join(clientBuildDir, "index.html"));
     });
     return;
@@ -136,6 +153,9 @@ function createApp({ getShutdownState = () => false } = {}) {
 
   const app = express();
   app.set("trust proxy", 1);
+
+  // gzip/deflate 压缩：HTML/JS/CSS/JSON 等文本资源，改善加载速度与 Core Web Vitals
+  app.use(compression());
 
   app.use(helmet({
     contentSecurityPolicy: {

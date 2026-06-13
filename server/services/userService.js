@@ -13,7 +13,7 @@ const { getDb } = require("../db");
 function getUserById(userId) {
   const db = getDb();
   return db.prepare(
-    "SELECT id, username, email, phone, contact_bound, usage_count, role, created_at FROM users WHERE id = ?"
+    "SELECT id, username, email, phone, contact_bound, usage_count, role, created_at, avatar_url, user_type, type_verified, display_name, org_name FROM users WHERE id = ?"
   ).get(userId);
 }
 

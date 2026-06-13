@@ -154,6 +154,11 @@ function getMe(req, res) {
       usage_count: user.usage_count || 0,
       role: user.role || "user",
       created_at: user.created_at,
+      avatar_url: user.avatar_url || null,
+      user_type: user.user_type || "unset",
+      type_verified: !!user.type_verified,
+      display_name: user.display_name || "",
+      org_name: user.org_name || "",
     },
     quota: {
       free: quota.free,

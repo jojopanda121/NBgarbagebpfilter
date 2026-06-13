@@ -28,11 +28,13 @@ import {
 import { useSearchParams } from "react-router-dom";
 import api from "../services/api";
 import useAuthStore from "../store/useAuthStore";
+import ProfileEditor from "./Forum/ProfileEditor";
 
 // Tab 配置
 const TABS = [
   { key: "mystats", label: "我的数据", icon: BarChart3 },
   { key: "account", label: "账户安全", icon: User },
+  { key: "forum", label: "论坛资料", icon: Users },
   { key: "billing", label: "财务与额度", icon: Wallet },
   { key: "token", label: "兑换额度", icon: Gift },
   { key: "feedback", label: "意见反馈", icon: MessageSquare },
@@ -508,6 +510,17 @@ export default function SettingsPage({ adminMode = false }) {
           confirmPassword={confirmPassword} setConfirmPassword={setConfirmPassword}
           loading={loading} setMessage={setMessage} setProfile={setProfile}
         />
+      )}
+
+      {/* 论坛资料 Tab */}
+      {activeTab === "forum" && (
+        <div className="bg-white border border-[#D8DCE8] rounded-xl p-5">
+          <div className="mb-4">
+            <h3 className="text-sm font-semibold text-[#0D2145]">论坛身份与资料</h3>
+            <p className="text-xs text-[#8E9BB0] mt-0.5">选择你在投资人论坛的身份（投资人 / 项目方 / FA），填写展示名与撮合名片。</p>
+          </div>
+          <ProfileEditor />
+        </div>
       )}
 
       {/* 财务与额度 Tab */}

@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from "react";
-import { Download, LogOut, User, Zap, FileText, ChevronDown, Shield, Trophy, BarChart2 } from "lucide-react";
+import { Download, LogOut, User, Zap, FileText, ChevronDown, Shield, Trophy, BarChart2, Users } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import useAuthStore from "../../store/useAuthStore";
 import useAnalysisStore from "../../store/useAnalysisStore";
@@ -141,6 +141,14 @@ export default function Header() {
                     >
                       <FileText className="w-4 h-4" />
                       历史报告
+                    </button>
+                    <button
+                      onClick={() => { setShowDropdown(false); navigate("/forum"); }}
+                      className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-[#0D2145] hover:bg-[#EEF1F7] transition-colors"
+                      role="menuitem"
+                    >
+                      <Users className="w-4 h-4 text-[#1B4FD8]" />
+                      投资人论坛
                     </button>
                     <button
                       onClick={() => { setShowDropdown(false); navigate("/app/leaderboard"); }}

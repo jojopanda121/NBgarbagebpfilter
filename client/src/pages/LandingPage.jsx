@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
+import ParticlesBackground from "../components/ParticlesBackground";
 import "./LandingPage.css";
 
 const LogoE = ({ size = 32 }) => (
@@ -198,6 +199,7 @@ export default function LandingPage() {
 
   return (
     <div className="lp-root">
+      {/* 原有网状背景：铺满全页，向下滚动时可见 */}
       <canvas ref={canvasRef} id="bg-canvas" />
       <div className="lp-bg-grid" />
       <div className="lp-bg-orbs">
@@ -205,6 +207,8 @@ export default function LandingPage() {
         <div className="lp-bg-orb o2" />
         <div className="lp-bg-orb o3" />
       </div>
+      {/* 粒子背景：仅覆盖首屏，叠在网状背景之上 */}
+      <ParticlesBackground />
 
       {/* NAV */}
       <nav className="lp-nav">

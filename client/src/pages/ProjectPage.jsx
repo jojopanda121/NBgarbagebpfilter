@@ -21,6 +21,8 @@ import IMemoTab from "../components/IMemoTab";
 import ProjectNotesTab from "../components/ProjectNotesTab";
 import WorkspaceTab from "../components/Workspace/WorkspaceTab";
 import LogoE from "../components/LogoE";
+import ShareToForumModal from "../components/forum/ShareToForumModal";
+import { Users } from "lucide-react";
 import Seo from "../components/Seo";
 
 const STAGE_CONFIG = {
@@ -45,6 +47,7 @@ export default function ProjectPage() {
   const [sharing, setSharing] = useState(false);
   const [shareLink, setShareLink] = useState("");
   const [copied, setCopied] = useState(false);
+  const [showForumShare, setShowForumShare] = useState(false);
 
   useEffect(() => {
     fetchProject();
@@ -156,6 +159,16 @@ export default function ProjectPage() {
               {sharing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Share2 className="w-4 h-4" />}
               分享
             </button>
+            {displayScore != null && (
+              <button
+                onClick={() => setShowForumShare(true)}
+                className="px-3 py-1.5 text-sm bg-white border border-[#1B4FD8] text-[#1B4FD8] hover:bg-[#EEF1F7] rounded-lg transition-colors flex items-center gap-1.5"
+                title="把评分结果脱敏后转发到投资人论坛"
+              >
+                <Users className="w-4 h-4" />
+                转发到论坛
+              </button>
+            )}
             <span className={`px-2.5 py-1 rounded-lg border text-xs font-medium ${stageCfg.color}`}>
               {stageCfg.label}
             </span>
@@ -170,6 +183,15 @@ export default function ProjectPage() {
           </div>
         </div>
       </header>
+
+      {/* 转发到论坛 */}
+      {showForumShare && (
+        <ShareToForumModal
+          taskId={taskId}
+          defaultTitle={project?.title ? `${project.title} — 平台实测评分` : ""}
+          onClose={() => setShowForumShare(false)}
+        />
+      )}
 
       {/* 分享链接弹出 */}
       {shareLink && (

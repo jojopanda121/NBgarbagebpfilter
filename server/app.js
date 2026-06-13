@@ -31,6 +31,7 @@ const apiRoutes = [
   ["/api/workspace-projects", "./routes/workspaceProjects"],
   ["/api/skills", "./routes/skills"],
   ["/api/teaser", "./routes/teaser"],
+  ["/api/forum", "./routes/forum"],
 ];
 
 function buildCorsOptions() {

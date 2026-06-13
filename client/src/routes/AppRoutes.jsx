@@ -20,6 +20,10 @@ const TrackingDashboardPage = lazy(() => import("../pages/TrackingDashboardPage"
 const WorkspaceProjectListPage = lazy(() => import("../pages/WorkspaceProjectListPage"));
 const WorkspaceProjectPage = lazy(() => import("../pages/WorkspaceProjectPage"));
 const PublicTeaserPage = lazy(() => import("../pages/PublicTeaserPage"));
+const ForumLayout = lazy(() => import("../pages/Forum/ForumLayout"));
+const ForumListPage = lazy(() => import("../pages/Forum/ForumListPage"));
+const ForumPostPage = lazy(() => import("../pages/Forum/ForumPostPage"));
+const ForumProfilePage = lazy(() => import("../pages/Forum/ForumProfilePage"));
 const AboutPage = lazy(() => import("../pages/AboutPage"));
 const PrivacyPage = lazy(() => import("../pages/PrivacyPage"));
 const TermsPage = lazy(() => import("../pages/TermsPage"));
@@ -39,6 +43,14 @@ export default function AppRoutes() {
         <Route path="/report/s/:shareToken" element={<ReportPage />} />
         <Route path="/project/:taskId" element={<ProjectPage />} />
         <Route path="/teaser/:token" element={<PublicTeaserPage />} />
+
+        {/* 论坛：公开路由（游客可浏览，软墙由后端控制） */}
+        <Route element={<ForumLayout />}>
+          <Route path="/forum" element={<ForumListPage />} />
+          <Route path="/forum/post/:id" element={<ForumPostPage />} />
+          <Route path="/forum/me" element={<ForumProfilePage />} />
+          <Route path="/forum/u/:id" element={<ForumProfilePage />} />
+        </Route>
 
         <Route
           element={

@@ -122,7 +122,7 @@ describe("HOST_TOOL_SCHEMAS", () => {
   test("包含 web_search，供主持人执行联网检索", () => {
     const op = ws.HOST_TOOL_SCHEMAS.find((s) => s.name === "web_search");
     expect(op).toBeTruthy();
-    expect(op.description).toMatch(/联网|检索|Kimi/);
+    expect(op.description).toMatch(/联网|检索|MiniMax/);
     expect(op.input_schema.required).toContain("query");
   });
 

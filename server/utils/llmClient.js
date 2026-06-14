@@ -1,9 +1,22 @@
-const { resolveKimiChatEndpoint } = require("./kimiEndpoints");
+// ============================================================
+// server/utils/llmClient.js — MiniMax OpenAI 兼容客户端（翻译层）
+//
+// 全代码库以 "Anthropic 风格" 调用本客户端（system / content blocks /
+// thinking / tool_use），这里负责双向翻译成 MiniMax 的 OpenAI 兼容
+// /v1/chat/completions 协议，再把响应翻回 Anthropic 形状。
+//
+// 与 Kimi 的差异（适配 MiniMax M3）：
+//   - 不再发送 Anthropic 式的 thinking:{type} 参数。MiniMax M3 是推理模型，
+//     默认产出思考内容并通过 reasoning_content 字段返回；发送未知的 thinking
+//     字段反而可能被拒。读取侧仍然兼容 reasoning_content / reasoning。
+//   - 其余（messages / tools↔tool_calls / 流式 SSE delta）均为标准 OpenAI 形状。
+// ============================================================
+const { resolveLLMChatEndpoint } = require("./llmEndpoints");
 
-class KimiAPIError extends Error {
+class LLMAPIError extends Error {
   constructor(message, status, body) {
     super(message);
-    this.name = "KimiAPIError";
+    this.name = "LLMAPIError";
     this.status = status;
     this.body = body;
   }
@@ -127,8 +140,8 @@ function toAnthropicLikeResponse(data) {
   };
 }
 
-function buildKimiBody(body) {
-  const kimiBody = {
+function buildLLMBody(body) {
+  const llmBody = {
     model: body.model,
     max_tokens: body.max_tokens,
     messages: normalizeMessages([
@@ -137,31 +150,26 @@ function buildKimiBody(body) {
     ]),
   };
   const tools = normalizeTools(body.tools);
-  if (tools.length) kimiBody.tools = tools;
-  if (body.tool_choice) kimiBody.tool_choice = body.tool_choice;
-  if (body.stream) kimiBody.stream = true;
-  if (body.thinking) {
-    kimiBody.thinking = body.thinking.type === "enabled"
-      ? { type: "enabled" }
-      : { type: "disabled" };
-  } else {
-    kimiBody.thinking = { type: "disabled" };
-  }
-  return kimiBody;
+  if (tools.length) llmBody.tools = tools;
+  if (body.tool_choice) llmBody.tool_choice = body.tool_choice;
+  if (body.stream) llmBody.stream = true;
+  // 注意：不转发 Anthropic 式 thinking:{type}。MiniMax M3 默认推理并通过
+  // reasoning_content 返回思考内容；发送未知 thinking 字段可能触发 400。
+  return llmBody;
 }
 
 async function parseError(resp) {
   const text = await resp.text().catch(() => "");
-  let msg = text || resp.statusText || "Kimi API request failed";
+  let msg = text || resp.statusText || "MiniMax API request failed";
   try {
     const json = JSON.parse(text);
-    msg = json?.error?.message || json?.message || msg;
+    msg = json?.error?.message || json?.message || json?.base_resp?.status_msg || msg;
   } catch (_) { /* ignore */ }
-  throw new KimiAPIError(`Kimi API 失败 (${resp.status}): ${msg}`, resp.status, text);
+  throw new LLMAPIError(`MiniMax API 失败 (${resp.status}): ${msg}`, resp.status, text);
 }
 
-function createKimiCompatClient({ apiKey, baseURL }) {
-  const endpoint = resolveKimiChatEndpoint(baseURL);
+function createLLMClient({ apiKey, baseURL }) {
+  const endpoint = resolveLLMChatEndpoint(baseURL);
 
   async function create(body) {
     const resp = await fetch(endpoint, {
@@ -170,7 +178,7 @@ function createKimiCompatClient({ apiKey, baseURL }) {
         Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify(buildKimiBody(body)),
+      body: JSON.stringify(buildLLMBody(body)),
     });
     if (!resp.ok) await parseError(resp);
     return toAnthropicLikeResponse(await resp.json());
@@ -178,7 +186,7 @@ function createKimiCompatClient({ apiKey, baseURL }) {
 
   function stream(body) {
     const abortController = new AbortController();
-    const iterator = streamIterator(endpoint, apiKey, buildKimiBody({ ...body, stream: true }), abortController);
+    const iterator = streamIterator(endpoint, apiKey, buildLLMBody({ ...body, stream: true }), abortController);
     return {
       controller: abortController,
       [Symbol.asyncIterator]() {
@@ -309,9 +317,9 @@ async function* streamIterator(endpoint, apiKey, body, abortController) {
 }
 
 module.exports = {
-  KimiAPIError,
-  createKimiCompatClient,
-  buildKimiBody,
+  LLMAPIError,
+  createLLMClient,
+  buildLLMBody,
   normalizeMessages,
   normalizeTools,
   toAnthropicLikeResponse,

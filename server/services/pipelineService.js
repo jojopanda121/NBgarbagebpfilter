@@ -105,7 +105,7 @@ function buildDefaultVerificationHarness(claim = {}, extractedData = {}) {
 
   return {
     preferred_sources: preferredSources,
-    kimi_research_prompt:
+    minimax_research_prompt:
       `请核验 ${company}（${industry}）BP 声明：“${claimText}”。` +
       "优先尝试同花顺/iFinD、天眼查、工商信息、财报、IMF、Scholar、arXiv、元典法律等可用能力；" +
       "若专业数据不可用，请用公开网页/用户材料/自身知识辅助，并明确标注缺口和置信度。",
@@ -129,7 +129,7 @@ function normalizeKeyClaimsForResearch(extractedData = {}) {
       const harness = buildDefaultVerificationHarness(normalized, extractedData);
       normalized.verification_harness = {
         preferred_sources: harness.preferred_sources,
-        kimi_research_prompt: harness.kimi_research_prompt,
+        minimax_research_prompt: harness.minimax_research_prompt,
         expected_fields: harness.expected_fields,
         failure_mode: harness.failure_mode,
         _generated: true,
@@ -380,7 +380,7 @@ async function runAgentBWithBatchingAndResearch(extractedData, bpText, onProgres
       }
     })(), "五维分析"),
 
-    // Task C: 深度研究报告（启用 Kimi web_search 工具，失败自动降级；并加 8min 任务级超时）
+    // Task C: 深度研究报告（启用 MiniMax web_search 工具，失败自动降级；并加 8min 任务级超时）
     withTaskTimeout((async () => {
       try {
         const { text, searchUsed } = await callLLMWithSearch(
@@ -699,7 +699,7 @@ function buildValuationComparison(validatedData, extractedData, scoringInput, sc
       comparable_companies: peerCompanies,
       temperature: valuationTemp?.temperature || null,
       temperature_reason: valuationTemp?.temperature_reason || null,
-      data_source: valuationTemp?.source_boundary || "ValuationAgent Kimi 估值温度计",
+      data_source: valuationTemp?.source_boundary || "ValuationAgent MiniMax 估值温度计",
       analysis: valuationAgent?.verdict?.summary || valuationComparison?.analysis || scoringResult.grade_action,
     };
   }
@@ -941,7 +941,7 @@ async function runPipeline(bpText, onProgress, taskId = null, userId = null) {
     project_location: projectLocation,
     search_summary: {
       enabled: true, mock: false, total_results: 0,
-      queries_count: (extractedData.key_claims || []).length, provider: "kimi_web_search",
+      queries_count: (extractedData.key_claims || []).length, provider: "minimax_web_search",
     },
   };
 }

@@ -44,6 +44,7 @@ const TABS = [
 const ADMIN_ONLY_TABS = [
   { key: "users", label: "用户管理", icon: Users },
   { key: "tasks", label: "分析记录", icon: FileText },
+  { key: "forum_admin", label: "论坛管理", icon: MessageSquare },
   { key: "stats", label: "数据统计", icon: BarChart3 },
   { key: "feature_usage", label: "功能使用", icon: TrendingUp },
   { key: "admin_feedback", label: "反馈管理", icon: MessageSquare },
@@ -576,6 +577,8 @@ export default function SettingsPage({ adminMode = false }) {
 
       {/* 数据统计 Tab (管理员) */}
       {activeTab === "stats" && isAdmin && <StatsTab stats={stats} />}
+
+      {activeTab === "forum_admin" && isAdmin && <ForumAdminTab setMessage={setMessage} />}
 
       {activeTab === "feature_usage" && isAdmin && <FeatureUsageTab />}
 
@@ -2340,6 +2343,237 @@ function StatsTab({ stats }) {
                   <div className="h-full bg-gradient-to-r from-green-500 to-green-400 rounded" style={{ width: `${(t.total / maxRevenue) * 100}%` }} />
                 </div>
                 <span className="text-xs text-[#4B5A72] w-16 text-right">¥{(t.total / 100).toFixed(0)}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ForumAdminTab({ setMessage }) {
+  const sections = [
+    { key: "reports", label: "举报" },
+    { key: "posts", label: "帖子" },
+    { key: "comments", label: "评论" },
+    { key: "identity", label: "身份" },
+  ];
+  const [section, setSection] = useState("reports");
+  const [analytics, setAnalytics] = useState(null);
+  const [data, setData] = useState({ items: [], total: 0 });
+  const [status, setStatus] = useState("pending");
+  const [loading, setLoading] = useState(false);
+
+  const loadAnalytics = async () => {
+    try {
+      setAnalytics(await api.get("/api/admin/forum/analytics?days=30"));
+    } catch (err) {
+      console.error("加载论坛统计失败:", err);
+    }
+  };
+
+  const loadSection = async () => {
+    setLoading(true);
+    try {
+      const endpoint = {
+        reports: `/api/admin/forum/reports?status=${status}`,
+        posts: `/api/admin/forum/posts?status=${status}`,
+        comments: `/api/admin/forum/comments?status=${status}`,
+        identity: `/api/admin/forum/identity?verified=${status}`,
+      }[section];
+      const result = await api.get(endpoint);
+      setData({ items: result.items || [], total: result.total || 0 });
+    } catch (err) {
+      setMessage({ type: "error", text: err.message || "加载论坛管理数据失败" });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadAnalytics();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (section === "identity") setStatus("");
+    else if (section === "reports") setStatus("pending");
+    else setStatus("all");
+  }, [section]);
+
+  useEffect(() => {
+    loadSection();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [section, status]);
+
+  const runAction = async (action, successText) => {
+    try {
+      await action();
+      setMessage({ type: "success", text: successText });
+      await Promise.all([loadSection(), loadAnalytics()]);
+    } catch (err) {
+      setMessage({ type: "error", text: err.message || "操作失败" });
+    }
+  };
+
+  const resolveReport = (id, action) => {
+    const reason = action === "remove" ? window.prompt("下架原因：", "举报处理：违规内容") : "";
+    if (action === "remove" && reason === null) return;
+    runAction(
+      () => api.post(`/api/admin/forum/reports/${id}/resolve`, { action, reason }),
+      action === "remove" ? "已下架被举报内容" : "已驳回举报"
+    );
+  };
+
+  const moderatePost = (id, op) => {
+    const reason = op === "remove" ? window.prompt("下架原因：", "管理员下架") : "";
+    if (op === "remove" && reason === null) return;
+    runAction(
+      () => api.post(`/api/admin/forum/posts/${id}/moderate`, { op, reason }),
+      "帖子操作已完成"
+    );
+  };
+
+  const moderateComment = (id, op) => {
+    runAction(
+      () => api.post(`/api/admin/forum/comments/${id}/moderate`, { op }),
+      "评论操作已完成"
+    );
+  };
+
+  const verifyIdentity = (id, verified) => {
+    runAction(
+      () => api.post(`/api/admin/forum/identity/${id}/verify`, { verified }),
+      verified ? "已认证身份" : "已取消认证"
+    );
+  };
+
+  const statusOptions = section === "reports"
+    ? [["pending", "待处理"], ["reviewed", "已处理"], ["dismissed", "已驳回"], ["all", "全部"]]
+    : section === "identity"
+      ? [["", "全部"], ["0", "未认证"], ["1", "已认证"]]
+      : [["all", "全部"], ["published", "已发布"], ["removed", "已下架"]];
+
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {[
+          ["待处理举报", analytics?.totals?.reports_pending ?? 0],
+          ["已发布帖子", analytics?.totals?.posts ?? 0],
+          ["已下架帖子", analytics?.totals?.posts_removed ?? 0],
+          ["待认证身份", analytics?.totals?.identity_unverified ?? 0],
+        ].map(([label, value]) => (
+          <div key={label} className="bg-white border border-[#D8DCE8] rounded-xl p-5">
+            <div className="text-xs text-[#8E9BB0]">{label}</div>
+            <div className="text-2xl font-bold text-[#0D2145] mt-1">{value}</div>
+          </div>
+        ))}
+      </div>
+
+      <div className="bg-white border border-[#D8DCE8] rounded-xl p-5">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4">
+          <div className="flex gap-2 overflow-x-auto">
+            {sections.map((item) => (
+              <button
+                key={item.key}
+                onClick={() => setSection(item.key)}
+                className={`px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap ${
+                  section === item.key ? "bg-[#1B4FD8] text-white" : "bg-[#EEF1F7] text-[#4B5A72] hover:text-[#0D2145]"
+                }`}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+          <select value={status} onChange={(e) => setStatus(e.target.value)} className="px-4 py-2 bg-[#EEF1F7] border border-[#D8DCE8] rounded-lg text-sm">
+            {statusOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+          </select>
+        </div>
+
+        {loading ? (
+          <div className="flex justify-center py-16"><Loader2 className="w-7 h-7 animate-spin text-[#1B4FD8]" /></div>
+        ) : data.items.length === 0 ? (
+          <p className="text-[#8E9BB0] text-center py-12">暂无数据</p>
+        ) : (
+          <div className="space-y-3">
+            {section === "reports" && data.items.map((item) => (
+              <div key={item.id} className="p-4 bg-[#EEF1F7] rounded-lg">
+                <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-semibold text-[#0D2145]">{item.target_label}</div>
+                    <div className="text-xs text-[#8E9BB0] mt-1">
+                      {item.target_type === "post" ? "帖子" : "评论"} #{item.target_id} · 举报人：{item.reporter?.name || "用户"} · {new Date(item.created_at).toLocaleString("zh-CN")}
+                    </div>
+                    {item.reason && <div className="text-sm text-[#4B5A72] mt-2">原因：{item.reason}</div>}
+                  </div>
+                  {item.status === "pending" && (
+                    <div className="flex gap-2 shrink-0">
+                      <button onClick={() => resolveReport(item.id, "remove")} className="px-3 py-1.5 bg-red-500/10 text-red-500 rounded-lg text-sm">下架</button>
+                      <button onClick={() => resolveReport(item.id, "dismiss")} className="px-3 py-1.5 bg-[#E5E9F4] text-[#4B5A72] rounded-lg text-sm">驳回</button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+
+            {section === "posts" && data.items.map((item) => (
+              <div key={item.id} className="p-4 bg-[#EEF1F7] rounded-lg">
+                <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-semibold text-[#0D2145]">{item.title}</span>
+                      {item.pinned && <span className="px-2 py-0.5 bg-blue-500/10 text-blue-500 rounded text-xs">置顶</span>}
+                      {item.featured && <span className="px-2 py-0.5 bg-amber-500/10 text-amber-600 rounded text-xs">精华</span>}
+                      <span className={`px-2 py-0.5 rounded text-xs ${item.status === "removed" ? "bg-red-500/10 text-red-500" : "bg-green-500/10 text-green-500"}`}>{item.status}</span>
+                    </div>
+                    <div className="text-xs text-[#8E9BB0] mt-1">
+                      #{item.id} · {item.category} · 作者：{item.author?.name || "用户"} · 评论 {item.comment_count} · 撮合 {item.interest_count}
+                    </div>
+                    {item.removed_reason && <div className="text-sm text-red-500 mt-2">下架原因：{item.removed_reason}</div>}
+                  </div>
+                  <div className="flex flex-wrap gap-2 shrink-0">
+                    {item.status === "removed"
+                      ? <button onClick={() => moderatePost(item.id, "restore")} className="px-3 py-1.5 bg-green-500/10 text-green-600 rounded-lg text-sm">恢复</button>
+                      : <button onClick={() => moderatePost(item.id, "remove")} className="px-3 py-1.5 bg-red-500/10 text-red-500 rounded-lg text-sm">下架</button>}
+                    <button onClick={() => moderatePost(item.id, item.pinned ? "unpin" : "pin")} className="px-3 py-1.5 bg-[#E5E9F4] rounded-lg text-sm">{item.pinned ? "取消置顶" : "置顶"}</button>
+                    <button onClick={() => moderatePost(item.id, item.featured ? "unfeature" : "feature")} className="px-3 py-1.5 bg-[#E5E9F4] rounded-lg text-sm">{item.featured ? "取消精华" : "精华"}</button>
+                  </div>
+                </div>
+              </div>
+            ))}
+
+            {section === "comments" && data.items.map((item) => (
+              <div key={item.id} className="p-4 bg-[#EEF1F7] rounded-lg">
+                <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
+                  <div>
+                    <div className="text-sm text-[#0D2145]">{item.body}</div>
+                    <div className="text-xs text-[#8E9BB0] mt-1">#{item.id} · 帖子：{item.post_title} · 作者：{item.author?.name || "用户"} · {item.status}</div>
+                  </div>
+                  <div className="flex gap-2 shrink-0">
+                    {item.status === "removed"
+                      ? <button onClick={() => moderateComment(item.id, "restore")} className="px-3 py-1.5 bg-green-500/10 text-green-600 rounded-lg text-sm">恢复</button>
+                      : <button onClick={() => moderateComment(item.id, "remove")} className="px-3 py-1.5 bg-red-500/10 text-red-500 rounded-lg text-sm">下架</button>}
+                  </div>
+                </div>
+              </div>
+            ))}
+
+            {section === "identity" && data.items.map((item) => (
+              <div key={item.id} className="p-4 bg-[#EEF1F7] rounded-lg">
+                <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-semibold text-[#0D2145]">{item.name}</div>
+                    <div className="text-xs text-[#8E9BB0] mt-1">#{item.id} · {item.user_type} · {item.org_name || "未填写机构"}</div>
+                    {item.bio && <div className="text-sm text-[#4B5A72] mt-2">{item.bio}</div>}
+                  </div>
+                  <button
+                    onClick={() => verifyIdentity(item.id, !item.type_verified)}
+                    className={`px-3 py-1.5 rounded-lg text-sm shrink-0 ${item.type_verified ? "bg-[#E5E9F4] text-[#4B5A72]" : "bg-[#1B4FD8] text-white"}`}
+                  >
+                    {item.type_verified ? "取消认证" : "通过认证"}
+                  </button>
+                </div>
               </div>
             ))}
           </div>

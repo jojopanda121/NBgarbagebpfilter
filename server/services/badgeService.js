@@ -38,19 +38,23 @@ function toRegion(loc) {
   return s; // 回退：直接用原始地名
 }
 
+// 一个项目算「高分/优质」的分数门槛
+const HIGH_SCORE_MIN = 70;
+
 // ── 徽章目录。每项 evaluate(stats) 返回 { tier, meta } 或 null ──
 // rank 用于「默认帮挂最高等级 1 枚」时排序（越大越优先）。
 const CATALOG = {
+  // 高分家族：按「发现的 70+ 优质项目数量」分级（不是最高分）。
   high_score: {
     code: "high_score",
     icon: "🏆",
     rankBase: 300,
     tiers: { 1: { name: "高分猎手", color: "#3b82f6" }, 2: { name: "明星猎手", color: "#8b5cf6" }, 3: { name: "顶尖猎手", color: "#f59e0b" } },
-    desc: (m) => `分析出过最高分 ${Math.round(m.best_score)} 的优质项目`,
+    desc: (m) => `发现 ${m.high_count} 个 ${HIGH_SCORE_MIN} 分以上的优质项目`,
     evaluate: (s) => {
-      if (s.bestScore == null) return null;
-      const tier = s.bestScore >= 93 ? 3 : s.bestScore >= 88 ? 2 : s.bestScore >= 80 ? 1 : 0;
-      return tier ? { tier, meta: { best_score: s.bestScore } } : null;
+      const n = s.highCount || 0;
+      const tier = n >= 15 ? 3 : n >= 5 ? 2 : n >= 1 ? 1 : 0;
+      return tier ? { tier, meta: { high_count: n } } : null;
     },
   },
   volume: {
@@ -72,13 +76,19 @@ const CATALOG = {
     desc: (m) => `近 30 天完成 ${m.recent_count} 份分析`,
     evaluate: (s) => (s.recentCount >= 5 ? { tier: 1, meta: { recent_count: s.recentCount } } : null),
   },
+  // 地区家族：按「主战区的项目数量」分级。展示名由地区拼接（如 华东在地 / 华东项目王）。
   region: {
     code: "region",
     icon: "📍",
     rankBase: 50,
-    tiers: { 1: { name: "在地", color: "#6366f1" } }, // 展示名由 region 拼接
-    desc: (m) => `常分析 ${m.region} 的项目`,
-    evaluate: (s) => (s.topRegion ? { tier: 1, meta: { region: s.topRegion } } : null),
+    tiers: { 1: { name: "在地", color: "#6366f1" }, 2: { name: "项目王", color: "#7c3aed" } },
+    desc: (m) => (m.tier >= 2 ? `${m.region} 项目之王，已分析 ${m.count} 个` : `常分析 ${m.region} 的项目（${m.count} 个）`),
+    evaluate: (s) => {
+      if (!s.topRegion) return null;
+      const n = s.topRegionCount || 0;
+      const tier = n >= 15 ? 2 : n >= 3 ? 1 : 0;
+      return tier ? { tier, meta: { region: s.topRegion, count: n, tier } } : null;
+    },
   },
 };
 
@@ -114,6 +124,7 @@ function computeStats(userId) {
 
   let bestScore = null;
   let totalCount = 0;
+  let highCount = 0;        // 70+ 优质项目数量
   let recentCount = 0;
   const regionCounts = {};
   const cutoff = Date.now() - 30 * 24 * 3600 * 1000;
@@ -128,6 +139,7 @@ function computeStats(userId) {
     if (score == null) continue;
     totalCount += 1;
     if (bestScore == null || score > bestScore) bestScore = score;
+    if (score >= HIGH_SCORE_MIN) highCount += 1;
 
     const t = Date.parse(r.created_at + "Z") || Date.parse(r.created_at);
     if (t && t >= cutoff) recentCount += 1;
@@ -136,12 +148,12 @@ function computeStats(userId) {
     if (region) regionCounts[region] = (regionCounts[region] || 0) + 1;
   }
 
-  let topRegion = null, topN = 0;
+  let topRegion = null, topRegionCount = 0;
   for (const [region, n] of Object.entries(regionCounts)) {
-    if (n > topN) { topRegion = region; topN = n; }
+    if (n > topRegionCount) { topRegion = region; topRegionCount = n; }
   }
 
-  return { bestScore, totalCount, recentCount, topRegion };
+  return { bestScore, totalCount, highCount, recentCount, topRegion, topRegionCount };
 }
 
 /**

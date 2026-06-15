@@ -10,14 +10,14 @@
 const { CATALOG, _internal } = require("../../services/badgeService");
 const { toRegion, badgeView } = _internal;
 
-describe("CATALOG.high_score 分级", () => {
+describe("CATALOG.high_score 分级（按 70+ 优质项目数量）", () => {
   const ev = CATALOG.high_score.evaluate;
-  test("未达 80 分不授予", () => expect(ev({ bestScore: 79 })).toBeNull());
-  test("80 → tier1", () => expect(ev({ bestScore: 80 }).tier).toBe(1));
-  test("88 → tier2", () => expect(ev({ bestScore: 88 }).tier).toBe(2));
-  test("93 → tier3", () => expect(ev({ bestScore: 95 }).tier).toBe(3));
-  test("无分数 → null", () => expect(ev({ bestScore: null })).toBeNull());
-  test("meta 带 best_score", () => expect(ev({ bestScore: 90 }).meta.best_score).toBe(90));
+  test("0 个 70+ 不授予", () => expect(ev({ highCount: 0 })).toBeNull());
+  test("1 个 → tier1（高分猎手）", () => expect(ev({ highCount: 1 }).tier).toBe(1));
+  test("5 个 → tier2（明星猎手）", () => expect(ev({ highCount: 5 }).tier).toBe(2));
+  test("15 个 → tier3（顶尖猎手）", () => expect(ev({ highCount: 20 }).tier).toBe(3));
+  test("缺字段 → null", () => expect(ev({})).toBeNull());
+  test("meta 带 high_count", () => expect(ev({ highCount: 7 }).meta.high_count).toBe(7));
 });
 
 describe("CATALOG.volume 分级", () => {
@@ -31,8 +31,11 @@ describe("CATALOG.volume 分级", () => {
 describe("CATALOG.active / region", () => {
   test("近30天 <5 不授予活跃", () => expect(CATALOG.active.evaluate({ recentCount: 4 })).toBeNull());
   test("近30天 ≥5 授予活跃", () => expect(CATALOG.active.evaluate({ recentCount: 5 }).tier).toBe(1));
-  test("无地域不授予", () => expect(CATALOG.region.evaluate({ topRegion: null })).toBeNull());
-  test("有地域授予并带 region", () => expect(CATALOG.region.evaluate({ topRegion: "华东" }).meta.region).toBe("华东"));
+  const reg = CATALOG.region.evaluate;
+  test("无地域不授予", () => expect(reg({ topRegion: null })).toBeNull());
+  test("地区项目 <3 不授予", () => expect(reg({ topRegion: "华东", topRegionCount: 2 })).toBeNull());
+  test("地区 ≥3 → tier1（在地）", () => { const r = reg({ topRegion: "华东", topRegionCount: 3 }); expect(r.tier).toBe(1); expect(r.meta.region).toBe("华东"); });
+  test("地区 ≥15 → tier2（项目王）", () => expect(reg({ topRegion: "华东", topRegionCount: 18 }).tier).toBe(2));
 });
 
 describe("toRegion 省份→大区", () => {
@@ -44,13 +47,18 @@ describe("toRegion 省份→大区", () => {
 });
 
 describe("badgeView 展示视图", () => {
-  test("region 徽章名按地区拼接", () => {
-    const v = badgeView({ badge_code: "region", tier: 1, meta: JSON.stringify({ region: "华东" }), displayed: 1, awarded_at: "t" });
+  test("region tier1 名按地区拼接（华东在地）", () => {
+    const v = badgeView({ badge_code: "region", tier: 1, meta: JSON.stringify({ region: "华东", count: 5, tier: 1 }), displayed: 1, awarded_at: "t" });
     expect(v.name).toBe("华东在地");
     expect(v.displayed).toBe(true);
   });
+  test("region tier2 名为 华东项目王", () => {
+    const v = badgeView({ badge_code: "region", tier: 2, meta: JSON.stringify({ region: "华东", count: 18, tier: 2 }), displayed: 0, awarded_at: "t" });
+    expect(v.name).toBe("华东项目王");
+    expect(v.tier).toBe(2);
+  });
   test("high_score tier3 用对应等级名与颜色", () => {
-    const v = badgeView({ badge_code: "high_score", tier: 3, meta: JSON.stringify({ best_score: 95 }), displayed: 0, awarded_at: "t" });
+    const v = badgeView({ badge_code: "high_score", tier: 3, meta: JSON.stringify({ high_count: 20 }), displayed: 0, awarded_at: "t" });
     expect(v.name).toBe("顶尖猎手");
     expect(v.tier).toBe(3);
     expect(v.displayed).toBe(false);

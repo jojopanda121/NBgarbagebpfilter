@@ -92,7 +92,7 @@ function PublicProfile({ userId }) {
           {profile.org_name && <div className="text-xs text-[#8E9BB0] mt-0.5">{profile.org_name}</div>}
           {profile.bio && <div className="text-sm text-[#4B5A72] mt-1">{profile.bio}</div>}
           {profile.badges?.length > 0 && (
-            <div className="mt-2"><BadgeList badges={profile.badges} size="sm" max={6} /></div>
+            <div className="mt-2"><BadgeList badges={profile.badges} size="sm" max={6} showName /></div>
           )}
         </div>
         {!profile.is_me && (

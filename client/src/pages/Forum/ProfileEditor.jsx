@@ -1,12 +1,11 @@
 // ProfileEditor — 编辑论坛身份资料（投资人/项目方/FA 标签 + 名片 + 头像 + 徽章展示）
 // 也被「个人中心」复用。
 import React, { useEffect, useRef, useState } from "react";
-import { Loader2, Check, Camera } from "lucide-react";
+import { Loader2, Check, Camera, Lock } from "lucide-react";
 import forumApi from "../../services/forumApi";
 import useAuthStore from "../../store/useAuthStore";
 import { USER_TYPE_OPTIONS } from "../../constants/forum";
 import Avatar from "../../components/forum/Avatar";
-import BadgeChip from "../../components/forum/BadgeChip";
 
 export default function ProfileEditor({ onSaved }) {
   const refreshAuth = useAuthStore((s) => s.initAuth);
@@ -32,10 +31,11 @@ export default function ProfileEditor({ onSaved }) {
           contact_card: p.contact_card || "",
         });
         setAvatarUrl(p.avatar_url || null);
-        setBadges(p.badges || []);
       })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
+    // 完整徽章目录（含未解锁）
+    forumApi.getMyBadges().then((r) => setBadges(r.badges || [])).catch(() => {});
   }, []);
 
   async function onPickAvatar(e) {
@@ -56,6 +56,7 @@ export default function ProfileEditor({ onSaved }) {
   }
 
   async function toggleBadge(badge) {
+    if (!badge.is_current) return; // 只有「当前所持等级」的徽章可挂出/收起
     try {
       const r = await forumApi.setBadgeDisplay(badge.code, !badge.displayed);
       setBadges(r.badges || []);
@@ -143,25 +144,44 @@ export default function ProfileEditor({ onSaved }) {
           placeholder="如：微信 abc123 / 邮箱 you@vc.com" />
       </Field>
 
-      {/* 徽章：根据 BP 分析自动获得，自选挂出展示 */}
+      {/* 徽章：根据 BP 分析自动获得，自选挂出展示。全目录展示，未解锁灰显。 */}
       <div>
-        <div className="text-xs font-semibold text-[#0D2145] mb-1">我的徽章</div>
-        <div className="text-[11px] text-[#8E9BB0] mb-2">根据你分析过的 BP 自动授予；点亮即「挂出」，会展示在你的帖子与主页。</div>
-        {badges.length === 0 ? (
-          <div className="text-xs text-[#8E9BB0] bg-[#F6F7FA] border border-[#EEF1F7] rounded-lg px-3 py-3">
-            还没有徽章。多分析优质项目即可解锁（高分 / 总量 / 活跃 / 所在地）。
-          </div>
-        ) : (
-          <div className="flex flex-wrap gap-2">
-            {badges.map((b) => (
-              <button key={b.code} type="button" onClick={() => toggleBadge(b)}
-                title={b.desc}
-                className={`rounded-full transition-opacity ${b.displayed ? "" : "opacity-40 hover:opacity-70"}`}>
-                <BadgeChip badge={b} size="sm" />
+        <div className="flex items-center gap-2 mb-1">
+          <span className="text-xs font-semibold text-[#0D2145]">我的徽章</span>
+          {badges.length > 0 && (
+            <span className="text-[11px] text-[#8E9BB0]">已解锁 {badges.filter((b) => b.earned).length} / {badges.length}</span>
+          )}
+        </div>
+        <div className="text-[11px] text-[#8E9BB0] mb-2">根据你分析过的 BP 自动授予。点击已解锁徽章切换「挂出/收起」，挂出的会显示在帖子与主页。</div>
+        <div className="grid gap-2" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(108px, 1fr))" }}>
+          {badges.map((b) => {
+            const clickable = b.is_current;
+            return (
+              <button key={b.code + "_" + b.tier} type="button" onClick={() => toggleBadge(b)}
+                disabled={!clickable} title={b.earned ? (b.desc || b.req) : `未解锁 · ${b.req}`}
+                className={`relative text-center rounded-lg border p-2.5 ${clickable ? "cursor-pointer" : "cursor-default"} ${
+                  b.displayed ? "border-2" : "border-[#EEF1F7]"
+                }`}
+                style={b.displayed ? { borderColor: b.color } : undefined}>
+                {b.displayed && (
+                  <span className="absolute top-1 right-1 text-[9px] px-1.5 rounded-full text-white" style={{ backgroundColor: b.color }}>展示中</span>
+                )}
+                <div className="relative w-12 h-12 mx-auto mb-1">
+                  <img src={b.image} alt={b.name}
+                    className="w-12 h-12 object-contain"
+                    style={b.earned ? undefined : { filter: "grayscale(1)", opacity: 0.45 }} />
+                  {!b.earned && (
+                    <span className="absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full bg-white border border-[#E6E9F0] flex items-center justify-center">
+                      <Lock className="w-2.5 h-2.5 text-[#8E9BB0]" />
+                    </span>
+                  )}
+                </div>
+                <div className={`text-[11px] font-medium leading-tight ${b.earned ? "text-[#0D2145]" : "text-[#8E9BB0]"}`}>{b.name}</div>
+                <div className="text-[10px] text-[#8E9BB0] mt-0.5 leading-tight">{b.earned ? (b.desc || b.req) : b.req}</div>
               </button>
-            ))}
-          </div>
-        )}
+            );
+          })}
+        </div>
       </div>
 
       <div className="flex items-center gap-3">

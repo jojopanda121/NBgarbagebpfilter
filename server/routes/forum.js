@@ -139,10 +139,12 @@ router.get("/users/:id", optionalAuth, handle((req) =>
 ));
 
 // ── 徽章 ──
-router.get("/badges/me", requireAuth, handle((req) => ({ badges: badges.recompute(req.user.id) })));
-router.put("/badges/display", requireAuth, handle((req) => ({
-  badges: badges.setDisplay(req.user.id, req.body.badge_code, !!req.body.displayed),
-})));
+// /badges/me 返回完整目录（含未解锁，用于资料页全目录灰显）
+router.get("/badges/me", requireAuth, handle((req) => ({ badges: badges.getCatalogProgress(req.user.id) })));
+router.put("/badges/display", requireAuth, handle((req) => {
+  badges.setDisplay(req.user.id, req.body.badge_code, !!req.body.displayed);
+  return { badges: badges.getCatalogProgress(req.user.id) };
+}));
 
 // ── 站内信（轻量私信，独立于撮合）──
 router.get("/conversations", requireAuth, handle((req) => ({

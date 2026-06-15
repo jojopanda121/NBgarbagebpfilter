@@ -3,6 +3,8 @@ import React from "react";
 import { useNavigate } from "react-router-dom";
 import { Heart, MessageCircle, Handshake, Eye } from "lucide-react";
 import UserTypeBadge from "./UserTypeBadge";
+import Avatar from "./Avatar";
+import BadgeList from "./BadgeList";
 import { gradeColorClass, categoryMeta } from "../../constants/forum";
 
 export default function ForumPostCard({ post }) {
@@ -44,10 +46,16 @@ export default function ForumPostCard({ post }) {
           )}
 
           <div className="flex items-center gap-3 mt-2.5 text-xs text-[#8E9BB0]">
-            <span className="flex items-center gap-1 text-[#4B5A72]">
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); if (post.author?.id) navigate(`/forum/u/${post.author.id}`); }}
+              className="flex items-center gap-1.5 text-[#4B5A72] hover:text-[#1B4FD8]"
+            >
+              <Avatar src={post.author?.avatar_url} name={post.author?.name} id={post.author?.id} size="xs" />
               {post.author?.name}
               <UserTypeBadge type={post.author?.user_type} verified={post.author?.type_verified} size="xs" />
-            </span>
+            </button>
+            {post.author?.badges?.length > 0 && <BadgeList badges={post.author.badges} size="xs" max={2} />}
             <span className="flex items-center gap-1"><Heart className="w-3.5 h-3.5" />{post.like_count}</span>
             <span className="flex items-center gap-1"><MessageCircle className="w-3.5 h-3.5" />{post.comment_count}</span>
             {post.interest_count > 0 && (

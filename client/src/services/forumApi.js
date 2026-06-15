@@ -53,6 +53,25 @@ const forumApi = {
   getMyProfile: () => api.get("/api/forum/profile"),
   updateMyProfile: (payload) => api.put("/api/forum/profile", payload),
   getPublicProfile: (id) => api.get(`/api/forum/users/${id}`),
+  // 头像（复用账号体系的上传端点）
+  uploadAvatar: (file) => {
+    const fd = new FormData();
+    fd.append("avatar", file);
+    return api.post("/api/user/avatar", fd, { headers: { "Content-Type": "multipart/form-data" } });
+  },
+
+  // 徽章
+  getMyBadges: () => api.get("/api/forum/badges/me"),
+  setBadgeDisplay: (badgeCode, displayed) =>
+    api.put("/api/forum/badges/display", { badge_code: badgeCode, displayed }),
+
+  // 站内信（轻量私信）
+  listConversations: () => api.get("/api/forum/conversations"),
+  getMessages: (conversationId) => api.get(`/api/forum/conversations/${conversationId}/messages`),
+  startConversation: (recipientId, body) =>
+    api.post("/api/forum/conversations", { recipient_id: recipientId, body }),
+  sendMessage: (conversationId, body) =>
+    api.post(`/api/forum/conversations/${conversationId}/messages`, { body }),
 };
 
 export default forumApi;

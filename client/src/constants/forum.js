@@ -3,7 +3,19 @@
 // 图标统一用 lucide 线性图标，与全站视觉语言一致（不用 emoji）。
 // ============================================================
 
-import { Award, MessageSquare, Handshake } from "lucide-react";
+import { Award, MessageSquare, Handshake, Trophy, BarChart3, Flame, MapPin } from "lucide-react";
+
+// 徽章 code → lucide 图标（前端统一线性图标，不用后端返回的 emoji）
+export const BADGE_ICONS = {
+  high_score: Trophy,
+  volume: BarChart3,
+  active: Flame,
+  region: MapPin,
+};
+
+export function badgeIcon(code) {
+  return BADGE_ICONS[code] || Award;
+}
 
 // 用户身份（社区身份，与权限 role 无关）
 export const USER_TYPES = {

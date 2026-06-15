@@ -1,9 +1,10 @@
 // ConnectionsPanel — 我的撮合：收到的意向（可同意/拒绝）+ 发出的意向
 import React, { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { Loader2, Check, X } from "lucide-react";
+import { Loader2, Check, X, MessageSquare } from "lucide-react";
 import forumApi from "../../services/forumApi";
 import UserTypeBadge from "../../components/forum/UserTypeBadge";
+import Avatar from "../../components/forum/Avatar";
 
 const STATUS_LABEL = {
   pending: { text: "待回应", cls: "text-[#B45309] bg-[#FBF1E3]" },
@@ -70,8 +71,13 @@ function ConnCard({ conn, side, onRespond }) {
       </div>
 
       <div className="flex items-center gap-1.5 mt-1.5 text-xs text-[#4B5A72]">
-        {side === "received" ? "来自" : "对方"}：{conn.counterpart.name}
-        <UserTypeBadge type={conn.counterpart.user_type} size="xs" />
+        <span className="text-[#8E9BB0]">{side === "received" ? "来自" : "对方"}：</span>
+        <button onClick={() => conn.counterpart.id && navigate(`/forum/u/${conn.counterpart.id}`)}
+          className="flex items-center gap-1.5 hover:text-[#1B4FD8]">
+          <Avatar src={conn.counterpart.avatar_url} name={conn.counterpart.name} id={conn.counterpart.id} size="xs" />
+          {conn.counterpart.name}
+          <UserTypeBadge type={conn.counterpart.user_type} size="xs" />
+        </button>
         {conn.counterpart.org_name && <span className="text-[#8E9BB0]">· {conn.counterpart.org_name}</span>}
       </div>
 
@@ -82,6 +88,14 @@ function ConnCard({ conn, side, onRespond }) {
         <div className="mt-2 text-xs bg-[#E7F6EF] border border-[#CDEBDD] rounded px-2.5 py-1.5 text-[#0D2145]">
           <span className="text-[#0F8A5F]">名片：</span>{conn.counterpart.contact_card}
         </div>
+      )}
+
+      {/* 建立联系后可直接站内私信 */}
+      {conn.status === "accepted" && conn.counterpart.id && (
+        <button onClick={() => navigate(`/forum/messages?to=${conn.counterpart.id}`)}
+          className="mt-2 flex items-center gap-1.5 px-3 py-1.5 text-xs border border-[#D8DCE8] hover:border-[#1B4FD8] text-[#4B5A72] hover:text-[#1B4FD8] rounded-lg">
+          <MessageSquare className="w-3.5 h-3.5" /> 站内私信
+        </button>
       )}
 
       {/* 收到的 pending 可同意/拒绝 */}

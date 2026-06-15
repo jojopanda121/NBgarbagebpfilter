@@ -3,11 +3,13 @@
 //   /forum/u/:id     → 他人公开主页 + 其帖子
 import React, { useEffect, useState, useCallback } from "react";
 import { useParams, useSearchParams, useNavigate } from "react-router-dom";
-import { Loader2, ArrowLeft } from "lucide-react";
+import { Loader2, ArrowLeft, MessageSquare } from "lucide-react";
 import forumApi from "../../services/forumApi";
 import useAuthStore from "../../store/useAuthStore";
 import ForumPostCard from "../../components/forum/ForumPostCard";
 import UserTypeBadge from "../../components/forum/UserTypeBadge";
+import Avatar from "../../components/forum/Avatar";
+import BadgeList from "../../components/forum/BadgeList";
 import RegistrationGate from "../../components/forum/RegistrationGate";
 import ProfileEditor from "./ProfileEditor";
 import ConnectionsPanel from "./ConnectionsPanel";
@@ -55,6 +57,7 @@ function MyProfile() {
 // ── 他人公开主页 ──
 function PublicProfile({ userId }) {
   const navigate = useNavigate();
+  const token = useAuthStore((s) => s.token);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -79,22 +82,25 @@ function PublicProfile({ userId }) {
   return (
     <div className="max-w-3xl mx-auto px-4 py-5">
       <button onClick={() => navigate("/forum")} className="flex items-center gap-1 text-xs text-[#8E9BB0] hover:text-[#0D2145] mb-3"><ArrowLeft className="w-4 h-4" /> 返回论坛</button>
-      <div className="bg-white border border-[#D8DCE8] rounded-lg p-5 flex items-center gap-4">
-        {profile.avatar_url ? (
-          <img src={profile.avatar_url} alt="" className="w-14 h-14 rounded-full object-cover" />
-        ) : (
-          <div className="w-14 h-14 rounded-full bg-[#1B4FD8] flex items-center justify-center text-white text-xl font-bold">
-            {profile.name?.charAt(0)?.toUpperCase() || "U"}
-          </div>
-        )}
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
+      <div className="bg-white border border-[#D8DCE8] rounded-lg p-5 flex items-start gap-4">
+        <Avatar src={profile.avatar_url} name={profile.name} id={profile.id} size="lg" />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2 flex-wrap">
             <span className="text-base font-bold text-[#0D2145]">{profile.name}</span>
             <UserTypeBadge type={profile.user_type} verified={profile.type_verified} />
           </div>
           {profile.org_name && <div className="text-xs text-[#8E9BB0] mt-0.5">{profile.org_name}</div>}
           {profile.bio && <div className="text-sm text-[#4B5A72] mt-1">{profile.bio}</div>}
+          {profile.badges?.length > 0 && (
+            <div className="mt-2"><BadgeList badges={profile.badges} size="sm" max={6} /></div>
+          )}
         </div>
+        {!profile.is_me && (
+          <button onClick={() => (token ? navigate(`/forum/messages?to=${profile.id}`) : navigate("/login"))}
+            className="flex items-center gap-1.5 px-3 py-2 text-sm border border-[#D8DCE8] hover:border-[#1B4FD8] text-[#4B5A72] hover:text-[#1B4FD8] rounded-lg shrink-0">
+            <MessageSquare className="w-4 h-4" /> 私信
+          </button>
+        )}
       </div>
 
       <h2 className="text-sm font-semibold text-[#0D2145] mt-5 mb-3">TA 的帖子</h2>

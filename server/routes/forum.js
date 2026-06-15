@@ -9,6 +9,8 @@ const { Router } = require("express");
 const rateLimit = require("express-rate-limit");
 const { requireAuth, optionalAuth } = require("../middleware/auth");
 const forum = require("../services/forumService");
+const badges = require("../services/badgeService");
+const messages = require("../services/forumMessageService");
 const { getDb } = require("../db");
 
 const router = Router();
@@ -134,6 +136,26 @@ router.get("/profile", requireAuth, handle((req) => forum.getMyProfile(req.user.
 router.put("/profile", requireAuth, handle((req) => forum.updateMyProfile(req.user.id, req.body)));
 router.get("/users/:id", optionalAuth, handle((req) =>
   forum.getPublicProfile(Number(req.params.id), req.user?.id || null)
+));
+
+// ── 徽章 ──
+router.get("/badges/me", requireAuth, handle((req) => ({ badges: badges.recompute(req.user.id) })));
+router.put("/badges/display", requireAuth, handle((req) => ({
+  badges: badges.setDisplay(req.user.id, req.body.badge_code, !!req.body.displayed),
+})));
+
+// ── 站内信（轻量私信，独立于撮合）──
+router.get("/conversations", requireAuth, handle((req) => ({
+  conversations: messages.listConversations(req.user.id),
+})));
+router.post("/conversations", requireAuth, writeLimiter, handle((req) =>
+  messages.sendMessage({ meId: req.user.id, recipientId: Number(req.body.recipient_id), body: req.body.body })
+));
+router.get("/conversations/:id/messages", requireAuth, handle((req) =>
+  messages.listMessages(Number(req.params.id), req.user.id)
+));
+router.post("/conversations/:id/messages", requireAuth, writeLimiter, handle((req) =>
+  messages.sendMessage({ meId: req.user.id, convId: Number(req.params.id), body: req.body.body })
 ));
 
 module.exports = router;

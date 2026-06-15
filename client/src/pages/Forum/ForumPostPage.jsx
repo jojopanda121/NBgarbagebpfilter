@@ -1,11 +1,13 @@
 // ForumPostPage — 帖子详情：评分快照 + 正文 + 撮合 + 评论 + 游客软墙
 import React, { useEffect, useState, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { Loader2, Heart, Bookmark, Flag, Handshake, Trash2, ArrowLeft, Send } from "lucide-react";
+import { Loader2, Heart, Bookmark, Flag, Handshake, Trash2, ArrowLeft, Send, MessageSquare } from "lucide-react";
 import forumApi from "../../services/forumApi";
 import useAuthStore from "../../store/useAuthStore";
 import ScoreSnapshotCard from "../../components/forum/ScoreSnapshotCard";
 import UserTypeBadge from "../../components/forum/UserTypeBadge";
+import Avatar from "../../components/forum/Avatar";
+import BadgeList from "../../components/forum/BadgeList";
 import RegistrationGate from "../../components/forum/RegistrationGate";
 import ForumDisclaimer from "../../components/forum/ForumDisclaimer";
 import InterestModal from "./InterestModal";
@@ -100,11 +102,13 @@ export default function ForumPostPage() {
         <h1 className="text-xl font-bold text-[#0D2145]">{post.title}</h1>
 
         {/* 作者 */}
-        <div className="flex items-center gap-2 mt-2 text-sm">
+        <div className="flex items-center gap-2 mt-2 text-sm flex-wrap">
           <button onClick={() => post.author?.id && navigate(`/forum/u/${post.author.id}`)} className="text-[#4B5A72] hover:text-[#1B4FD8] flex items-center gap-1.5">
+            <Avatar src={post.author?.avatar_url} name={post.author?.name} id={post.author?.id} size="sm" />
             {post.author?.name}
             <UserTypeBadge type={post.author?.user_type} verified={post.author?.type_verified} />
           </button>
+          {post.author?.badges?.length > 0 && <BadgeList badges={post.author.badges} size="xs" max={3} />}
           {post.author?.org_name && <span className="text-xs text-[#8E9BB0]">· {post.author.org_name}</span>}
           <span className="text-xs text-[#8E9BB0]">· {post.created_at}</span>
         </div>
@@ -138,12 +142,22 @@ export default function ForumPostPage() {
             <div className="flex-1" />
             {post.is_author ? (
               <Action onClick={handleDelete} icon={Trash2} danger>删除</Action>
-            ) : post.allow_contact ? (
-              <button onClick={() => (token ? setShowInterest(true) : navigate("/login"))}
-                className="flex items-center gap-1.5 px-4 py-2 text-sm bg-[#1B4FD8] hover:bg-[#163069] text-white rounded-lg font-semibold">
-                <Handshake className="w-4 h-4" /> 我有兴趣
-              </button>
-            ) : null}
+            ) : (
+              <>
+                {post.author?.id && (
+                  <button onClick={() => (token ? navigate(`/forum/messages?to=${post.author.id}`) : navigate("/login"))}
+                    className="flex items-center gap-1.5 px-3 py-2 text-sm border border-[#D8DCE8] hover:border-[#1B4FD8] text-[#4B5A72] hover:text-[#1B4FD8] rounded-lg">
+                    <MessageSquare className="w-4 h-4" /> 私信
+                  </button>
+                )}
+                {post.allow_contact && (
+                  <button onClick={() => (token ? setShowInterest(true) : navigate("/login"))}
+                    className="flex items-center gap-1.5 px-4 py-2 text-sm bg-[#1B4FD8] hover:bg-[#163069] text-white rounded-lg font-semibold">
+                    <Handshake className="w-4 h-4" /> 我有兴趣
+                  </button>
+                )}
+              </>
+            )}
           </div>
         )}
       </article>
@@ -179,11 +193,12 @@ export default function ForumPostPage() {
             ) : comments.map((c) => (
               <div key={c.id} className="bg-white border border-[#EEF1F7] rounded-lg px-3 py-2.5">
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-1.5 text-xs">
+                  <button onClick={() => c.author?.id && navigate(`/forum/u/${c.author.id}`)} className="flex items-center gap-1.5 text-xs hover:opacity-80">
+                    <Avatar src={c.author.avatar_url} name={c.author.name} id={c.author.id} size="xs" />
                     <span className="text-[#0D2145] font-medium">{c.author.name}</span>
                     <UserTypeBadge type={c.author.user_type} verified={c.author.type_verified} size="xs" />
                     <span className="text-[#8E9BB0]">· {c.created_at}</span>
-                  </div>
+                  </button>
                   {(c.is_author || me?.role === "admin") && (
                     <button onClick={() => deleteComment(c.id)} className="text-[#8E9BB0] hover:text-rose-500"><Trash2 className="w-3.5 h-3.5" /></button>
                   )}

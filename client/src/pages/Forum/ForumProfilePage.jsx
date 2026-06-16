@@ -3,7 +3,7 @@
 //   /forum/u/:id     → 他人公开主页 + 其帖子
 import React, { useEffect, useState, useCallback } from "react";
 import { useParams, useSearchParams, useNavigate } from "react-router-dom";
-import { Loader2, ArrowLeft, MessageSquare } from "lucide-react";
+import { Loader2, ArrowLeft } from "lucide-react";
 import forumApi from "../../services/forumApi";
 import useAuthStore from "../../store/useAuthStore";
 import ForumPostCard from "../../components/forum/ForumPostCard";
@@ -95,12 +95,7 @@ function PublicProfile({ userId }) {
             <div className="mt-2"><BadgeList badges={profile.badges} size="sm" max={6} showName /></div>
           )}
         </div>
-        {!profile.is_me && (
-          <button onClick={() => (token ? navigate(`/forum/messages?to=${profile.id}`) : navigate("/login"))}
-            className="flex items-center gap-1.5 px-3 py-2 text-sm border border-[#D8DCE8] hover:border-[#1B4FD8] text-[#4B5A72] hover:text-[#1B4FD8] rounded-lg shrink-0">
-            <MessageSquare className="w-4 h-4" /> 私信
-          </button>
-        )}
+        {/* 私信已门控：不能从冷主页直接私信。先到 TA 的项目帖点「我有兴趣」，对方同意后解锁。 */}
       </div>
 
       <h2 className="text-sm font-semibold text-[#0D2145] mt-5 mb-3">TA 的帖子</h2>

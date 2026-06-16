@@ -132,7 +132,7 @@ export default function MessagesPage() {
           {loadingList ? (
             <div className="py-10 flex justify-center"><Loader2 className="w-5 h-5 animate-spin text-[#8E9BB0]" /></div>
           ) : conversations.length === 0 ? (
-            <div className="text-xs text-[#8E9BB0] text-center py-10 px-3">还没有私信。<br />在帖子或主页点「私信」开始聊天。</div>
+            <div className="text-xs text-[#8E9BB0] text-center py-10 px-3">还没有私信。<br />在项目帖点「我有兴趣」，<br />发帖人同意后即可在此私信。</div>
           ) : (
             <ul className="divide-y divide-[#F3F5F9]">
               {conversations.map((c) => (

@@ -12,6 +12,8 @@
 // ============================================================
 
 const { getDb } = require("../db");
+const badgeService = require("./badgeService");
+const forumMessageService = require("./forumMessageService");
 
 const GUEST_LIST_LIMIT = 6;       // 游客最多看前 6 条
 const GUEST_BODY_CHARS = 140;     // 游客正文截断长度
@@ -114,6 +116,14 @@ function authorView(row) {
   };
 }
 
+// 给作者视图附上其「挂出」的徽章（仅用于帖子作者展示，避免在评论列表上 N+1）。
+function attachBadges(author) {
+  if (!author) return author;
+  try { author.badges = badgeService.getBadges(author.id, { onlyDisplayed: true }); }
+  catch { author.badges = []; }
+  return author;
+}
+
 const POST_AUTHOR_JOIN = `
   LEFT JOIN users u ON u.id = p.author_id
 `;
@@ -155,12 +165,16 @@ function createPost(args) {
   let disclosureLevel = "public";
   let scrubbedBody = body;
   let resolvedTaskId = null;
+  // 排序/分区派生字段（评分帖才有值；非评分帖留 NULL）
+  let scoreTotal = null;
+  let industry = null;
+  let region = null;
 
   if (category === "project") {
     // 评分帖：必须关联真实任务，分数由服务端现取
     if (!taskId) throw badRequest("优质项目帖需关联一次真实分析（task_id）");
     const task = db.prepare(
-      "SELECT id, user_id, title, result FROM tasks WHERE id = ?"
+      "SELECT id, user_id, title, result, industry_category, project_location, ip_region FROM tasks WHERE id = ?"
     ).get(taskId);
     if (!task) throw badRequest("关联的分析任务不存在");
 
@@ -173,6 +187,7 @@ function createPost(args) {
     if (!snapshot) throw badRequest("该任务尚无有效评分结果，无法转发");
 
     resolvedTaskId = task.id;
+    const result = safeParse(task.result, {});
     const ids = collectIdentifiers(task);
     codename = (!showProjectName) ? generateCodename() : null;
     const scrubOpts = { showCompany: showCompanyName, showProject: showProjectName, codename: codename || ids.title };
@@ -183,9 +198,14 @@ function createPost(args) {
     disclosureLevel = showProjectName && showCompanyName ? "public"
       : (showProjectName || showCompanyName ? "semi" : "anonymous");
 
+    // 派生排序/分区字段（不影响不可变快照；分区维度即使脱敏也保留，类目本身不泄漏可识别信息）
+    scoreTotal = snapshot.total_score != null ? Math.round(snapshot.total_score) : null;
+    industry = (task.industry_category || result?.industry || "").trim() || null;
+    region = badgeService._internal.toRegion(task.project_location || task.ip_region) || null;
+
     teaserPayload = JSON.stringify({
       codename: codename || ids.title || ids.company || "项目",
-      sector: safeParse(task.result, {})?.industry || null,
+      sector: industry,
     });
   }
 
@@ -193,15 +213,19 @@ function createPost(args) {
     `INSERT INTO forum_posts
       (author_id, category, title, body, task_id, score_snapshot, score_source,
        disclosure_level, show_project_name, show_company_name, codename, teaser_payload,
-       allow_contact, public_contact)
-     VALUES (?, ?, ?, ?, ?, ?, 'platform', ?, ?, ?, ?, ?, ?, ?)`
+       allow_contact, public_contact, score_total, industry, region)
+     VALUES (?, ?, ?, ?, ?, ?, 'platform', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     userId, category, title.trim(), scrubbedBody, resolvedTaskId,
     snapshot ? JSON.stringify(snapshot) : null,
     disclosureLevel, showProjectName ? 1 : 0, showCompanyName ? 1 : 0,
     codename, teaserPayload,
-    allowContact ? 1 : 0, (publicContact || "").trim() || null
+    allowContact ? 1 : 0, (publicContact || "").trim() || null,
+    scoreTotal, industry, region
   );
+
+  // 发帖后顺手重算徽章（用户活跃度/总量可能变化），失败不影响发帖
+  try { badgeService.recompute(userId); } catch { /* noop */ }
 
   return getPostById(info.lastInsertRowid, userId);
 }
@@ -243,7 +267,12 @@ function listPosts({ category, sort = "latest", page = 1, pageSize = 20, viewerI
   let orderSql;
   switch (sort) {
     case "score":
-      orderSql = "ORDER BY json_extract(p.score_snapshot, '$.total_score') DESC NULLS LAST, p.created_at DESC";
+      // 走 score_total 一等列（有索引）；非评分帖无分数沉底
+      orderSql = "ORDER BY p.score_total DESC NULLS LAST, p.created_at DESC";
+      break;
+    case "interest":
+      // 感兴趣度：收到的撮合意向数
+      orderSql = "ORDER BY p.interest_count DESC, p.created_at DESC";
       break;
     case "hot":
       orderSql = "ORDER BY (p.like_count * 3 + p.comment_count * 2 + p.view_count) DESC, p.created_at DESC";
@@ -283,7 +312,7 @@ function listItemView(r, viewerId, isGuest) {
     title: r.title,
     codename: r.codename,
     disclosure_level: r.disclosure_level,
-    author: authorView(r),
+    author: attachBadges(authorView(r)),
     score: snap ? { total_score: snap.total_score, grade: snap.grade, grade_label: snap.grade_label } : null,
     score_source: r.score_source,
     like_count: r.like_count,
@@ -325,7 +354,7 @@ function getPostDetail(postId, viewerId) {
     title: r.title,
     codename: r.codename,
     disclosure_level: r.disclosure_level,
-    author: authorView(r),
+    author: attachBadges(authorView(r)),
     score: snap,                      // 完整快照（含 strengths / risk_flags）
     score_source: r.score_source,
     allow_contact: !!r.allow_contact,
@@ -537,7 +566,17 @@ function respondInterest({ connectionId, userId, accept }) {
   db.prepare(
     "UPDATE deal_connections SET status = ?, responded_at = datetime('now') WHERE id = ?"
   ).run(accept ? "accepted" : "declined", connectionId);
-  return { ok: true, status: accept ? "accepted" : "declined" };
+
+  let conversationId = null;
+  if (accept) {
+    // 发帖人「同意即开私信」：解锁名片 + 顺手开一条空会话，双方均可在站内信里看到并发起对话。
+    // 开会话失败不应阻断同意本身。
+    try {
+      const conv = forumMessageService.openConversationOnAccept(conn.owner_id, conn.initiator_id);
+      conversationId = conv?.id ?? null;
+    } catch (e) { console.error("[Forum] open conversation on accept failed:", e.message); }
+  }
+  return { ok: true, status: accept ? "accepted" : "declined", conversation_id: conversationId };
 }
 
 /**
@@ -548,7 +587,7 @@ function listMyConnections(userId) {
   const db = getDb();
   const received = db.prepare(
     `SELECT dc.*, p.title AS post_title, p.codename,
-            u.display_name, u.username, u.user_type, u.org_name, u.contact_card
+            u.id AS counterpart_id, u.display_name, u.username, u.user_type, u.org_name, u.avatar_url, u.contact_card
      FROM deal_connections dc
      LEFT JOIN forum_posts p ON p.id = dc.post_id
      LEFT JOIN users u ON u.id = dc.initiator_id
@@ -557,7 +596,7 @@ function listMyConnections(userId) {
 
   const sent = db.prepare(
     `SELECT dc.*, p.title AS post_title, p.codename,
-            u.display_name, u.username, u.user_type, u.org_name, u.contact_card
+            u.id AS counterpart_id, u.display_name, u.username, u.user_type, u.org_name, u.avatar_url, u.contact_card
      FROM deal_connections dc
      LEFT JOIN forum_posts p ON p.id = dc.post_id
      LEFT JOIN users u ON u.id = dc.owner_id
@@ -573,9 +612,11 @@ function listMyConnections(userId) {
     created_at: c.created_at,
     responded_at: c.responded_at,
     counterpart: {
+      id: c.counterpart_id,
       name: c.display_name || c.username || "用户",
       user_type: c.user_type || "unset",
       org_name: c.org_name || null,
+      avatar_url: c.avatar_url || null,
       // 名片仅在 accepted 后解锁
       contact_card: c.status === "accepted" ? (c.contact_card || null) : null,
     },
@@ -597,11 +638,15 @@ function getMyProfile(userId) {
     "SELECT id, username, display_name, user_type, type_verified, org_name, bio, contact_card, avatar_url FROM users WHERE id = ?"
   ).get(userId);
   if (!u) throw notFound("用户不存在");
+  // 打开自己资料时重算徽章（幂等，保留已挂出选择）
+  let badges = [];
+  try { badges = badgeService.recompute(userId); } catch { /* noop */ }
   return {
     id: u.id, username: u.username,
     display_name: u.display_name || "", user_type: u.user_type || "unset",
     type_verified: !!u.type_verified, org_name: u.org_name || "",
     bio: u.bio || "", contact_card: u.contact_card || "", avatar_url: u.avatar_url || null,
+    badges,  // 全部已获得（含 displayed 标记），供资料页「挂/取消挂」
   };
 }
 
@@ -634,11 +679,15 @@ function getPublicProfile(targetUserId, viewerId) {
     `SELECT p.*, ${AUTHOR_COLS} FROM forum_posts p ${POST_AUTHOR_JOIN}
      WHERE p.author_id = ? AND p.status = 'published' ORDER BY p.created_at DESC LIMIT 30`
   ).all(targetUserId);
+  let badges = [];
+  try { badges = badgeService.getBadges(targetUserId, { onlyDisplayed: true }); } catch { /* noop */ }
   return {
     profile: {
       id: u.id, name: u.display_name || u.username || "用户",
       user_type: u.user_type || "unset", type_verified: !!u.type_verified,
       org_name: u.org_name || null, bio: u.bio || null, avatar_url: u.avatar_url || null,
+      badges,  // 仅挂出的徽章（对外展示）
+      is_me: !!viewerId && viewerId === targetUserId,
     },
     posts: posts.map((r) => listItemView(r, viewerId, false)),
   };

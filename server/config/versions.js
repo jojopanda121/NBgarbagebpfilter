@@ -13,6 +13,11 @@
 // 用户重新分析会按新逻辑重跑（正常消耗额度）。
 // ============================================================
 
-const PIPELINE_VERSION = "v4.5.0";
+// v4.5.0: S5 反稀释重构（materiality 分组 + Integrity Veto 一票否决）、
+//         关键声明核查接入真实联网检索、BP 原文不可信边界（注入防线）、
+//         estimated 推断值打折、scoring_shadow 落库、降级报告显式警告。
+// v4.6.0: S3 资本壁垒 harness（scoringS3Harness.js，默认 shadow，对照块 scoring_s3_shadow）——
+//         资本壁垒溢价 / 新质生产力 / 成本曲线陡峭度 / 资本耐心，修复硬科技重资产偏见。
+const PIPELINE_VERSION = "v4.6.0";
 
 module.exports = { PIPELINE_VERSION };

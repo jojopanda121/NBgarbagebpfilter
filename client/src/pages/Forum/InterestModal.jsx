@@ -34,7 +34,7 @@ export default function InterestModal({ post, onClose, onDone }) {
         <div className="px-5 py-4 space-y-3">
           {error && <div className="text-xs text-rose-600 bg-rose-50 border border-rose-200 rounded px-2.5 py-1.5">{error}</div>}
           <p className="text-xs text-[#4B5A72]">
-            向发帖人「{post.codename || post.title}」表达兴趣。对方同意后，你们将互相解锁名片（资料里填写的联系方式）。
+            向发帖人「{post.codename || post.title}」表达兴趣。对方同意后，你们将互相解锁名片（资料里填写的联系方式）并开启站内私信；在对方同意前无法私信。
           </p>
           <textarea value={message} onChange={(e) => setMessage(e.target.value)} maxLength={1000}
             placeholder="附言（选填）：简单介绍你/你的机构，以及为什么感兴趣"

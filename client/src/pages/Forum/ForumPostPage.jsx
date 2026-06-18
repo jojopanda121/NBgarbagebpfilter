@@ -1,7 +1,7 @@
 // ForumPostPage — 帖子详情：评分快照 + 正文 + 撮合 + 评论 + 游客软墙
 import React, { useEffect, useState, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { Loader2, Heart, Bookmark, Flag, Handshake, Trash2, ArrowLeft, Send, MessageSquare } from "lucide-react";
+import { Loader2, Heart, Bookmark, Flag, Handshake, Trash2, ArrowLeft, Send } from "lucide-react";
 import forumApi from "../../services/forumApi";
 import useAuthStore from "../../store/useAuthStore";
 import ScoreSnapshotCard from "../../components/forum/ScoreSnapshotCard";
@@ -143,20 +143,13 @@ export default function ForumPostPage() {
             {post.is_author ? (
               <Action onClick={handleDelete} icon={Trash2} danger>删除</Action>
             ) : (
-              <>
-                {post.author?.id && (
-                  <button onClick={() => (token ? navigate(`/forum/messages?to=${post.author.id}`) : navigate("/login"))}
-                    className="flex items-center gap-1.5 px-3 py-2 text-sm border border-[#D8DCE8] hover:border-[#1B4FD8] text-[#4B5A72] hover:text-[#1B4FD8] rounded-lg">
-                    <MessageSquare className="w-4 h-4" /> 私信
-                  </button>
-                )}
-                {post.allow_contact && (
-                  <button onClick={() => (token ? setShowInterest(true) : navigate("/login"))}
-                    className="flex items-center gap-1.5 px-4 py-2 text-sm bg-[#1B4FD8] hover:bg-[#163069] text-white rounded-lg font-semibold">
-                    <Handshake className="w-4 h-4" /> 我有兴趣
-                  </button>
-                )}
-              </>
+              // 私信已门控：先「我有兴趣」，发帖人同意后才解锁站内私信（在「撮合」里进入对话）
+              post.allow_contact && (
+                <button onClick={() => (token ? setShowInterest(true) : navigate("/login"))}
+                  className="flex items-center gap-1.5 px-4 py-2 text-sm bg-[#1B4FD8] hover:bg-[#163069] text-white rounded-lg font-semibold">
+                  <Handshake className="w-4 h-4" /> 我有兴趣
+                </button>
+              )
             )}
           </div>
         )}
@@ -214,7 +207,7 @@ export default function ForumPostPage() {
 
       {showInterest && (
         <InterestModal post={post} onClose={() => setShowInterest(false)}
-          onDone={() => { setShowInterest(false); alert("已发送意向，等待对方同意后即可交换联系方式"); }} />
+          onDone={() => { setShowInterest(false); alert("已发送意向，等待对方同意后即可交换联系方式并私信"); }} />
       )}
     </div>
   );

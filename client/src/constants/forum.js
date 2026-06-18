@@ -41,6 +41,7 @@ export const FORUM_CATEGORIES = [
 export const SORT_OPTIONS = [
   { key: "latest", label: "最新" },
   { key: "score", label: "评分最高" },
+  { key: "interest", label: "最多人感兴趣" },
   { key: "hot", label: "热门" },
 ];
 

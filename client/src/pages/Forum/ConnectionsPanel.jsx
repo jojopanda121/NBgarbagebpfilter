@@ -103,7 +103,7 @@ function ConnCard({ conn, side, onRespond }) {
         <div className="flex items-center gap-2 mt-2.5">
           <button onClick={() => onRespond(conn.id, true)}
             className="flex items-center gap-1 px-3 py-1.5 text-xs bg-[#1B4FD8] hover:bg-[#163069] text-white rounded-lg font-medium">
-            <Check className="w-3.5 h-3.5" /> 同意建立联系
+            <Check className="w-3.5 h-3.5" /> 同意并开启私信
           </button>
           <button onClick={() => onRespond(conn.id, false)}
             className="flex items-center gap-1 px-3 py-1.5 text-xs text-[#4B5A72] hover:bg-[#EEF1F7] rounded-lg">

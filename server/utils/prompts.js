@@ -293,6 +293,21 @@ function buildStructuralPrompt(projectContext) {
   - Capital_Archetype 从 {纯软件SaaS, 平台双边市场, 软硬结合, 服务密集型, 硬件fab-lite, 重资产制造} **严格选一个**
   - Scale_Mechanism 从 {双边网络效应, 数据飞轮, 规模经济, 品牌渠道复利, 线性人力交付} **严格选一个**
 - 仍保留 Industry_Capital_Score / Industry_Scale_Score（1-10）作兜底，但优先保证上面两个枚举准确
+- 额外产出 S3_Rubric（新版评分用，解决"资本密集=护城河时自相矛盾、新质重资产≠产能过剩、
+  资本来源差异"三个问题）。**全部基于客观可检索信息，查不到的字段直接省略**，不要硬编：
+  - capital_archetype     同 Capital_Archetype（资产模式）
+  - scale_type            同 Scale_Mechanism（规模效应类型）
+  - cost_curve_steepness  成本曲线陡峭度，从 {指数级, 强学习曲线, 中等学习曲线, 普通规模经济, 近线性} 选一个
+                          · 指数级=软件/网络边际成本趋零，或半导体良率驱动/学习率≥20%
+                          · 普通规模经济=传统制造产量翻倍降本5-10%；近线性=成熟商品化几乎无规模效应
+  - global_player_count   全球/全国能做同类事的玩家数量（整数；玩家越少=资本门槛护城河越强）
+  - market_cagr           该细分赛道市场 CAGR（%，数字部分）
+  - policy_tier           政策优先级，从 {国家级, 省级, 无} 选一个
+                          · 国家级=列入国家战略性新兴产业/未来产业目录 且 有国家级专项/大基金支持
+                          · 省级=地方战略性新兴产业/专精特新方向；无=不在任何战略目录
+  - capital_source        主导资本来源，从 {大基金主导, 国资参与, 市场化} 选一个
+                          · 大基金主导=国家大基金+省市政府主导，长期限低成本；国资参与=国资/产业基金参与但非主导；
+                          · 市场化=纯 VC/PE/产业资本
 
 *第四维度：团队基因（多因子评分）*
 - Founder_Exp_Years: 核心创始人赛道相关经验年数
@@ -329,6 +344,15 @@ function buildStructuralPrompt(projectContext) {
     "TAM_Source": { "type": "自下而上", "customer_count": 500000, "arpu": 1200, "source": null },
     "Capital_Archetype": "纯软件SaaS",
     "Scale_Mechanism": "数据飞轮",
+    "S3_Rubric": {
+      "capital_archetype": "纯软件SaaS",
+      "scale_type": "数据飞轮",
+      "cost_curve_steepness": "强学习曲线",
+      "global_player_count": 12,
+      "market_cagr": 20,
+      "policy_tier": "省级",
+      "capital_source": "市场化"
+    },
     "Competitor_Rank_Score": 6,
     "TRL_Evidence": {
       "bp_claimed_trl": 8,

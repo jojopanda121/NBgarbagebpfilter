@@ -17,7 +17,8 @@
 // ============================================================
 
 const { scoreS2Harness, trlGapVerdict } = require("./scoringHarness");
-const { scoringHarnessMode } = require("./config/featureFlags");
+const { scoreS3Harness } = require("./scoringS3Harness");
+const { scoringHarnessMode, scoringS3HarnessMode } = require("./config/featureFlags");
 
 /** 将分数钳制到 0-100 整数 */
 function clampScore(score) {
@@ -410,9 +411,10 @@ function _applyIntegrityVeto(result, vetoInfo) {
 /**
  * 组装最终结果对象（给定 5 维分 + S2 展示元数据 + 声明数）
  */
-function _assemble(S1, S2, S3, S4, S5, data, s2meta) {
+function _assemble(S1, S2, S3, S4, S5, data, s2meta, s3meta) {
   const totalScore = calculateTotalScore(S1, S2, S3, S4, S5);
   const grading = getGrade(totalScore);
+  const s3m = s3meta || _S3_LEGACY_META(data);
   return {
     dimensions: {
       timing_ceiling: {
@@ -427,8 +429,8 @@ function _assemble(S1, S2, S3, S4, S5, data, s2meta) {
         subtitle: s2meta.subtitle, inputs: s2meta.inputs,
       },
       business_validation: {
-        score: S3, label: "资本效率与规模效应", subtitle: "行业资本效率 + 行业规模效应", weight: 20,
-        inputs: { Industry_Capital_Score: data.Industry_Capital_Score, Industry_Scale_Score: data.Industry_Scale_Score },
+        score: S3, label: "资本效率与规模效应", weight: 20,
+        subtitle: s3m.subtitle, inputs: s3m.inputs,
       },
       team: {
         score: S4, label: "团队基因", subtitle: "创始人赛道经验年数", weight: 20,
@@ -468,6 +470,30 @@ function _s2HarnessMeta(detail) {
   };
 }
 
+const _S3_LEGACY_META = (data) => ({
+  subtitle: "行业资本效率 + 行业规模效应",
+  inputs: { Industry_Capital_Score: data.Industry_Capital_Score, Industry_Scale_Score: data.Industry_Scale_Score },
+});
+
+function _s3HarnessMeta(h3) {
+  const d = h3.detail || {};
+  return {
+    subtitle: "资本效率(含耐心) + 规模×陡峭度 + 资本壁垒溢价 + 新质生产力 + 毛利修正",
+    inputs: {
+      CE: d.CE, G: d.G, CBP: d.CBP, N: d.N, GM_adj: d.GM_adj,
+      archetype: d.archetype, scale_type: d.scale_type, steepness_k: d.k,
+      player_count: d.player_count, policy_tier: d.policy_tier, capital_source: d.capital_source,
+    },
+  };
+}
+
+/** S3 harness 输入门槛：S3_Rubric 含至少一个非毛利的实质字段才视为可用 */
+function _hasS3HarnessInputs(data) {
+  const r = data.S3_Rubric;
+  if (!r || typeof r !== "object") return false;
+  return Object.keys(r).some((key) => key !== "gross_margin" && r[key] != null);
+}
+
 /**
  * 主评分函数
  *
@@ -484,14 +510,14 @@ function _s2HarnessMeta(detail) {
  *   claim_verdicts                      → S5 (BP诚信度；harness on 时叠加 TRL gap verdict)
  */
 function scoreProject(data, opts = {}) {
-  // modeOverride 让调用方(如 pipeline 的专家合并 A/B)显式指定 off/shadow/on，
-  // 绕过全局 env，避免多层 shadow 嵌套。缺省时读全局开关。
-  const mode = opts.modeOverride || scoringHarnessMode(); // off | shadow | on
+  // modeOverride / s3ModeOverride 让调用方(如 pipeline 的专家合并 A/B)显式指定
+  // off/shadow/on，绕过全局 env，避免多层 shadow 嵌套。缺省时读全局开关。
+  const mode = opts.modeOverride || scoringHarnessMode();       // S2: off | shadow | on
+  const s3mode = opts.s3ModeOverride || scoringS3HarnessMode(); // S3: off | shadow | on
   const harnessAvailable = mode !== "off" && _hasHarnessInputs(data);
 
-  // 三维共用（不受 harness 影响）
+  // 两维共用（不受 S2 harness 影响）
   const S1 = calculateDimension1_TimingAndCeiling(data.TAM_Million_RMB, data.CAGR);
-  const S3 = calculateDimension3_CapitalEfficiencyAndScale(data.Industry_Capital_Score, data.Industry_Scale_Score);
   const S4 = calculateDimension4_Team({
     Founder_Exp_Years: data.Founder_Exp_Years,
     Team_Experience_Score: data.Team_Experience_Score,
@@ -501,20 +527,54 @@ function scoreProject(data, opts = {}) {
     Team_Education_Score: data.Team_Education_Score,
   });
 
+  // —— S3：legacy + harness（与 S2 同范式，独立灰度开关）——
+  const S3legacy = calculateDimension3_CapitalEfficiencyAndScale(
+    data.Industry_Capital_Score, data.Industry_Scale_Score);
+  const s3Available = s3mode !== "off" && _hasS3HarnessInputs(data);
+  const h3 = s3Available
+    ? scoreS3Harness({
+        s3Rubric: data.S3_Rubric,
+        archetype: data.Capital_Archetype,
+        scaleMechanism: data.Scale_Mechanism,
+        grossMargin: data.S3_Rubric ? data.S3_Rubric.gross_margin : undefined,
+        fallbackCagr: data.CAGR,
+      })
+    : null;
+  const S3live = s3mode === "on" && h3 ? h3.S3 : S3legacy;
+  const s3meta = s3mode === "on" && h3 ? _s3HarnessMeta(h3) : undefined;
+  // shadow：把新版 S3 对照块附到任何返回结果上（独立于 S2 路径，供校准）
+  const attachS3Shadow = (result) => {
+    if (h3 && s3mode === "shadow") {
+      const d = result.dimensions;
+      const totalWithHarnessS3 = calculateTotalScore(
+        d.timing_ceiling.score, d.product_moat.score, h3.S3, d.team.score, d.external_risk.score);
+      result.scoring_s3_shadow = {
+        S3: h3.S3,
+        basis: h3.basis,
+        detail: h3.detail,
+        delta_S3: h3.S3 - S3legacy,
+        delta_total: totalWithHarnessS3 - result.total_score,
+      };
+    }
+    return result;
+  };
+
   // legacy 路径（始终算，作为 shadow 基线/兜底）
   const S2legacy = calculateDimension2_ProductAndMoat(data.TRL, data.Competitor_Rank_Score);
   const S5legacy = calculateDimension5_Integrity(data.claim_verdicts);
 
-  // 没有 harness 数据或开关 off → 纯 legacy
+  // 没有 S2 harness 数据或 S2 开关 off → 纯 legacy（S3 仍可独立走 on/shadow）
   if (!harnessAvailable) {
     const legacyVeto = assessIntegrityVeto(data.claim_verdicts);
-    return _applyIntegrityVeto(
-      _assemble(S1, S2legacy, S3, S4, S5legacy, data, _S2_LEGACY_META(data)),
-      legacyVeto
+    return attachS3Shadow(
+      _applyIntegrityVeto(
+        _assemble(S1, S2legacy, S3live, S4, S5legacy, data, _S2_LEGACY_META(data), s3meta),
+        legacyVeto
+      )
     );
   }
 
-  // harness 路径
+  // S2 harness 路径
   const h = scoreS2Harness({
     trlEvidence: data.TRL_Evidence,
     moatRubric: data.Moat_Rubric,
@@ -533,19 +593,19 @@ function scoreProject(data, opts = {}) {
 
   if (mode === "on") {
     const result = _applyIntegrityVeto(
-      _assemble(S1, h.S2, S3, S4, S5harness, data, _s2HarnessMeta(h)),
+      _assemble(S1, h.S2, S3live, S4, S5harness, data, _s2HarnessMeta(h), s3meta),
       harnessVeto
     );
     result.scoring_basis = "harness";
-    return result;
+    return attachS3Shadow(result);
   }
 
-  // shadow：旧分生效，附 harness 对照块（供校准）
+  // S2 shadow：旧分生效，附 S2 harness 对照块（供校准）；live 仍受 Integrity Veto 封顶
   const live = _applyIntegrityVeto(
-    _assemble(S1, S2legacy, S3, S4, S5legacy, data, _S2_LEGACY_META(data)),
+    _assemble(S1, S2legacy, S3live, S4, S5legacy, data, _S2_LEGACY_META(data), s3meta),
     assessIntegrityVeto(data.claim_verdicts)
   );
-  const shadow = _assemble(S1, h.S2, S3, S4, S5harness, data, _s2HarnessMeta(h));
+  const shadow = _assemble(S1, h.S2, S3live, S4, S5harness, data, _s2HarnessMeta(h), s3meta);
   live.scoring_basis = "legacy";
   live.scoring_shadow = {
     S2: h.S2,
@@ -558,7 +618,7 @@ function scoreProject(data, opts = {}) {
     delta_total: shadow.total_score - live.total_score,
     delta_S2: h.S2 - S2legacy,
   };
-  return live;
+  return attachS3Shadow(live);
 }
 
 module.exports = {

@@ -123,6 +123,107 @@ const SCALE_MECHANISM_SCORES = {
 const S3_GM_BONUS_THRESHOLD = 0.70;   // 毛利 ≥70% → +1
 const S3_GM_PENALTY_THRESHOLD = 0.40; // 毛利 <40% → −1
 
+// ============================================================
+// S3 HARNESS（新版：资本壁垒溢价 + 新质生产力 + 成本曲线陡峭度）
+//
+// 与上面的旧 BUSINESS_ARCHETYPE_SCORES / SCALE_MECHANISM_SCORES 并存，由
+// SCORING_S3_HARNESS 灰度开关(off/shadow/on)切换。设计见 scoringS3Harness.js。
+//
+// 修复旧 S3 三个结构性缺陷：
+//   1) 资本密集=护城河时 S2/S3 自相矛盾 → 资本壁垒溢价(CBP)：玩家越少，资本门槛
+//      越有效构成护城河，资本密集从减分翻成加分。
+//   2) 新质重资产 ≠ 产能过剩重资产 → 新质生产力加分(N)：用市场CAGR+政策目录量化。
+//   3) 资本来源/成本差异 → 资本耐心系数(λ)：国家大基金/政府主导的战略项目，资本
+//      效率惩罚部分豁免（仅战略赛道生效，避免给产能过剩SOE放水）。
+//   外加：规模陡峭度 → G = 规模类型分(ST) × 成本曲线陡峭度(k)，区分半导体良率驱动的
+//      指数级规模与普通制造的近线性规模。
+//
+// 公式：S3 = clamp( CE + G + CBP + N + ΔGM, 0, 100 )
+// ============================================================
+
+// CE_base：资本效率基础分（0-38）。键沿用 Capital_Archetype 枚举以便回退兼容。
+const S3H_CE_BASE = {
+  "纯软件SaaS": 38,
+  "平台双边市场": 35,
+  "软硬结合": 23,
+  "服务密集型": 20,
+  "硬件fab-lite": 17,
+  "重资产制造": 14,
+};
+const S3H_CE_BASE_DEFAULT = 23; // 查不到 → 软硬结合中性档
+const S3H_CE_MAX = 38;          // 资本耐心豁免向上收敛的天花板
+
+// ST：规模效应类型分（0-10）。键沿用 Scale_Mechanism 枚举。
+const S3H_SCALE_TYPE = {
+  "双边网络效应": 10,
+  "数据飞轮": 8,
+  "规模经济": 6,
+  "品牌渠道复利": 5,
+  "线性人力交付": 2,
+};
+const S3H_SCALE_TYPE_DEFAULT = 6;
+
+// k：成本曲线陡峭度系数（以 Wright 学习率 LR=累计产量翻倍单位成本下降幅度 为锚）。
+const S3H_STEEPNESS_K = {
+  "指数级": 3.8,       // 边际成本趋零(软件/网络) 或 良率驱动 / 有效 LR≥20%
+  "边际成本趋零": 3.8,
+  "强学习曲线": 2.8,   // LR 15-20%
+  "中等学习曲线": 2.0, // LR 10-15%
+  "普通规模经济": 1.5, // LR 5-10%
+  "近线性": 1.0,       // LR <5%（成熟商品化）
+};
+// 缺省 k：按规模类型推定（网络/飞轮天然更陡），其余给普通规模经济。
+const S3H_STEEPNESS_DEFAULT_BY_SCALE = {
+  "双边网络效应": 3.8,
+  "数据飞轮": 2.8,
+};
+const S3H_STEEPNESS_DEFAULT = 1.5;
+const S3H_G_MAX = 38;
+
+// CBP：资本壁垒溢价 = 玩家稀缺分 × 资本密集闸门。
+// 玩家稀缺分按全球/全国同类玩家数分档（玩家越少 = 资本门槛越有效）。
+const S3H_SCARCITY_BRACKETS = [
+  { maxPlayers: 5, score: 16 },
+  { maxPlayers: 15, score: 10 },
+  { maxPlayers: 50, score: 5 },
+  { maxPlayers: Infinity, score: 0 },
+];
+// 资本密集闸门：仅这些资产模式可获溢价（资本门槛才构成护城河；轻资产靠 CE 已高）。
+const S3H_CAPITAL_GATE_ARCHETYPES = ["重资产制造", "硬件fab-lite", "软硬结合"];
+
+// N：新质生产力 = 成长性分(CAGR) + 政策优先级分。
+const S3H_GROWTH_BRACKETS = [
+  { minCagr: 25, score: 9 },
+  { minCagr: 15, score: 6 },
+  { minCagr: 8, score: 3 },
+  { minCagr: -Infinity, score: 0 },
+];
+const S3H_GROWTH_DEFAULT = 3; // CAGR 查不到 → 8-15% 中性档（低置信）
+const S3H_POLICY_TIER = {
+  "国家级": 7, // 列入国家战略性新兴产业/未来产业目录 + 国家级专项/大基金支持
+  "省级": 3,   // 地方战略性新兴产业 / 专精特新方向
+  "无": 0,
+};
+const S3H_POLICY_DEFAULT = 0;
+
+// λ：资本耐心系数（gating：仅政策优先级≥阈值的战略赛道才允许豁免）。
+const S3H_CAPITAL_SOURCE_LAMBDA = {
+  "大基金主导": 0.20, // 国家大基金+省市政府主导，长期限低成本
+  "国资参与": 0.10,   // 国资/产业基金参与但非主导
+  "市场化": 0,        // 纯 VC/PE/产业资本
+};
+const S3H_CAPITAL_SOURCE_DEFAULT = 0;
+const S3H_PATIENCE_POLICY_GATE = 3; // Pol ≥ 此值（至少省级战略）才允许耐心豁免
+
+// ΔGM：毛利修正（细化原 ±1 逻辑；gm 为小数 0-1）。
+const S3H_GM_BRACKETS = [
+  { minGm: 0.70, adj: 6 },
+  { minGm: 0.50, adj: 3 },
+  { minGm: 0.40, adj: 0 },
+  { minGm: 0.30, adj: -3 },
+  { minGm: -Infinity, adj: -6 },
+];
+
 // ---------- S5：财务异常 → claim_verdict 映射（对称：奖保守、罚有证据的隐瞒） ----------
 // 设计原则："LLM 查不到 / BP 没写" = 存疑(6分及格,无罪推定)；
 //          只有带证据的刻意选择性披露才打"信息不对称"(2分)。
@@ -165,6 +266,26 @@ module.exports = {
   SCALE_MECHANISM_SCORES,
   S3_GM_BONUS_THRESHOLD,
   S3_GM_PENALTY_THRESHOLD,
+  // S3 harness 新版表
+  S3H_CE_BASE,
+  S3H_CE_BASE_DEFAULT,
+  S3H_CE_MAX,
+  S3H_SCALE_TYPE,
+  S3H_SCALE_TYPE_DEFAULT,
+  S3H_STEEPNESS_K,
+  S3H_STEEPNESS_DEFAULT_BY_SCALE,
+  S3H_STEEPNESS_DEFAULT,
+  S3H_G_MAX,
+  S3H_SCARCITY_BRACKETS,
+  S3H_CAPITAL_GATE_ARCHETYPES,
+  S3H_GROWTH_BRACKETS,
+  S3H_GROWTH_DEFAULT,
+  S3H_POLICY_TIER,
+  S3H_POLICY_DEFAULT,
+  S3H_CAPITAL_SOURCE_LAMBDA,
+  S3H_CAPITAL_SOURCE_DEFAULT,
+  S3H_PATIENCE_POLICY_GATE,
+  S3H_GM_BRACKETS,
   ANOMALY_VERDICT_MAP,
   HIDDEN_SIGNAL_SEVERITY_FLOOR,
   VALUATION_POSITION_VERDICTS,

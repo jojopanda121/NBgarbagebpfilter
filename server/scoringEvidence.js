@@ -390,12 +390,21 @@ function mergeSpecialistEvidence({ agentBData = {}, claimVerdicts = [], speciali
   if (s1.CAGR != null) { enriched.CAGR = s1.CAGR; audit.s1.cagr_capped = true; }
   if (s1.conflicts.length) audit.conflicts.push(...s1.conflicts);
 
-  // —— S3：枚举 → 分 + 毛利修正 ——
+  // —— S3：枚举 → 分 + 毛利修正（legacy）——
   const s3 = deriveS3(agentBData, financial);
   if (s3) {
     if (s3.Industry_Capital_Score != null) enriched.Industry_Capital_Score = s3.Industry_Capital_Score;
     if (s3.Industry_Scale_Score != null) enriched.Industry_Scale_Score = s3.Industry_Scale_Score;
     audit.s3 = s3;
+  }
+  // S3 harness：把 financial 实抽毛利率注入 S3_Rubric（毛利不在 Agent B 视野内，
+  // 与咽喉分注入 Moat_Rubric 同理）。harness 关时该字段无副作用。
+  const gmForS3 = _num(financial?.financial_snapshot?.gross_margin);
+  if (gmForS3 != null) {
+    enriched.S3_Rubric = {
+      ...(_isObj(agentBData.S3_Rubric) ? agentBData.S3_Rubric : {}),
+      gross_margin: gmForS3,
+    };
   }
 
   // —— S5：追加财务/估值 verdict ——

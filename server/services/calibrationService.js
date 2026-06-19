@@ -230,8 +230,27 @@ function setGpLabel({ db, id = null, taskId = null, label, outcome = null } = {}
   }
 }
 
+function _safeParse(s, fallback) {
+  try { return JSON.parse(s); } catch (_) { return fallback; }
+}
+
+/**
+ * 取一条记录用于诊断的分数。
+ *   useShadow=false → live 总分（shadow 模式下=旧算术平均，校准的是旧系统）
+ *   useShadow=true  → **新聚合分**：优先 agg_shadow.total_median；若已切 on
+ *                     (scoring_agg_basis=aggregate_v3) 则 live 本身就是新分；都没有→null
+ * 切 on 前要验证的是新聚合，必须用 useShadow=true，否则量错对象。
+ */
+function pickScore(row, useShadow = false) {
+  if (!useShadow) return row.total_score ?? null;
+  const shadow = _safeParse(row.agg_shadow_json, null);
+  if (shadow && Number.isFinite(Number(shadow.total_median))) return Number(shadow.total_median);
+  if (row.scoring_agg_basis === "aggregate_v3") return row.total_score ?? null;
+  return null; // off/legacy 记录无新分
+}
+
 /** 读出归档记录（映射为诊断输入形态） */
-function loadRecords({ db, pipelineVersion = null } = {}) {
+function loadRecords({ db, pipelineVersion = null, useShadow = false } = {}) {
   const database = db || _getDb();
   if (!database) return [];
   try {
@@ -239,7 +258,8 @@ function loadRecords({ db, pipelineVersion = null } = {}) {
       ? database.prepare("SELECT * FROM scoring_calibration WHERE pipeline_version = ?").all(pipelineVersion)
       : database.prepare("SELECT * FROM scoring_calibration").all();
     return rows.map((r) => ({
-      id: r.id, score: r.total_score, label: r.gp_label,
+      id: r.id, task_id: r.task_id, project_name: r.project_name,
+      score: pickScore(r, useShadow), label: r.gp_label,
       tags: _safeParse(r.triggered_tags_json, []),
       grade: r.grade, policy_readout: r.policy_readout,
     }));
@@ -249,13 +269,28 @@ function loadRecords({ db, pipelineVersion = null } = {}) {
   }
 }
 
-function _safeParse(s, fallback) {
-  try { return JSON.parse(s); } catch (_) { return fallback; }
+/** 列出最近归档记录（管理端/CLI 用） */
+function listRecent({ db, limit = 30, onlyUnlabeled = false } = {}) {
+  const database = db || _getDb();
+  if (!database) return [];
+  try {
+    const sql = `SELECT id, task_id, project_name, total_score, grade, gp_label, scoring_agg_basis, created_at
+      FROM scoring_calibration ${onlyUnlabeled ? "WHERE gp_label IS NULL" : ""}
+      ORDER BY created_at DESC LIMIT ?`;
+    return database.prepare(sql).all(limit);
+  } catch (err) {
+    logger.warn("[calibration] listRecent 失败:", err.message);
+    return [];
+  }
 }
 
-/** 跑全套诊断（读库 → 诊断） */
-function runDiagnostics({ db, pipelineVersion = null } = {}) {
-  return summarizeDiagnostics(loadRecords({ db, pipelineVersion }));
+/** 跑全套诊断（读库 → 诊断）。切 on 前用 useShadow=true 量新聚合分。 */
+function runDiagnostics({ db, pipelineVersion = null, useShadow = false } = {}) {
+  const out = summarizeDiagnostics(loadRecords({ db, pipelineVersion, useShadow }));
+  out.scored_by = useShadow
+    ? "新聚合分（agg_shadow.total_median / aggregate_v3）—— 切 on 前应看这个"
+    : "live 总分（shadow 期=旧算术平均，量的是旧系统）";
+  return out;
 }
 
 module.exports = {
@@ -269,6 +304,8 @@ module.exports = {
   // 持久化
   recordJudgment,
   setGpLabel,
+  pickScore,
   loadRecords,
+  listRecent,
   runDiagnostics,
 };

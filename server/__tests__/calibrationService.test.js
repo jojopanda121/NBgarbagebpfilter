@@ -1,5 +1,5 @@
 const {
-  labelToRank, rankingConcordance, systematicBias, ruleBacktest, driftReport, summarizeDiagnostics,
+  labelToRank, rankingConcordance, systematicBias, ruleBacktest, driftReport, summarizeDiagnostics, pickScore,
 } = require("../services/calibrationService");
 
 describe("calibrationService — 纯诊断函数（不依赖 DB）", () => {
@@ -67,6 +67,22 @@ describe("calibrationService — 纯诊断函数（不依赖 DB）", () => {
     const r = driftReport([80, 82, 84], [70, 72, 74]);
     expect(r.mean_shift).toBe(10);
     expect(r.median_shift).toBe(10);
+  });
+
+  test("pickScore：切 on 前必须用新聚合分（agg_shadow.total_median）而非旧 live 分", () => {
+    const shadowRow = { total_score: 72, agg_shadow_json: JSON.stringify({ total_median: 91 }), scoring_agg_basis: "legacy" };
+    expect(pickScore(shadowRow, false)).toBe(72); // 旧 live（错误对象）
+    expect(pickScore(shadowRow, true)).toBe(91);  // 新聚合（正确对象）
+  });
+
+  test("pickScore：已切 on 的记录，live 本身就是新分", () => {
+    const onRow = { total_score: 88, agg_shadow_json: null, scoring_agg_basis: "aggregate_v3" };
+    expect(pickScore(onRow, true)).toBe(88);
+  });
+
+  test("pickScore：off/legacy 记录无新分 → null（useShadow 时被忽略）", () => {
+    const legacyRow = { total_score: 70, agg_shadow_json: null, scoring_agg_basis: "legacy" };
+    expect(pickScore(legacyRow, true)).toBeNull();
   });
 
   test("summarizeDiagnostics：只统计有标签的样本", () => {

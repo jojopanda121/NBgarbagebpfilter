@@ -39,9 +39,9 @@ function parseYearsSpan(span, nowYear = new Date().getFullYear()) {
   return _clamp(end - start, 0, 60);
 }
 
-/** 经验年限 → 1-10（与 scoring.js dim4 同曲线 min(10, 2.5×ln(年+1))） */
+/** 经验年限 → 1-10（与 scoring.js dim4 同曲线 v3：min(10, 年数/2.5)，25 年触顶） */
 function _expYearsToScore(years) {
-  return _clamp(Math.round(Math.min(10, 2.5 * Math.log(years + 1)) * 10) / 10, 1, 10);
+  return _clamp(Math.round(Math.min(10, Math.max(0, years) / 2.5) * 10) / 10, 1, 10);
 }
 
 /** 子串命中任一关键词 */

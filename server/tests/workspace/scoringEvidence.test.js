@@ -40,30 +40,31 @@ describe("deriveTeam", () => {
     expect(r.Team_Completeness_Score).toBe(2); // 4 - 2
   });
 
-  test("经验从 career 年限累加，解析不出给 null", () => {
-    const r = deriveTeam({ founders: [{ role: "CEO", career: [{ years: "2010-2020" }], education: [], past_ventures: [] }] });
-    expect(r.Team_Experience_Score).toBeGreaterThan(5);
+  test("经验从 career 年限累加，解析不出给 null（v3 曲线 年数/2.5）", () => {
+    // 20 年 → min(10, 20/2.5)=8
+    const r = deriveTeam({ founders: [{ role: "CEO", career: [{ years: "2005-2025" }], education: [], past_ventures: [] }] });
+    expect(r.Team_Experience_Score).toBe(8);
     const r2 = deriveTeam({ founders: [{ role: "CEO", career: [{ years: "资深" }], education: [], past_ventures: [] }] });
     expect(r2.Team_Experience_Score).toBeNull();
   });
 
-  test("过往成绩：退出→9，连续失败→3", () => {
+  test("过往成绩：退出→10（v3 满分可达），连续失败→3", () => {
     const exit = deriveTeam({ founders: [{ role: "CEO", career: [], education: [], past_ventures: [{ outcome: "已被收购退出" }] }] });
-    expect(exit.Team_Track_Record_Score).toBe(9);
+    expect(exit.Team_Track_Record_Score).toBe(10);
     const fail = deriveTeam({ founders: [{ role: "CEO", career: [], education: [], past_ventures: [{ outcome: "失败" }, { outcome: "清算" }] }] });
     expect(fail.Team_Track_Record_Score).toBe(3);
   });
 
-  test("教育查表取最高档", () => {
+  test("教育查表取最高档（v3：清北复交 = 满分 10）", () => {
     const r = deriveTeam({ founders: [{ role: "CEO", career: [], education: [{ school: "清华大学" }], past_ventures: [] }] });
-    expect(r.Team_Education_Score).toBe(9);
+    expect(r.Team_Education_Score).toBe(10);
     const unknown = deriveTeam({ founders: [{ role: "CEO", career: [], education: [], past_ventures: [] }] });
     expect(unknown.Team_Education_Score).toBe(6); // 无信息中性
   });
 
-  test("赛道匹配枚举映射", () => {
+  test("赛道匹配枚举映射（v3：同赛道 = 满分 10）", () => {
     const r = deriveTeam({ founders: [{ role: "CEO", career: [], education: [], past_ventures: [] }], team_assessment: { domain_match: "同赛道" } });
-    expect(r.Team_Domain_Match_Score).toBe(9);
+    expect(r.Team_Domain_Match_Score).toBe(10);
   });
 });
 
@@ -171,7 +172,7 @@ describe("mergeSpecialistEvidence — 双路取平均 + 容错", () => {
     TAM_Million_RMB: 5000, CAGR: 20, TRL: 7, Competitor_Rank_Score: 7,
     Industry_Capital_Score: 5, Industry_Scale_Score: 5,
     Team_Completeness_Score: 8, Team_Experience_Score: 6, Team_Track_Record_Score: 6,
-    Team_Education_Score: 6, Team_Domain_Match_Score: 6,
+    Team_Education_Score: 7, Team_Domain_Match_Score: 6,
   };
 
   test("专家全缺（{}）→ 整体 no-op，回退 Agent B", () => {
@@ -197,8 +198,8 @@ describe("mergeSpecialistEvidence — 双路取平均 + 容错", () => {
     // 完整性：AgentB 8 与 派生 4 → 平均 6，差 4>3 → 冲突
     expect(enrichedInput.Team_Completeness_Score).toBe(6);
     expect(specialist_audit.conflicts.some((c) => c.includes("Completeness"))).toBe(true);
-    // 教育：AgentB 6 与 派生 9 → 平均 7.5，差=3 → 一致，不记冲突
-    expect(enrichedInput.Team_Education_Score).toBe(7.5);
+    // 教育：AgentB 7 与 派生 10（v3 清华满分）→ 平均 8.5，差=3 → 一致，不记冲突
+    expect(enrichedInput.Team_Education_Score).toBe(8.5);
     expect(specialist_audit.conflicts.some((c) => c.includes("Education"))).toBe(false);
   });
 

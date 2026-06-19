@@ -18,7 +18,10 @@
 
 const { scoreS2Harness, trlGapVerdict } = require("./scoringHarness");
 const { scoreS3Harness } = require("./scoringS3Harness");
-const { scoringHarnessMode, scoringS3HarnessMode } = require("./config/featureFlags");
+const { aggregate } = require("./scoringAggregate");
+const { scorePolicyFit, isHardtechTrack } = require("./scoringPolicy");
+const T = require("./config/scoringTables");
+const { scoringHarnessMode, scoringS3HarnessMode, scoringAggMode } = require("./config/featureFlags");
 
 /** 将分数钳制到 0-100 整数 */
 function clampScore(score) {
@@ -53,7 +56,7 @@ function normalizeInput(val, fallback, min, max) {
  * @param {number} CAGR - 行业预期年复合增长率（百分比数字，如 25 表示 25%）
  * @returns {number} 0-100 的整数得分
  */
-function calculateDimension1_TimingAndCeiling(TAM_Million_RMB, CAGR) {
+function calculateDimension1_TimingAndCeiling(TAM_Million_RMB, CAGR, revenueGrowthYoY) {
   const rawTAM = Number(TAM_Million_RMB);
   const rawCAGR = Number(CAGR);
 
@@ -61,15 +64,31 @@ function calculateDimension1_TimingAndCeiling(TAM_Million_RMB, CAGR) {
   //   TAM 缺失（NaN 或 <1，含上游 `?? 0` 的占位 0）→ 中性 30 分（满分 60 的一半），
   //   与 S3 缺失=50、S4 缺失≈60 的"中性兜底"哲学对齐。
   //   旧实现 TAM 缺失按 1 计 → log10(1)=0 分，等于把"信息少"系统性判成"市场小"。
-  //   CAGR 缺失默认 0（增速无证据不给分，CAGR 是加分项而非基础盘）。
   const tamMissing = isNaN(rawTAM) || rawTAM < 1;
   const cagrVal = isNaN(rawCAGR) ? 0 : Math.max(0, rawCAGR);
 
-  // 对数压缩市场规模分（满分 60），线性增速分（满分 40）
+  // 对数压缩市场规模分（满分 60）
   const tamScore = tamMissing ? 30 : Math.min(60, Math.round(17.5 * Math.log10(rawTAM)));
-  const cagrScore = Math.min(40, cagrVal);
 
-  return clampScore(tamScore + cagrScore);
+  // 增速分（满分 40）—— 二阶加速（基因⑤）：
+  //   优先公司营收同比增速（奖励小基数高斜率），市场 CAGR 退为天花板辅助；
+  //   无公司增速时回退用市场 CAGR（向后兼容旧 2 参调用与旧数据）。
+  const revYoY = Number(revenueGrowthYoY);
+  let growthScore;
+  if (!isNaN(revYoY)) {
+    growthScore = 0;
+    for (const b of T.S1_REVENUE_GROWTH_BRACKETS) {
+      if (revYoY >= b.minYoY) { growthScore = b.score; break; }
+    }
+    // 停滞/衰退赛道里公司爆发增速可疑 → 用市场 CAGR 作天花板封顶
+    if (!isNaN(rawCAGR) && rawCAGR < T.S1_STAGNANT_MARKET_CAGR) {
+      growthScore = Math.min(growthScore, T.S1_STAGNANT_GROWTH_CAP);
+    }
+  } else {
+    growthScore = Math.min(40, cagrVal);
+  }
+
+  return clampScore(tamScore + growthScore);
 }
 
 /** TAM 是否缺失（与 calculateDimension1 的判定保持一致，用于结果标记） */
@@ -162,9 +181,9 @@ function calculateDimension4_Team(teamData) {
   // 兼容旧接口：如果传入的是数字，按旧逻辑处理
   if (typeof teamData === "number" || teamData === null || teamData === undefined) {
     const rawExp = (teamData === null || teamData === undefined) ? NaN : Number(teamData);
-    const expVal = isNaN(rawExp) ? 5 : Math.max(0, rawExp);
-    const expScore = Math.min(10, 2.5 * Math.log(expVal + 1));
-    return clampScore(expScore * 10);
+    // v3：经验曲线改 min(10, 年数/2.5)，~25 年触顶（旧 ln 曲线要 53 年才满分，子量表满分够不到）
+    const expVal = isNaN(rawExp) ? 6 : Math.min(10, Math.max(0, rawExp) / 2.5);
+    return clampScore(expVal * 10);
   }
 
   const data = teamData || {};
@@ -176,8 +195,9 @@ function calculateDimension4_Team(teamData) {
     experienceScore = rawTeamExp;
   } else {
     const rawExp = Number(data.Founder_Exp_Years);
-    const expVal = isNaN(rawExp) ? 5 : Math.max(0, rawExp);
-    experienceScore = Math.min(10, 2.5 * Math.log(expVal + 1));
+    // v3：年数→分用 min(10, 年数/2.5)（25 年触顶）；经验完全缺失 → 中性 6
+    //（与其他子因子缺失默认 6 一致，不再用假设的 5 年线性算低分）
+    experienceScore = isNaN(rawExp) ? 6 : Math.min(10, Math.max(0, rawExp) / 2.5);
   }
 
   // 子因子提取（LLM 输出 1-10，缺失默认 6）。
@@ -408,6 +428,174 @@ function _applyIntegrityVeto(result, vetoInfo) {
   return result;
 }
 
+// ============================================================
+// 聚合层（方案乙）+ 政策融入 —— 在五维分算好后叠加
+// ============================================================
+
+const GRADE_REP = { A: 85, B: 70, C: 55, D: 40 };
+
+/** 由政策档位 + 赛道大类组装政策输入 */
+function _policyInputs(data) {
+  const r = (data.Policy_Rubric && typeof data.Policy_Rubric === "object") ? data.Policy_Rubric : {};
+  // 资本来源是 S3 的输入，但"国资/大基金"同时是政策背书信号（仅作 readout，不重复加资本分）
+  const capSource = r.capital_source || (data.S3_Rubric && data.S3_Rubric.capital_source);
+  const stateCapital = r.state_capital != null
+    ? !!r.state_capital
+    : ["大基金主导", "国资参与"].includes(String(capSource || ""));
+  return {
+    tier: r.tier || null,
+    industryCategory: data.industry_category || null,
+    chokepointSubstitution: !!r.chokepoint_substitution,
+    stateCapital,
+    geoExposure: r.geo_exposure || null,
+    industrialization: r.industrialization,
+  };
+}
+
+/**
+ * 各维真实覆盖度（Phase 3）：按"该维有多少输入是真证据、多少是中性默认"打分。
+ * coverage 越低 → 该维在聚合中让权、置信度下降、区间变宽 —— 这样缺信息的项目
+ * 显示成"X 分 / 低置信"，而不是被中性默认分把总分往中心拽（修复根因②）。
+ * 返回 {S1..S5} 覆盖度 0-1。
+ */
+function _deriveCoverages(data) {
+  // S1：TAM 与 增速（公司同比或市场 CAGR）两块证据
+  const tamOk = !isTamMissing(data.TAM_Million_RMB);
+  const growthOk = Number.isFinite(Number(data.Company_Revenue_Growth_YoY)) ||
+    (Number.isFinite(Number(data.CAGR)) && Number(data.CAGR) > 0);
+  const s1 = tamOk && growthOk ? 1.0 : tamOk || growthOk ? 0.6 : 0.3;
+
+  // S2：harness moat 子因子覆盖(0-5)/5；仅 TRL/咽喉 → 中等；纯 legacy 裸分 → 低
+  let s2 = 0.5;
+  const mc = data.Moat_Rubric && typeof data.Moat_Rubric === "object"
+    ? Object.values(data.Moat_Rubric).filter((v) => v && Number.isFinite(Number(v.score))).length
+    : 0;
+  if (mc > 0) s2 = Math.max(0.4, Math.min(1, (mc + (data.Chokepoint_Score != null ? 1 : 0)) / 5));
+  else if (data.TRL_Evidence || data.Chokepoint_Score != null) s2 = 0.6;
+
+  // S3：有结构化 S3_Rubric 实质字段 → 高覆盖；只有 legacy 枚举 → 中
+  const s3 = _hasS3HarnessInputs(data) ? 1.0 : (data.Capital_Archetype || data.Scale_Mechanism ? 0.6 : 0.4);
+
+  // S4：团队子分中"真给了"的比例（Founder_Exp_Years 也算一块）
+  const teamFields = ["Team_Experience_Score", "Team_Domain_Match_Score", "Team_Completeness_Score",
+    "Team_Track_Record_Score", "Team_Education_Score"];
+  let teamGiven = teamFields.filter((f) => Number.isFinite(Number(data[f]))).length;
+  if (Number.isFinite(Number(data.Founder_Exp_Years))) teamGiven = Math.min(teamFields.length, teamGiven + 1);
+  const s4 = teamGiven > 0 ? Math.max(0.3, teamGiven / teamFields.length) : 0.3;
+
+  // S5：可核查声明条数（无声明 ≠ 诚信问题，但确实是低覆盖/低置信）
+  const claimN = Array.isArray(data.claim_verdicts) ? data.claim_verdicts.length : 0;
+  const s5 = claimN === 0 ? 0.3 : claimN < 3 ? 0.6 : claimN < 6 ? 0.85 : 1.0;
+
+  return { S1: s1, S2: s2, S3: s3, S4: s4, S5: s5 };
+}
+
+const _DIM_KEY_BY_S = {
+  S1: "timing_ceiling", S2: "product_moat", S3: "business_validation", S4: "team", S5: "external_risk",
+};
+
+/**
+ * 把非线性聚合 + 政策融入叠加到已组装结果上。
+ *   off    → 原样返回
+ *   shadow → 附 scoring_agg_shadow 对照块，live（算术平均）不变
+ *   on     → 用聚合结果替换 total/grade，写入分布/政策/敏感性/triggered_rules，
+ *            并重新套用 Integrity Veto 封顶
+ */
+function _applyAggregation(result, data, aggMode, vetoInfo) {
+  if (aggMode === "off") return result;
+
+  const d = result.dimensions;
+  const policy = scorePolicyFit(_policyInputs(data));
+
+  // 政策融入两条不重叠通道：需求侧→S1，资本侧→S3（地缘等 harness 未覆盖的修正）
+  const S1base = d.timing_ceiling.score;
+  const S3base = d.business_validation.score;
+  const S1adj = clampScore(S1base + policy.s1_demand_adj);
+  const S3adj = clampScore(S3base + policy.s3_capital_adj);
+
+  const coverages = _deriveCoverages(data);
+  const track = isHardtechTrack(policy.tier) ? "hardtech" : "general";
+  const agg = aggregate({
+    scores: { S1: S1adj, S2: d.product_moat.score, S3: S3adj, S4: d.team.score, S5: d.external_risk.score },
+    coverages,
+    track,
+  });
+
+  const policyFit = {
+    tier: policy.tier,
+    tier_label: policy.tier_label,
+    readout_score: policy.readout_score,
+    coverage: policy.coverage,
+    s1_demand_adj: policy.s1_demand_adj,
+    s3_capital_adj: policy.s3_capital_adj,
+    note: "政策不设独立维度，融入 S1（需求侧）/S3（资本侧）；readout 仅展示与回测，不进加权平均",
+  };
+  const triggeredRules = [...policy.triggered_rules, ...agg.triggered_rules];
+
+  const aggBlock = {
+    total_median: agg.total_median,
+    total_range: agg.total_range,
+    confidence: agg.confidence,
+    grade: agg.grade,
+    base: agg.base,
+    excellence_bonus: agg.excellence_bonus,
+    excellence_count: agg.excellence_count,
+    avg_coverage: agg.avg_coverage,
+    coverages,
+    track: agg.track,
+    weights: agg.weights,
+    sensitivity: agg.sensitivity,
+    resonance_gate: agg.resonance_gate,
+    policy_fit: policyFit,
+    triggered_rules: triggeredRules,
+    dims_adjusted: { S1: { from: S1base, to: S1adj }, S3: { from: S3base, to: S3adj } },
+    delta_total: agg.total_median - result.total_score,
+  };
+
+  if (aggMode === "shadow") {
+    result.scoring_agg_shadow = aggBlock;
+    return result;
+  }
+
+  // on：聚合正式生效
+  result.total_score = agg.total_median;
+  result.total_distribution = {
+    median: agg.total_median, range: agg.total_range, confidence: agg.confidence,
+  };
+  // S1/S3 展示分反映政策融入（可解释、与敏感性一致）
+  if (policy.s1_demand_adj !== 0) {
+    d.timing_ceiling.score = S1adj;
+    d.timing_ceiling.inputs = { ...d.timing_ceiling.inputs, policy_demand_adj: policy.s1_demand_adj };
+  }
+  if (policy.s3_capital_adj !== 0) {
+    d.business_validation.score = S3adj;
+    d.business_validation.inputs = { ...d.business_validation.inputs, policy_capital_adj: policy.s3_capital_adj };
+  }
+  const meta = getGrade(GRADE_REP[agg.grade] ?? 40);
+  result.grade = agg.grade;
+  result.grade_label = meta.label;
+  result.grade_action = meta.action;
+  result.grade_color = meta.color;
+  result.scoring_agg_basis = "aggregate_v3";
+  // 每维标注覆盖度与低置信旗（缺信息 → "X分/低置信"，不再用中性默认硬撑总分）
+  for (const sKey of Object.keys(coverages)) {
+    const dimObj = d[_DIM_KEY_BY_S[sKey]];
+    if (dimObj) {
+      dimObj.coverage = Math.round(coverages[sKey] * 100) / 100;
+      dimObj.low_confidence = coverages[sKey] < 0.5;
+    }
+  }
+  result.policy_fit = policyFit;
+  result.sensitivity = agg.sensitivity;
+  result.triggered_rules = triggeredRules;
+  result.aggregation = {
+    base: agg.base, excellence_bonus: agg.excellence_bonus, track: agg.track,
+    weights: agg.weights, resonance_gate: agg.resonance_gate, avg_coverage: agg.avg_coverage,
+  };
+  // 重新套 Integrity Veto：聚合可能把评级抬回 A/B，重大造假必须仍封顶 C
+  return _applyIntegrityVeto(result, vetoInfo);
+}
+
 /**
  * 组装最终结果对象（给定 5 维分 + S2 展示元数据 + 声明数）
  */
@@ -514,10 +702,12 @@ function scoreProject(data, opts = {}) {
   // off/shadow/on，绕过全局 env，避免多层 shadow 嵌套。缺省时读全局开关。
   const mode = opts.modeOverride || scoringHarnessMode();       // S2: off | shadow | on
   const s3mode = opts.s3ModeOverride || scoringS3HarnessMode(); // S3: off | shadow | on
+  const aggMode = opts.aggModeOverride || scoringAggMode();     // 聚合: off | shadow | on
   const harnessAvailable = mode !== "off" && _hasHarnessInputs(data);
 
   // 两维共用（不受 S2 harness 影响）
-  const S1 = calculateDimension1_TimingAndCeiling(data.TAM_Million_RMB, data.CAGR);
+  const S1 = calculateDimension1_TimingAndCeiling(
+    data.TAM_Million_RMB, data.CAGR, data.Company_Revenue_Growth_YoY);
   const S4 = calculateDimension4_Team({
     Founder_Exp_Years: data.Founder_Exp_Years,
     Team_Experience_Score: data.Team_Experience_Score,
@@ -566,11 +756,14 @@ function scoreProject(data, opts = {}) {
   // 没有 S2 harness 数据或 S2 开关 off → 纯 legacy（S3 仍可独立走 on/shadow）
   if (!harnessAvailable) {
     const legacyVeto = assessIntegrityVeto(data.claim_verdicts);
-    return attachS3Shadow(
-      _applyIntegrityVeto(
-        _assemble(S1, S2legacy, S3live, S4, S5legacy, data, _S2_LEGACY_META(data), s3meta),
-        legacyVeto
-      )
+    return _applyAggregation(
+      attachS3Shadow(
+        _applyIntegrityVeto(
+          _assemble(S1, S2legacy, S3live, S4, S5legacy, data, _S2_LEGACY_META(data), s3meta),
+          legacyVeto
+        )
+      ),
+      data, aggMode, legacyVeto
     );
   }
 
@@ -597,7 +790,7 @@ function scoreProject(data, opts = {}) {
       harnessVeto
     );
     result.scoring_basis = "harness";
-    return attachS3Shadow(result);
+    return _applyAggregation(attachS3Shadow(result), data, aggMode, harnessVeto);
   }
 
   // S2 shadow：旧分生效，附 S2 harness 对照块（供校准）；live 仍受 Integrity Veto 封顶
@@ -618,7 +811,9 @@ function scoreProject(data, opts = {}) {
     delta_total: shadow.total_score - live.total_score,
     delta_S2: h.S2 - S2legacy,
   };
-  return attachS3Shadow(live);
+  return _applyAggregation(
+    attachS3Shadow(live), data, aggMode, assessIntegrityVeto(data.claim_verdicts)
+  );
 }
 
 module.exports = {

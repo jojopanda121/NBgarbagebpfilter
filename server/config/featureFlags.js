@@ -22,7 +22,19 @@ function scoringS3HarnessMode() {
   return ["off", "shadow", "on"].includes(v) ? v : "shadow";
 }
 
+// 「投资判断内核 v3」聚合层灰度开关（独立于 S2/S3 harness）：
+//   off    —— 总分仍走五维算术平均（calculateTotalScore），评级 getGrade
+//   shadow —— 算术平均仍生效，但同时算出非线性聚合分（方案乙：赛道加权 + 卓越加成
+//            + A级共振 gate + 分布/置信度/敏感性 + 政策融入 S1/S3）并附在
+//            scoring_agg_shadow 供对照（默认）
+//   on     —— 非线性聚合正式生效，替换总分/评级，输出分布与判断卡数据
+function scoringAggMode() {
+  const v = (process.env.SCORING_AGG || "shadow").toLowerCase();
+  return ["off", "shadow", "on"].includes(v) ? v : "shadow";
+}
+
 module.exports = {
   scoringHarnessMode,
   scoringS3HarnessMode,
+  scoringAggMode,
 };

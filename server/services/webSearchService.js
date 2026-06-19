@@ -182,6 +182,8 @@ async function kimiAgenticChatWithSearch({ system, user, maxTokens = 6144, maxRo
   throw new Error(`Kimi agentic search 未在 ${maxRounds} 轮内收敛`);
 }
 
+const { filterAndRankResults } = require("./retrievalDiscipline");
+
 async function runWebSearch(queries = []) {
   const unique = [...new Set(queries.map(cleanQuery).filter(Boolean))].slice(0, 3);
   const results = [];
@@ -193,7 +195,8 @@ async function runWebSearch(queries = []) {
       console.warn("[WebSearch] 查询失败:", query, err.message);
     }
   }
-  return results.slice(0, 10);
+  // 检索纪律：丢弃命理/玄学/SEO 农场，按来源可信度排序去重（官方>财经媒体>行研>其他）
+  return filterAndRankResults(results).slice(0, 10);
 }
 
 function formatSearchContext(results = []) {
@@ -206,8 +209,9 @@ function formatSearchContext(results = []) {
       `查询: ${r.query}`,
       `标题: ${r.title}`,
       `链接: ${r.url}`,
+      r._source ? `来源可信度: ${r._source.label}(T${r._source.tier})` : "",
       `摘要: ${r.snippet}`,
-    ].join("\n")),
+    ].filter(Boolean).join("\n")),
   ].join("\n\n");
 }
 

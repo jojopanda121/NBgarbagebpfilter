@@ -257,6 +257,9 @@ function buildStructuralPrompt(projectContext) {
   - type 从 {研报, 自下而上, 模型估计} **严格选一个**
   - 若 type=自下而上：必须分别给 customer_count(目标客户数) 和 arpu(客单价,元/年) 两个数，系统会自己相乘
   - 若 type=研报：给 source(报告名+年份)
+- **Company_Revenue_Growth_YoY（二阶加速，优先于市场 CAGR）**：公司近 1-2 年**自身营收/出货同比增速**（%，纯数字，如 +182% 写 182）。
+  这一维奖励"小基数+高斜率"（如寒武纪窗口期同比+43倍、摩尔线程+182%）。**只填可核查的公司自身增速**，
+  查不到就省略该字段（系统会回退用市场 CAGR）。不要把市场 CAGR 填到这里。
 
 *第二维度：产品与壁垒*
 - 检索 ${industry} 行业内 ${product_name} 的真实竞品及行业排名
@@ -309,6 +312,18 @@ function buildStructuralPrompt(projectContext) {
                           · 大基金主导=国家大基金+省市政府主导，长期限低成本；国资参与=国资/产业基金参与但非主导；
                           · 市场化=纯 VC/PE/产业资本
 
+*国家政策契合度（融入 S1/S3，不是独立维度）*
+- 额外产出 Policy_Rubric（系统据此把政策顺风融入 S1 需求侧与 S3 资本侧；**全部基于客观可检索信息，查不到的字段省略**）：
+  - tier            政策档位，从 {第一档, 第二档, 第三档, 第四档, 第五档} 选一个（查不到就省略，系统按赛道大类派生）
+                    · 第一档=关键核心技术攻关（集成电路/工业母机/高端仪器/基础软件/关键战略材料/生物制造）
+                    · 第二档=战略性新兴产业（新能源/新材料/航空航天/低空经济/智能网联/机器人/AI算力）
+                    · 第三档=前瞻未来产业（量子/氢能核聚变/脑机接口/具身智能/6G，萌芽期高不确定）
+                    · 第四档=受支持但非前沿的传统/一般产业；第五档=不鼓励/产能过剩/限制类
+  - chokepoint_substitution  布尔：是否卡脖子/国产替代刚需（进口依赖高、外资垄断）
+  - state_capital            布尔：是否已进入国家级/省级产业基金、大基金、国资 LP 布局
+  - geo_exposure             地缘/出口管制敞口，从 {high, medium, low} 选一个（如先进制程依赖海外设备=high）
+  - industrialization        布尔：是否有产业化落地路径（纯概念无落地=false，系统取该档下沿）
+
 *第四维度：团队基因（多因子评分）*
 - Founder_Exp_Years: 核心创始人赛道相关经验年数
 - Team_Experience_Score: 经验深度评分（1-10）
@@ -341,6 +356,7 @@ function buildStructuralPrompt(projectContext) {
   "one_line_summary": "赛道+阶段+核心判断",
   "validated_data": {
     "TAM_Million_RMB": 5000, "CAGR": 20, "TRL": 6,
+    "Company_Revenue_Growth_YoY": 120,
     "TAM_Source": { "type": "自下而上", "customer_count": 500000, "arpu": 1200, "source": null },
     "Capital_Archetype": "纯软件SaaS",
     "Scale_Mechanism": "数据飞轮",
@@ -352,6 +368,13 @@ function buildStructuralPrompt(projectContext) {
       "market_cagr": 20,
       "policy_tier": "省级",
       "capital_source": "市场化"
+    },
+    "Policy_Rubric": {
+      "tier": "第二档",
+      "chokepoint_substitution": false,
+      "state_capital": false,
+      "geo_exposure": "low",
+      "industrialization": true
     },
     "Competitor_Rank_Score": 6,
     "TRL_Evidence": {

@@ -18,6 +18,11 @@
 //         estimated 推断值打折、scoring_shadow 落库、降级报告显式警告。
 // v4.6.0: S3 资本壁垒 harness（scoringS3Harness.js，默认 shadow，对照块 scoring_s3_shadow）——
 //         资本壁垒溢价 / 新质生产力 / 成本曲线陡峭度 / 资本耐心，修复硬科技重资产偏见。
-const PIPELINE_VERSION = "v4.6.0";
+// v4.7.0: 投资判断内核 v3 —— 非线性聚合（方案乙：赛道加权+卓越加成+A级共振 gate）
+//         替代五维算术平均（修复 70-78 天花板）；政策融入 S1/S3（不设独立维度，
+//         scoringPolicy.js）；总分以分布呈现（中位+区间+置信度）+敏感性+triggered_rules。
+//         默认 shadow（开关 SCORING_AGG），对照块 scoring_agg_shadow。
+//         附带修复：_toScoringInput 漏传 S3_Rubric/Capital_Archetype/Scale_Mechanism。
+const PIPELINE_VERSION = "v4.7.0";
 
 module.exports = { PIPELINE_VERSION };

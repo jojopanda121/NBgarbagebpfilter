@@ -107,6 +107,88 @@ function IntegrityVetoBanner({ veto, overriddenFrom }) {
   );
 }
 
+// 判断卡 v3：总分分布 + 政策契合度 + 敏感性 + 触发规则（SCORING_AGG=on 时后端下发）
+function JudgmentCardV3({ verdict }) {
+  const dist = verdict.total_distribution;
+  if (!dist) return null; // shadow/off：不下发，自动隐藏
+  const [lo, hi] = Array.isArray(dist.range) ? dist.range : [dist.median, dist.median];
+  const policy = verdict.policy_fit;
+  const sens = Array.isArray(verdict.sensitivity) ? verdict.sensitivity : [];
+  const rules = Array.isArray(verdict.triggered_rules) ? verdict.triggered_rules : [];
+  const confColor = dist.confidence === "高" ? "text-emerald-500"
+    : dist.confidence === "中" ? "text-amber-500" : "text-red-500";
+
+  return (
+    <div className="mt-6 pt-6 border-t border-[#D8DCE8]">
+      {/* 总分以分布呈现，不是单一数字 */}
+      <div className="mb-5">
+        <div className="flex items-baseline gap-3 mb-2">
+          <span className="text-sm font-bold text-[#0F1C36]">总分分布</span>
+          <span className="text-base font-bold">{dist.median}</span>
+          <span className="text-sm text-[#8E9BB0]">区间 {lo}–{hi}</span>
+          <span className={`text-sm font-semibold ${confColor}`}>置信度 {dist.confidence}</span>
+        </div>
+        <div className="relative h-2 bg-[#EEF1F7] rounded-full">
+          <div className="absolute h-2 bg-[#3b82f6]/30 rounded-full"
+            style={{ left: `${lo}%`, width: `${Math.max(2, hi - lo)}%` }} />
+          <div className="absolute w-1 h-3 -top-0.5 bg-[#0F1C36] rounded"
+            style={{ left: `calc(${dist.median}% - 2px)` }} />
+        </div>
+        <p className="text-xs text-[#8E9BB0] mt-1">早期项目存在固有不确定性，总分以中位+区间呈现；区间越宽=信息覆盖越低。</p>
+      </div>
+
+      {/* 政策契合度（融入 S1/S3，不进加权平均） */}
+      {policy?.tier && (
+        <div className="mb-5 p-3 rounded-xl bg-[#F6F8FC] border border-[#E3E8F2]">
+          <div className="flex items-center gap-2 text-sm">
+            <span className="font-bold text-[#0F1C36]">政策契合度</span>
+            <span className="px-2 py-0.5 rounded-full bg-[#3b82f6]/10 text-[#3b82f6] text-xs font-semibold">
+              {policy.tier}{policy.tier_label ? ` · ${policy.tier_label}` : ""}
+            </span>
+            {policy.readout_score != null && (
+              <span className="text-[#8E9BB0] text-xs">readout {policy.readout_score}/100</span>
+            )}
+          </div>
+          <p className="text-xs text-[#8E9BB0] mt-1">
+            融入 S1 需求侧 {policy.s1_demand_adj >= 0 ? "+" : ""}{policy.s1_demand_adj}
+            ，S3 资本侧 {policy.s3_capital_adj >= 0 ? "+" : ""}{policy.s3_capital_adj}
+            （政策不设独立维度、不直接进总分平均，仅作 readout 与回测）。
+          </p>
+        </div>
+      )}
+
+      {/* 敏感性：对总分影响最大的维度 */}
+      {sens.length > 0 && (
+        <div className="mb-5">
+          <div className="text-sm font-bold text-[#0F1C36] mb-2">敏感性（哪个假设最影响总分）</div>
+          <div className="flex flex-wrap gap-2">
+            {sens.map((s, i) => (
+              <span key={i} className="px-3 py-1 text-xs bg-[#F6F8FC] border border-[#E3E8F2] rounded-full text-[#0F1C36]">
+                {s.label}：变动10分 ≈ 总分±{s.impact}（当前 {s.score}）
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* 触发的评分规则（每条可解释逻辑） */}
+      {rules.length > 0 && (
+        <div>
+          <div className="text-sm font-bold text-[#0F1C36] mb-2">触发的评分规则</div>
+          <ul className="space-y-1.5">
+            {rules.map((r, i) => (
+              <li key={i} className="text-xs text-[#475569]">
+                <span className="font-semibold text-[#0F1C36]">{r.label}</span>
+                {r.logic ? <span className="text-[#8E9BB0]"> — {r.logic}</span> : null}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
 const VerdictCard = memo(function VerdictCard({ result }) {
   if (!result?.verdict) return null;
   const verdict = result.verdict;
@@ -181,6 +263,7 @@ const VerdictCard = memo(function VerdictCard({ result }) {
           )}
         </div>
       </div>
+      <JudgmentCardV3 verdict={verdict} />
     </div>
     </div>
   );

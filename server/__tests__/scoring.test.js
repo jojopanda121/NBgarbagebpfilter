@@ -44,6 +44,34 @@ describe("calculateDimension1_TimingAndCeiling (S1)", () => {
       calculateDimension1_TimingAndCeiling(100, 0)
     );
   });
+
+  // v3 二阶加速：公司营收同比增速优先（奖励小基数高斜率），市场 CAGR 退为天花板
+  test("二阶加速：公司营收同比高增速 → 增速分高于同等市场 CAGR", () => {
+    // TAM=3000（tamScore≈61）；CAGR=15 但公司营收同比 +200% → 增速分应远高
+    const withRevGrowth = calculateDimension1_TimingAndCeiling(3000, 15, 200);
+    const cagrOnly = calculateDimension1_TimingAndCeiling(3000, 15);
+    expect(withRevGrowth).toBeGreaterThan(cagrOnly);
+  });
+
+  test("二阶加速：+300% 以上拿满增速分 40", () => {
+    // TAM=1 → tamScore=0，便于隔离增速分
+    expect(calculateDimension1_TimingAndCeiling(1, 30, 400)).toBe(40);
+  });
+
+  test("市场天花板辅助：停滞赛道（CAGR<5）里公司爆发增速被封顶", () => {
+    // 公司同比 +400%（本应 40），但市场 CAGR=2（停滞）→ 封顶 16
+    expect(calculateDimension1_TimingAndCeiling(1, 2, 400)).toBe(16);
+  });
+
+  test("向后兼容：无公司增速时回退用市场 CAGR（旧 2 参调用不变）", () => {
+    expect(calculateDimension1_TimingAndCeiling(3000, 25)).toBe(
+      calculateDimension1_TimingAndCeiling(3000, 25, undefined)
+    );
+  });
+
+  test("负增长不给增速分", () => {
+    expect(calculateDimension1_TimingAndCeiling(1, 20, -30)).toBe(0);
+  });
 });
 
 describe("calculateDimension2_ProductAndMoat (S2)", () => {
@@ -109,10 +137,8 @@ describe("calculateDimension4_Team (S4)", () => {
 
   test("defaults missing factors to 6 (v4.1: raised from 5)", () => {
     const score = calculateDimension4_Team({});
-    // Experience defaults via Founder_Exp_Years fallback (5 years → min(10, 2.5*ln(6)) ≈ 4.48)
-    // Other factors default to 6
-    // weighted ≈ 0.30*4.48 + 0.25*6 + 0.20*6 + 0.15*6 + 0.10*6 = 1.34 + 1.5 + 1.2 + 0.9 + 0.6 = 5.54
-    // → 55
+    // v3：经验完全缺失（无 Team_Experience_Score 也无 Founder_Exp_Years）→ 中性 6，
+    // 其余子因子缺失也默认 6 → weighted = 6 → 60（不再用假设 5 年算低分）
     expect(score).toBeGreaterThanOrEqual(50);
     expect(score).toBeLessThanOrEqual(60);
   });

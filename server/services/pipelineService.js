@@ -14,6 +14,7 @@ const trackingService = require("./trackingService");
 const agentRuntime = require("./agentRuntime");
 const dataLakeService = require("./dataLakeService");
 const crossMatchService = require("./crossMatchService");
+const calibrationService = require("./calibrationService");
 const { PIPELINE_VERSION } = require("../config/versions");
 const { scoringHarnessMode } = require("../config/featureFlags");
 const {
@@ -658,6 +659,13 @@ function buildVerdictResponse(scoringResult, structuralResult, validatedData, di
     conflicts: validatedData.conflicts || [],
     claim_verdicts: validatedData.claim_verdicts || [],
     valuation_comparison: valuationComparison,
+    // 判断卡 v3（SCORING_AGG=on 时生效；shadow/off 时为 null，UI 自动隐藏）：
+    // 总分分布、政策契合度 readout、敏感性、触发规则、聚合元信息
+    total_distribution: scoringResult.total_distribution || null,
+    policy_fit: scoringResult.policy_fit || null,
+    sensitivity: scoringResult.sensitivity || null,
+    triggered_rules: scoringResult.triggered_rules || null,
+    aggregation: scoringResult.aggregation || null,
   };
 }
 
@@ -709,10 +717,12 @@ async function extractBPData(bpText, onProgress) {
  * @param {Array}  claimVerdicts - Agent B 声明核查结果数组（用于 S5 诚信度计算）
  */
 // 把 validated_data 映射成 scoreProject 入参（原始与合并共用）
-function _toScoringInput(d, claimVerdicts) {
+// industryCategory：用于聚合层的政策融入（无显式 Policy_Rubric.tier 时据赛道大类派生）
+function _toScoringInput(d, claimVerdicts, industryCategory = null) {
   return {
     TAM_Million_RMB: d.TAM_Million_RMB ?? d.TAM ?? 0,
     CAGR: d.CAGR ?? 0,
+    Company_Revenue_Growth_YoY: d.Company_Revenue_Growth_YoY,
     TRL: d.TRL ?? 5,
     Competitor_Rank_Score: d.Competitor_Rank_Score ?? 5,
     TRL_Evidence: d.TRL_Evidence,
@@ -727,10 +737,17 @@ function _toScoringInput(d, claimVerdicts) {
     Team_Track_Record_Score: d.Team_Track_Record_Score,
     Team_Education_Score: d.Team_Education_Score,
     claim_verdicts: d.claim_verdicts || claimVerdicts || [],
+    // S3 harness 输入（此前被本映射函数漏传 → harness 在生产中拿不到结构化输入）
+    S3_Rubric: d.S3_Rubric,
+    Capital_Archetype: d.Capital_Archetype,
+    Scale_Mechanism: d.Scale_Mechanism,
+    // 政策融入 S1/S3 的输入（聚合层用）；Policy_Rubric 由证据层产出（可缺）
+    Policy_Rubric: d.Policy_Rubric,
+    industry_category: industryCategory,
   };
 }
 
-function calculateScoring(validatedData, claimVerdicts, onProgress, multiagent = null) {
+function calculateScoring(validatedData, claimVerdicts, onProgress, multiagent = null, industryCategory = null) {
   onProgress({ type: "progress", stage: "ai_done", percentage: 82, message: "AI研究完成，计算五维评分..." });
 
   const rawScoringData = validatedData.validated_data || {};
@@ -783,16 +800,16 @@ function calculateScoring(validatedData, claimVerdicts, onProgress, multiagent =
   let scoringResult;
   if (mode === "on" && enrichedData) {
     // on：全量新分生效（harness S2 + 专家合并五维；专家 verdict 已由合并器注入）
-    scoringInput = _toScoringInput(enrichedData, claimVerdicts);
+    scoringInput = _toScoringInput(enrichedData, claimVerdicts, industryCategory);
     scoringResult = scoreProject(scoringInput, { modeOverride: "on" });
   } else {
     // off / shadow / 无专家：live 走纯 legacy（force off 避免嵌套 shadow），
     // 但专家确定性 verdict 计入 live S5（liveVerdicts）
-    scoringInput = _toScoringInput(rawScoringData, liveVerdicts);
+    scoringInput = _toScoringInput(rawScoringData, liveVerdicts, industryCategory);
     scoringResult = scoreProject(scoringInput, { modeOverride: "off" });
     // shadow：把"全量新分"作为对照块附上，不影响 live
     if (mode === "shadow" && enrichedData) {
-      const full = scoreProject(_toScoringInput(enrichedData, claimVerdicts), { modeOverride: "on" });
+      const full = scoreProject(_toScoringInput(enrichedData, claimVerdicts, industryCategory), { modeOverride: "on" });
       scoringResult.scoring_shadow = {
         total_score: full.total_score,
         grade: full.grade,
@@ -978,7 +995,11 @@ async function runPipeline(bpText, onProgress, taskId = null, userId = null) {
   }
 
   // Step 3: 评分计算（CPU，瞬间完成）
-  const { scoringInput, scoringResult } = calculateScoring(validatedData, claimVerdicts, onProgress, multiagent);
+  // 赛道大类（聚合层政策融入按此派生政策档位；显式 Policy_Rubric.tier 优先）
+  const primaryIndustryCategory = classifyIndustryMulti(extractedData.industry)[0];
+  const { scoringInput, scoringResult } = calculateScoring(
+    validatedData, claimVerdicts, onProgress, multiagent, primaryIndustryCategory
+  );
 
   // 所见即所评：报告展示的声明核查列表与实际计入 S5 的声明集保持一致
   // （含专家注入的"财务数学矛盾→证伪"等确定性结论，投资人必须看得到）
@@ -1117,6 +1138,15 @@ async function runPipeline(bpText, onProgress, taskId = null, userId = null) {
       if (crossMatchInsights) {
         logger.info("[Pipeline] 交叉识别完成", { taskId, insights: crossMatchInsights });
       }
+      // 诊断式校准：归档 judgment 快照（供 GP 事后标注 + 回测；不阻塞、不回写内核）
+      calibrationService.recordJudgment({
+        taskId,
+        projectName: title,
+        industryCategory: primaryIndustryCategory,
+        pipelineVersion: PIPELINE_VERSION,
+        verdict,
+        scoringResult,
+      });
     } catch (err) {
       logger.warn("[Pipeline] 数据飞轮写入异常（不影响报告）:", err.message);
     }

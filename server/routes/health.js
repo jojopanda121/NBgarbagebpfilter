@@ -30,13 +30,14 @@ function createHealthRouter({ getShutdownState = () => false } = {}) {
     const { getLlmStats } = require("../services/llmService");
     return res.status(ok ? 200 : 503).json({
       status,
+      provider: config.llmProvider,
       model: getModelName(),
       llm_stats: getLlmStats(),
       search: {
-        provider: "kimi_builtin_web_search",
-        configured: !!config.kimiApiKey,
-        keySource: process.env.KIMI_API_KEY ? "KIMI_API_KEY" : (process.env.MOONSHOT_API_KEY ? "MOONSHOT_API_KEY" : ""),
-        tool: "$web_search",
+        provider: "minimax_coding_plan_search",
+        configured: !!config.minimaxApiKey,
+        keySource: process.env.MINIMAX_API_KEY ? "MINIMAX_API_KEY" : "",
+        tool: "coding_plan/search",
       },
       version: "3.0.0",
       checks,

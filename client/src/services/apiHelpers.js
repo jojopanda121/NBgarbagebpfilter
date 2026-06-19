@@ -19,14 +19,29 @@ export function shouldSendJson(body) {
   return body && !(body instanceof FormData);
 }
 
+export function bodyFromPayload(data) {
+  return data instanceof FormData ? data : JSON.stringify(data);
+}
+
+export function prepareRequestOptions(options = {}) {
+  const headers = buildAuthHeaders(options.headers);
+
+  if (shouldSendJson(options.body)) {
+    headers["Content-Type"] = "application/json";
+  }
+
+  return { ...options, headers };
+}
+
 export async function readJsonSafely(resp) {
   return resp.json().catch(() => ({}));
 }
 
 export async function handleAuthStatus(resp) {
   if (resp.status === 401) {
+    const body = await readJsonSafely(resp);
     useAuthStore.getState().logout();
-    throw new ApiError("登录已过期，请重新登录", 401);
+    throw new ApiError(body.error || "登录已过期，请重新登录", 401);
   }
 
   if (resp.status !== 403) return;

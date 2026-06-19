@@ -17,7 +17,7 @@ class BaseAgent {
    * @param {string} opts.systemPrompt — LLM system prompt
    * @param {number} [opts.maxRetries=2]
    * @param {number} [opts.maxTokens=6144]
-   * @param {boolean} [opts.useSearch=false] — 是否启用 Kimi web_search 预检索
+   * @param {boolean} [opts.useSearch=false] — 是否启用 MiniMax web_search 预检索
    */
   constructor({ name, systemPrompt, maxRetries = 2, maxTokens = 6144, useSearch = false }) {
     this.name = name;
@@ -39,7 +39,7 @@ class BaseAgent {
 
   /**
    * 子类可覆盖：为 callLLMWithSearch 提供服务端预检索 query。
-   * 这些 query 会先用 Kimi $web_search 执行，再注入 LLM 上下文。
+   * 这些 query 会先用 MiniMax $web_search 执行，再注入 LLM 上下文。
    */
   buildSearchQueries(_context) {
     return [];

@@ -12,23 +12,14 @@ import { triggerBlobDownload } from "../utils/downloadFile";
 import {
   ApiError,
   assertOkResponse,
-  buildAuthHeaders,
+  bodyFromPayload,
   filenameFromDisposition,
-  shouldSendJson,
+  prepareRequestOptions,
 } from "./apiHelpers";
 
 class ApiService {
-  /**
-   * 通用请求方法
-   */
   async request(url, options = {}) {
-    const headers = buildAuthHeaders(options.headers);
-
-    if (shouldSendJson(options.body)) {
-      headers["Content-Type"] = "application/json";
-    }
-
-    const resp = await fetch(`${API_BASE}${url}`, { ...options, headers });
+    const resp = await fetch(`${API_BASE}${url}`, prepareRequestOptions(options));
     await assertOkResponse(resp, "请求失败");
     return resp.json();
   }
@@ -40,7 +31,7 @@ class ApiService {
   post(url, data) {
     return this.request(url, {
       method: "POST",
-      body: data instanceof FormData ? data : JSON.stringify(data),
+      body: bodyFromPayload(data),
     });
   }
 
@@ -104,7 +95,7 @@ class ApiService {
   }
 
   async fetchBlobResponse(url, fallbackMessage) {
-    const resp = await fetch(`${API_BASE}${url}`, { headers: buildAuthHeaders() });
+    const resp = await fetch(`${API_BASE}${url}`, prepareRequestOptions());
     await assertOkResponse(resp, fallbackMessage);
     return resp;
   }

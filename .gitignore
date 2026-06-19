@@ -14,12 +14,15 @@ server/node_modules
 coverage
 .vscode
 .claude/worktrees/
+.claude/settings.local.json
+.claude/launch.json
 *.pyc
 __pycache__
 uploads/
 
 # 数据库（生产数据不入库，但保留目录占位符）
 data/*.db
+data/*.db.bak-*
 data/*.db-journal
 data/*.db-wal
 data/*.db-shm

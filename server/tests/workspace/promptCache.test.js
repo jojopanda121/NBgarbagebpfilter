@@ -82,8 +82,8 @@ describe("P2-3 prompt caching · llmService cache_control 注入", () => {
   beforeEach(() => {
     capturedRequests = [];
     jest.resetModules();
-    jest.doMock("../../utils/kimiClient", () => ({
-      createKimiCompatClient: () => ({
+    jest.doMock("../../utils/llmClient", () => ({
+      createLLMClient: () => ({
         messages: {
           create: async (req) => {
             capturedRequests.push(req);
@@ -93,18 +93,18 @@ describe("P2-3 prompt caching · llmService cache_control 注入", () => {
         },
       }),
     }));
-    // 用 fake config 跳过 ensureKimiConfigured 校验
+    // 用 fake config 跳过 ensureLLMConfigured 校验
     jest.doMock("../../config", () => ({
-      kimiApiKey: "test-key",
-      kimiApiHost: "https://api.moonshot.test/v1",
-      kimiModel: "test-model",
+      minimaxApiKey: "test-key",
+      minimaxApiHost: "https://api.minimax.test/v1",
+      minimaxModel: "test-model",
     }));
     llmService = require("../../services/llmService");
   });
 
   afterEach(() => {
     jest.resetModules();
-    jest.dontMock("../../utils/kimiClient");
+    jest.dontMock("../../utils/llmClient");
     jest.dontMock("../../config");
   });
 

@@ -42,17 +42,31 @@ const config = {
   // Uploads (公开上传：头像、站点图片)。容器中映射到 /app/data/uploads，与数据卷一同持久化。
   uploadsDir: process.env.UPLOADS_DIR || require("path").join(__dirname, "..", "..", "data", "uploads"),
 
-  // Kimi / Moonshot LLM
-  kimiApiKey: process.env.KIMI_API_KEY || process.env.MOONSHOT_API_KEY || "",
-  kimiModel: process.env.KIMI_MODEL || "kimi-k2.6",
+  // MiniMax LLM（OpenAI 兼容接口；M3 为默认模型）
+  // 一个 MINIMAX_API_KEY（Token Plan 订阅 key）同时用于 M3 推理与 coding_plan/search 联网检索。
+  minimaxApiKey: process.env.MINIMAX_API_KEY || "",
+  minimaxModel: process.env.MINIMAX_MODEL || "MiniMax-M3",
+  llmProvider: "minimax",
+  llmApiKey: process.env.MINIMAX_API_KEY || "",
+  llmModel: process.env.MINIMAX_MODEL || "MiniMax-M3",
   // P2-4 per-skill 模型路由 (可选)：
   //   heavy  → deck / memo / investmentDeckPptx / icQuestions 等重任务
   //   light  → snapshot / brief / one-pager / 语义抽样审计 等轻任务
   //   default→ 其他所有 skill（兜底）
-  // 任一字段未配置时回落到 kimiModel，保持单模型行为不变。
-  kimiModelHeavy: process.env.KIMI_MODEL_HEAVY || "",
-  kimiModelLight: process.env.KIMI_MODEL_LIGHT || "",
-  kimiApiHost: process.env.KIMI_API_HOST || process.env.MOONSHOT_BASE_URL || "https://api.moonshot.ai/v1",
+  // 任一字段未配置时回落到 minimaxModel，保持单模型行为不变。
+  minimaxModelHeavy: process.env.MINIMAX_MODEL_HEAVY || "",
+  minimaxModelLight: process.env.MINIMAX_MODEL_LIGHT || "",
+  // 国内站 api.minimaxi.com（注意域名是 minimaxi）；国际站用 MINIMAX_API_HOST=https://api.minimax.io/v1 覆盖。
+  minimaxApiHost: process.env.MINIMAX_API_HOST || process.env.MINIMAX_BASE_URL || "https://api.minimaxi.com/v1",
+  llmModelHeavy: process.env.MINIMAX_MODEL_HEAVY || "",
+  llmModelLight: process.env.MINIMAX_MODEL_LIGHT || "",
+  llmApiHost: process.env.MINIMAX_API_HOST || process.env.MINIMAX_BASE_URL || "https://api.minimaxi.com/v1",
+  // 兼容旧调用点命名；实际后端统一走 MiniMax。
+  kimiApiKey: process.env.MINIMAX_API_KEY || "",
+  kimiModel: process.env.MINIMAX_MODEL || "MiniMax-M3",
+  kimiModelHeavy: process.env.MINIMAX_MODEL_HEAVY || "",
+  kimiModelLight: process.env.MINIMAX_MODEL_LIGHT || "",
+  kimiApiHost: process.env.MINIMAX_API_HOST || process.env.MINIMAX_BASE_URL || "https://api.minimaxi.com/v1",
 
   // 企查查 Agent（企业追踪数据源）
   qccApiKey: process.env.QCC_API_KEY || "",
@@ -119,9 +133,9 @@ if (config.env === "production") {
     process.exit(1);
   }
 
-  if (!config.kimiApiKey) {
+  if (!config.minimaxApiKey) {
     console.error(
-      "\n[FATAL] 生产环境必须设置 KIMI_API_KEY 或 MOONSHOT_API_KEY 环境变量！\n"
+      "\n[FATAL] 生产环境必须设置 MINIMAX_API_KEY 环境变量！\n"
     );
     process.exit(1);
   }

@@ -19,6 +19,20 @@ export function shouldSendJson(body) {
   return body && !(body instanceof FormData);
 }
 
+export function bodyFromPayload(data) {
+  return data instanceof FormData ? data : JSON.stringify(data);
+}
+
+export function prepareRequestOptions(options = {}) {
+  const headers = buildAuthHeaders(options.headers);
+
+  if (shouldSendJson(options.body)) {
+    headers["Content-Type"] = "application/json";
+  }
+
+  return { ...options, headers };
+}
+
 export async function readJsonSafely(resp) {
   return resp.json().catch(() => ({}));
 }

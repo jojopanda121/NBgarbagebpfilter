@@ -8,7 +8,7 @@ const { callLLM, callLLMWithThinking, callLLMWithSearch, getModelName } = requir
 const { extractJson, extractJsonArray, extractPartialResult, ensureStringArray } = require("../utils/jsonParser");
 const { scoreProject, assessIntegrityVeto } = require("../scoring");
 const { mergeSpecialistEvidence, financialToVerdicts, valuationToVerdicts } = require("../scoringEvidence");
-const { runWebSearch, formatSearchContext, kimiAgenticChatWithSearch } = require("./webSearchService");
+const { runWebSearch, formatSearchContext } = require("./webSearchService");
 const logger = require("../utils/logger");
 const trackingService = require("./trackingService");
 const agentRuntime = require("./agentRuntime");
@@ -168,7 +168,7 @@ function buildDefaultVerificationHarness(claim = {}, extractedData = {}) {
 
   return {
     preferred_sources: preferredSources,
-    kimi_research_prompt:
+    minimax_research_prompt:
       `请核验 ${company}（${industry}）BP 声明：“${claimText}”。` +
       "优先尝试同花顺/iFinD、天眼查、工商信息、财报、IMF、Scholar、arXiv、元典法律等可用能力；" +
       "若专业数据不可用，请用公开网页/用户材料/自身知识辅助，并明确标注缺口和置信度。",
@@ -192,7 +192,7 @@ function normalizeKeyClaimsForResearch(extractedData = {}) {
       const harness = buildDefaultVerificationHarness(normalized, extractedData);
       normalized.verification_harness = {
         preferred_sources: harness.preferred_sources,
-        kimi_research_prompt: harness.kimi_research_prompt,
+        minimax_research_prompt: harness.minimax_research_prompt,
         expected_fields: harness.expected_fields,
         failure_mode: harness.failure_mode,
         _generated: true,
@@ -264,11 +264,8 @@ async function runAgentBWithBatchingAndResearch(extractedData, bpText, onProgres
 
   const limit = pLimit(MAX_CONCURRENT_BATCHES);
   // 含 critical/high 声明的批次走真实联网检索，让"事实核查"对关键声明有
-  // 外部证据，而不是纯模型记忆自我背书。三级降级：
-  //   ① Kimi 原生 agentic 检索（builtin $web_search，Kimi 按每条声明自主
-  //     决定搜什么、搜几轮——检索针对性最强，深挖 Kimi 自带能力）
-  //   ② 服务端预检索注入（callLLMWithSearch + verification_harness 查询）
-  //   ③ 纯模型知识（callLLM，verdict 受证据纪律约束只能给存疑）
+  // 外部证据，而不是纯模型记忆自我背书。优先服务端预检索注入，
+  // 检索失败时 callLLMWithSearch 会降级为纯模型回答。
   const verifyBatch = async (batch, batchIdx) => {
     const sysPrompt = CLAIM_VERDICT_BATCH_PROMPT + "\n\n【重要】请严格只输出 JSON 数组，不要使用 markdown 代码块。";
     const userInput = `${bpContext}\n\n待核查声明批次 ${batchIdx + 1}/${batchCount}：\n${JSON.stringify(batch, null, 2)}`;
@@ -277,24 +274,9 @@ async function runAgentBWithBatchingAndResearch(extractedData, bpText, onProgres
     );
     if (!hasPriorityClaim) return callLLM(sysPrompt, userInput, 6144);
 
-    // ① Kimi 原生自主检索
-    try {
-      const r = await kimiAgenticChatWithSearch({
-        system: sysPrompt +
-          "\n\n你拥有联网搜索工具。对每条 critical/high 声明，按其 verification_harness.kimi_research_prompt 主动检索核验；" +
-          "ai_research 中必须写明检索到的来源（媒体/机构名 + URL + 日期）。",
-        user: userInput,
-        maxTokens: 6144,
-      });
-      logger.info(`[B.1] 批次 ${batchIdx + 1} Kimi 原生检索完成`, { searchRounds: r.searchRounds });
-      return r.text;
-    } catch (err) {
-      logger.warn(`[B.1] 批次 ${batchIdx + 1} Kimi 原生检索失败，降级预检索: ${err.message}`);
-    }
-    // ② 服务端预检索注入
     const preSearchQueries = batch
       .filter((c) => ["critical", "high"].includes(String(c?.priority || "").toLowerCase()))
-      .map((c) => c?.verification_harness?.kimi_research_prompt)
+      .map((c) => c?.verification_harness?.minimax_research_prompt || c?.verification_harness?.kimi_research_prompt)
       .filter(Boolean)
       .slice(0, 3);
     return callLLMWithSearch(sysPrompt, userInput, { maxTokens: 6144, preSearchQueries })
@@ -484,24 +466,8 @@ async function runAgentBWithBatchingAndResearch(extractedData, bpText, onProgres
       }
     })(), "五维分析"),
 
-    // Task C: 深度研究报告。三级降级：
-    // Kimi 原生 agentic 检索（自主多轮搜市场/竞品/政策/创始人）→ 兼容层
-    // web_search → 纯模型。原生路径要求报告中的外部事实带来源 URL+日期。
+    // Task C: 深度研究报告（启用 MiniMax web_search 工具，失败自动降级；并加 8min 任务级超时）
     withTaskTimeout((async () => {
-      try {
-        const r = await kimiAgenticChatWithSearch({
-          system: DEEP_RESEARCH_PROMPT +
-            "\n\n你拥有联网搜索工具。撰写前请主动检索：行业规模与增速、主要竞品及其融资、相关政策、公司与创始人公开信息。" +
-            "报告中引用的外部事实必须标注来源（媒体/机构名 + URL + 日期）；检索不到的写明待核实。",
-          user: earlyDeepResearchInput,
-          maxTokens: 16000,
-          maxRounds: 10,
-        });
-        logger.info("[B.deep] 深度研究 Kimi 原生检索完成", { searchRounds: r.searchRounds });
-        return r.text;
-      } catch (nativeErr) {
-        logger.warn("[B.deep] Kimi 原生检索失败，降级兼容层 web_search:", nativeErr.message);
-      }
       try {
         const { text, searchUsed } = await callLLMWithSearch(
           DEEP_RESEARCH_PROMPT,
@@ -864,7 +830,7 @@ function buildValuationComparison(validatedData, extractedData, scoringInput, sc
       comparable_companies: peerCompanies,
       temperature: valuationTemp?.temperature || null,
       temperature_reason: valuationTemp?.temperature_reason || null,
-      data_source: valuationTemp?.source_boundary || "ValuationAgent Kimi 估值温度计",
+      data_source: valuationTemp?.source_boundary || "ValuationAgent MiniMax 估值温度计",
       analysis: valuationAgent?.verdict?.summary || valuationComparison?.analysis || scoringResult.grade_action,
     };
   }
@@ -1180,7 +1146,7 @@ async function runPipeline(bpText, onProgress, taskId = null, userId = null) {
     project_location: projectLocation,
     search_summary: {
       enabled: true, mock: false, total_results: 0,
-      queries_count: (extractedData.key_claims || []).length, provider: "kimi_web_search",
+      queries_count: (extractedData.key_claims || []).length, provider: "minimax_web_search",
     },
   };
 }

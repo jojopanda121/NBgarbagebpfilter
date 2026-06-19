@@ -264,21 +264,22 @@ function listPosts({ category, sort = "latest", page = 1, pageSize = 20, viewerI
   }
   const whereSql = `WHERE ${where.join(" AND ")}`;
 
+  // 置顶帖恒在最前（不论排序方式），其后再按所选 sort 排
   let orderSql;
   switch (sort) {
     case "score":
       // 走 score_total 一等列（有索引）；非评分帖无分数沉底
-      orderSql = "ORDER BY p.score_total DESC NULLS LAST, p.created_at DESC";
+      orderSql = "ORDER BY p.pinned DESC, p.score_total DESC NULLS LAST, p.created_at DESC";
       break;
     case "interest":
       // 感兴趣度：收到的撮合意向数
-      orderSql = "ORDER BY p.interest_count DESC, p.created_at DESC";
+      orderSql = "ORDER BY p.pinned DESC, p.interest_count DESC, p.created_at DESC";
       break;
     case "hot":
-      orderSql = "ORDER BY (p.like_count * 3 + p.comment_count * 2 + p.view_count) DESC, p.created_at DESC";
+      orderSql = "ORDER BY p.pinned DESC, (p.like_count * 3 + p.comment_count * 2 + p.view_count) DESC, p.created_at DESC";
       break;
     default:
-      orderSql = "ORDER BY p.created_at DESC";
+      orderSql = "ORDER BY p.pinned DESC, p.created_at DESC";
   }
 
   // 游客只给前 N 条
@@ -315,6 +316,8 @@ function listItemView(r, viewerId, isGuest) {
     author: attachBadges(authorView(r)),
     score: snap ? { total_score: snap.total_score, grade: snap.grade, grade_label: snap.grade_label } : null,
     score_source: r.score_source,
+    pinned: !!r.pinned,
+    featured: !!r.featured,
     like_count: r.like_count,
     comment_count: r.comment_count,
     interest_count: r.interest_count,

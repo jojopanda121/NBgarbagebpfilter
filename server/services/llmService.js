@@ -1,6 +1,6 @@
 // ============================================================
 // server/services/llmService.js — LLM 调用服务
-// 封装 MiniMax / Kimi / Moonshot OpenAI-compatible API 的调用逻辑
+// 封装 MiniMax (M3) OpenAI-compatible API 的调用逻辑
 // 含超时控制和重试机制
 // ============================================================
 
@@ -8,12 +8,11 @@ const config = require("../config");
 const { runWebSearch, formatSearchContext } = require("./webSearchService");
 const { extractJson } = require("../utils/jsonParser");
 const jsonSchema = require("../utils/jsonSchema");
-const { createKimiCompatClient } = require("../utils/kimiClient");
+const { createLLMClient } = require("../utils/llmClient");
 
-const kimi = createKimiCompatClient({
-  apiKey: config.kimiApiKey,
-  baseURL: config.kimiApiHost,
-  provider: config.llmProvider,
+const llm = createLLMClient({
+  apiKey: config.minimaxApiKey,
+  baseURL: config.minimaxApiHost,
 });
 
 // ── LLM 调用计量（成本可观测最小实现）────────────────────────
@@ -32,9 +31,9 @@ function getLlmStats() {
   return { ..._llmStats, since: _llmStats.since || (_llmStats.since = new Date().toISOString()) };
 }
 
-if (kimi && kimi.messages && typeof kimi.messages.create === "function") {
-  const _origCreate = kimi.messages.create.bind(kimi.messages);
-  kimi.messages.create = async function instrumentedCreate(body, ...rest) {
+if (llm && llm.messages && typeof llm.messages.create === "function") {
+  const _origCreate = llm.messages.create.bind(llm.messages);
+  llm.messages.create = async function instrumentedCreate(body, ...rest) {
     const start = Date.now();
     try {
       const resp = await _origCreate(body, ...rest);
@@ -72,15 +71,15 @@ if (kimi && kimi.messages && typeof kimi.messages.create === "function") {
   };
 }
 
-const MODEL = config.kimiModel;
+const MODEL = config.minimaxModel;
 
 // ── P2-4 per-skill 模型路由 ─────────────────────────────────
 // 三档：heavy / default / light。每档可走不同 model name；未配置时回落 default。
 // 路由表按 skillId / taskHint 命中；都不命中 → "default" 档。
 const MODEL_TIERS = {
-  heavy: () => config.kimiModelHeavy || MODEL,
+  heavy: () => config.minimaxModelHeavy || MODEL,
   default: () => MODEL,
-  light: () => config.kimiModelLight || MODEL,
+  light: () => config.minimaxModelLight || MODEL,
 };
 
 // skillId / taskHint → tier
@@ -125,7 +124,7 @@ const MAX_RETRIES = 3;                  // 最多重试 3 次（共 4 次尝试�
 const BASE_DELAY_MS = 2000;             // 重试基础延迟 2s
 
 // ── Prompt Caching (Anthropic ephemeral cache) ─────────────
-// 默认关闭，因为 Kimi 兼容端点不一定支持 cache_control 数组形式。
+// 默认关闭，因为 MiniMax 兼容端点不一定支持 cache_control 数组形式。
 // 开关：env ENABLE_PROMPT_CACHE=1（生产对接真 Anthropic / Claude 时启用）。
 // 经验阈值：≥ 1500 字符（~ 1000 tokens）才值得标 cache_control，
 // 否则缓存收益不抵开销（Sonnet/Haiku 最低 1024 tokens 才入缓存）。
@@ -157,9 +156,9 @@ function _buildCacheableUserMessage(userContent, userPrefix) {
   ];
 }
 
-function ensureKimiConfigured() {
-  if (!config.kimiApiKey) {
-    throw new Error("LLM 未配置：服务端缺少 MINIMAX_API_KEY、KIMI_API_KEY 或 MOONSHOT_API_KEY，请在 .env 中设置后重启进程");
+function ensureLLMConfigured() {
+  if (!config.minimaxApiKey) {
+    throw new Error("LLM 未配置：服务端缺少 MINIMAX_API_KEY，请在 .env 中设置后重启进程");
   }
 }
 
@@ -208,7 +207,7 @@ function isRetryable(err) {
 function normalizeLLMError(err) {
   const status = err?.status;
   if (status === 401 || status === 403) {
-    const e = new Error("LLM 服务认证失败：请检查 MINIMAX_API_KEY、KIMI_API_KEY 或 MOONSHOT_API_KEY 配置");
+    const e = new Error("LLM 服务认证失败：请检查 MINIMAX_API_KEY 配置");
     e.permanent = true;
     return e;
   }
@@ -219,7 +218,7 @@ function normalizeLLMError(err) {
 }
 
 /**
- * 调用 Kimi LLM（普通模式），含超时和重试。
+ * 调用 MiniMax LLM（普通模式），含超时和重试。
  *
  * @param {string} systemPrompt
  * @param {string} userContent
@@ -227,7 +226,7 @@ function normalizeLLMError(err) {
  *                                                   或传 { maxTokens, userPrefix } 启用 prompt caching
  */
 async function callLLM(systemPrompt, userContent, maxTokensOrOpts = 8192) {
-  ensureKimiConfigured();
+  ensureLLMConfigured();
   const opts = typeof maxTokensOrOpts === "object" ? maxTokensOrOpts : { maxTokens: maxTokensOrOpts };
   const { maxTokens = 8192, userPrefix = "" } = opts;
   let lastError;
@@ -248,7 +247,7 @@ async function callLLM(systemPrompt, userContent, maxTokensOrOpts = 8192) {
 
       const timeout = calcTimeout(maxTokens);
       const resp = await withTimeout(
-        kimi.messages.create({
+        llm.messages.create({
           model,
           max_tokens: maxTokens,
           system: cachedSystem,
@@ -275,9 +274,9 @@ async function callLLM(systemPrompt, userContent, maxTokensOrOpts = 8192) {
   throw normalizeLLMError(lastError);
 }
 
-/** 调用 Kimi LLM（深度思考模式，不支持时自动降级），含超时和重试 */
+/** 调用 MiniMax LLM（深度思考模式，不支持时自动降级），含超时和重试 */
 async function callLLMWithThinking(systemPrompt, userContent, maxTokens = 16000, thinkingBudget = 8000) {
-  ensureKimiConfigured();
+  ensureLLMConfigured();
   try {
     let lastError;
 
@@ -291,7 +290,7 @@ async function callLLMWithThinking(systemPrompt, userContent, maxTokens = 16000,
 
         const timeout = calcTimeout(maxTokens) * 2; // thinking 模式给双倍超时
         const resp = await withTimeout(
-          kimi.messages.create({
+          llm.messages.create({
             model: MODEL,
             max_tokens: maxTokens,
             thinking: { type: "enabled", budget_tokens: thinkingBudget },
@@ -341,7 +340,7 @@ async function callLLMWithThinking(systemPrompt, userContent, maxTokens = 16000,
  */
 async function callLLMChat(systemPrompt, messages, opts = {}) {
   const { maxTokens = 4096, onDelta, signal } = opts;
-  ensureKimiConfigured();
+  ensureLLMConfigured();
   let lastError;
   let streamUnsupported = false;
 
@@ -370,7 +369,7 @@ async function callLLMChat(systemPrompt, messages, opts = {}) {
               timeout
             );
             try {
-              const s = kimi.messages.stream({
+              const s = llm.messages.stream({
                 model: MODEL,
                 max_tokens: maxTokens,
                 system: systemPrompt,
@@ -407,7 +406,7 @@ async function callLLMChat(systemPrompt, messages, opts = {}) {
 
       // 非流式
       const resp = await withTimeout(
-        kimi.messages.create({
+        llm.messages.create({
           model: MODEL,
           max_tokens: maxTokens,
           system: systemPrompt,
@@ -429,7 +428,7 @@ async function callLLMChat(systemPrompt, messages, opts = {}) {
       // 客户端取消不重试
       if (err?.message === "客户端取消" || signal?.aborted) break;
 
-      // 流式不被上游支持（Kimi 兼容端点常见）→ 改走非流式，下一轮直接降级
+      // 流式不被上游支持（兼容端点常见）→ 改走非流式，下一轮直接降级
       const msg = err?.message || "";
       if (
         onDelta && !streamUnsupported &&
@@ -453,9 +452,9 @@ async function callLLMChat(systemPrompt, messages, opts = {}) {
 }
 
 /**
- * 调用 Kimi LLM 并启用 web_search 工具。
- * Kimi Anthropic 兼容端点不接受 type:"web_search" 这种内置工具声明；
- * 这里声明为函数工具，由本服务端执行搜索并把结果回填给模型。
+ * 调用 MiniMax LLM 并启用 web_search 工具。
+ * 这里把 web_search 声明为函数工具，由本服务端执行 MiniMax coding_plan/search
+ * 检索并把结果回填给模型（而非依赖上游内置工具）。
  *
  * 回退：若服务端不识别工具，自动降级为普通 callLLM。
  *
@@ -468,7 +467,7 @@ async function callLLMChat(systemPrompt, messages, opts = {}) {
  * @returns {Promise<{ text: string, searchUsed: boolean }>}
  */
 async function callLLMWithSearch(systemPrompt, userContent, opts = {}) {
-  ensureKimiConfigured();
+  ensureLLMConfigured();
   const { maxTokens = 8192, maxToolRounds = 6, preSearchQueries = [] } = opts;
 
   const tools = [{
@@ -528,7 +527,7 @@ async function callLLMWithSearch(systemPrompt, userContent, opts = {}) {
       for (let round = 0; round < maxToolRounds; round++) {
         const timeout = calcTimeout(maxTokens);
         const resp = await withTimeout(
-          kimi.messages.create({
+          llm.messages.create({
             model: MODEL,
             max_tokens: maxTokens,
             system: systemPrompt,
@@ -611,7 +610,7 @@ function getModelTier(opts) {
 // ============================================================
 // callLLMAgentic — 工作区"类 Claude"调用核心
 //
-// 把 Kimi 的三个能力（thinking / streaming / tool use）合一暴露：
+// 把 MiniMax 的三个能力（thinking / streaming / tool use）合一暴露：
 //   - thinking_delta → onEvent({ type: "thinking_delta", text })
 //   - text_delta     → onEvent({ type: "text_delta",     text })
 //   - tool_use       → onEvent({ type: "tool_use", id, name, input })
@@ -641,7 +640,7 @@ function getModelTier(opts) {
 //   signal           AbortSignal
 // ============================================================
 async function callLLMAgentic(opts) {
-  ensureKimiConfigured();
+  ensureLLMConfigured();
   const {
     system,
     messages,
@@ -696,7 +695,7 @@ async function callLLMAgentic(opts) {
         const stream = await new Promise((resolve, reject) => {
           const t = setTimeout(() => reject(new Error(`LLM 请求超时 (${timeout}ms): agentic-stream`)), timeout);
           try {
-            const s = kimi.messages.stream(reqBody);
+            const s = llm.messages.stream(reqBody);
             clearTimeout(t);
             resolve(s);
           } catch (e) { clearTimeout(t); reject(e); }
@@ -761,7 +760,7 @@ async function callLLMAgentic(opts) {
       } else {
         // ── 非流式路径 ───────────────────────────────
         const resp = await withTimeout(
-          kimi.messages.create(reqBody),
+          llm.messages.create(reqBody),
           timeout,
           "agentic-nonstream"
         );

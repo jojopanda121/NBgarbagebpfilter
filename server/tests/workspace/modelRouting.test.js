@@ -12,11 +12,11 @@ describe("P2-4 per-skill 模型路由", () => {
   beforeEach(() => {
     jest.resetModules();
     jest.doMock("../../config", () => ({
-      kimiApiKey: "test-key",
-      kimiApiHost: "https://api.moonshot.test/v1",
-      kimiModel: "default-model",
-      kimiModelHeavy: "heavy-model",
-      kimiModelLight: "light-model",
+      minimaxApiKey: "test-key",
+      minimaxApiHost: "https://api.minimax.test/v1",
+      minimaxModel: "default-model",
+      minimaxModelHeavy: "heavy-model",
+      minimaxModelLight: "light-model",
     }));
     llm = require("../../services/llmService");
   });
@@ -65,11 +65,11 @@ describe("P2-4 模型路由 · 未配置 heavy/light 时回落 default", () => {
   beforeEach(() => {
     jest.resetModules();
     jest.doMock("../../config", () => ({
-      kimiApiKey: "test-key",
-      kimiApiHost: "https://api.moonshot.test/v1",
-      kimiModel: "only-default",
-      kimiModelHeavy: "", // 未配
-      kimiModelLight: "", // 未配
+      minimaxApiKey: "test-key",
+      minimaxApiHost: "https://api.minimax.test/v1",
+      minimaxModel: "only-default",
+      minimaxModelHeavy: "", // 未配
+      minimaxModelLight: "", // 未配
     }));
   });
   afterEach(() => {

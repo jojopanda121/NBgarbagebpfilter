@@ -2,7 +2,7 @@
 const { Router } = require("express");
 const rateLimit = require("express-rate-limit");
 const { requireAuth } = require("../middleware/auth");
-const { getTaskStatus, getSharedTask, shareTask, getUserTasks, softDeleteTask, revokeShare } = require("../controllers/taskController");
+const { getTaskStatus, getSharedTask, shareTask, getUserTasks, softDeleteTask, batchDeleteTasks, revokeShare } = require("../controllers/taskController");
 
 const router = Router();
 
@@ -24,6 +24,8 @@ router.get("/shared/:shareToken", sharedTaskLimiter, getSharedTask);
 router.post("/:taskId/share", requireAuth, shareTask);
 // 撤销分享链接
 router.delete("/:taskId/share", requireAuth, revokeShare);
+// 批量软删除（必须在 :taskId 之前，避免被动态段匹配）
+router.post("/batch-delete", requireAuth, batchDeleteTasks);
 // 软删除报告
 router.delete("/:taskId", requireAuth, softDeleteTask);
 // 查看任务（需登录，owner 或 admin）

@@ -46,6 +46,17 @@ random_string() {
   cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w "${1:-32}" | head -n 1
 }
 
+set_env_var() {
+  local key="$1"
+  local value="$2"
+
+  if grep -q "^${key}=" .env; then
+    perl -0pi -e "s|^${key}=.*$|${key}=${value}|m" .env
+  else
+    echo "${key}=${value}" >> .env
+  fi
+}
+
 # 首次部署：交互式生成 .env
 setup_env() {
   if [ -f .env ]; then
@@ -61,18 +72,18 @@ setup_env() {
   echo "  GarbageBPFilter 部署配置向导"
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-  # Kimi / Moonshot API Key
+  # MiniMax API Key
   echo ""
-  read -p "请输入 Kimi / Moonshot API Key (必填): " KIMI_KEY
-  if [ -z "$KIMI_KEY" ]; then
-    error "Kimi / Moonshot API Key 不能为空！"
+  read -p "请输入 MiniMax API Key (必填): " MINIMAX_KEY
+  if [ -z "$MINIMAX_KEY" ]; then
+    error "MiniMax API Key 不能为空！"
     exit 1
   fi
-  sed -i "s|KIMI_API_KEY=.*|KIMI_API_KEY=${KIMI_KEY}|" .env
+  set_env_var "MINIMAX_API_KEY" "$MINIMAX_KEY"
 
   # JWT Secret
   JWT=$(random_string 48)
-  sed -i "s|JWT_SECRET=.*|JWT_SECRET=${JWT}|" .env
+  set_env_var "JWT_SECRET" "$JWT"
   info "JWT Secret 已自动生成"
 
   # doc-service 共享密钥 + PII 盐（生产必配，自动生成）
@@ -144,7 +155,7 @@ deploy() {
       # 管理员账号已在首次启动时写入数据库（bcrypt 哈希），
       # 清除 .env 中的明文密码，避免长期驻留磁盘
       if grep -q "^ADMIN_PASSWORD=.\+" .env 2>/dev/null; then
-        sed -i "s|^ADMIN_PASSWORD=.*|ADMIN_PASSWORD=|" .env
+        set_env_var "ADMIN_PASSWORD" ""
         info "管理员账号已初始化，.env 中的明文 ADMIN_PASSWORD 已清除"
       fi
       info "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

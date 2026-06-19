@@ -32,8 +32,8 @@ cd client && npm start
 
 ## 切换 AI 模型
 
-编辑 `.env` 文件中的 `MINIMAX_API_KEY`（或 `MINIMAX_API_KEY`）字段。
-后端默认使用 MiniMax 开放平台 的 `MiniMax-M3`。
+编辑 `.env` 文件中的 `MINIMAX_API_KEY` 字段。
+后端默认使用 MiniMax 开放平台的 `MiniMax-M3`。
 MiniMax API 支持 Chat Completion、Tool Calling 和 `coding_plan/search`；同花顺/天眼查等 MiniMax 内部专业数据源不开放结构化 API。工作区 Host 主攻低成本 MiniMax Chat 路线：通过 `minimax_professional_research` 做间接研究，结果按自然语言证据处理；拿不到的数据标为待上传材料、公开检索或人工补充核验，不默认依赖昂贵第三方 API。
 
 ## 项目结构

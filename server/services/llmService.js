@@ -1,6 +1,6 @@
 // ============================================================
 // server/services/llmService.js — LLM 调用服务
-// 封装 Kimi / Moonshot OpenAI-compatible API 的调用逻辑
+// 封装 MiniMax / Kimi / Moonshot OpenAI-compatible API 的调用逻辑
 // 含超时控制和重试机制
 // ============================================================
 
@@ -13,6 +13,7 @@ const { createKimiCompatClient } = require("../utils/kimiClient");
 const kimi = createKimiCompatClient({
   apiKey: config.kimiApiKey,
   baseURL: config.kimiApiHost,
+  provider: config.llmProvider,
 });
 
 // ── LLM 调用计量（成本可观测最小实现）────────────────────────
@@ -158,7 +159,7 @@ function _buildCacheableUserMessage(userContent, userPrefix) {
 
 function ensureKimiConfigured() {
   if (!config.kimiApiKey) {
-    throw new Error("LLM 未配置：服务端缺少 KIMI_API_KEY 或 MOONSHOT_API_KEY，请在 .env 中设置后重启进程");
+    throw new Error("LLM 未配置：服务端缺少 MINIMAX_API_KEY、KIMI_API_KEY 或 MOONSHOT_API_KEY，请在 .env 中设置后重启进程");
   }
 }
 
@@ -207,7 +208,7 @@ function isRetryable(err) {
 function normalizeLLMError(err) {
   const status = err?.status;
   if (status === 401 || status === 403) {
-    const e = new Error("LLM 服务认证失败：请检查 KIMI_API_KEY 或 MOONSHOT_API_KEY 配置");
+    const e = new Error("LLM 服务认证失败：请检查 MINIMAX_API_KEY、KIMI_API_KEY 或 MOONSHOT_API_KEY 配置");
     e.permanent = true;
     return e;
   }

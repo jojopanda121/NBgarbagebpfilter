@@ -25,8 +25,9 @@ export async function readJsonSafely(resp) {
 
 export async function handleAuthStatus(resp) {
   if (resp.status === 401) {
+    const body = await readJsonSafely(resp);
     useAuthStore.getState().logout();
-    throw new ApiError("登录已过期，请重新登录", 401);
+    throw new ApiError(body.error || "登录已过期，请重新登录", 401);
   }
 
   if (resp.status !== 403) return;

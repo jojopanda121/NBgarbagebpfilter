@@ -37,11 +37,11 @@ function buildSearchQueries(agentName, userMsg = "", projectCtx = "") {
 }
 
 function getKimiSearchKey() {
-  return (config.kimiApiKey || "").trim();
+  return (process.env.KIMI_API_KEY || process.env.MOONSHOT_API_KEY || "").trim();
 }
 
 function resolveKimiWebSearchEndpoint() {
-  return resolveKimiChatEndpoint(config.kimiApiHost);
+  return resolveKimiChatEndpoint(process.env.KIMI_API_HOST || process.env.MOONSHOT_BASE_URL);
 }
 
 function normalizeKimiResult(query, output, usage = null) {

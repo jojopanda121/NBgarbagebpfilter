@@ -128,6 +128,39 @@ function softDeleteTask(req, res) {
   res.json({ success: true });
 }
 
+/** POST /api/task/batch-delete — 批量软删除（仅删除本人记录；admin 可删任意） */
+function batchDeleteTasks(req, res) {
+  const userId = req.user.id;
+  const { ids } = req.body || {};
+
+  if (!Array.isArray(ids) || ids.length === 0) {
+    return res.status(400).json({ error: "请提供要删除的记录 ID 列表" });
+  }
+  if (ids.length > 100) {
+    return res.status(400).json({ error: "单次最多删除 100 条" });
+  }
+
+  const db = getDb();
+  const userRow = db.prepare("SELECT role FROM users WHERE id = ?").get(userId);
+  const isAdmin = userRow?.role === "admin";
+
+  // 非 admin 通过 WHERE user_id 限定，越权 id 不会被删除（changes=0）
+  const stmt = isAdmin
+    ? db.prepare("UPDATE tasks SET deleted_at = datetime('now'), updated_at = datetime('now') WHERE id = ? AND deleted_at IS NULL")
+    : db.prepare("UPDATE tasks SET deleted_at = datetime('now'), updated_at = datetime('now') WHERE id = ? AND user_id = ? AND deleted_at IS NULL");
+
+  let deleted = 0;
+  const runAll = db.transaction((list) => {
+    for (const id of list) {
+      const info = isAdmin ? stmt.run(id) : stmt.run(id, userId);
+      deleted += info.changes;
+    }
+  });
+  runAll(ids);
+
+  res.json({ success: true, deleted });
+}
+
 /** DELETE /api/task/:taskId/share — 撤销分享链接（owner 或 admin） */
 function revokeShare(req, res) {
   const { taskId } = req.params;
@@ -145,4 +178,4 @@ function revokeShare(req, res) {
   res.json({ success: true });
 }
 
-module.exports = { getTaskStatus, getSharedTask, shareTask, getUserTasks, softDeleteTask, revokeShare };
+module.exports = { getTaskStatus, getSharedTask, shareTask, getUserTasks, softDeleteTask, batchDeleteTasks, revokeShare };

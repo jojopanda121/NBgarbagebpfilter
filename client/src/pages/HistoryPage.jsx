@@ -12,6 +12,10 @@ import {
   Calendar,
   MapPin,
   Trash2,
+  CheckSquare,
+  Square,
+  ListChecks,
+  X,
 } from "lucide-react";
 import api from "../services/api";
 
@@ -52,6 +56,10 @@ const INDUSTRY_FILTERS = [
   "金融科技",
   "其他",
 ];
+
+// 是否可删除：已完成 / 失败(error) / 失败(legacy failed) 均可删除；分析中(running)不可删
+const isDeletable = (task) =>
+  task.status === "complete" || task.status === "error" || task.status === "failed";
 
 // 评分圆圈组件
 function ScoreCircle({ score }) {
@@ -116,6 +124,10 @@ export default function HistoryPage() {
   const [sortBy, setSortBy] = useState("time"); // "time" | "score"
   const [filterIndustry, setFilterIndustry] = useState("全部");
   const [deleteConfirm, setDeleteConfirm] = useState(null); // taskId to confirm delete
+  const [selectMode, setSelectMode] = useState(false);       // 批量管理模式
+  const [selectedIds, setSelectedIds] = useState(() => new Set());
+  const [batchConfirm, setBatchConfirm] = useState(false);   // 批量删除确认弹窗
+  const [batchDeleting, setBatchDeleting] = useState(false);
 
   const fetchTasks = async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true);
@@ -152,6 +164,36 @@ export default function HistoryPage() {
     }
   };
 
+  const toggleSelect = (id) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const exitSelectMode = () => {
+    setSelectMode(false);
+    setSelectedIds(new Set());
+  };
+
+  const handleBatchDelete = async () => {
+    const ids = [...selectedIds];
+    if (ids.length === 0) return;
+    setBatchDeleting(true);
+    try {
+      await api.post("/api/task/batch-delete", { ids });
+      setTasks((prev) => prev.filter((t) => !selectedIds.has(t.id)));
+      exitSelectMode();
+    } catch (err) {
+      alert("批量删除失败：" + (err.message || "未知错误"));
+    } finally {
+      setBatchDeleting(false);
+      setBatchConfirm(false);
+    }
+  };
+
   // 筛选 + 排序
   const filteredTasks = useMemo(() => {
     let list = [...tasks];
@@ -176,6 +218,17 @@ export default function HistoryPage() {
 
     return list;
   }, [tasks, sortBy, filterIndustry]);
+
+  // 当前视图内可删除的项 + 全选状态
+  const deletableInView = useMemo(
+    () => filteredTasks.filter(isDeletable),
+    [filteredTasks]
+  );
+  const allSelected =
+    deletableInView.length > 0 && deletableInView.every((t) => selectedIds.has(t.id));
+  const toggleSelectAll = () => {
+    setSelectedIds(allSelected ? new Set() : new Set(deletableInView.map((t) => t.id)));
+  };
 
   // 格式化时间
   const formatTime = (dateStr) => {
@@ -246,14 +299,35 @@ export default function HistoryPage() {
       {/* 标题栏 */}
       <div className="flex items-center justify-between mb-4">
         <h1 className="text-2xl font-bold">历史报告</h1>
-        <button
-          onClick={() => fetchTasks(true)}
-          disabled={refreshing}
-          className="flex items-center gap-2 px-3 py-1.5 text-sm bg-[#EEF1F7] hover:bg-[#E5E9F4] rounded-lg transition-colors"
-        >
-          <RefreshCw className={`w-4 h-4 ${refreshing ? "animate-spin" : ""}`} />
-          刷新
-        </button>
+        <div className="flex items-center gap-2">
+          {tasks.length > 0 && (
+            selectMode ? (
+              <button
+                onClick={exitSelectMode}
+                className="flex items-center gap-2 px-3 py-1.5 text-sm bg-[#EEF1F7] hover:bg-[#E5E9F4] rounded-lg transition-colors"
+              >
+                <X className="w-4 h-4" />
+                退出管理
+              </button>
+            ) : (
+              <button
+                onClick={() => setSelectMode(true)}
+                className="flex items-center gap-2 px-3 py-1.5 text-sm bg-[#EEF1F7] hover:bg-[#E5E9F4] rounded-lg transition-colors"
+              >
+                <ListChecks className="w-4 h-4" />
+                批量删除
+              </button>
+            )
+          )}
+          <button
+            onClick={() => fetchTasks(true)}
+            disabled={refreshing}
+            className="flex items-center gap-2 px-3 py-1.5 text-sm bg-[#EEF1F7] hover:bg-[#E5E9F4] rounded-lg transition-colors"
+          >
+            <RefreshCw className={`w-4 h-4 ${refreshing ? "animate-spin" : ""}`} />
+            刷新
+          </button>
+        </div>
       </div>
 
       {/* 排序 + 筛选栏 */}
@@ -302,6 +376,33 @@ export default function HistoryPage() {
         </div>
       )}
 
+      {/* 批量管理操作栏 */}
+      {selectMode && tasks.length > 0 && (
+        <div className="flex items-center gap-4 mb-4 p-3 bg-white border border-[#D8DCE8] rounded-xl">
+          <button
+            onClick={toggleSelectAll}
+            disabled={deletableInView.length === 0}
+            className="flex items-center gap-2 text-sm text-[#0F1C36] disabled:text-[#8E9BB0] disabled:cursor-not-allowed"
+          >
+            {allSelected ? (
+              <CheckSquare className="w-4 h-4 text-blue-500" />
+            ) : (
+              <Square className="w-4 h-4 text-[#8E9BB0]" />
+            )}
+            全选可删除项
+          </button>
+          <span className="text-sm text-[#8E9BB0]">已选 {selectedIds.size} 项</span>
+          <button
+            onClick={() => setBatchConfirm(true)}
+            disabled={selectedIds.size === 0 || batchDeleting}
+            className="ml-auto flex items-center gap-1.5 px-3 py-1.5 text-sm bg-red-600 hover:bg-red-500 text-white rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            <Trash2 className="w-4 h-4" />
+            删除选中{selectedIds.size > 0 ? `（${selectedIds.size}）` : ""}
+          </button>
+        </div>
+      )}
+
       {tasks.length === 0 ? (
         <div className="text-center py-16 bg-white rounded-xl border border-[#D8DCE8]">
           <FileText className="w-12 h-12 text-[#8E9BB0] mx-auto mb-4" />
@@ -322,15 +423,39 @@ export default function HistoryPage() {
           {filteredTasks.map((task) => (
             <div
               key={task.id}
-              onClick={() => handleViewReport(task)}
-              className={`p-4 bg-white border border-[#D8DCE8] rounded-xl transition-colors ${
-                task.status === "complete" || task.status === "running"
-                  ? "cursor-pointer hover:border-[#D8DCE8] hover:bg-[#EEF1F7]"
-                  : "opacity-75"
+              onClick={() => {
+                if (selectMode) {
+                  if (isDeletable(task)) toggleSelect(task.id);
+                } else {
+                  handleViewReport(task);
+                }
+              }}
+              className={`p-4 bg-white border rounded-xl transition-colors ${
+                selectMode
+                  ? isDeletable(task)
+                    ? selectedIds.has(task.id)
+                      ? "cursor-pointer border-blue-500/60 bg-blue-500/10"
+                      : "cursor-pointer border-[#D8DCE8] hover:bg-[#EEF1F7]"
+                    : "border-[#D8DCE8] opacity-50"
+                  : task.status === "complete" || task.status === "running"
+                    ? "cursor-pointer border-[#D8DCE8] hover:border-[#D8DCE8] hover:bg-[#EEF1F7]"
+                    : "border-[#D8DCE8] opacity-75"
               }`}
             >
               <div className="flex items-center justify-between gap-3">
                 <div className="flex items-center gap-4 flex-1 min-w-0">
+                  {/* 批量模式：选择框 */}
+                  {selectMode && (
+                    isDeletable(task) ? (
+                      selectedIds.has(task.id) ? (
+                        <CheckSquare className="w-5 h-5 text-blue-500 shrink-0" />
+                      ) : (
+                        <Square className="w-5 h-5 text-[#8E9BB0] shrink-0" />
+                      )
+                    ) : (
+                      <Square className="w-5 h-5 text-[#E5E9F4] shrink-0" />
+                    )
+                  )}
                   {/* 评分圆圈 or 文件图标 */}
                   {task.status === "complete" && task.total_score != null ? (
                     <ScoreCircle score={task.total_score} />
@@ -405,16 +530,16 @@ export default function HistoryPage() {
                     <span className="text-xs text-purple-400">→{Math.round(task.adjusted_score)}</span>
                   )}
                   {getStatusBadge(task.status)}
-                  {task.status === "complete" && (
+                  {!selectMode && isDeletable(task) && (
                     <button
                       onClick={(e) => { e.stopPropagation(); setDeleteConfirm(task.id); }}
                       className="p-1 text-[#8E9BB0] hover:text-red-400 transition-colors"
-                      title="删除报告"
+                      title={task.status === "complete" ? "删除报告" : "删除记录"}
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>
                   )}
-                  {(task.status === "complete" || task.status === "running") && (
+                  {!selectMode && (task.status === "complete" || task.status === "running") && (
                     <ChevronRight className="w-5 h-5 text-[#8E9BB0]" />
                   )}
                 </div>
@@ -440,8 +565,8 @@ export default function HistoryPage() {
         </div>
       )}
 
-      {/* 删除确认弹窗 */}
-      {deleteConfirm && (
+      {/* 删除确认弹窗（单条 / 批量共用） */}
+      {(deleteConfirm || batchConfirm) && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
           <div className="bg-white border border-[#D8DCE8] rounded-xl p-6 max-w-sm mx-4 shadow-2xl">
             <div className="flex items-center gap-3 mb-4">
@@ -451,19 +576,31 @@ export default function HistoryPage() {
               <h3 className="text-lg font-bold">确认删除</h3>
             </div>
             <p className="text-[#4B5A72] text-sm mb-6">
-              删除后该报告将从您的列表中移除，<strong className="text-red-400">此操作不可恢复</strong>。确定要继续吗？
+              {batchConfirm ? (
+                <>
+                  确认删除选中的 <strong className="text-[#0F1C36]">{selectedIds.size}</strong> 条记录？删除后将从您的列表中移除，
+                  <strong className="text-red-400">此操作不可恢复</strong>。
+                </>
+              ) : (
+                <>
+                  删除后该报告将从您的列表中移除，<strong className="text-red-400">此操作不可恢复</strong>。确定要继续吗？
+                </>
+              )}
             </p>
             <div className="flex gap-3 justify-end">
               <button
-                onClick={() => setDeleteConfirm(null)}
-                className="px-4 py-2 text-sm bg-[#EEF1F7] hover:bg-[#E5E9F4] rounded-lg transition-colors"
+                onClick={() => (batchConfirm ? setBatchConfirm(false) : setDeleteConfirm(null))}
+                disabled={batchDeleting}
+                className="px-4 py-2 text-sm bg-[#EEF1F7] hover:bg-[#E5E9F4] rounded-lg transition-colors disabled:opacity-60"
               >
                 取消
               </button>
               <button
-                onClick={() => handleDeleteTask(deleteConfirm)}
-                className="px-4 py-2 text-sm bg-red-600 hover:bg-red-500 rounded-lg transition-colors font-medium"
+                onClick={() => (batchConfirm ? handleBatchDelete() : handleDeleteTask(deleteConfirm))}
+                disabled={batchDeleting}
+                className="px-4 py-2 text-sm bg-red-600 hover:bg-red-500 text-white rounded-lg transition-colors font-medium disabled:opacity-60 flex items-center gap-1.5"
               >
+                {batchDeleting && <Loader2 className="w-4 h-4 animate-spin" />}
                 确认删除
               </button>
             </div>

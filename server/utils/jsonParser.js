@@ -81,6 +81,8 @@ function repairTruncatedJson(str) {
 function preprocessMinimaxOutput(raw) {
   if (!raw || typeof raw !== "string") return raw;
   let processed = raw;
+  processed = processed.replace(/<think>[\s\S]*?<\/think>/gi, "");
+  processed = processed.replace(/^\s*<think>[\s\S]*?(?=\{|\[|$)/i, "");
   processed = processed.replace(/<minimax:tool_call>[\s\S]*?<\/minimax:tool_call>/g, "");
   processed = processed.replace(/<minimax:tool_result>[\s\S]*?<\/minimax:tool_result>/g, "");
   processed = processed.replace(/<invoke[^>]*>[\s\S]*?<\/invoke>/g, "");

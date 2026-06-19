@@ -28,6 +28,16 @@ function parseJsonObject(value) {
   }
 }
 
+function splitInlineThinking(content) {
+  const text = String(content || "");
+  let thinking = "";
+  const cleaned = text.replace(/<think>([\s\S]*?)<\/think>/gi, (_m, inner) => {
+    thinking += inner || "";
+    return "";
+  }).trim();
+  return { thinking, text: cleaned };
+}
+
 function normalizeMessages(messages = []) {
   const out = [];
   for (const msg of messages || []) {
@@ -101,11 +111,13 @@ function toAnthropicLikeResponse(data) {
   const choice = data?.choices?.[0] || {};
   const message = choice.message || {};
   const content = [];
-  if (message.reasoning_content) {
-    content.push({ type: "thinking", thinking: message.reasoning_content });
+  const inline = splitInlineThinking(message.content || "");
+  const reasoning = message.reasoning_content || inline.thinking;
+  if (reasoning) {
+    content.push({ type: "thinking", thinking: reasoning });
   }
-  if (message.content) {
-    content.push({ type: "text", text: message.content });
+  if (inline.text) {
+    content.push({ type: "text", text: inline.text });
   }
   for (const call of message.tool_calls || []) {
     content.push({
@@ -127,7 +139,7 @@ function toAnthropicLikeResponse(data) {
   };
 }
 
-function buildKimiBody(body) {
+function buildKimiBody(body, opts = {}) {
   const kimiBody = {
     model: body.model,
     max_tokens: body.max_tokens,
@@ -140,6 +152,9 @@ function buildKimiBody(body) {
   if (tools.length) kimiBody.tools = tools;
   if (body.tool_choice) kimiBody.tool_choice = body.tool_choice;
   if (body.stream) kimiBody.stream = true;
+  if (opts.includeThinkingParam === false) {
+    return kimiBody;
+  }
   if (body.thinking) {
     kimiBody.thinking = body.thinking.type === "enabled"
       ? { type: "enabled" }
@@ -160,8 +175,9 @@ async function parseError(resp) {
   throw new KimiAPIError(`Kimi API 失败 (${resp.status}): ${msg}`, resp.status, text);
 }
 
-function createKimiCompatClient({ apiKey, baseURL }) {
+function createKimiCompatClient({ apiKey, baseURL, provider = "kimi" }) {
   const endpoint = resolveKimiChatEndpoint(baseURL);
+  const includeThinkingParam = true;
 
   async function create(body) {
     const resp = await fetch(endpoint, {
@@ -170,7 +186,7 @@ function createKimiCompatClient({ apiKey, baseURL }) {
         Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify(buildKimiBody(body)),
+      body: JSON.stringify(buildKimiBody(body, { includeThinkingParam })),
     });
     if (!resp.ok) await parseError(resp);
     return toAnthropicLikeResponse(await resp.json());
@@ -178,7 +194,12 @@ function createKimiCompatClient({ apiKey, baseURL }) {
 
   function stream(body) {
     const abortController = new AbortController();
-    const iterator = streamIterator(endpoint, apiKey, buildKimiBody({ ...body, stream: true }), abortController);
+    const iterator = streamIterator(
+      endpoint,
+      apiKey,
+      buildKimiBody({ ...body, stream: true }, { includeThinkingParam }),
+      abortController
+    );
     return {
       controller: abortController,
       [Symbol.asyncIterator]() {

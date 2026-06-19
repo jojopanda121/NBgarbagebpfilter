@@ -165,14 +165,15 @@ function buildKimiBody(body, opts = {}) {
   return kimiBody;
 }
 
-async function parseError(resp) {
+async function parseError(resp, provider = "Kimi") {
   const text = await resp.text().catch(() => "");
-  let msg = text || resp.statusText || "Kimi API request failed";
+  const providerLabel = provider === "minimax" ? "MiniMax" : "Kimi";
+  let msg = text || resp.statusText || `${providerLabel} API request failed`;
   try {
     const json = JSON.parse(text);
     msg = json?.error?.message || json?.message || msg;
   } catch (_) { /* ignore */ }
-  throw new KimiAPIError(`Kimi API 失败 (${resp.status}): ${msg}`, resp.status, text);
+  throw new KimiAPIError(`${providerLabel} API 失败 (${resp.status}): ${msg}`, resp.status, text);
 }
 
 function createKimiCompatClient({ apiKey, baseURL, provider = "kimi" }) {
@@ -188,7 +189,7 @@ function createKimiCompatClient({ apiKey, baseURL, provider = "kimi" }) {
       },
       body: JSON.stringify(buildKimiBody(body, { includeThinkingParam })),
     });
-    if (!resp.ok) await parseError(resp);
+    if (!resp.ok) await parseError(resp, provider);
     return toAnthropicLikeResponse(await resp.json());
   }
 
@@ -198,7 +199,8 @@ function createKimiCompatClient({ apiKey, baseURL, provider = "kimi" }) {
       endpoint,
       apiKey,
       buildKimiBody({ ...body, stream: true }, { includeThinkingParam }),
-      abortController
+      abortController,
+      provider
     );
     return {
       controller: abortController,
@@ -211,7 +213,7 @@ function createKimiCompatClient({ apiKey, baseURL, provider = "kimi" }) {
   return { messages: { create, stream } };
 }
 
-async function* streamIterator(endpoint, apiKey, body, abortController) {
+async function* streamIterator(endpoint, apiKey, body, abortController, provider = "kimi") {
   const resp = await fetch(endpoint, {
     method: "POST",
     headers: {
@@ -222,7 +224,7 @@ async function* streamIterator(endpoint, apiKey, body, abortController) {
     body: JSON.stringify(body),
     signal: abortController.signal,
   });
-  if (!resp.ok) await parseError(resp);
+  if (!resp.ok) await parseError(resp, provider);
 
   const decoder = new TextDecoder();
   let buffer = "";

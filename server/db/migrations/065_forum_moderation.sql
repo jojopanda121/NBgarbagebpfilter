@@ -1,4 +1,4 @@
--- 061_forum_moderation.sql
+-- 065_forum_moderation.sql
 -- 论坛管理：置顶 / 精华。
 -- 仅影响展示排序与标记，不触碰 score_snapshot / risk_flags（评分快照与风险旗标不可篡改）。
 -- 下架/恢复沿用既有 forum_posts.status('published'|'removed') + removed_reason，无需新列。

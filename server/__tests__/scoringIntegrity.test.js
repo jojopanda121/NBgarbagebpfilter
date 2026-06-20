@@ -10,10 +10,13 @@
 
 const {
   calculateDimension5_Integrity,
+  analyzeIntegrity,
+  classifyProjectStage,
   assessIntegrityVeto,
   scoreProject,
   VERDICT_SCORE_MAP,
   INTEGRITY_VETO_CAP,
+  INTEGRITY_SOFT_CAP,
 } = require("../scoring");
 
 const {
@@ -314,5 +317,182 @@ describe("F-10: 专家确定性结论计入 live 评分", () => {
     const a = calculateScoring(baseValidated, claims, noopProgress, { error: "执行失败" });
     const b = calculateScoring(baseValidated, claims, noopProgress, null);
     expect(a.scoringResult.total_score).toBe(b.scoringResult.total_score);
+  });
+});
+
+// ============================================================
+// v5 诚信度重构：拆开"诚实/可核实"、按阶段判夸大、谨慎分层否决
+// ============================================================
+describe("v5: 存疑/无据剔除 + 覆盖率折让", () => {
+  const q = (n, category = "market") =>
+    Array(n).fill(null).map(() => ({ verdict: "存疑", category }));
+
+  test("存疑不再以 6 分惩罚——不拉低 integrity_raw，只降覆盖率与置信度", () => {
+    const honestOnly = analyzeIntegrity(honest(6, "market"));
+    const withQ = analyzeIntegrity([...honest(6, "market"), ...q(6)]);
+    expect(honestOnly.integrity_raw).toBe(100);
+    expect(withQ.integrity_raw).toBe(100);            // 存疑没拉低"原始诚信"
+    expect(withQ.coverage).toBeCloseTo(0.5, 5);       // 但拉低了覆盖率
+    expect(withQ.score).toBeLessThan(honestOnly.score); // 经置信度折让，而非 6 分惩罚
+    expect(withQ.score).toBeGreaterThan(75);          // 远高于旧逻辑 (5×10+...) 的拖分
+  });
+
+  test("低覆盖率把分数向中性 60 折让，既不虚高也不误杀", () => {
+    const r = analyzeIntegrity([{ verdict: "诚实", category: "market" }, ...q(9)]);
+    expect(r.verifiable).toBe(1);
+    expect(r.coverage).toBeCloseTo(0.1, 5);
+    expect(r.score).toBeLessThan(75);   // 1 真话 + 9 存疑 不该接近满分
+    expect(r.score).toBeGreaterThan(55); // 也不惩罚
+  });
+
+  test("无任何可核实声明 → 中性，不被存疑误判为不诚信", () => {
+    const r = analyzeIntegrity(q(8));
+    expect(r.verifiable).toBe(0);
+    expect(r.score).toBeGreaterThanOrEqual(55);
+    expect(r.score).toBeLessThanOrEqual(65);
+  });
+});
+
+describe("v5: 项目阶段分级（只认有据信号，查不到按早期从严）", () => {
+  test("无任何已验证信号 → 早期（默认从严）", () => {
+    expect(classifyProjectStage({})).toBe("early");
+    expect(classifyProjectStage({ TRL: 5 })).toBe("early");
+  });
+
+  test("高 TRL → 成熟/成长", () => {
+    expect(classifyProjectStage({ TRL: 9 })).toBe("mature");
+    expect(classifyProjectStage({ TRL: 7 })).toBe("growth");
+  });
+
+  test("已验证牵引信号升档（verified/public_evidence）", () => {
+    const v = [
+      { category: "financial", verdict: "诚实", evidence_status: "verified" },
+      { category: "product", verdict: "保守低估", evidence_status: "public_evidence" },
+    ];
+    expect(classifyProjectStage({ claim_verdicts: v })).toBe("mature");
+    expect(classifyProjectStage({ claim_verdicts: [v[0]] })).toBe("growth");
+  });
+
+  test("BP 自报但无据（bp_only/unavailable）→ 不升档（防自报刷档）", () => {
+    const v = [
+      { category: "financial", verdict: "诚实", evidence_status: "bp_only" },
+      { category: "financial", verdict: "诚实", evidence_status: "unavailable" },
+    ];
+    expect(classifyProjectStage({ claim_verdicts: v })).toBe("early");
+  });
+});
+
+describe("v5: 夸大扣分随阶段反向调节", () => {
+  test("成熟期夸大扣分轻于早期（行业常态，后期近乎话术）", () => {
+    const claim = [{ category: "financial", verdict: "夸大" }, ...honest(4, "market")];
+    const mature = analyzeIntegrity(claim, { stage: "mature" }).score;
+    const early = analyzeIntegrity(claim, { stage: "early" }).score;
+    expect(mature).toBeGreaterThan(early);
+  });
+});
+
+describe("v5: 谨慎分层否决", () => {
+  test("前瞻预测的财务严重夸大 → 不否决（长鑫场景核心）", () => {
+    const projection = {
+      category: "financial", verdict: "严重夸大", severity: "高",
+      original_claim: "公司2020-2023年收入预计15亿、65亿、135亿、300亿人民币",
+    };
+    expect(assessIntegrityVeto([projection]).triggered).toBe(false);
+  });
+
+  test("LLM 认怂（evidence_status=unavailable）的严重夸大 → 不否决", () => {
+    const guess = {
+      category: "financial", verdict: "严重夸大", severity: "高",
+      evidence_status: "unavailable", original_claim: "收入夸大约 5 倍",
+    };
+    expect(assessIntegrityVeto([guess]).triggered).toBe(false);
+  });
+
+  test("成熟期·有据·非预测的严重夸大 → 不否决（只扣分）；早期同条件 → 软否决", () => {
+    const claim = [{
+      category: "financial", verdict: "严重夸大", severity: "高",
+      original_claim: "2023年收入5000万实际约100万",
+    }];
+    expect(assessIntegrityVeto(claim, { stage: "mature" }).triggered).toBe(false);
+    const early = assessIntegrityVeto(claim, { stage: "early" });
+    expect(early.hard).toBe(false);
+    expect(early.soft).toBe(true);
+  });
+
+  test("证伪（有据·已实现事实）→ 硬否决，任何阶段", () => {
+    const f = [{ category: "financial", verdict: "证伪", original_claim: "宣称已盈利实为持续亏损" }];
+    expect(assessIntegrityVeto(f, { stage: "mature" }).hard).toBe(true);
+    expect(assessIntegrityVeto(f, { stage: "early" }).hard).toBe(true);
+  });
+
+  test("软封顶：早期重大严重夸大把偏高的 raw 压到 INTEGRITY_SOFT_CAP 以内；成熟期不封", () => {
+    const claims = [
+      { category: "financial", verdict: "严重夸大", severity: "高", original_claim: "2023年收入实际仅为宣称的 1/8" },
+      { category: "financial", verdict: "诚实" },
+      { category: "financial", verdict: "诚实" },
+      ...honest(6, "market"),
+    ];
+    const early = analyzeIntegrity(claims, { stage: "early" });
+    expect(early.veto.soft).toBe(true);
+    expect(early.score).toBeLessThanOrEqual(INTEGRITY_SOFT_CAP);
+    // 成熟期同样输入不软否决，分数高于软封顶（夸大是话术，基本盘可验证）
+    expect(analyzeIntegrity(claims, { stage: "mature" }).score).toBeGreaterThan(INTEGRITY_SOFT_CAP);
+  });
+
+  test("scoreProject：早期有据严重夸大 → 软否决(soft, 非 hard)，评级不为 A", () => {
+    const r = scoreProject({
+      TAM_Million_RMB: 5000, CAGR: 25, TRL: 6, Competitor_Rank_Score: 8,
+      Industry_Capital_Score: 8, Industry_Scale_Score: 8,
+      Team_Experience_Score: 8, Team_Domain_Match_Score: 8, Team_Completeness_Score: 8,
+      Team_Track_Record_Score: 7, Team_Education_Score: 8,
+      claim_verdicts: [{
+        category: "financial", verdict: "严重夸大", severity: "高",
+        original_claim: "2023年收入实际仅为宣称的 1/10",
+      }],
+    });
+    expect(r.integrity_veto?.soft).toBe(true);
+    expect(r.integrity_veto?.hard).toBe(false);
+    expect(r.grade).not.toBe("A");
+  });
+});
+
+describe("v5: 长鑫/长江回归场景", () => {
+  test("长鑫式：多数诚实 + 财务预测严重夸大 → 不否决、诚信高、预测列尽调红旗", () => {
+    const claims = [
+      ...Array(9).fill({ verdict: "诚实", category: "market" }),
+      ...Array(2).fill({ verdict: "保守低估", category: "team" }),
+      ...Array(10).fill({ verdict: "存疑", category: "market" }),
+      { verdict: "夸大", category: "market" },
+      {
+        category: "financial", verdict: "严重夸大", severity: "高",
+        original_claim: "公司2020-2023年收入预计15亿、65亿、135亿、300亿人民币",
+      },
+      {
+        category: "financial", verdict: "严重夸大", severity: "高",
+        evidence_status: "bp_only", original_claim: "2023年净利润10亿后大幅增长",
+      },
+    ];
+    const ana = analyzeIntegrity(claims);
+    expect(ana.veto.triggered).toBe(false);     // 预测 + 认怂都不触发
+    expect(ana.score).toBeGreaterThan(75);       // 不再是被否决的 25
+    expect(ana.dd_flags.length).toBeGreaterThanOrEqual(2); // 但作为尽调红旗呈现
+  });
+
+  test("长江式：多数存疑 + 少量诚实 → 诚信不被存疑拖低，覆盖率如实偏低", () => {
+    const claims = [
+      ...Array(11).fill({ verdict: "存疑", category: "market" }),
+      { verdict: "诚实", category: "team" },
+      { verdict: "保守低估", category: "team" },
+      { verdict: "诚实", category: "product" },
+      { verdict: "保守低估", category: "product" },
+      {
+        category: "financial", verdict: "严重夸大", severity: "高",
+        evidence_status: "unavailable", original_claim: "市场份额第一",
+      },
+    ];
+    const ana = analyzeIntegrity(claims);
+    expect(ana.veto.triggered).toBe(false);
+    expect(ana.coverage).toBeLessThan(0.4);
+    expect(ana.score).toBeGreaterThan(70); // 远高于旧逻辑被存疑拖出的发黄 63
   });
 });

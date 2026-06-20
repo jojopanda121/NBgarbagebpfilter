@@ -21,9 +21,9 @@ function createRun({ runId, taskId, userId }) {
   const db = getDb();
   db.prepare(
     `INSERT OR IGNORE INTO agent_runs
-       (run_id, task_id, user_id, status, total_agents, finished_agents, failed_agents)
-     VALUES (?, ?, ?, 'pending', 6, 0, 0)`
-  ).run(runId, taskId || null, userId || null);
+       (run_id, task_id, agent_name, user_id, status, total_agents, finished_agents, failed_agents)
+     VALUES (?, ?, '__workflow__', ?, 'pending', 6, 0, 0)`
+  ).run(runId, taskId, userId || null);
 
   // 预建 agent_results 行（pending 状态）
   const ins = db.prepare(

@@ -114,8 +114,38 @@ function ensureColumnsExist(database) {
     console.log(`[DB] Column check warning: ${err.message}`);
   }
 
+  ensureAgentRunColumns(database);
+
   // 自动初始化管理员账号（如果配置了环境变量）
   initializeAdminUser(database);
+}
+
+function ensureAgentRunColumns(database) {
+  try {
+    const table = database.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='agent_runs'").get();
+    if (!table) return;
+
+    const columns = new Set(database.prepare("PRAGMA table_info(agent_runs)").all().map(col => col.name));
+    const addColumn = (name, definition) => {
+      if (columns.has(name)) return;
+      console.log(`[DB] Adding missing 'agent_runs.${name}' column...`);
+      database.exec(`ALTER TABLE agent_runs ADD COLUMN ${name} ${definition}`);
+      columns.add(name);
+    };
+
+    addColumn("user_id", "INTEGER");
+    addColumn("total_agents", "INTEGER DEFAULT 6");
+    addColumn("finished_agents", "INTEGER DEFAULT 0");
+    addColumn("failed_agents", "INTEGER DEFAULT 0");
+    addColumn("finished_at", "DATETIME");
+
+    database.exec(`
+      CREATE INDEX IF NOT EXISTS idx_agent_runs_user ON agent_runs(user_id);
+      CREATE INDEX IF NOT EXISTS idx_agent_runs_status ON agent_runs(status);
+    `);
+  } catch (err) {
+    console.log(`[DB] Agent run column check warning: ${err.message}`);
+  }
 }
 
 // 根据环境变量自动创建管理员

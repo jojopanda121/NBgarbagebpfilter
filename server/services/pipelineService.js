@@ -6,7 +6,7 @@
 const pLimit = require("p-limit");
 const { callLLM, callLLMWithThinking, callLLMWithSearch, getModelName } = require("./llmService");
 const { extractJson, extractJsonArray, extractPartialResult, ensureStringArray } = require("../utils/jsonParser");
-const { scoreProject, assessIntegrityVeto } = require("../scoring");
+const { scoreProject, analyzeIntegrity } = require("../scoring");
 const { mergeSpecialistEvidence, financialToVerdicts, valuationToVerdicts } = require("../scoringEvidence");
 const { runWebSearch, formatSearchContext } = require("./webSearchService");
 const logger = require("../utils/logger");
@@ -512,12 +512,16 @@ async function runAgentBWithBatchingAndResearch(extractedData, bpText, onProgres
   };
 }
 
+const _STAGE_LABEL = { early: "早期", growth: "成长期", mature: "成熟期" };
+
 /**
  * 基于声明核查结果生成诚信度维度的分析摘要（纯 JS，不依赖 LLM）
+ * v5：呈现核查覆盖率 + 项目阶段 + 分层否决，并把"存疑系知识盲区不扣分"说清楚。
  * @param {Array} claimVerdicts
+ * @param {object} [data] 评分输入（validated_data），用于派生项目阶段
  * @returns {{ finding, comprehensive_analysis, score_rationale, risk_factors, positive_signals }}
  */
-function buildIntegrityDimAnalysis(claimVerdicts) {
+function buildIntegrityDimAnalysis(claimVerdicts, data = {}) {
   if (!Array.isArray(claimVerdicts) || claimVerdicts.length === 0) {
     return {
       finding: "暂无声明核查数据",
@@ -540,31 +544,47 @@ function buildIntegrityDimAnalysis(claimVerdicts) {
     .map(([verdict, count]) => `${verdict} ${count} 条`)
     .join("、");
 
+  const ana = analyzeIntegrity(claimVerdicts, { data });
+  const stageLabel = _STAGE_LABEL[ana.stage] || "早期";
+  const coveragePct = Math.round(ana.coverage * 100);
+  const unverifiable = total - ana.verifiable;
+
   const honestCount = (counts["诚实"] || 0) + (counts["保守低估"] || 0);
   const exaggeratedCount = (counts["夸大"] || 0) + (counts["严重夸大"] || 0);
   const falseCount = counts["证伪"] || 0;
-  const dishonestCount = exaggeratedCount + falseCount + (counts["信息不对称"] || 0);
 
   const finding = `共核查 ${total} 条声明：${parts}。`;
-  const honestPct = Math.round((honestCount / total) * 100);
-  const dishonestPct = Math.round((dishonestCount / total) * 100);
+  const honestPct = ana.verifiable > 0 ? Math.round((honestCount / ana.verifiable) * 100) : 0;
 
   const riskFactors = [];
   const positiveSignals = [];
-  if (exaggeratedCount > 0) riskFactors.push(`${exaggeratedCount} 条声明存在夸大`);
+
+  // 否决（分硬/软）——最高优先级
+  if (ana.veto.hard) {
+    riskFactors.push(`触发诚信一票否决（硬否决·重大类别已实现事实被证伪/隐瞒）：${ana.veto.reasons[0]}`);
+  } else if (ana.veto.soft) {
+    riskFactors.push(`触发诚信软否决（${stageLabel}·重大类别有据严重夸大/隐瞒）：${ana.veto.reasons[0]}`);
+  }
+  if (exaggeratedCount > 0) riskFactors.push(`${exaggeratedCount} 条声明存在夸大（已按项目阶段【${stageLabel}】计权）`);
   if (falseCount > 0) riskFactors.push(`${falseCount} 条声明被证伪`);
   if (counts["信息不对称"] > 0) riskFactors.push(`${counts["信息不对称"]} 条声明涉嫌信息不对称`);
-  const veto = assessIntegrityVeto(claimVerdicts);
-  if (veto.triggered) {
-    riskFactors.unshift(`触发诚信一票否决（重大类别声明被证伪/严重夸大）：${veto.reasons[0]}`);
+  // 尽调红旗：前瞻预测/无独立证据的重大夸大（不否决但要追）
+  for (const f of ana.dd_flags) riskFactors.push(f);
+
+  if (honestCount > 0) positiveSignals.push(`可核实声明中 ${honestCount} 条（${honestPct}%）经核查属实或保守`);
+  positiveSignals.push(`核查覆盖率 ${ana.verifiable}/${total}（${coveragePct}%）；其余 ${unverifiable} 条为存疑/无法核实，系知识盲区，不计入诚信扣分`);
+  if (exaggeratedCount === 0 && falseCount === 0 && !ana.veto.triggered) {
+    positiveSignals.push("可核实声明中未发现夸大或造假迹象");
   }
-  if (honestCount > 0) positiveSignals.push(`${honestCount} 条声明（${honestPct}%）经核查属实或保守`);
-  if (dishonestPct === 0) positiveSignals.push("未发现明显夸大或造假迹象");
+
+  let vetoSentence = "";
+  if (ana.veto.hard) vetoSentence = " ⚠ 重大类别声明被证伪或已证实隐瞒，已触发诚信一票否决（硬否决），评级被强制限制。";
+  else if (ana.veto.soft) vetoSentence = ` ⚠ ${stageLabel}项目重大类别出现有据严重夸大/隐瞒，已触发诚信软否决，评级 A 已压至 B。`;
 
   return {
     finding,
-    comprehensive_analysis: `${finding} 诚实/保守声明占比 ${honestPct}%，存在问题声明占比 ${dishonestPct}%。存疑声明为 LLM 知识库覆盖不足所致，不代表项目问题。${veto.triggered ? " ⚠ 重大类别（财务/估值/合规）声明被证伪或严重夸大，已触发诚信一票否决，评级被强制限制。" : ""}`,
-    score_rationale: `verdict 映射（诚实/保守=10，存疑=6，夸大=3，信息不对称=2，严重夸大=1，证伪=0）后分组加权：财务/估值/合规等重大声明占 70%，其余声明占 30%；重大声明被证伪或严重夸大时 S5 封顶 25 分且评级封顶 C（不可被其他声明稀释）`,
+    comprehensive_analysis: `${finding} 项目阶段判定为【${stageLabel}】，夸大类按该阶段计权。诚信仅就可核实声明评判：可核实 ${ana.verifiable} 条（覆盖率 ${coveragePct}%），其中诚实/保守 ${honestCount} 条。其余 ${unverifiable} 条为存疑/无法核实，系 LLM 知识库覆盖不足，已不计入诚信扣分、仅降低核查覆盖率与置信度。${vetoSentence}`,
+    score_rationale: `诚信仅在可核实声明上计分（存疑/无独立证据剔除，只降覆盖率）：诚实/保守=10、信息不对称=2、证伪=0；夸大/严重夸大按项目阶段计权（成熟 8/5、成长 6/3、早期 4/2）。先按重大（财务/估值/合规）70% + 一般 30% 分组加权，再按核查覆盖率向中性 60 折让（覆盖率≥60% 给满置信）。重大类别已实现事实被证伪→硬封顶 25 分+评级封顶 C；早期/成长期有据严重夸大→软封顶 45 分+评级 A→B；前瞻预测与无独立证据的判断不触发否决，仅列尽调红旗。`,
     risk_factors: riskFactors,
     positive_signals: positiveSignals,
   };
@@ -601,7 +621,10 @@ function buildVerdictResponse(scoringResult, structuralResult, validatedData, di
   // 第五维度（BP诚信度）由 JS 生成分析摘要，不依赖 LLM 的 dimension_analysis
   const enrichedDimAnalysis = {
     ...dimensionAnalysis,
-    external_risk: buildIntegrityDimAnalysis(validatedData.claim_verdicts || []),
+    external_risk: buildIntegrityDimAnalysis(
+      validatedData.claim_verdicts || [],
+      { ...(validatedData.validated_data || {}), claim_verdicts: validatedData.claim_verdicts || [] }
+    ),
   };
 
   const dimensions = {};

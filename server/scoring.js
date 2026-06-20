@@ -229,107 +229,240 @@ function calculateDimension4_Team(teamData) {
  * 基于 Agent B 对 BP 所有关键声明的逐条核查结果，量化计算这份 BP 的
  * 信息质量与可信程度。
  *
- * 设计原则：
- *   "存疑" 是 LLM 知识库覆盖不足的结果，不是项目的问题，给及格分（6分）。
- *   只有可被证伪或有明确夸大证据的声明才拉低分数。
+ * v5 设计原则（拆开"诚实"与"可核实"，按阶段判夸大，谨慎用否决）：
+ *   诚信只衡量"可核实声明里他有没有如实说"。查不到的不进分子。
  *
- * verdict 映射规则（满分10）:
- *   诚实 / 保守低估  → 10    （正面信号）
- *   存疑             →  6    （及格分，无罪推定但不再偏上——LLM 知识盲区不奖励）
- *   夸大             →  3    （有证据的负面信号）
- *   信息不对称       →  2    （故意隐瞒）
- *   严重夸大         →  1    （严重负面）
- *   证伪             →  0    （声明明显错误）
+ * verdict 映射规则（满分10，夸大类随阶段调节）:
+ *   诚实 / 保守低估  → 10
+ *   存疑             →  剔除（不计入诚信均值，只降核查覆盖率/置信度）
+ *   夸大             →  8(成熟) / 6(成长) / 4(早期)   ——行业常态，后期近乎无所谓
+ *   信息不对称       →  2
+ *   严重夸大         →  5(成熟) / 3(成长) / 2(早期)
+ *   证伪             →  0
  *
- * v4.5 反稀释重构（修复"造假项目堆诚实声明洗分"漏洞）：
- *   1. 声明按 materiality 分组：financial / valuation / legal_compliance 为
- *      "重大组"（直接影响投资决策与资金安全），其余为"一般组"。
- *      S5 = 0.7 × 重大组均值 + 0.3 × 一般组均值（缺一组则用另一组）。
- *      → 核心财务声明的问题不再被 20 条"公司成立于某年"式真话摊薄。
- *   2. Integrity Veto（hard cap）：重大组出现"证伪"，或"严重夸大"且
- *      severity ∈ {严重, 高} → S5 封顶 INTEGRITY_VETO_CAP(25)，
- *      且评级封顶 C（见 scoreProject）。一票否决不可被任何数量的
- *      正面声明稀释——这是真实投委会的工作方式。
- *   3. 无 category 的旧数据全部落入一般组，行为与 v4.4 简单平均一致，向后兼容。
+ * 计算（analyzeIntegrity）：
+ *   1. 仅在"可核实"声明上算：integrity_raw = 0.7×重大组均值 + 0.3×一般组均值。
+ *      可核实 = 非"存疑" 且 evidence_status ∉ {unavailable, bp_only}。
+ *   2. 覆盖率折让：S5 = 60 + (raw − 60) × min(1, 覆盖率/0.6)。
+ *      可核实证据越少越向中性 60 靠拢，避免"几条真话→满分"虚高。
+ *   3. 分层 Integrity Veto（assessIntegrityVeto）——仅对"重大类别+非预测+有据"声明：
+ *      · 证伪 → 硬封顶 S5≤25 + 评级封顶 C（任何阶段）。
+ *      · 早期/成长期·有据·高严重度的"严重夸大/隐瞒" → 软封顶 S5≤45 + 评级 A→B。
+ *      · 成熟期严重夸大不否决（基本盘可验证，夸大是话术），只按计分表扣分。
+ *      · 前瞻预测（预计/计划/目标…）与 LLM 认怂的猜测一律不否决，转尽调红旗。
+ *   4. 无 category 旧数据落入一般组，向后兼容。
  *
- * 无数据兜底: 70（中性偏上，不误杀——没有声明可核查不代表不诚信）
+ * 无数据兜底: 70（中性偏上，没有声明可核查不代表不诚信）
  *
  * @param {Array} claimVerdicts - Agent B 输出的声明核查结果数组
- * @returns {number} 0-100 的整数得分
+ * @param {object} [ctx] - { stage?, data? }；缺省时由 data 派生阶段，再缺省按 early
+ * @returns {number} 0-100 的整数得分（完整拆解见 analyzeIntegrity）
  */
 const VERDICT_SCORE_MAP = {
   "诚实": 10,
   "保守低估": 10,
-  "存疑": 6,
-  "夸大": 3,
+  "夸大": 3,            // early 基准；实际按阶段查 EXAGGERATION_SCORE_BY_STAGE
   "信息不对称": 2,
-  "严重夸大": 1,
+  "严重夸大": 1,        // early 基准；实际按阶段查 EXAGGERATION_SCORE_BY_STAGE
   "证伪": 0,
+  // 「存疑」刻意保留 6 分，但仅供 prompts.js 向模型描述其"安全档"用——
+  // v5 评分实际把存疑从诚信均值里剔除（只降覆盖率/置信度，见 _isVerifiable）。
+  // 即"告诉模型 6 分（安全）、实际比 6 更宽容"，不构成 impl 漂移（不会更严厉）。
+  "存疑": 6,
+};
+
+// 夸大类得分随项目成熟度反向调节（v5）：
+//   后期有据可查 → 夸大是销售话术，基本盘可验证，扣分轻；
+//   早期无名无据 → BP 声明即全部投资逻辑，夸大就是虚构标的本身，扣分重。
+const EXAGGERATION_SCORE_BY_STAGE = {
+  "夸大":     { mature: 8, growth: 6, early: 4 },
+  "严重夸大": { mature: 5, growth: 3, early: 2 },
 };
 
 // 重大声明类别：造假直接威胁资金安全（财务/估值/合规）
 const MATERIAL_CLAIM_CATEGORIES = new Set(["financial", "valuation", "legal_compliance"]);
 const MATERIAL_GROUP_WEIGHT = 0.7;
-const INTEGRITY_VETO_CAP = 25;
-// veto 触发的 verdict：证伪无条件触发；严重夸大需 severity 佐证（避免误杀）
+
+// —— v5 诚信度旋钮 ——
+const INTEGRITY_VETO_CAP = 25;        // 硬否决（已实现事实被证伪/已证实隐瞒）封顶
+const INTEGRITY_SOFT_CAP = 45;        // 软否决（早期/成长期·有据·重大严重夸大）封顶
+const INTEGRITY_NEUTRAL = 60;         // 覆盖率折算锚：可核实证据越少，分数越向此靠拢
+const COVERAGE_FULL_CONFIDENCE = 0.6; // 核查覆盖率≥60% 给满置信，低于则线性折让
+const NO_CLAIMS_FALLBACK = 70;        // 完全无声明可核查 → 中性偏上（无声明≠不诚信）
+
+// 触发否决的 severity：避免把低严重度的判断升级成否决
 const VETO_SEVERITIES = new Set(["严重", "高"]);
+// LLM 明确认怂的证据档位：此时它的方向性判断只是猜测，不得据以否决/拉低诚信分
+const EVIDENCE_WEAK = new Set(["unavailable", "bp_only"]);
+// 前瞻预测（无法被证伪/严重夸大）——不进否决，只作尽调红旗
+const PROJECTION_RE = /预计|预测|预期|计划|目标|展望|规划|拟(?:于|在|定|实现|达)|将(?:达|超|实现|增至|突破)|未来\s*\d|forecast|projected|projection|guidance/i;
 
 function _isMaterialClaim(v) {
   return MATERIAL_CLAIM_CATEGORIES.has(String(v?.category || "").toLowerCase());
 }
 
-function _verdictScore(v) {
-  return VERDICT_SCORE_MAP[v?.verdict] ?? VERDICT_SCORE_MAP["存疑"];
+function _evidenceStatus(v) {
+  return String(v?.evidence_status || "").toLowerCase();
+}
+
+/** LLM 自己标了"查不到/仅 BP 自报" → 它的方向性判断不可作数（既不计分也不否决） */
+function _evidenceWeak(v) {
+  return EVIDENCE_WEAK.has(_evidenceStatus(v));
+}
+
+/** 是否前瞻预测：扫声明原文里的预测/计划措辞（未来无法被证伪） */
+function _isForwardProjection(v) {
+  const text = `${v?.original_claim || ""} ${v?.bp_claim || ""} ${v?.claim || ""}`;
+  return PROJECTION_RE.test(text);
 }
 
 /**
- * Integrity Veto 判定：重大类别声明被证伪/严重夸大（高严重度）→ 一票否决。
- * @returns {{ triggered: boolean, reasons: string[] }}
+ * 可核实声明 = 进入诚信均值的声明。排除三类（它们不拉低诚信分，只降覆盖率/置信度）：
+ *   1. 「存疑」—— LLM 知识盲区；
+ *   2. LLM 认怂（evidence_status ∈ {unavailable, bp_only}）的方向性判断；
+ *   3. 前瞻预测（预计/计划/目标…）—— 未来无法判断诚实与否，对称剔除（既不因
+ *      乐观预测被判"诚实"而虚高，也不因被判"严重夸大"而误伤），改列尽调红旗。
  */
-function assessIntegrityVeto(claimVerdicts) {
-  if (!Array.isArray(claimVerdicts)) return { triggered: false, reasons: [] };
-  const reasons = [];
-  for (const v of claimVerdicts) {
-    if (!v || !_isMaterialClaim(v)) continue;
-    const isVeto =
-      v.verdict === "证伪" ||
-      (v.verdict === "严重夸大" && VETO_SEVERITIES.has(String(v.severity || "")));
-    if (isVeto) {
-      const claimText = String(v.original_claim || v.claim || v.bp_claim || "").slice(0, 80);
-      reasons.push(`[${v.category}] ${v.verdict}：${claimText}`);
-    }
-  }
-  return { triggered: reasons.length > 0, reasons: reasons.slice(0, 5) };
+function _isVerifiable(v) {
+  if (!v) return false;
+  if (v.verdict === "存疑") return false;
+  if (_evidenceWeak(v)) return false;
+  if (_isForwardProjection(v)) return false;
+  return true;
 }
 
-function calculateDimension5_Integrity(claimVerdicts) {
-  if (!Array.isArray(claimVerdicts) || claimVerdicts.length === 0) {
-    return 70; // 无数据 → 中性偏上，没有声明可核查不代表不诚信
-  }
+/**
+ * 项目成熟度分级——只认"有据可查"的信号，查不到一律按早期从严。
+ * 防止 BP 自称后期来骗取夸大宽容（自报无法验证 → 不升档）。
+ * @returns {"early"|"growth"|"mature"}
+ */
+function classifyProjectStage(data = {}) {
+  const v = Array.isArray(data.claim_verdicts) ? data.claim_verdicts : [];
+  const strong = (x) => ["verified", "public_evidence"].includes(_evidenceStatus(x));
+  const OP = new Set(["financial", "valuation", "traction", "product", "market", "business"]);
+  const verifiedTraction = v.filter(
+    (x) => x && OP.has(String(x.category || "").toLowerCase())
+      && ["诚实", "保守低估"].includes(x.verdict) && strong(x)
+  ).length;
+  const trl = Number(data.TRL);
+  if (verifiedTraction >= 2 || (Number.isFinite(trl) && trl >= 8)) return "mature";
+  if (verifiedTraction >= 1 || (Number.isFinite(trl) && trl >= 7)) return "growth";
+  return "early";
+}
 
-  const material = [];
-  const general = [];
+function _verdictScore(v, stage) {
+  const byStage = EXAGGERATION_SCORE_BY_STAGE[v?.verdict];
+  if (byStage) return byStage[stage] ?? byStage.early;
+  return VERDICT_SCORE_MAP[v?.verdict] ?? 6; // 未知 verdict 当中性，不误杀
+}
+
+/**
+ * 分层 Integrity Veto（v5：谨慎、看证据、看阶段、排除预测）。
+ * 候选必须同时满足：重大类别 + 非前瞻预测 + 证据不弱（LLM 没认怂）。
+ *   - 证伪（已实现事实被证明为假） → 硬否决，任何阶段
+ *   - 信息不对称（已证实隐瞒重大负面，severity 高） → 软否决，仅早期/成长期
+ *   - 严重夸大（severity 高） → 软否决，仅早期/成长期；成熟期不否决（只扣分）
+ * @returns {{ triggered: boolean, hard: boolean, soft: boolean, reasons: string[] }}
+ */
+function assessIntegrityVeto(claimVerdicts, ctx = {}) {
+  const empty = { triggered: false, hard: false, soft: false, reasons: [] };
+  if (!Array.isArray(claimVerdicts)) return empty;
+  const stage = ctx.stage || classifyProjectStage(ctx.data || {});
+  const earlyish = stage === "early" || stage === "growth";
+  const hardReasons = [];
+  const softReasons = [];
   for (const v of claimVerdicts) {
-    (_isMaterialClaim(v) ? material : general).push(v);
+    if (!v || !_isMaterialClaim(v)) continue;
+    if (_isForwardProjection(v)) continue;   // 预测不否决（未来无法证伪）
+    if (_evidenceWeak(v)) continue;          // LLM 认怂的猜测不否决
+    const sevHigh = VETO_SEVERITIES.has(String(v.severity || ""));
+    const claimText = String(v.original_claim || v.claim || v.bp_claim || "").slice(0, 80);
+    if (v.verdict === "证伪") {
+      hardReasons.push(`[${v.category}] 证伪：${claimText}`);
+    } else if (v.verdict === "信息不对称" && sevHigh && earlyish) {
+      softReasons.push(`[${v.category}] 信息不对称（隐瞒重大负面）：${claimText}`);
+    } else if (v.verdict === "严重夸大" && sevHigh && earlyish) {
+      softReasons.push(`[${v.category}] 严重夸大：${claimText}`);
+    }
   }
+  const hard = hardReasons.length > 0;
+  const soft = !hard && softReasons.length > 0;
+  return {
+    triggered: hard || soft,
+    hard,
+    soft,
+    reasons: (hard ? hardReasons : softReasons).slice(0, 5),
+  };
+}
+
+/**
+ * 诚信度完整拆解（v5）：诚信只衡量"可核实声明里他有没有如实说"。
+ *   "查不到/LLM 认怂"的声明转入核查覆盖率，不拉低诚信分；
+ *   低覆盖 → 分数向中性(INTEGRITY_NEUTRAL)折让，避免"几条真话→满分"虚高。
+ * @returns {{ score, integrity_raw, coverage, verifiable, total, stage, veto, dd_flags }}
+ */
+function analyzeIntegrity(claimVerdicts, ctx = {}) {
+  const stage = ctx.stage || classifyProjectStage(ctx.data || {});
+  if (!Array.isArray(claimVerdicts) || claimVerdicts.length === 0) {
+    return {
+      score: NO_CLAIMS_FALLBACK, integrity_raw: NO_CLAIMS_FALLBACK,
+      coverage: 0, verifiable: 0, total: 0, stage,
+      veto: { triggered: false, hard: false, soft: false, reasons: [] },
+      dd_flags: [],
+    };
+  }
+  const total = claimVerdicts.length;
+  const verifiable = claimVerdicts.filter(_isVerifiable);
+  const coverage = total > 0 ? verifiable.length / total : 0;
+
+  const material = verifiable.filter(_isMaterialClaim);
+  const general = verifiable.filter((v) => !_isMaterialClaim(v));
   const groupAvg = (list) =>
     list.length === 0
       ? null
-      : (list.reduce((sum, v) => sum + _verdictScore(v), 0) / list.length) * 10;
-
+      : (list.reduce((sum, v) => sum + _verdictScore(v, stage), 0) / list.length) * 10;
   const m = groupAvg(material);
   const g = groupAvg(general);
-  let s5;
-  if (m == null) s5 = g;
-  else if (g == null) s5 = m;
-  else s5 = MATERIAL_GROUP_WEIGHT * m + (1 - MATERIAL_GROUP_WEIGHT) * g;
 
-  // hard cap：重大造假不可被正面声明数量稀释
-  if (assessIntegrityVeto(claimVerdicts).triggered) {
-    s5 = Math.min(s5, INTEGRITY_VETO_CAP);
+  let raw;
+  if (m == null && g == null) raw = INTEGRITY_NEUTRAL; // 无可核实声明 → 中性
+  else if (m == null) raw = g;
+  else if (g == null) raw = m;
+  else raw = MATERIAL_GROUP_WEIGHT * m + (1 - MATERIAL_GROUP_WEIGHT) * g;
+
+  const confidence = Math.max(0, Math.min(1, coverage / COVERAGE_FULL_CONFIDENCE));
+  let score = INTEGRITY_NEUTRAL + (raw - INTEGRITY_NEUTRAL) * confidence;
+
+  const veto = assessIntegrityVeto(claimVerdicts, { stage });
+  if (veto.hard) score = Math.min(score, INTEGRITY_VETO_CAP);
+  else if (veto.soft) score = Math.min(score, INTEGRITY_SOFT_CAP);
+
+  // 尽调红旗：被排除否决资格（前瞻预测 / LLM 认怂）的重大夸大/证伪仍要让投资人看到
+  const dd_flags = [];
+  for (const v of claimVerdicts) {
+    if (!_isMaterialClaim(v)) continue;
+    if (!["夸大", "严重夸大", "证伪"].includes(v.verdict)) continue;
+    const proj = _isForwardProjection(v);
+    if (proj || _evidenceWeak(v)) {
+      const t = String(v.original_claim || v.claim || v.bp_claim || "").slice(0, 80);
+      dd_flags.push(`[${v.category}] ${v.verdict}（${proj ? "前瞻预测" : "无独立证据"}，待尽调验证）：${t}`);
+    }
   }
 
-  return clampScore(s5);
+  return {
+    score: clampScore(score),
+    integrity_raw: Math.round(raw),
+    coverage,
+    verifiable: verifiable.length,
+    total,
+    stage,
+    veto,
+    dd_flags: dd_flags.slice(0, 5),
+  };
+}
+
+function calculateDimension5_Integrity(claimVerdicts, ctx = {}) {
+  return analyzeIntegrity(claimVerdicts, ctx).score;
 }
 
 /**
@@ -413,17 +546,37 @@ function _hasHarnessInputs(data) {
  */
 function _applyIntegrityVeto(result, vetoInfo) {
   if (!vetoInfo || !vetoInfo.triggered) return result;
-  result.integrity_veto = { triggered: true, reasons: vetoInfo.reasons };
-  if (result.grade === "A" || result.grade === "B") {
-    result.grade_overridden_from = result.grade;
-    result.grade = "C";
-    result.grade_label = "重大诚信红旗 (Integrity Veto)";
-    result.grade_action =
-      "核查发现重大类别声明（财务/估值/合规）被证伪或严重夸大，已触发一票否决：" +
-      "评级强制降至 C，禁止按原始分数推进。建议优先要求公司就被证伪声明提供原始凭证" +
-      "（审计报告、银行流水、合同原件），核实清楚前不进入投资流程。" +
-      (vetoInfo.reasons.length ? ` 触发依据：${vetoInfo.reasons.join("；")}` : "");
-    result.grade_color = "#f59e0b";
+  result.integrity_veto = {
+    triggered: true,
+    hard: !!vetoInfo.hard,
+    soft: !!vetoInfo.soft,
+    reasons: vetoInfo.reasons,
+  };
+  const why = vetoInfo.reasons.length ? ` 触发依据：${vetoInfo.reasons.join("；")}` : "";
+
+  if (vetoInfo.hard) {
+    // 硬否决：重大类别已实现事实被证伪/已证实隐瞒 → 评级封顶 C
+    if (result.grade === "A" || result.grade === "B") {
+      result.grade_overridden_from = result.grade;
+      result.grade = "C";
+      result.grade_label = "重大诚信红旗 (Integrity Veto)";
+      result.grade_action =
+        "核查发现重大类别声明（财务/估值/合规）被证伪或已证实隐瞒重大负面，已触发诚信一票否决（硬否决）：" +
+        "评级强制降至 C，禁止按原始分数推进。建议优先要求公司就被证伪声明提供原始凭证" +
+        "（审计报告、银行流水、合同原件），核实清楚前不进入投资流程。" + why;
+      result.grade_color = "#f59e0b";
+    }
+  } else if (vetoInfo.soft) {
+    // 软否决：早期/成长期·有据·高严重度的严重夸大或隐瞒 → 仅压住 A（A→B）
+    if (result.grade === "A") {
+      result.grade_overridden_from = result.grade;
+      result.grade = "B";
+      result.grade_label = "诚信软否决 (谨慎推进)";
+      result.grade_action =
+        "早期/成长期项目在重大类别（财务/估值/合规）出现有据的严重夸大或隐瞒，已触发诚信软否决：" +
+        "评级由 A 降至 B，须先打穿被夸大的关键假设、要求公司补充佐证后再推进。" + why;
+      result.grade_color = "#3b82f6";
+    }
   }
   return result;
 }
@@ -705,6 +858,9 @@ function scoreProject(data, opts = {}) {
   const aggMode = opts.aggModeOverride || scoringAggMode();     // 聚合: off | shadow | on
   const harnessAvailable = mode !== "off" && _hasHarnessInputs(data);
 
+  // 诚信度阶段一次定档，贯穿 S5 计分与分层否决（保证两者用同一阶段口径）
+  const integrityStage = classifyProjectStage(data);
+
   // 两维共用（不受 S2 harness 影响）
   const S1 = calculateDimension1_TimingAndCeiling(
     data.TAM_Million_RMB, data.CAGR, data.Company_Revenue_Growth_YoY);
@@ -751,11 +907,11 @@ function scoreProject(data, opts = {}) {
 
   // legacy 路径（始终算，作为 shadow 基线/兜底）
   const S2legacy = calculateDimension2_ProductAndMoat(data.TRL, data.Competitor_Rank_Score);
-  const S5legacy = calculateDimension5_Integrity(data.claim_verdicts);
+  const S5legacy = calculateDimension5_Integrity(data.claim_verdicts, { stage: integrityStage });
 
   // 没有 S2 harness 数据或 S2 开关 off → 纯 legacy（S3 仍可独立走 on/shadow）
   if (!harnessAvailable) {
-    const legacyVeto = assessIntegrityVeto(data.claim_verdicts);
+    const legacyVeto = assessIntegrityVeto(data.claim_verdicts, { stage: integrityStage });
     return _applyAggregation(
       attachS3Shadow(
         _applyIntegrityVeto(
@@ -780,9 +936,9 @@ function scoreProject(data, opts = {}) {
   const harnessVerdicts = gapVerdict
     ? [...(Array.isArray(data.claim_verdicts) ? data.claim_verdicts : []), gapVerdict]
     : data.claim_verdicts;
-  const S5harness = calculateDimension5_Integrity(harnessVerdicts);
+  const S5harness = calculateDimension5_Integrity(harnessVerdicts, { stage: integrityStage });
 
-  const harnessVeto = assessIntegrityVeto(harnessVerdicts);
+  const harnessVeto = assessIntegrityVeto(harnessVerdicts, { stage: integrityStage });
 
   if (mode === "on") {
     const result = _applyIntegrityVeto(
@@ -796,7 +952,7 @@ function scoreProject(data, opts = {}) {
   // S2 shadow：旧分生效，附 S2 harness 对照块（供校准）；live 仍受 Integrity Veto 封顶
   const live = _applyIntegrityVeto(
     _assemble(S1, S2legacy, S3live, S4, S5legacy, data, _S2_LEGACY_META(data), s3meta),
-    assessIntegrityVeto(data.claim_verdicts)
+    assessIntegrityVeto(data.claim_verdicts, { stage: integrityStage })
   );
   const shadow = _assemble(S1, h.S2, S3live, S4, S5harness, data, _s2HarnessMeta(h), s3meta);
   live.scoring_basis = "legacy";
@@ -823,6 +979,8 @@ module.exports = {
   calculateDimension3_CapitalEfficiencyAndScale,
   calculateDimension4_Team,
   calculateDimension5_Integrity,
+  analyzeIntegrity,
+  classifyProjectStage,
   assessIntegrityVeto,
   calculateTotalScore,
   getGrade,
@@ -831,4 +989,5 @@ module.exports = {
   VERDICT_SCORE_MAP,
   MATERIAL_CLAIM_CATEGORIES,
   INTEGRITY_VETO_CAP,
+  INTEGRITY_SOFT_CAP,
 };

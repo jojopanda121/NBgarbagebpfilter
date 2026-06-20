@@ -200,18 +200,19 @@ describe("calculateDimension5_Integrity (S5)", () => {
     expect(VERDICT_SCORE_MAP["证伪"]).toBe(0);
   });
 
-  test("realistic BP claim distribution scores reasonably", () => {
+  test("realistic BP claim distribution scores reasonably (v5: 存疑剔除 + 阶段计权)", () => {
     // Typical good BP: 40% honest, 35% uncertain, 20% exaggerated, 5% info asymmetry
     const verdicts = [
-      ...Array(8).fill({ verdict: "诚实" }),       // 8 × 10 = 80
-      ...Array(7).fill({ verdict: "存疑" }),       // 7 × 6 = 42
-      ...Array(4).fill({ verdict: "夸大" }),       // 4 × 3 = 12
-      ...Array(1).fill({ verdict: "信息不对称" }), // 1 × 2 = 2
+      ...Array(8).fill({ verdict: "诚实" }),       // 计分 8 × 10
+      ...Array(7).fill({ verdict: "存疑" }),       // v5: 剔除，不计分，只降覆盖率
+      ...Array(4).fill({ verdict: "夸大" }),       // v5: early 阶段 4 分/条
+      ...Array(1).fill({ verdict: "信息不对称" }), // 2 分
     ];
     const score = calculateDimension5_Integrity(verdicts);
-    // avg = (80 + 42 + 12 + 2) / 20 = 136 / 20 = 6.8 → 68
-    expect(score).toBeGreaterThanOrEqual(65);
-    expect(score).toBeLessThanOrEqual(71);
+    // v5: 可核实 13/20（覆盖率 0.65 ≥ 0.6 → 满置信）；
+    //     raw = (8×10 + 4×4 + 1×2) / 13 × 10 ≈ 75 → 75（存疑不再把分数拖到 68）
+    expect(score).toBeGreaterThanOrEqual(70);
+    expect(score).toBeLessThanOrEqual(80);
   });
 });
 

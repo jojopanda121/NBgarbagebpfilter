@@ -81,6 +81,85 @@ describe("BaseAgent.run() — retry logic", () => {
   });
 });
 
+describe("BaseAgent — MiniMax M3 think-only / 截断输出处理", () => {
+  it("retries with corrective feedback when the model returns think-only output, then succeeds", async () => {
+    callLLM
+      // 第一轮：M3 把预算烧在 <think> 上，没吐 JSON
+      .mockResolvedValueOnce("<think>let me think very hard about this</think>")
+      .mockResolvedValueOnce('{"recovered":true}');
+
+    const agent = new TestAgent({ maxRetries: 2 });
+    const result = await agent.run({ runId: "rt1", context: { text: "BASE_MSG" } });
+
+    expect(callLLM).toHaveBeenCalledTimes(2);
+    expect(result.userOutput).toEqual({ recovered: true });
+    expect(agentRunService.markAgentDone).toHaveBeenCalled();
+    expect(agentRunService.markAgentFailed).not.toHaveBeenCalled();
+  });
+
+  it("appends a 'finish the JSON' hint and escalates tokens (no model-tier switch, no thinking suppression) on the retry", async () => {
+    callLLM
+      .mockResolvedValueOnce("<think>burning tokens</think>")
+      .mockResolvedValueOnce('{"ok":true}');
+
+    const agent = new TestAgent({ maxRetries: 2, maxTokens: 4096 });
+    await agent.run({ runId: "rt2", context: { text: "BASE_MSG" } });
+
+    // 首轮：原始消息 + 原始 token 预算（数字签名）
+    const [, firstMsg, firstOpts] = callLLM.mock.calls[0];
+    expect(firstMsg).toBe("BASE_MSG");
+    expect(firstOpts).toBe(4096);
+
+    // 纠偏轮：消息追加"思考后务必输出完整 JSON"的提示，预算放大一倍（仍是数字签名，不切档）
+    const [, secondMsg, secondOpts] = callLLM.mock.calls[1];
+    expect(secondMsg).toContain("BASE_MSG");
+    expect(secondMsg).toContain("务必输出最终答案");
+    expect(secondOpts).toBe(8192); // 4096 * 2
+  });
+
+  it("fails after exhausting retries when every attempt is think-only", async () => {
+    callLLM.mockResolvedValue("<think>only ever thinking, never any json</think>");
+
+    const agent = new TestAgent({ maxRetries: 2 });
+    await expect(agent.run({ runId: "rt3", context: {} })).rejects.toThrow(/无有效 JSON/);
+
+    expect(callLLM).toHaveBeenCalledTimes(3); // 1 + 2 retries
+    expect(agentRunService.markAgentFailed).toHaveBeenCalledWith(
+      "rt3", "test", expect.objectContaining({ error: expect.stringMatching(/无有效 JSON/) })
+    );
+  });
+
+  it("useSearch path: think-only triggers retry with escalated maxTokens and no re-search", async () => {
+    callLLMWithSearch
+      .mockResolvedValueOnce({ text: "<think>burning the budget</think>" })
+      .mockResolvedValueOnce({ text: '{"ok":true}' });
+
+    const agent = new TestAgent({ useSearch: true, maxRetries: 2 }); // maxTokens=1024
+    const result = await agent.run({ runId: "rt4", context: {} });
+
+    expect(callLLMWithSearch).toHaveBeenCalledTimes(2);
+    const secondOpts = callLLMWithSearch.mock.calls[1][2];
+    expect(secondOpts.maxTokens).toBe(2048); // 1024 * 2
+    expect(secondOpts.preSearchQueries).toEqual([]); // 重试不重复检索
+    expect(result.userOutput).toEqual({ ok: true });
+  });
+
+  it("does not probe JSON when jsonOnly=false (non-JSON agents opt out)", async () => {
+    class TextAgent extends BaseAgent {
+      constructor() { super({ name: "text", systemPrompt: "s", maxTokens: 512, jsonOnly: false }); }
+      buildUserMessage() { return "hi"; }
+      parseResponse(raw) { return { userOutput: raw, dataPayload: raw }; }
+    }
+    callLLM.mockResolvedValue("just markdown prose, no json at all");
+
+    const agent = new TextAgent();
+    const result = await agent.run({ runId: "rt5", context: {} });
+
+    expect(callLLM).toHaveBeenCalledTimes(1); // 无 JSON 探针 → 不触发重试
+    expect(result.userOutput).toBe("just markdown prose, no json at all");
+  });
+});
+
 describe("BaseAgent — useSearch mode", () => {
   it("calls callLLMWithSearch when useSearch=true", async () => {
     callLLMWithSearch.mockResolvedValue({ text: '{"search":true}' });

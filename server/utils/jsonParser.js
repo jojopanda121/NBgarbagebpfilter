@@ -191,6 +191,51 @@ function extractJsonArray(raw) {
 }
 
 /**
+ * 诊断一段 LLM 原始输出能否解析出 JSON，不能时给出失败类别。
+ *
+ * 背景：MiniMax M3 是推理模型，会把推理写进正文 <think>，甚至把整个
+ * max_tokens 全烧在 <think> 上、根本不吐 JSON。这类"调用成功返回、但
+ * 内容没有可用 JSON"不会抛异常，普通 try/catch 抓不到，需要显式探测。
+ * 调用方据此区分"原样重试" vs "带『别再思考、直接输出 JSON』反馈重试"。
+ *
+ * @param {string} raw
+ * @param {object} [opts]
+ * @param {boolean} [opts.expectArray=false] 期望顶层是数组而非对象
+ * @returns {{ ok: boolean, reason?: 'empty'|'think_only'|'truncated'|'no_json', parsed?: any }}
+ *   reason 含义：
+ *     empty      — 输出为空 / 全空白
+ *     think_only — 剥掉 <think> 后什么都不剩（预算烧在思考上）
+ *     no_json    — 有正文但完全没有 JSON 结构（纯散文 / 解释）
+ *     truncated  — 有 JSON 起始但即使修复仍无法解析（被截断 / 畸形）
+ */
+function diagnoseJsonOutput(raw, opts = {}) {
+  const { expectArray = false } = opts;
+  if (!raw || typeof raw !== "string" || !raw.trim()) {
+    return { ok: false, reason: "empty" };
+  }
+
+  const parsed = expectArray ? extractJsonArray(raw) : extractJson(raw);
+  const typeOk = expectArray
+    ? Array.isArray(parsed)
+    : parsed && typeof parsed === "object" && !Array.isArray(parsed);
+  if (typeOk) return { ok: true, parsed };
+
+  // 解析失败 → 归因，供调用方决定重试策略
+  const stripped = preprocessMinimaxOutput(raw);
+  if (!stripped || !stripped.trim()) {
+    // 剥掉 <think> 后空空如也：整个 token 预算烧在了思考上
+    return { ok: false, reason: "think_only" };
+  }
+  if (!stripped.includes("{") && !stripped.includes("[")) {
+    // 有正文却没有任何 JSON 结构：纯散文，或 <think> 未闭合把 JSON 吞了
+    const hadThink = /<think>/i.test(raw);
+    return { ok: false, reason: hadThink ? "think_only" : "no_json" };
+  }
+  // 有 JSON 起始但解析不出来（repair 也救不回）→ 截断 / 畸形
+  return { ok: false, reason: "truncated" };
+}
+
+/**
  * Coerce every element of `arr` to a string.
  * LLM sometimes returns objects where strings are expected;
  * this prevents React error #31 ("Objects are not valid as a React child").
@@ -331,4 +376,5 @@ module.exports = {
   extractNestedJson,
   extractPartialResult,
   ensureStringArray,
+  diagnoseJsonOutput,
 };

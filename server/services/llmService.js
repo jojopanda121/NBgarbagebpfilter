@@ -225,10 +225,10 @@ function normalizeLLMError(err) {
  * @param {number|object} [maxTokensOrOpts=8192]  - 兼容旧签名 (数字 = maxTokens)；
  *                                                   或传 { maxTokens, userPrefix } 启用 prompt caching
  */
-async function callLLM(systemPrompt, userContent, maxTokensOrOpts = 8192) {
+async function callLLM(systemPrompt, userContent, maxTokensOrOpts = 12000) {
   ensureLLMConfigured();
   const opts = typeof maxTokensOrOpts === "object" ? maxTokensOrOpts : { maxTokens: maxTokensOrOpts };
-  const { maxTokens = 8192, userPrefix = "" } = opts;
+  const { maxTokens = 12000, userPrefix = "" } = opts;
   let lastError;
 
   // Prompt caching: 系统提示 + 用户消息可选前缀
@@ -468,7 +468,7 @@ async function callLLMChat(systemPrompt, messages, opts = {}) {
  */
 async function callLLMWithSearch(systemPrompt, userContent, opts = {}) {
   ensureLLMConfigured();
-  const { maxTokens = 8192, maxToolRounds = 6, preSearchQueries = [] } = opts;
+  const { maxTokens = 12000, maxToolRounds = 6, preSearchQueries = [] } = opts;
 
   const tools = [{
     name: "web_search",

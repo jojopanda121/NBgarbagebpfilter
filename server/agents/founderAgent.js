@@ -35,7 +35,7 @@ function encryptName(name) {
 
 class FounderAgent extends BaseAgent {
   constructor() {
-    super({ name: "founder", systemPrompt: PROMPT, maxTokens: 8192, useSearch: true });
+    super({ name: "founder", systemPrompt: PROMPT, maxTokens: 12000, useSearch: true });
   }
 
   buildSearchQueries({ extractedData }) {

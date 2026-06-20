@@ -6,6 +6,7 @@ const {
   extractJson,
   extractJsonArray,
   ensureStringArray,
+  diagnoseJsonOutput,
 } = require("../utils/jsonParser");
 
 describe("sanitizeJsonString", () => {
@@ -173,6 +174,63 @@ describe("extractJsonArray", () => {
     const input = '```json\n[{"claim": "test"}]\n';
     const result = extractJsonArray(input);
     expect(result).not.toBeNull();
+  });
+});
+
+describe("diagnoseJsonOutput", () => {
+  test("ok for clean object", () => {
+    expect(diagnoseJsonOutput('{"a":1}')).toEqual({ ok: true, parsed: { a: 1 } });
+  });
+
+  test("ok for object after stripping <think>", () => {
+    const r = diagnoseJsonOutput('<think>let me reason about this</think>\n{"a":1}');
+    expect(r.ok).toBe(true);
+    expect(r.parsed).toEqual({ a: 1 });
+  });
+
+  test("ok for repairable truncated object", () => {
+    // extractJson 的 repairTruncatedJson 能补齐这类截断 → 视为可用
+    const r = diagnoseJsonOutput('{"a": {"b": "c"');
+    expect(r.ok).toBe(true);
+  });
+
+  test("think_only when output is entirely a closed <think> block", () => {
+    // M3 把整个 max_tokens 烧在 <think> 上、根本没吐 JSON
+    expect(diagnoseJsonOutput("<think>burned the whole budget reasoning</think>"))
+      .toEqual({ ok: false, reason: "think_only" });
+  });
+
+  test("think_only when <think> is unclosed and eats the whole output", () => {
+    expect(diagnoseJsonOutput("<think>still reasoning, never produced any json"))
+      .toEqual({ ok: false, reason: "think_only" });
+  });
+
+  test("empty for blank / null input", () => {
+    expect(diagnoseJsonOutput("")).toEqual({ ok: false, reason: "empty" });
+    expect(diagnoseJsonOutput("   ")).toEqual({ ok: false, reason: "empty" });
+    expect(diagnoseJsonOutput(null)).toEqual({ ok: false, reason: "empty" });
+    expect(diagnoseJsonOutput(undefined)).toEqual({ ok: false, reason: "empty" });
+  });
+
+  test("no_json for prose with no JSON and no <think>", () => {
+    expect(diagnoseJsonOutput("抱歉，我无法完成该任务。"))
+      .toEqual({ ok: false, reason: "no_json" });
+  });
+
+  test("truncated for malformed JSON that repair cannot fix", () => {
+    const r = diagnoseJsonOutput('{"a": 1 "b": 2}'); // 缺逗号，修复器补不回来
+    expect(r.ok).toBe(false);
+    expect(r.reason).toBe("truncated");
+  });
+
+  test("expectArray: ok for top-level array", () => {
+    const r = diagnoseJsonOutput('[{"a":1}]', { expectArray: true });
+    expect(r.ok).toBe(true);
+    expect(r.parsed).toEqual([{ a: 1 }]);
+  });
+
+  test("expectArray: a lone object is not accepted", () => {
+    expect(diagnoseJsonOutput('{"a":1}', { expectArray: true }).ok).toBe(false);
   });
 });
 

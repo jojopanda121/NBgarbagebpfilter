@@ -6,7 +6,7 @@ const { extractJson } = require("../utils/jsonParser");
 class CompetitorAgent extends BaseAgent {
   constructor() {
     // useSearch=true 触发 callLLMWithSearch，获取最新竞品信息
-    super({ name: "competitor", systemPrompt: PROMPT, maxTokens: 8192, useSearch: true });
+    super({ name: "competitor", systemPrompt: PROMPT, maxTokens: 12000, useSearch: true });
   }
 
   buildUserMessage({ bpFullText, extractedData }) {

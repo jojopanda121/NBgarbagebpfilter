@@ -6,7 +6,7 @@ const MAX_BP_CHARS = 25000;
 
 class ProjectSummaryAgent extends BaseAgent {
   constructor() {
-    super({ name: "project_summary", systemPrompt: PROMPT, maxTokens: 4096 });
+    super({ name: "project_summary", systemPrompt: PROMPT, maxTokens: 6000 });
   }
 
   buildUserMessage({ bpFullText, extractedData }) {

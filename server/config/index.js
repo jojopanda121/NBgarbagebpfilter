@@ -34,7 +34,7 @@ const config = {
 
   // JWT
   jwtSecret: devJwtSecret,
-  jwtExpiresIn: process.env.JWT_EXPIRES_IN || "12h",
+  jwtExpiresIn: process.env.JWT_EXPIRES_IN || "24h",
 
   // Database
   dbPath: process.env.DB_PATH || require("path").join(__dirname, "..", "..", "data", "app.db"),

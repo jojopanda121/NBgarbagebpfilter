@@ -62,7 +62,7 @@ cp .env.example .env
 | `PORT` | `3001` | 应用监听端口 |
 | `APP_BIND_HOST` | `127.0.0.1` | 应用端口宿主机绑定地址；**对外裸暴露请改成 `0.0.0.0`，但建议保持默认 + 走 Nginx** |
 | `DB_PATH` | `./data/app.db` | SQLite 文件路径（容器内为 `/app/data/app.db`） |
-| `JWT_EXPIRES_IN` | `12h` | Token 有效期 |
+| `JWT_EXPIRES_IN` | `24h` | Token 有效期 |
 | `DEFAULT_FREE_QUOTA` | `3` | 新用户注册赠送的分析次数 |
 | `ADMIN_USERNAME` / `ADMIN_PASSWORD` | – | 启动时自动创建/升级该账号为管理员（密码 ≥ 6 位） |
 | `DOC_SERVICE_URL` | – | 文档提取微服务地址；Docker 部署时由 compose 自动设为 `http://doc-service:8001`，**不需要在 .env 里填** |

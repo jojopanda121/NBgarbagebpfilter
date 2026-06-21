@@ -10,6 +10,7 @@ const { requireAuth } = require("../middleware/auth");
 const adminController = require("../controllers/adminController");
 const trackingController = require("../controllers/trackingController");
 const forumAdmin = require("../services/forumAdminService");
+const { jsonHandler } = require("./routeUtils");
 
 const imageUpload = multer({
   dest: os.tmpdir(),
@@ -89,27 +90,17 @@ router.get("/feedback", adminController.requireAdmin, adminController.getFeedbac
 router.post("/feedback/:id/reply", adminController.requireAdmin, adminController.replyFeedback);
 
 // 论坛管理
-function adminJson(handler) {
-  return (req, res, next) => {
-    try {
-      res.json(handler(req));
-    } catch (err) {
-      next(err);
-    }
-  };
-}
-
-router.get("/forum/analytics", adminController.requireAdmin, adminJson((req) =>
+router.get("/forum/analytics", adminController.requireAdmin, jsonHandler((req) =>
   forumAdmin.analytics({ days: req.query.days })
 ));
-router.get("/forum/reports", adminController.requireAdmin, adminJson((req) =>
+router.get("/forum/reports", adminController.requireAdmin, jsonHandler((req) =>
   forumAdmin.listReports({
     status: req.query.status || "pending",
     page: req.query.page,
     pageSize: req.query.pageSize,
   })
 ));
-router.post("/forum/reports/:id/resolve", adminController.requireAdmin, adminJson((req) =>
+router.post("/forum/reports/:id/resolve", adminController.requireAdmin, jsonHandler((req) =>
   forumAdmin.resolveReport({
     reportId: Number(req.params.id),
     adminId: req.user.id,
@@ -117,7 +108,7 @@ router.post("/forum/reports/:id/resolve", adminController.requireAdmin, adminJso
     reason: req.body.reason,
   })
 ));
-router.get("/forum/posts", adminController.requireAdmin, adminJson((req) =>
+router.get("/forum/posts", adminController.requireAdmin, jsonHandler((req) =>
   forumAdmin.listAdminPosts({
     status: req.query.status || "all",
     category: req.query.category,
@@ -126,47 +117,47 @@ router.get("/forum/posts", adminController.requireAdmin, adminJson((req) =>
     pageSize: req.query.pageSize,
   })
 ));
-router.post("/forum/posts/:id/moderate", adminController.requireAdmin, adminJson((req) =>
+router.post("/forum/posts/:id/moderate", adminController.requireAdmin, jsonHandler((req) =>
   forumAdmin.moderatePost({
     postId: Number(req.params.id),
     op: req.body.op,
     reason: req.body.reason,
   })
 ));
-router.get("/forum/comments", adminController.requireAdmin, adminJson((req) =>
+router.get("/forum/comments", adminController.requireAdmin, jsonHandler((req) =>
   forumAdmin.listAdminComments({
     status: req.query.status || "all",
     page: req.query.page,
     pageSize: req.query.pageSize,
   })
 ));
-router.post("/forum/comments/:id/moderate", adminController.requireAdmin, adminJson((req) =>
+router.post("/forum/comments/:id/moderate", adminController.requireAdmin, jsonHandler((req) =>
   forumAdmin.moderateComment({
     commentId: Number(req.params.id),
     op: req.body.op,
   })
 ));
-router.get("/forum/identity", adminController.requireAdmin, adminJson((req) =>
+router.get("/forum/identity", adminController.requireAdmin, jsonHandler((req) =>
   forumAdmin.listIdentity({
     verified: req.query.verified,
     page: req.query.page,
     pageSize: req.query.pageSize,
   })
 ));
-router.post("/forum/identity/:id/verify", adminController.requireAdmin, adminJson((req) =>
+router.post("/forum/identity/:id/verify", adminController.requireAdmin, jsonHandler((req) =>
   forumAdmin.setIdentityVerified({
     userId: Number(req.params.id),
     verified: !!req.body.verified,
   })
 ));
-router.get("/forum/deals", adminController.requireAdmin, adminJson((req) =>
+router.get("/forum/deals", adminController.requireAdmin, jsonHandler((req) =>
   forumAdmin.listDeals({
     status: req.query.status || "all",
     page: req.query.page,
     pageSize: req.query.pageSize,
   })
 ));
-router.post("/forum/deals/:id/intervene", adminController.requireAdmin, adminJson((req) =>
+router.post("/forum/deals/:id/intervene", adminController.requireAdmin, jsonHandler((req) =>
   forumAdmin.interveneDeal({
     dealId: Number(req.params.id),
     op: req.body.op,

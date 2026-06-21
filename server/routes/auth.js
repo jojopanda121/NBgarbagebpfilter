@@ -13,6 +13,7 @@ const loginLimiter = rateLimit({
   message: { error: "登录尝试次数过多，请 15 分钟后再试" },
   standardHeaders: true,
   legacyHeaders: false,
+  skipSuccessfulRequests: true,
   validate: { default: false },
 });
 

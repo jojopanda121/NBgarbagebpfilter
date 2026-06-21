@@ -296,6 +296,10 @@ const VETO_SEVERITIES = new Set(["严重", "高"]);
 const EVIDENCE_WEAK = new Set(["unavailable", "bp_only"]);
 // 前瞻预测（无法被证伪/严重夸大）——不进否决，只作尽调红旗
 const PROJECTION_RE = /预计|预测|预期|计划|目标|展望|规划|拟(?:于|在|定|实现|达)|将(?:达|超|实现|增至|突破)|未来\s*\d|forecast|projected|projection|guidance/i;
+// 缺数据/未披露 不是声明：不计诚信、不否决、不列红旗，只降覆盖率。
+// 缺数据≠不诚信——大部分早期 BP 不写真实财务，不能据此判证伪。
+const ABSENCE_OF_DATA_RE =
+  /(?:零|无(?:任何)?|没有|未(?:经?披露|提供|给出)?|缺(?:少|失|乏)?|不(?:含|包含|涉及))\s*[、,，]?\s*.{0,6}(?:财务|营收|收入|毛利|利润|烧钱|现金流|融资额?|估值|财报)(?:.{0,6}(?:数据|披露|信息|指标))?/;
 
 function _isMaterialClaim(v) {
   return MATERIAL_CLAIM_CATEGORIES.has(String(v?.category || "").toLowerCase());
@@ -316,18 +320,26 @@ function _isForwardProjection(v) {
   return PROJECTION_RE.test(text);
 }
 
+/** 是否「缺数据/未披露」类声明：缺失≠不诚信，统一不计诚信、不否决，只降覆盖率 */
+function _isAbsenceOfData(v) {
+  const text = `${v?.original_claim || ""} ${v?.bp_claim || ""} ${v?.claim || ""} ${v?.evidence || ""}`;
+  return ABSENCE_OF_DATA_RE.test(text);
+}
+
 /**
  * 可核实声明 = 进入诚信均值的声明。排除三类（它们不拉低诚信分，只降覆盖率/置信度）：
  *   1. 「存疑」—— LLM 知识盲区；
  *   2. LLM 认怂（evidence_status ∈ {unavailable, bp_only}）的方向性判断；
  *   3. 前瞻预测（预计/计划/目标…）—— 未来无法判断诚实与否，对称剔除（既不因
  *      乐观预测被判"诚实"而虚高，也不因被判"严重夸大"而误伤），改列尽调红旗。
+ *   4. 缺数据/未披露（"BP 零财务数据"…）—— 缺失≠不诚信，只降覆盖率，不计分不否决。
  */
 function _isVerifiable(v) {
   if (!v) return false;
   if (v.verdict === "存疑") return false;
   if (_evidenceWeak(v)) return false;
   if (_isForwardProjection(v)) return false;
+  if (_isAbsenceOfData(v)) return false; // 缺数据只降覆盖率，不进诚信均值
   return true;
 }
 
@@ -375,6 +387,7 @@ function assessIntegrityVeto(claimVerdicts, ctx = {}) {
     if (!v || !_isMaterialClaim(v)) continue;
     if (_isForwardProjection(v)) continue;   // 预测不否决（未来无法证伪）
     if (_evidenceWeak(v)) continue;          // LLM 认怂的猜测不否决
+    if (_isAbsenceOfData(v)) continue;       // 缺数据≠不诚信，不否决
     const sevHigh = VETO_SEVERITIES.has(String(v.severity || ""));
     const claimText = String(v.original_claim || v.claim || v.bp_claim || "").slice(0, 80);
     if (v.verdict === "证伪") {
@@ -442,6 +455,7 @@ function analyzeIntegrity(claimVerdicts, ctx = {}) {
   for (const v of claimVerdicts) {
     if (!_isMaterialClaim(v)) continue;
     if (!["夸大", "严重夸大", "证伪"].includes(v.verdict)) continue;
+    if (_isAbsenceOfData(v)) continue; // 缺数据不列红旗噪音
     const proj = _isForwardProjection(v);
     if (proj || _evidenceWeak(v)) {
       const t = String(v.original_claim || v.claim || v.bp_claim || "").slice(0, 80);

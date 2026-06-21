@@ -138,6 +138,41 @@ describe("assessIntegrityVeto 边界", () => {
   });
 });
 
+describe("缺数据 ≠ 不诚信（不得触发一票否决）", () => {
+  // 复刻线上 bug：早期 BP 没有财务数据，被误判成 financial 证伪 → 硬否决 → 封顶 25
+  const absenceFinancial = {
+    category: "financial",
+    verdict: "证伪",
+    severity: "高",
+    original_claim: "BP全文零财务数据，无任何收入、毛利、烧钱、融资额披露",
+  };
+
+  test("缺数据型财务证伪不触发 veto", () => {
+    expect(assessIntegrityVeto([absenceFinancial]).triggered).toBe(false);
+  });
+
+  test("缺数据声明只降覆盖率，诚信落回中性（≫25），绝不封顶 25", () => {
+    const only = analyzeIntegrity([absenceFinancial]);
+    expect(only.veto.hard).toBe(false);
+    expect(only.score).toBeGreaterThan(INTEGRITY_VETO_CAP);
+    expect(only.score).toBe(60); // 无可核实声明 → INTEGRITY_NEUTRAL
+    expect(only.verifiable).toBe(0); // 被排除出诚信均值
+    expect(only.total).toBe(1);      // 仍计入覆盖率分母
+  });
+
+  test("缺数据夹在诚实声明中不拖分、不否决", () => {
+    const mixed = analyzeIntegrity([absenceFinancial, ...honest(5, "market")]);
+    expect(mixed.veto.hard).toBe(false);
+    expect(mixed.score).toBeGreaterThan(INTEGRITY_VETO_CAP);
+  });
+
+  test("回归保护：具体已披露数字被证伪仍照常硬否决", () => {
+    const v = analyzeIntegrity([falsifiedFinancial("2024 年收入 5000 万元")]);
+    expect(v.veto.hard).toBe(true);
+    expect(v.score).toBeLessThanOrEqual(INTEGRITY_VETO_CAP);
+  });
+});
+
 describe("scoreProject 评级封顶（造假项目不得拿 A/B 推进建议）", () => {
   const excellentProject = {
     TAM_Million_RMB: 5000,

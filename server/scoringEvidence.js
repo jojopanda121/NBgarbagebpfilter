@@ -25,6 +25,11 @@ function _isObj(v) { return v && typeof v === "object" && !Array.isArray(v); }
 function _arr(v) { return Array.isArray(v) ? v : []; }
 function _str(v) { return typeof v === "string" ? v : ""; }
 
+// 「缺数据/未披露」识别：缺失≠不诚信，不能据此判证伪（须与 scoring.js 的 ABSENCE_OF_DATA_RE 同义）
+const ABSENCE_OF_DATA_RE =
+  /(?:零|无(?:任何)?|没有|未(?:经?披露|提供|给出)?|缺(?:少|失|乏)?|不(?:含|包含|涉及))\s*[、,，]?\s*.{0,6}(?:财务|营收|收入|毛利|利润|烧钱|现金流|融资额?|估值|财报)(?:.{0,6}(?:数据|披露|信息|指标))?/;
+function _isAbsenceOfData(text) { return ABSENCE_OF_DATA_RE.test(_str(text)); }
+
 /** 解析 "2018-2021" / "2019-至今" / "2020-2023年" → 年数；失败返回 null */
 function parseYearsSpan(span, nowYear = new Date().getFullYear()) {
   const s = _str(span);
@@ -243,11 +248,16 @@ function financialToVerdicts(financialOut) {
   if (!_isObj(financialOut)) return [];
   const verdicts = [];
 
-  // 数学矛盾（consistency_check.math_errors）—— 视为数学矛盾 sev5（确定性硬伤）
+  // 数学矛盾（consistency_check.math_errors）—— 真矛盾（引用了冲突的 BP 原文数字）才判证伪。
+  // "BP 零财务数据/未披露" 不是矛盾，也无独立证据 → 降为存疑（只降覆盖率，不触发否决）。
   for (const me of _arr(financialOut.consistency_check?.math_errors)) {
+    const desc = _str(me.description);
+    const ev = _str(me.evidence);
+    const realContradiction = ev.trim() !== "" && !_isAbsenceOfData(`${desc} ${ev}`);
     verdicts.push({
-      category: "financial", claim: _str(me.description).slice(0, 120),
-      verdict: "证伪", evidence: _str(me.evidence).slice(0, 200), source: "financial agent",
+      category: "financial", claim: desc.slice(0, 120),
+      verdict: realContradiction ? "证伪" : "存疑",
+      evidence: ev.slice(0, 200), source: "financial agent",
     });
   }
   // 一般异常

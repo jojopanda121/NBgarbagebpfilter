@@ -134,6 +134,24 @@ describe("financialToVerdicts — 对称奖惩 + 缺失给及格", () => {
     expect(v.find((x) => x.claim.includes("年增")).verdict).toBe("夸大");
   });
 
+  test("缺数据/无证据的 math_error 降为存疑（不再硬编码证伪→不触发否决）", () => {
+    const v = financialToVerdicts({
+      consistency_check: { math_errors: [
+        { description: "BP全文零财务数据，无任何收入、毛利、烧钱、融资额披露", evidence: "" },
+      ] },
+    });
+    expect(v[0].verdict).toBe("存疑");
+  });
+
+  test("真实数字矛盾（带冲突证据）仍判证伪", () => {
+    const v = financialToVerdicts({
+      consistency_check: { math_errors: [
+        { description: "毛利对不上", evidence: "收入1亿×30%=3000万，但BP写毛利5000万" },
+      ] },
+    });
+    expect(v[0].verdict).toBe("证伪");
+  });
+
   test("hidden_signals 只有带证据且 sev≥4 才记信息不对称（缺失不罚）", () => {
     const v = financialToVerdicts({
       hidden_signals: [

@@ -9,7 +9,7 @@ const { getDb } = require("../db");
 const skills = require("../skills");
 const teaserService = require("../services/teaserService");
 const { recordFeatureUsage } = require("../services/featureUsageTracker");
-const asyncHandler = require("../utils/asyncHandler");
+const { asyncHandler } = require("../middleware/errorHandler");
 
 skills.init();
 

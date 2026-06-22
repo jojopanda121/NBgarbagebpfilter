@@ -31,6 +31,11 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      # 中国镜像加速：从 .env 读取（默认官方源，国内服务器设 CN_MIRROR=1 等）
+      args:
+        CN_MIRROR: ${CN_MIRROR:-0}
+        NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmjs.org}
+        PIP_INDEX: ${PIP_INDEX:-https://pypi.org/simple}
     container_name: bp-filter-app
     restart: always
     # H9: 默认仅绑定本地回环，避免越过 Nginx 直接暴露应用端口；
@@ -72,6 +77,9 @@ services:
     build:
       context: ./doc-service
       dockerfile: Dockerfile
+      args:
+        CN_MIRROR: ${CN_MIRROR:-0}
+        PIP_INDEX: ${PIP_INDEX:-https://pypi.org/simple}
     container_name: bp-filter-doc
     restart: always
     environment:

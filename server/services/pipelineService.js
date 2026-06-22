@@ -11,7 +11,6 @@ const { mergeSpecialistEvidence, financialToVerdicts, valuationToVerdicts } = re
 const { runWebSearch, formatSearchContext } = require("./webSearchService");
 const logger = require("../utils/logger");
 const trackingService = require("./trackingService");
-const agentRuntime = require("./agentRuntime");
 const dataLakeService = require("./dataLakeService");
 const crossMatchService = require("./crossMatchService");
 const calibrationService = require("./calibrationService");
@@ -568,32 +567,22 @@ function buildIntegrityDimAnalysis(claimVerdicts, data = {}) {
   const riskFactors = [];
   const positiveSignals = [];
 
-  // 否决（分硬/软）——最高优先级
-  if (ana.veto.hard) {
-    riskFactors.push(`触发诚信一票否决（硬否决·重大类别已实现事实被证伪/隐瞒）：${ana.veto.reasons[0]}`);
-  } else if (ana.veto.soft) {
-    riskFactors.push(`触发诚信软否决（${stageLabel}·重大类别有据严重夸大/隐瞒）：${ana.veto.reasons[0]}`);
-  }
   if (exaggeratedCount > 0) riskFactors.push(`${exaggeratedCount} 条声明存在夸大（已按项目阶段【${stageLabel}】计权）`);
   if (falseCount > 0) riskFactors.push(`${falseCount} 条声明被证伪`);
   if (counts["信息不对称"] > 0) riskFactors.push(`${counts["信息不对称"]} 条声明涉嫌信息不对称`);
-  // 尽调红旗：前瞻预测/无独立证据的重大夸大（不否决但要追）
+  // 尽调红旗：前瞻预测/无独立证据的重大夸大（需追问验证，不扣分）
   for (const f of ana.dd_flags) riskFactors.push(f);
 
   if (honestCount > 0) positiveSignals.push(`可核实声明中 ${honestCount} 条（${honestPct}%）经核查属实或保守`);
   positiveSignals.push(`核查覆盖率 ${ana.verifiable}/${total}（${coveragePct}%）；其余 ${unverifiable} 条为存疑/无法核实，系知识盲区，不计入诚信扣分`);
-  if (exaggeratedCount === 0 && falseCount === 0 && !ana.veto.triggered) {
+  if (exaggeratedCount === 0 && falseCount === 0) {
     positiveSignals.push("可核实声明中未发现夸大或造假迹象");
   }
 
-  let vetoSentence = "";
-  if (ana.veto.hard) vetoSentence = " ⚠ 重大类别声明被证伪或已证实隐瞒，已触发诚信一票否决（硬否决），评级被强制限制。";
-  else if (ana.veto.soft) vetoSentence = ` ⚠ ${stageLabel}项目重大类别出现有据严重夸大/隐瞒，已触发诚信软否决，评级 A 已压至 B。`;
-
   return {
     finding,
-    comprehensive_analysis: `${finding} 项目阶段判定为【${stageLabel}】，夸大类按该阶段计权。诚信仅就可核实声明评判：可核实 ${ana.verifiable} 条（覆盖率 ${coveragePct}%），其中诚实/保守 ${honestCount} 条。其余 ${unverifiable} 条为存疑/无法核实，系 LLM 知识库覆盖不足，已不计入诚信扣分、仅降低核查覆盖率与置信度。${vetoSentence}`,
-    score_rationale: `诚信仅在可核实声明上计分（存疑/无独立证据剔除，只降覆盖率）：诚实/保守=10、信息不对称=2、证伪=0；夸大/严重夸大按项目阶段计权（成熟 8/5、成长 6/3、早期 4/2）。先按重大（财务/估值/合规）70% + 一般 30% 分组加权，再按核查覆盖率向中性 60 折让（覆盖率≥60% 给满置信）。重大类别已实现事实被证伪→硬封顶 25 分+评级封顶 C；早期/成长期有据严重夸大→软封顶 45 分+评级 A→B；前瞻预测与无独立证据的判断不触发否决，仅列尽调红旗。`,
+    comprehensive_analysis: `${finding} 项目阶段判定为【${stageLabel}】，夸大类按该阶段计权。诚信仅就可核实声明评判：可核实 ${ana.verifiable} 条（覆盖率 ${coveragePct}%），其中诚实/保守 ${honestCount} 条。其余 ${unverifiable} 条为存疑/无法核实，系 LLM 知识库覆盖不足，已不计入诚信扣分、仅降低核查覆盖率与置信度。`,
+    score_rationale: `诚信仅在可核实声明上计分（存疑/无独立证据剔除，只降覆盖率）：诚实/保守=10、信息不对称=2、证伪=0；夸大/严重夸大按项目阶段计权（成熟 8/5、成长 6/3、早期 4/2）。先按重大（财务/估值/合规）70% + 一般 30% 分组加权，再按核查覆盖率向中性 60 折让（覆盖率≥60% 给满置信）。证伪/严重夸大只按计分表拉低 S5，不再触发一票否决或强制改评级；前瞻预测与无独立证据的判断仅列尽调红旗。`,
     risk_factors: riskFactors,
     positive_signals: positiveSignals,
   };
@@ -900,29 +889,15 @@ async function runPipeline(bpText, onProgress, taskId = null, userId = null) {
   // Step 1: 数据提取
   const { extractedData, truncatedText } = await extractBPData(bpText, onProgress);
 
-  // Step 2: Agent B（声明核查+评分）与 6 个 Multiagent 并行启动，互不等待
-  onProgress({ type: "progress", stage: "agent_b_start", percentage: 32, message: "Agent B 启动（3批并发核查）+ 6个AI Agent 并行分析..." });
+  // Step 2: Agent B（声明核查 + 评分 + 五维深度分析 + 深度研究）
+  // 注：6 个 Multiagent 深度尽调 Agent 已从分析流水线中摘出，改为用户在工作区
+  // 按需触发（见 multiagentService）。分析阶段不再自动跑，投研结论也不再喂评分。
+  onProgress({ type: "progress", stage: "agent_b_start", percentage: 32, message: "Agent B 启动（3批并发核查）..." });
 
-  const [agentBResult, multiagent] = await Promise.all([
-    // 主流水线：声明核查 + 评分数据 + 五维深度分析 + 深度研究
-    runAgentBWithBatchingAndResearch(extractedData, truncatedText, onProgress),
+  const agentBResult = await runAgentBWithBatchingAndResearch(extractedData, truncatedText, onProgress);
 
-    // multiagent：本地 orchestrator 并行执行
-    (async () => {
-      try {
-        onProgress({ type: "progress", stage: "multiagent_start", percentage: 33, message: "深度投研分析启动中..." });
-        const { runId, multiagent: ma } = await agentRuntime.runBpPipeline({
-          bpText, extractedData, taskId, userId,
-        });
-        const runtime = ma?.runtime || "legacy";
-        onProgress({ type: "progress", stage: "multiagent_done", percentage: 85, message: `投研分析完成 (${runtime})` });
-        return { runId, ...ma };
-      } catch (err) {
-        logger.warn("[Pipeline] multiagent 全局异常，不影响主报告:", err.message);
-        return {};
-      }
-    })(),
-  ]);
+  // multiagent 不再随主流水线生成；评分/估值对比的相关入参一律按"无专家数据"处理（均已 null 安全）
+  const multiagent = null;
 
   const { claimVerdicts, structuralResult, thinking, dimensionAnalysisResult, deepResearch, scoringEvidenceUsed } = agentBResult;
 
@@ -936,9 +911,7 @@ async function runPipeline(bpText, onProgress, taskId = null, userId = null) {
   }
   if (!deepResearch) qualityFlags.push("deep_research_unavailable");
   if (!scoringEvidenceUsed) qualityFlags.push("scoring_search_unavailable");
-  if (!multiagent || multiagent.error || Object.keys(multiagent).length === 0) {
-    qualityFlags.push("multiagent_unavailable");
-  }
+  // multiagent 已改为按需生成，分析阶段不参与，不再因其缺席标记降级
   const failedVerifyCount = (claimVerdicts || []).filter(
     (v) => v && v.ai_research === "核查失败，无法验证"
   ).length;
@@ -1171,7 +1144,7 @@ async function runPipeline(bpText, onProgress, taskId = null, userId = null) {
     thinking,
     deep_research: deepResearch,
     verdict,
-    multiagent,
+    // multiagent 深度尽调改为按需生成，不再随分析结果一起返回（见 multiagentService）
     title,
     industry_category: industryCategory,
     industry_categories: industryCategories,

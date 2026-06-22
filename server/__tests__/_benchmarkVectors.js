@@ -106,7 +106,7 @@ const VECTORS = {
     Policy_Rubric: { tier: "第四档", chokepoint_substitution: false, state_capital: false, geo_exposure: "low", industrialization: true },
     industry_category: "企业服务/SaaS",
   },
-  // 反例C 财务造假：财务"证伪"触发一票否决（专家补充：估值主动造假同样按 严重夸大/证伪 论处）
+  // 反例C 财务造假：财务"证伪"拉低 S5 诚信维度（一票否决已移除，证伪只反映在分数）
   反例C_财务造假: {
     TAM_Million_RMB: 80000, CAGR: 40, Company_Revenue_Growth_YoY: 200,
     TRL_Evidence: trlLadder(8, 8), Chokepoint_Score: 85, Moat_Rubric: moat(90, 80, 90, 85),

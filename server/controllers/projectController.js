@@ -12,6 +12,7 @@ const { getDb } = require("../db");
 const { getTask } = require("../services/taskService");
 const { generateDDQuestionnaire, saveDDAnswers, rescoreAfterDD } = require("../services/ddService");
 const { getOrGenerateIMemo, regenerateIMemo } = require("../services/iMemoService");
+const { getOrGenerateMultiagent, regenerateMultiagent } = require("../services/multiagentService");
 const {
   getOrGenerateOnePager,
   regenerateOnePager,
@@ -305,6 +306,42 @@ function regenerateIMemoHandler(req, res) {
   }
 }
 
+/** GET /api/projects/:taskId/multiagent — 取/按需生成深度尽调报告（6 Agent） */
+async function getMultiagentReportHandler(req, res) {
+  const { taskId } = req.params;
+  const userId = req.user.id;
+  const db = getDb();
+
+  const task = getTask(taskId);
+  const err = checkOwner(task, userId, db);
+  if (err) return res.status(err === "任务不存在" ? 404 : 403).json({ error: err });
+
+  try {
+    const data = await getOrGenerateMultiagent(taskId, userId);
+    res.json(data);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+}
+
+/** POST /api/projects/:taskId/multiagent/regenerate — 强制重新生成深度尽调报告 */
+async function regenerateMultiagentHandler(req, res) {
+  const { taskId } = req.params;
+  const userId = req.user.id;
+  const db = getDb();
+
+  const task = getTask(taskId);
+  const err = checkOwner(task, userId, db);
+  if (err) return res.status(err === "任务不存在" ? 404 : 403).json({ error: err });
+
+  try {
+    const data = await regenerateMultiagent(taskId, userId);
+    res.json(data);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+}
+
 /** GET /api/projects/:taskId/onepager — 取/生成一页 PPT JSON（用于前端预览） */
 async function getOnePagerHandler(req, res) {
   const { taskId } = req.params;
@@ -406,6 +443,8 @@ module.exports = {
   rescoreHandler,
   getIMemo,
   regenerateIMemoHandler,
+  getMultiagentReportHandler,
+  regenerateMultiagentHandler,
   getOnePagerHandler,
   postOnePagerHandler,
   regenerateOnePagerHandler,

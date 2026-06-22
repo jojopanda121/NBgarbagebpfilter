@@ -11,18 +11,24 @@ const router = Router();
 // H6: 限制扩展名 + mime + 大小，避免越权类型上传
 const ALLOWED_UPLOAD_MIMES = new Set([
   "application/pdf",
-  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-  "application/octet-stream", // 部分浏览器对 .pdf/.pptx 给出 octet-stream
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation", // .pptx
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",    // .docx
+  "application/msword", // legacy .doc
+  "application/octet-stream", // 部分浏览器对 .pdf/.pptx/.docx 给出 octet-stream
 ]);
 const upload = multer({
   dest: os.tmpdir(),
   limits: { fileSize: 50 * 1024 * 1024, files: 1 },
   fileFilter: (_req, file, cb) => {
     const name = (file.originalname || "").toLowerCase();
-    const okExt = name.endsWith(".pdf") || name.endsWith(".pptx");
+    const okExt = name.endsWith(".pdf") || name.endsWith(".pptx") || name.endsWith(".docx") || name.endsWith(".doc");
     const okMime = ALLOWED_UPLOAD_MIMES.has(file.mimetype);
     if (okExt && okMime) return cb(null, true);
-    return cb(new Error("仅支持 PDF / PPTX 文件"));
+    // 旧版二进制 .ppt 暂不支持；Word 的 .doc 会进入 best-effort 解析兜底。
+    if (name.endsWith(".ppt")) {
+      return cb(new Error("不支持旧版 .ppt，请另存为 .pptx 后上传"));
+    }
+    return cb(new Error("仅支持 PDF / Word(.doc/.docx) / PPT(.pptx) 文件"));
   },
 });
 

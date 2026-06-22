@@ -4,7 +4,7 @@
 
 const crypto = require("crypto");
 const { getDb } = require("../db");
-const { getTask, getTasksByUser } = require("../services/taskService");
+const { getTask, getTasksByUser, hardDeleteTask } = require("../services/taskService");
 
 /** GET /api/task/:taskId — 查询任务状态（需登录，owner 或 admin） */
 function getTaskStatus(req, res) {
@@ -104,7 +104,7 @@ function getUserTasks(req, res) {
   res.json({ tasks });
 }
 
-/** DELETE /api/task/:taskId — 软删除报告（数据库保留，用户不可见） */
+/** DELETE /api/task/:taskId — 物理删除报告（连同服务器上的关联数据一并删除） */
 function softDeleteTask(req, res) {
   const { taskId } = req.params;
   const userId = req.user.id;
@@ -122,13 +122,12 @@ function softDeleteTask(req, res) {
     return res.status(403).json({ error: "无权操作此报告" });
   }
 
-  db.prepare("UPDATE tasks SET deleted_at = datetime('now'), updated_at = datetime('now') WHERE id = ?")
-    .run(taskId);
+  hardDeleteTask(taskId);
 
   res.json({ success: true });
 }
 
-/** POST /api/task/batch-delete — 批量软删除（仅删除本人记录；admin 可删任意） */
+/** POST /api/task/batch-delete — 批量物理删除（仅删除本人记录；admin 可删任意） */
 function batchDeleteTasks(req, res) {
   const userId = req.user.id;
   const { ids } = req.body || {};
@@ -144,16 +143,15 @@ function batchDeleteTasks(req, res) {
   const userRow = db.prepare("SELECT role FROM users WHERE id = ?").get(userId);
   const isAdmin = userRow?.role === "admin";
 
-  // 非 admin 通过 WHERE user_id 限定，越权 id 不会被删除（changes=0）
-  const stmt = isAdmin
-    ? db.prepare("UPDATE tasks SET deleted_at = datetime('now'), updated_at = datetime('now') WHERE id = ? AND deleted_at IS NULL")
-    : db.prepare("UPDATE tasks SET deleted_at = datetime('now'), updated_at = datetime('now') WHERE id = ? AND user_id = ? AND deleted_at IS NULL");
-
   let deleted = 0;
   const runAll = db.transaction((list) => {
     for (const id of list) {
-      const info = isAdmin ? stmt.run(id) : stmt.run(id, userId);
-      deleted += info.changes;
+      // 校验归属：非 admin 仅能删本人记录，越权 id 跳过
+      const owner = db.prepare("SELECT user_id FROM tasks WHERE id = ?").get(id);
+      if (!owner) continue;
+      if (!isAdmin && owner.user_id !== userId) continue;
+      hardDeleteTask(id); // 内层事务自动降级为 savepoint
+      deleted += 1;
     }
   });
   runAll(ids);

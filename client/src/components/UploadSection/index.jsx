@@ -9,8 +9,8 @@ import { useAnalysisPipeline } from "../../hooks/useAnalysisPipeline";
  * UploadSection
  *
  * 职责：
- *   - 拖拽 / 点击上传 PDF 文件
- *   - 文件类型校验（仅接受 application/pdf）
+ *   - 拖拽 / 点击上传 PDF / Word(.doc/.docx) / PPT(.pptx) 文件
+ *   - 文件类型校验（PDF / doc/docx / pptx）
  *   - 触发分析并显示加载态按钮
  *   - 错误提示
  *
@@ -35,13 +35,26 @@ const UploadSection = memo(function UploadSection() {
   const fileInputRef = useRef(null);
 
   // ── 文件校验 ──
+  // 支持 PDF / Word(.doc/.docx) / PPT(.pptx)。部分浏览器对 doc/docx/pptx 的 MIME 不稳定，
+  // 故同时按扩展名兜底判断。
   const handleFile = useCallback(
     (f) => {
-      if (f && f.type === "application/pdf") {
+      if (!f) return;
+      const name = (f.name || "").toLowerCase();
+      const okExt =
+        name.endsWith(".pdf") || name.endsWith(".doc") || name.endsWith(".docx") || name.endsWith(".pptx");
+      const okMime =
+        f.type === "application/pdf" ||
+        f.type === "application/msword" ||
+        f.type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
+        f.type === "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+      if (okExt || okMime) {
         setFile(f);
         setError("");
-      } else if (f) {
-        setError("请上传 PDF 文件");
+      } else if (name.endsWith(".ppt")) {
+        setError("不支持旧版 .ppt，请另存为 .pptx 后上传");
+      } else {
+        setError("请上传 PDF / Word(.doc/.docx) / PPT(.pptx) 文件");
       }
     },
     [setFile, setError]
@@ -118,7 +131,7 @@ const UploadSection = memo(function UploadSection() {
         <input
           ref={fileInputRef}
           type="file"
-          accept=".pdf"
+          accept=".pdf,.doc,.docx,.pptx"
           className="hidden"
           onChange={(e) => handleFile(e.target.files[0])}
         />
@@ -134,9 +147,9 @@ const UploadSection = memo(function UploadSection() {
           <div className="flex flex-col items-center gap-3">
             <Upload className="w-12 h-12 text-[#8E9BB0]" />
             <p className="text-lg text-[#4B5A72]">
-              拖拽 PDF 到此处，或点击选择文件
+              拖拽 PDF / Word / PPT 到此处，或点击选择文件
             </p>
-            <p className="text-sm text-[#8E9BB0]">支持文字版和扫描版 PDF</p>
+            <p className="text-sm text-[#8E9BB0]">支持 PDF（文字版/扫描版）、Word(.doc/.docx)、PPT(.pptx)</p>
           </div>
         )}
       </div>

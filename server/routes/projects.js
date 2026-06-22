@@ -13,6 +13,8 @@ const {
   rescoreHandler,
   getIMemo,
   regenerateIMemoHandler,
+  getMultiagentReportHandler,
+  regenerateMultiagentHandler,
   getOnePagerHandler,
   postOnePagerHandler,
   regenerateOnePagerHandler,
@@ -37,6 +39,10 @@ router.post("/:taskId/dd/rescore",   requireAuth, rescoreHandler);
 // IMemo
 router.get("/:taskId/imemo",                 requireAuth, getIMemo);
 router.post("/:taskId/imemo/regenerate",     requireAuth, regenerateIMemoHandler);
+
+// 深度尽调报告（6 Agent，按需生成）
+router.get("/:taskId/multiagent",                requireAuth, getMultiagentReportHandler);
+router.post("/:taskId/multiagent/regenerate",    requireAuth, regenerateMultiagentHandler);
 
 // 一页投资亮点 PPT
 router.get("/:taskId/onepager",              requireAuth, getOnePagerHandler);

@@ -25,8 +25,9 @@ function computeFileHash(filePath) {
 
 /**
  * Magic number 校验：扩展名/MIME 可伪造，读文件头交叉验证真实格式。
- *   PDF  → "%PDF"
- *   PPTX → ZIP 容器局部文件头 "PK\x03\x04"
+ *   PDF        → "%PDF"
+ *   PPTX/DOCX  → OOXML 均为 ZIP 容器，局部文件头 "PK\x03\x04"
+ *   DOC        → CFB 容器头 D0 CF 11 E0
  */
 async function verifyFileMagic(filePath, fileMode) {
   const fd = await fs.promises.open(filePath, "r");
@@ -35,11 +36,38 @@ async function verifyFileMagic(filePath, fileMode) {
     const { bytesRead } = await fd.read(buf, 0, 4, 0);
     if (bytesRead < 4) return false;
     if (fileMode === "pdf") return buf.toString("latin1") === "%PDF";
-    if (fileMode === "pptx") return buf[0] === 0x50 && buf[1] === 0x4b && buf[2] === 0x03 && buf[3] === 0x04;
+    // pptx / docx 都是 ZIP 容器
+    if (fileMode === "pptx" || fileMode === "docx") {
+      return buf[0] === 0x50 && buf[1] === 0x4b && buf[2] === 0x03 && buf[3] === 0x04;
+    }
+    if (fileMode === "doc") {
+      return buf[0] === 0xd0 && buf[1] === 0xcf && buf[2] === 0x11 && buf[3] === 0xe0;
+    }
     return false;
   } finally {
     await fd.close();
   }
+}
+
+function buildAnalysisFallbackText({ filePath, fileMode, originalName, fileSize, reason, extractedText }) {
+  let size = 0;
+  if (Number.isFinite(Number(fileSize))) {
+    size = Number(fileSize);
+  } else {
+    try { size = filePath ? fs.statSync(filePath).size : 0; } catch (_) { /* ignore */ }
+  }
+  const lines = [
+    "【上传材料解析结果】",
+    `文件名：${originalName || "document"}`,
+    `文件格式：${fileMode || "text"}`,
+    `文件大小：${size} 字节`,
+    `解析提示：${reason || "自动解析只能取得有限文本。"}`,
+    "系统已接收该文件，但自动解析得到的正文有限。请基于已提取片段、文件名和材料类型谨慎分析；不要声称已读取到文件中未实际提取出的具体事实。",
+  ];
+  if (extractedText && String(extractedText).trim()) {
+    lines.push("【已提取片段】", String(extractedText).trim().slice(0, 1000));
+  }
+  return lines.join("\n");
 }
 
 /**
@@ -48,7 +76,7 @@ async function verifyFileMagic(filePath, fileMode) {
  */
 function findExistingResult(db, userId, fileHash) {
   const row = db.prepare(
-    "SELECT id, result FROM tasks WHERE user_id = ? AND file_hash = ? AND status = 'complete' ORDER BY created_at DESC LIMIT 1"
+    "SELECT id, result FROM tasks WHERE user_id = ? AND file_hash = ? AND status = 'complete' AND deleted_at IS NULL ORDER BY created_at DESC LIMIT 1"
   ).get(userId, fileHash);
   if (!row || !row.result) return null;
   let parsed;
@@ -65,7 +93,7 @@ function findExistingResult(db, userId, fileHash) {
 /** 查找同一用户正在运行中的相同文件分析任务 */
 function findRunningTask(db, userId, fileHash) {
   return db.prepare(
-    "SELECT id FROM tasks WHERE user_id = ? AND file_hash = ? AND status = 'running' ORDER BY created_at DESC LIMIT 1"
+    "SELECT id FROM tasks WHERE user_id = ? AND file_hash = ? AND status = 'running' AND deleted_at IS NULL ORDER BY created_at DESC LIMIT 1"
   ).get(userId, fileHash) || null;
 }
 
@@ -119,11 +147,15 @@ async function analyze(req, res) {
     const name = (req.file.originalname || "").toLowerCase();
     const isPdf = mime === "application/pdf" || name.endsWith(".pdf");
     const isPptx = mime === "application/vnd.openxmlformats-officedocument.presentationml.presentation" || name.endsWith(".pptx");
-    if (!isPdf && !isPptx) {
+    const isDocx = mime === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" || name.endsWith(".docx");
+    const isDoc = mime === "application/msword" || name.endsWith(".doc");
+    if (!isPdf && !isPptx && !isDocx && !isDoc) {
       cleanupUpload();
-      return res.status(400).json({ error: "请上传 PDF 或 PPTX 格式的文件" });
+      return res.status(400).json({ error: "请上传 PDF / Word(.doc/.docx) / PPT(.pptx) 格式的文件" });
     }
     if (name.endsWith(".pptx")) fileMode = "pptx";
+    else if (name.endsWith(".docx")) fileMode = "docx";
+    else if (name.endsWith(".doc")) fileMode = "doc";
     else if (name.endsWith(".pdf")) fileMode = "pdf";
     if (!fileMode) {
       cleanupUpload();
@@ -157,7 +189,7 @@ async function analyze(req, res) {
       const magicOk = await verifyFileMagic(req.file.path, fileMode);
       if (!magicOk) {
         cleanupUpload();
-        return res.status(400).json({ error: "文件内容与格式不符，请上传真实的 PDF / PPTX 文件" });
+        return res.status(400).json({ error: "文件内容与格式不符，请上传真实的 PDF / Word(.doc/.docx) / PPT(.pptx) 文件" });
       }
       fileHash = await computeFileHash(req.file.path);
     } catch (err) {
@@ -211,6 +243,8 @@ async function analyze(req, res) {
 
   // 在响应前提取所有需要的 req 数据（响应后 req 对象可能被 GC）
   const filePath = req.file ? req.file.path : null;
+  const originalName = req.file ? req.file.originalname : null;
+  const fileSize = req.file ? req.file.size : 0;
   const directText = req.body?.text || null;
   const clientIp = req.headers?.["x-forwarded-for"]?.split(",")[0]?.trim() || req.ip || req.socket?.remoteAddress || null;
 
@@ -231,7 +265,14 @@ async function analyze(req, res) {
             const p = JSON.parse(errMsg);
             if (p.error) userMessage = p.error;
           } catch {}
-          throw new Error("文档解析失败: " + userMessage);
+          console.warn(`[Analyze] 文档解析失败，使用兜底文本继续分析: ${userMessage}`);
+          bpText = buildAnalysisFallbackText({
+            filePath,
+            fileMode,
+            originalName,
+            fileSize,
+            reason: userMessage,
+          });
         } finally {
           // M5: 异步清理临时文件，避免阻塞事件循环
           fs.promises.unlink(filePath).catch((err) => {
@@ -243,7 +284,14 @@ async function analyze(req, res) {
       }
 
       if (!bpText || bpText.length < 50) {
-        throw new Error("提取的文本过短（仅 " + (bpText?.length || 0) + " 字符），请检查文件");
+        bpText = buildAnalysisFallbackText({
+          filePath,
+          fileMode,
+          originalName,
+          fileSize,
+          reason: `提取文本较短（${bpText?.length || 0} 字符），已使用兜底材料说明继续分析。`,
+          extractedText: bpText,
+        });
       }
 
       const onProgress = ({ type, stage, percentage, message }) => {
@@ -259,6 +307,8 @@ async function analyze(req, res) {
         stage: "complete",
         message: "分析完成！",
         result,
+        // 持久化 BP 原文：深度尽调 6 Agent 改为按需触发，需要能取回原文重跑
+        bp_text: bpText,
       };
 
       // 安全写入新字段（列可能尚未通过迁移创建；M13: 严格类型检查防 verdict=null 导致空指针）

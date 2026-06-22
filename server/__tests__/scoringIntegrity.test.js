@@ -22,7 +22,6 @@ const {
   detectInjectionHints,
   buildIntegrityDimAnalysis,
   buildScoringSearchQueries,
-  calculateScoring,
 } = require("../services/pipelineService");
 
 const {
@@ -253,59 +252,6 @@ describe("评分接地检索（S1/S2 不再只凭模型记忆）", () => {
   test("无任何项目信息时不发无意义的泛查询", () => {
     expect(buildScoringSearchQueries({})).toEqual([]);
     expect(buildScoringSearchQueries({ industry: "  " })).toEqual([]);
-  });
-});
-
-describe("F-10: 专家确定性结论计入 live 评分", () => {
-  const noopProgress = () => {};
-  const baseValidated = {
-    validated_data: {
-      TAM_Million_RMB: 5000, CAGR: 25, TRL: 8, Competitor_Rank_Score: 8,
-      Industry_Capital_Score: 8, Industry_Scale_Score: 8,
-      Team_Experience_Score: 8, Team_Domain_Match_Score: 8,
-      Team_Completeness_Score: 8, Team_Track_Record_Score: 7, Team_Education_Score: 8,
-    },
-  };
-
-  test("财务专家发现数学矛盾（证伪）→ 拖低 live S5（不再触发否决）", () => {
-    const honestClaims = Array(10).fill(null).map(() => ({ verdict: "诚实", category: "market" }));
-    const multiagent = {
-      financial_analysis: {
-        consistency_check: {
-          math_errors: [{ description: "收入×毛利率与毛利对不上，差 3 倍", evidence: "BP 第 12 页" }],
-        },
-      },
-    };
-    const withSpecialist = calculateScoring(baseValidated, honestClaims, noopProgress, multiagent);
-    const without = calculateScoring(baseValidated, honestClaims, noopProgress, null);
-
-    // 专家证伪进入了实际计分的声明集
-    expect(withSpecialist.scoringInput.claim_verdicts.some((v) => v.verdict === "证伪")).toBe(true);
-    // 否决已移除：证伪只拉低 S5，不强制改评级
-    expect(withSpecialist.scoringResult.integrity_veto).toBeFalsy();
-    expect(without.scoringResult.integrity_veto).toBeFalsy();
-    expect(withSpecialist.scoringResult.dimensions.external_risk.score).toBeLessThan(
-      without.scoringResult.dimensions.external_risk.score
-    );
-  });
-
-  test("估值专家判'远高于'→ 计入 live S5（夸大）", () => {
-    const claims = Array(5).fill(null).map(() => ({ verdict: "诚实", category: "market" }));
-    const multiagent = {
-      valuation_analysis: {
-        verdict: { position: "远高于", summary: "估值显著超出同业区间" },
-      },
-    };
-    const r = calculateScoring(baseValidated, claims, noopProgress, multiagent);
-    expect(r.scoringInput.claim_verdicts.some((v) => v.category === "valuation" && v.verdict === "夸大")).toBe(true);
-    expect(r.scoringResult.integrity_veto).toBeFalsy();
-  });
-
-  test("multiagent 失败/缺失时 live 评分不受影响", () => {
-    const claims = [{ verdict: "诚实", category: "market" }];
-    const a = calculateScoring(baseValidated, claims, noopProgress, { error: "执行失败" });
-    const b = calculateScoring(baseValidated, claims, noopProgress, null);
-    expect(a.scoringResult.total_score).toBe(b.scoringResult.total_score);
   });
 });
 

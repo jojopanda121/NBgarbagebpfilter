@@ -365,7 +365,8 @@ function _verdictScore(v, stage) {
   return VERDICT_SCORE_MAP[v?.verdict] ?? 6; // 未知 verdict 当中性，不误杀
 }
 
-// 空否决对象：Integrity Veto 已移除，保留字段形状供下游只读引用（恒不触发）。
+// 空否决对象：Integrity Veto 已移除。analyzeIntegrity 仍返回 veto 字段以保持
+// 返回形状稳定（恒为此常量、永不触发），仅供回归测试断言"否决确已移除"。
 const NO_VETO = Object.freeze({ triggered: false, hard: false, soft: false, reasons: [] });
 
 /**
@@ -582,8 +583,7 @@ const _DIM_KEY_BY_S = {
  * 把非线性聚合 + 政策融入叠加到已组装结果上。
  *   off    → 原样返回
  *   shadow → 附 scoring_agg_shadow 对照块，live（算术平均）不变
- *   on     → 用聚合结果替换 total/grade，写入分布/政策/敏感性/triggered_rules，
- *            并重新套用 Integrity Veto 封顶
+ *   on     → 用聚合结果替换 total/grade，写入分布/政策/敏感性/triggered_rules
  */
 function _applyAggregation(result, data, aggMode) {
   if (aggMode === "off") return result;

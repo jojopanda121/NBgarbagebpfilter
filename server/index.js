@@ -1,20 +1,20 @@
 const config = require("./config");
 const { createApp } = require("./app");
-const { closeDb } = require("./db");
 const { getModelName } = require("./services/llmService");
 const { checkPythonDeps, bootDocServiceIfLocal } = require("./runtime/docService");
-const { startWorkspaceGc } = require("./runtime/workspaceGc");
+const {
+  configureServerTimeouts,
+  createGracefulShutdown,
+  createShutdownState,
+  startRuntimeServices,
+} = require("./runtime/serverLifecycle");
 
-let shuttingDown = false;
-
-function isShuttingDown() {
-  return shuttingDown;
-}
+const shutdownState = createShutdownState();
 
 checkPythonDeps();
 
-const docService = bootDocServiceIfLocal({ isShuttingDown });
-const app = createApp({ getShutdownState: isShuttingDown });
+const docService = bootDocServiceIfLocal({ isShuttingDown: shutdownState.isShuttingDown });
+const app = createApp({ getShutdownState: shutdownState.isShuttingDown });
 const PORT = config.port;
 
 const server = app.listen(PORT, () => {
@@ -25,51 +25,15 @@ const server = app.listen(PORT, () => {
   console.log("  通信模式: 异步任务轮询\n");
 });
 
-const HTTP_TIMEOUT = 2 * 60 * 1000;
-server.timeout = HTTP_TIMEOUT;
-server.requestTimeout = HTTP_TIMEOUT;
-server.keepAliveTimeout = HTTP_TIMEOUT + 1000;
+configureServerTimeouts(server);
 
-const stopWorkspaceGc = startWorkspaceGc();
-const GRACEFUL_TIMEOUT_MS = parseInt(process.env.GRACEFUL_SHUTDOWN_TIMEOUT_MS, 10) || 5 * 60 * 1000;
-
-function cleanupAndExit(code) {
-  try { stopWorkspaceGc(); } catch {}
-  try { docService.stop(); } catch {}
-  try { closeDb(); } catch {}
-  process.exit(code);
-}
-
-function gracefulShutdown(signal) {
-  if (shuttingDown) return;
-  shuttingDown = true;
-
-  console.log(`${signal} received, shutting down gracefully (timeout=${GRACEFUL_TIMEOUT_MS}ms)...`);
-
-  // 1. 停止接收新连接；2. 等待在途后台分析收尾（LLM 成本已花，
-  //    腰斩=用户看到失败+平台白付钱）；3. 超时则放弃，由下次启动的
-  //    recoverStaleTasks 标记失败并退款。
-  server.close(() => {
-    const inflightTasks = require("./runtime/inflightTasks");
-    const pending = inflightTasks.count();
-    if (pending === 0) {
-      console.log("All connections closed, exiting...");
-      return cleanupAndExit(0);
-    }
-    console.log(`等待 ${pending} 个在途分析任务收尾...`);
-    inflightTasks.waitForDrain(GRACEFUL_TIMEOUT_MS - 10_000).then((drained) => {
-      if (!drained) {
-        console.warn(`仍有 ${inflightTasks.count()} 个任务未完成，由下次启动恢复退款`);
-      }
-      cleanupAndExit(drained ? 0 : 1);
-    });
-  });
-
-  setTimeout(() => {
-    console.error(`Graceful shutdown timed out (${GRACEFUL_TIMEOUT_MS}ms), forcing exit...`);
-    cleanupAndExit(1);
-  }, GRACEFUL_TIMEOUT_MS).unref();
-}
+const { stopWorkspaceGc } = startRuntimeServices();
+const gracefulShutdown = createGracefulShutdown({
+  server,
+  docService,
+  stopWorkspaceGc,
+  shutdownState,
+});
 
 process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
 process.on("SIGINT", () => gracefulShutdown("SIGINT"));
@@ -87,4 +51,4 @@ process.on("uncaughtException", (err) => {
   gracefulShutdown("uncaughtException");
 });
 
-module.exports = { isShuttingDown };
+module.exports = { isShuttingDown: shutdownState.isShuttingDown };

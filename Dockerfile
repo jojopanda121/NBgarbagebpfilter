@@ -4,15 +4,30 @@
 
 FROM node:20-slim AS frontend-builder
 
+# 中国镜像加速：构建时由 docker-compose 从 .env 透传 build-arg（默认走官方 npm 源）
+ARG NPM_REGISTRY=https://registry.npmjs.org
+
 WORKDIR /app
 
 COPY client/package*.json ./client/
-RUN cd client && npm ci
+RUN cd client && npm ci --registry="$NPM_REGISTRY"
 
 COPY client/ ./client/
 RUN cd client && npm run build
 
 FROM node:20-slim
+
+# ── 中国镜像加速（CN_MIRROR=1 时启用，默认 0，不影响海外/CI 构建）──
+# 由 docker-compose 从 .env 透传：apt 切腾讯云镜像，npm/pip 由下面两个源指定。
+ARG CN_MIRROR=0
+ARG NPM_REGISTRY=https://registry.npmjs.org
+ARG PIP_INDEX=https://pypi.org/simple
+
+# Debian bookworm 源切腾讯云镜像（deb822 .sources 优先，回退旧 sources.list）
+RUN if [ "$CN_MIRROR" = "1" ]; then \
+      sed -i 's|deb.debian.org|mirrors.tencentyun.com|g; s|security.debian.org|mirrors.tencentyun.com|g' /etc/apt/sources.list.d/debian.sources 2>/dev/null || true; \
+      sed -i 's|deb.debian.org|mirrors.tencentyun.com|g; s|security.debian.org|mirrors.tencentyun.com|g' /etc/apt/sources.list 2>/dev/null || true; \
+    fi
 
 # 系统依赖：Python fallback + better-sqlite3 构建工具 + OCR/PDF 依赖 + wget 健康检查
 RUN apt-get update && \
@@ -33,13 +48,13 @@ WORKDIR /app
 
 COPY scripts/requirements.txt ./scripts/
 RUN python3 -m venv /app/.venv && \
-    /app/.venv/bin/pip install --no-cache-dir -r scripts/requirements.txt
+    /app/.venv/bin/pip install --no-cache-dir -i "$PIP_INDEX" -r scripts/requirements.txt
 
 ENV PATH="/app/.venv/bin:$PATH"
 
 COPY package*.json ./
 COPY server/package*.json ./server/
-RUN cd server && npm ci --omit=dev
+RUN cd server && npm ci --omit=dev --registry="$NPM_REGISTRY"
 
 COPY server/ ./server/
 COPY scripts/ ./scripts/

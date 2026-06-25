@@ -20,7 +20,7 @@ const evidenceStore = require("./evidenceStore");
 const taskQueue = require("./taskQueue");
 const logger = require("../utils/logger");
 
-const EXTRACT_MODES = new Set(["pdf", "pptx", "docx", "xlsx", "csv"]);
+const EXTRACT_MODES = new Set(["pdf", "pptx", "docx", "doc", "xlsx", "csv"]);
 
 // 同步抽取的文件大小阈值（字符数）。超过这个阈值就走后台异步，避免阻塞上传响应。
 // 4 vCPU / 4GB 机型 LLM 调用 5-15s 量级，小文档同步可接受。

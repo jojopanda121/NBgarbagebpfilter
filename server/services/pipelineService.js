@@ -7,16 +7,13 @@ const pLimit = require("p-limit");
 const { callLLM, callLLMWithThinking, callLLMWithSearch, getModelName } = require("./llmService");
 const { extractJson, extractJsonArray, extractPartialResult, ensureStringArray } = require("../utils/jsonParser");
 const { scoreProject, analyzeIntegrity } = require("../scoring");
-const { mergeSpecialistEvidence, financialToVerdicts, valuationToVerdicts } = require("../scoringEvidence");
 const { runWebSearch, formatSearchContext } = require("./webSearchService");
 const logger = require("../utils/logger");
 const trackingService = require("./trackingService");
-const agentRuntime = require("./agentRuntime");
 const dataLakeService = require("./dataLakeService");
 const crossMatchService = require("./crossMatchService");
 const calibrationService = require("./calibrationService");
 const { PIPELINE_VERSION } = require("../config/versions");
-const { scoringHarnessMode } = require("../config/featureFlags");
 const {
   AGENT_A_PROMPT,
   CLAIM_VERDICT_BATCH_PROMPT,
@@ -568,32 +565,22 @@ function buildIntegrityDimAnalysis(claimVerdicts, data = {}) {
   const riskFactors = [];
   const positiveSignals = [];
 
-  // 否决（分硬/软）——最高优先级
-  if (ana.veto.hard) {
-    riskFactors.push(`触发诚信一票否决（硬否决·重大类别已实现事实被证伪/隐瞒）：${ana.veto.reasons[0]}`);
-  } else if (ana.veto.soft) {
-    riskFactors.push(`触发诚信软否决（${stageLabel}·重大类别有据严重夸大/隐瞒）：${ana.veto.reasons[0]}`);
-  }
   if (exaggeratedCount > 0) riskFactors.push(`${exaggeratedCount} 条声明存在夸大（已按项目阶段【${stageLabel}】计权）`);
   if (falseCount > 0) riskFactors.push(`${falseCount} 条声明被证伪`);
   if (counts["信息不对称"] > 0) riskFactors.push(`${counts["信息不对称"]} 条声明涉嫌信息不对称`);
-  // 尽调红旗：前瞻预测/无独立证据的重大夸大（不否决但要追）
+  // 尽调红旗：前瞻预测/无独立证据的重大夸大（需追问验证，不扣分）
   for (const f of ana.dd_flags) riskFactors.push(f);
 
   if (honestCount > 0) positiveSignals.push(`可核实声明中 ${honestCount} 条（${honestPct}%）经核查属实或保守`);
   positiveSignals.push(`核查覆盖率 ${ana.verifiable}/${total}（${coveragePct}%）；其余 ${unverifiable} 条为存疑/无法核实，系知识盲区，不计入诚信扣分`);
-  if (exaggeratedCount === 0 && falseCount === 0 && !ana.veto.triggered) {
+  if (exaggeratedCount === 0 && falseCount === 0) {
     positiveSignals.push("可核实声明中未发现夸大或造假迹象");
   }
 
-  let vetoSentence = "";
-  if (ana.veto.hard) vetoSentence = " ⚠ 重大类别声明被证伪或已证实隐瞒，已触发诚信一票否决（硬否决），评级被强制限制。";
-  else if (ana.veto.soft) vetoSentence = ` ⚠ ${stageLabel}项目重大类别出现有据严重夸大/隐瞒，已触发诚信软否决，评级 A 已压至 B。`;
-
   return {
     finding,
-    comprehensive_analysis: `${finding} 项目阶段判定为【${stageLabel}】，夸大类按该阶段计权。诚信仅就可核实声明评判：可核实 ${ana.verifiable} 条（覆盖率 ${coveragePct}%），其中诚实/保守 ${honestCount} 条。其余 ${unverifiable} 条为存疑/无法核实，系 LLM 知识库覆盖不足，已不计入诚信扣分、仅降低核查覆盖率与置信度。${vetoSentence}`,
-    score_rationale: `诚信仅在可核实声明上计分（存疑/无独立证据剔除，只降覆盖率）：诚实/保守=10、信息不对称=2、证伪=0；夸大/严重夸大按项目阶段计权（成熟 8/5、成长 6/3、早期 4/2）。先按重大（财务/估值/合规）70% + 一般 30% 分组加权，再按核查覆盖率向中性 60 折让（覆盖率≥60% 给满置信）。重大类别已实现事实被证伪→硬封顶 25 分+评级封顶 C；早期/成长期有据严重夸大→软封顶 45 分+评级 A→B；前瞻预测与无独立证据的判断不触发否决，仅列尽调红旗。`,
+    comprehensive_analysis: `${finding} 项目阶段判定为【${stageLabel}】，夸大类按该阶段计权。诚信仅就可核实声明评判：可核实 ${ana.verifiable} 条（覆盖率 ${coveragePct}%），其中诚实/保守 ${honestCount} 条。其余 ${unverifiable} 条为存疑/无法核实，系 LLM 知识库覆盖不足，已不计入诚信扣分、仅降低核查覆盖率与置信度。`,
+    score_rationale: `诚信仅在可核实声明上计分（存疑/无独立证据剔除，只降覆盖率）：诚实/保守=10、信息不对称=2、证伪=0；夸大/严重夸大按项目阶段计权（成熟 8/5、成长 6/3、早期 4/2）。先按重大（财务/估值/合规）70% + 一般 30% 分组加权，再按核查覆盖率向中性 60 折让（覆盖率≥60% 给满置信）。证伪/严重夸大只按计分表拉低 S5，不再触发一票否决或强制改评级；前瞻预测与无独立证据的判断仅列尽调红旗。`,
     risk_factors: riskFactors,
     positive_signals: positiveSignals,
   };
@@ -647,7 +634,8 @@ function buildVerdictResponse(scoringResult, structuralResult, validatedData, di
     grade_label: scoringResult.grade_label,
     grade_action: scoringResult.grade_action,
     grade_color: scoringResult.grade_color,
-    // 诚信一票否决：触发时前端必须醒目展示（grade 已被 scoring 层封顶 C）
+    // Integrity Veto 已于 v4.8.0 移除；以下两字段恒为 null，保留供 DB 列/
+    // 校准表（migration 064）向后兼容，不再有任何触发路径。
     integrity_veto: scoringResult.integrity_veto || null,
     grade_overridden_from: scoringResult.grade_overridden_from || null,
     verdict_summary: structuralResult?.one_line_summary || scoringResult.grade_label,
@@ -745,85 +733,16 @@ function _toScoringInput(d, claimVerdicts, industryCategory = null) {
   };
 }
 
-function calculateScoring(validatedData, claimVerdicts, onProgress, multiagent = null, industryCategory = null) {
+function calculateScoring(validatedData, claimVerdicts, onProgress, industryCategory = null) {
   onProgress({ type: "progress", stage: "ai_done", percentage: 82, message: "AI研究完成，计算五维评分..." });
 
   const rawScoringData = validatedData.validated_data || {};
-  const mode = scoringHarnessMode(); // off | shadow | on
 
-  // F-10: 财务/估值专家的确定性结论并入 live 声明集。
-  // 这些 verdict 是纯 JS 查表推导（数学矛盾→证伪、估值远高于→夸大等），
-  // 已在 scoringEvidence 里封顶防淹没——专家查到"财务自相矛盾"必须能拖分、
-  // 能触发诚信一票否决，而不是只躺在 multiagent 标签页的文字里。
-  // 注意：仅用于 live/legacy 路径；harness 合并路径(mergeSpecialistEvidence)
-  // 自带同样的注入逻辑，传原始 claimVerdicts 避免重复计入。
-  let liveVerdicts = claimVerdicts || [];
-  if (multiagent && !multiagent.error) {
-    try {
-      const extra = [
-        ...financialToVerdicts(multiagent.financial_analysis),
-        ...valuationToVerdicts(multiagent.valuation_analysis),
-      ].map((v) => ({ ...v, original_claim: v.original_claim || v.claim }));
-      if (extra.length > 0) liveVerdicts = [...liveVerdicts, ...extra];
-    } catch (err) {
-      logger.warn("[Pipeline] 专家 verdict 注入 live 评分失败（忽略）:", err.message);
-    }
-  }
-
-  // Plan A：把 orchestrator 5 专家已产的事实，用 JS 推导并双路合并进评分输入。
-  // 任一专家缺失/{} → 合并器逐字段 no-op 回退 Agent B，绝不 fail。
-  let enrichedData = null;
-  let specialistAudit = null;
-  if (mode !== "off" && multiagent && !multiagent.error) {
-    try {
-      const merged = mergeSpecialistEvidence({
-        agentBData: rawScoringData,
-        claimVerdicts: claimVerdicts || [],
-        specialists: {
-          founder_profile: multiagent.founder_profile,
-          competitor_analysis: multiagent.competitor_analysis,
-          financial_analysis: multiagent.financial_analysis,
-          valuation_analysis: multiagent.valuation_analysis,
-        },
-        // 主管线默认无 skill 咽喉分；workspace 路径运行 chokepoint_analysis 后才注入
-      });
-      enrichedData = merged.enrichedInput;
-      specialistAudit = merged.specialist_audit;
-    } catch (err) {
-      logger.warn("[Pipeline] 专家证据合并异常，回退 Agent B 原始评分:", err.message);
-    }
-  }
-
-  let scoringInput;
-  let scoringResult;
-  if (mode === "on" && enrichedData) {
-    // on：全量新分生效（harness S2 + 专家合并五维；专家 verdict 已由合并器注入）
-    scoringInput = _toScoringInput(enrichedData, claimVerdicts, industryCategory);
-    scoringResult = scoreProject(scoringInput, { modeOverride: "on" });
-  } else {
-    // off / shadow / 无专家：live 走纯 legacy（force off 避免嵌套 shadow），
-    // 但专家确定性 verdict 计入 live S5（liveVerdicts）
-    scoringInput = _toScoringInput(rawScoringData, liveVerdicts, industryCategory);
-    scoringResult = scoreProject(scoringInput, { modeOverride: "off" });
-    // shadow：把"全量新分"作为对照块附上，不影响 live
-    if (mode === "shadow" && enrichedData) {
-      const full = scoreProject(_toScoringInput(enrichedData, claimVerdicts, industryCategory), { modeOverride: "on" });
-      scoringResult.scoring_shadow = {
-        total_score: full.total_score,
-        grade: full.grade,
-        dimensions: {
-          timing_ceiling: full.dimensions.timing_ceiling.score,
-          product_moat: full.dimensions.product_moat.score,
-          business_validation: full.dimensions.business_validation.score,
-          team: full.dimensions.team.score,
-          external_risk: full.dimensions.external_risk.score,
-        },
-        delta_total: full.total_score - scoringResult.total_score,
-        specialist_audit: specialistAudit,
-      };
-    }
-  }
-  if (specialistAudit && !scoringResult.scoring_shadow) scoringResult.specialist_audit = specialistAudit;
+  // v4.8.0 起 multiagent 专家证据不再喂评分（深度尽调改为按需生成，见 multiagentService）。
+  // live 走纯 legacy（S2 harness force off 避免嵌套 shadow）；S3/聚合 shadow 由
+  // scoreProject 内部按全局开关自行附挂，与此处无关。
+  const scoringInput = _toScoringInput(rawScoringData, claimVerdicts || [], industryCategory);
+  const scoringResult = scoreProject(scoringInput, { modeOverride: "off" });
 
   onProgress({ type: "progress", stage: "scoring", percentage: 86, message: `评分完成（${scoringResult.total_score}分 / ${scoringResult.grade}），生成报告...` });
 
@@ -834,39 +753,11 @@ function calculateScoring(validatedData, claimVerdicts, onProgress, multiagent =
 /**
  * Step 3: 构建估值对比数据
  */
-function buildValuationComparison(validatedData, extractedData, scoringInput, scoringResult, multiagent = null) {
+function buildValuationComparison(validatedData, extractedData, scoringResult) {
   let valuationComparison = validatedData.valuation_comparison;
-  const valuationAgent = multiagent?.valuation_analysis || null;
-  const valuationTemp = valuationAgent?.valuation_temperature || null;
-  const peerCompanies = Array.isArray(valuationAgent?.peer_public_companies)
-    ? valuationAgent.peer_public_companies
-    : [];
-  const finiteNumber = (value) => {
-    if (value === null || value === undefined || value === "") return null;
-    const n = Number(value);
-    return Number.isFinite(n) ? n : null;
-  };
 
-  if (valuationTemp || peerCompanies.length > 0) {
-    const subjectPs = finiteNumber(valuationTemp?.subject_ps_multiple);
-    const medianPs = finiteNumber(valuationTemp?.industry_median_ps);
-    const overvaluedPct = subjectPs != null && medianPs != null && medianPs > 0
-      ? Math.round(((subjectPs - medianPs) / medianPs) * 100)
-      : 0;
-    return {
-      ...(valuationComparison || {}),
-      bp_multiple: subjectPs != null ? subjectPs : (valuationComparison?.bp_multiple || 0),
-      industry_avg_multiple: medianPs != null ? medianPs : (valuationComparison?.industry_avg_multiple || 0),
-      overvalued_pct: overvaluedPct,
-      industry_name: extractedData.industry || valuationComparison?.industry_name || "",
-      comparable_companies: peerCompanies,
-      temperature: valuationTemp?.temperature || null,
-      temperature_reason: valuationTemp?.temperature_reason || null,
-      data_source: valuationTemp?.source_boundary || "ValuationAgent MiniMax 估值温度计",
-      analysis: valuationAgent?.verdict?.summary || valuationComparison?.analysis || scoringResult.grade_action,
-    };
-  }
-
+  // v4.8.0 起 ValuationAgent（估值温度计/可比公司）不再随主流水线生成，
+  // 估值对比退回 BP 自述倍数兜底；专家估值改由按需深度尽调单独呈现。
   if (!valuationComparison || !valuationComparison.bp_multiple) {
     const bpValuation = extractedData.BP_Valuation || 0;
     const bpRevenue = extractedData.BP_Revenue || 0;
@@ -900,29 +791,12 @@ async function runPipeline(bpText, onProgress, taskId = null, userId = null) {
   // Step 1: 数据提取
   const { extractedData, truncatedText } = await extractBPData(bpText, onProgress);
 
-  // Step 2: Agent B（声明核查+评分）与 6 个 Multiagent 并行启动，互不等待
-  onProgress({ type: "progress", stage: "agent_b_start", percentage: 32, message: "Agent B 启动（3批并发核查）+ 6个AI Agent 并行分析..." });
+  // Step 2: Agent B（声明核查 + 评分 + 五维深度分析 + 深度研究）
+  // 注：6 个 Multiagent 深度尽调 Agent 已从分析流水线中摘出，改为用户在工作区
+  // 按需触发（见 multiagentService）。分析阶段不再自动跑，投研结论也不再喂评分。
+  onProgress({ type: "progress", stage: "agent_b_start", percentage: 32, message: "Agent B 启动（3批并发核查）..." });
 
-  const [agentBResult, multiagent] = await Promise.all([
-    // 主流水线：声明核查 + 评分数据 + 五维深度分析 + 深度研究
-    runAgentBWithBatchingAndResearch(extractedData, truncatedText, onProgress),
-
-    // multiagent：本地 orchestrator 并行执行
-    (async () => {
-      try {
-        onProgress({ type: "progress", stage: "multiagent_start", percentage: 33, message: "深度投研分析启动中..." });
-        const { runId, multiagent: ma } = await agentRuntime.runBpPipeline({
-          bpText, extractedData, taskId, userId,
-        });
-        const runtime = ma?.runtime || "legacy";
-        onProgress({ type: "progress", stage: "multiagent_done", percentage: 85, message: `投研分析完成 (${runtime})` });
-        return { runId, ...ma };
-      } catch (err) {
-        logger.warn("[Pipeline] multiagent 全局异常，不影响主报告:", err.message);
-        return {};
-      }
-    })(),
-  ]);
+  const agentBResult = await runAgentBWithBatchingAndResearch(extractedData, truncatedText, onProgress);
 
   const { claimVerdicts, structuralResult, thinking, dimensionAnalysisResult, deepResearch, scoringEvidenceUsed } = agentBResult;
 
@@ -936,9 +810,7 @@ async function runPipeline(bpText, onProgress, taskId = null, userId = null) {
   }
   if (!deepResearch) qualityFlags.push("deep_research_unavailable");
   if (!scoringEvidenceUsed) qualityFlags.push("scoring_search_unavailable");
-  if (!multiagent || multiagent.error || Object.keys(multiagent).length === 0) {
-    qualityFlags.push("multiagent_unavailable");
-  }
+  // multiagent 已改为按需生成，分析阶段不参与，不再因其缺席标记降级
   const failedVerifyCount = (claimVerdicts || []).filter(
     (v) => v && v.ai_research === "核查失败，无法验证"
   ).length;
@@ -996,11 +868,11 @@ async function runPipeline(bpText, onProgress, taskId = null, userId = null) {
   // 赛道大类（聚合层政策融入按此派生政策档位；显式 Policy_Rubric.tier 优先）
   const primaryIndustryCategory = classifyIndustryMulti(extractedData.industry)[0];
   const { scoringInput, scoringResult } = calculateScoring(
-    validatedData, claimVerdicts, onProgress, multiagent, primaryIndustryCategory
+    validatedData, claimVerdicts, onProgress, primaryIndustryCategory
   );
 
-  // 所见即所评：报告展示的声明核查列表与实际计入 S5 的声明集保持一致
-  // （含专家注入的"财务数学矛盾→证伪"等确定性结论，投资人必须看得到）
+  // 所见即所评：报告展示的声明核查列表与实际计入 S5 的声明集保持一致。
+  // multiagent 专家证据已解耦，不再注入 live 评分。
   if (Array.isArray(scoringInput.claim_verdicts) && scoringInput.claim_verdicts.length > 0) {
     validatedData.claim_verdicts = scoringInput.claim_verdicts;
   }
@@ -1048,7 +920,7 @@ async function runPipeline(bpText, onProgress, taskId = null, userId = null) {
     }
   }
 
-  const valuationComparison = buildValuationComparison(validatedData, extractedData, scoringInput, scoringResult, multiagent);
+  const valuationComparison = buildValuationComparison(validatedData, extractedData, scoringResult);
   const verdict = buildVerdictResponse(scoringResult, structuralResult, validatedData, dimensionAnalysis, valuationComparison);
 
   // 注入嫌疑 → 风险旗置顶，投资人必须看到"这份 BP 试图操纵 AI 分析"
@@ -1124,13 +996,13 @@ async function runPipeline(bpText, onProgress, taskId = null, userId = null) {
       dataLakeService.sinkAllAgentData({
         taskId,
         userId,
-        multiagent,
+        multiagent: null,
         score: verdict?.total_score ?? null,
         isAnonymized: 1,
       });
       const crossMatchInsights = crossMatchService.runCrossMatch({
         taskId,
-        multiagent,
+        multiagent: null,
         score: verdict?.total_score ?? null,
       });
       if (crossMatchInsights) {
@@ -1159,8 +1031,6 @@ async function runPipeline(bpText, onProgress, taskId = null, userId = null) {
     model_id: getModelName(),
     scoring_basis: scoringResult.scoring_basis || "legacy",
     scoring_shadow: scoringResult.scoring_shadow || null,
-    specialist_audit:
-      scoringResult.specialist_audit || scoringResult.scoring_shadow?.specialist_audit || null,
     // 降级显式化：degraded=true 表示报告部分内容由兜底路径生成，
     // flags 枚举具体降级点（前端/管理端可据此提示用户或排查）
     quality: { degraded: qualityFlags.length > 0, flags: qualityFlags },
@@ -1171,7 +1041,7 @@ async function runPipeline(bpText, onProgress, taskId = null, userId = null) {
     thinking,
     deep_research: deepResearch,
     verdict,
-    multiagent,
+    // multiagent 深度尽调改为按需生成，不再随分析结果一起返回（见 multiagentService）
     title,
     industry_category: industryCategory,
     industry_categories: industryCategories,

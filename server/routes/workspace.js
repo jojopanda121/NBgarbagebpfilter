@@ -17,7 +17,7 @@ const { workspaceRateLimit, getWorkspaceUsage } = require("../middleware/workspa
 const { enforceWorkspaceUploadLimits } = require("../services/workspaceUploadLimits");
 
 const router = Router();
-const ALLOWED_EXTENSIONS = new Set([".pdf",".pptx",".docx",".xlsx",".csv",".txt",".md",".png",".jpg",".jpeg"]);
+const ALLOWED_EXTENSIONS = new Set([".pdf",".pptx",".docx",".doc",".xlsx",".csv",".txt",".md",".png",".jpg",".jpeg"]);
 const upload = multer({
   dest: os.tmpdir(),
   limits: { fileSize: 50 * 1024 * 1024 },

@@ -1,6 +1,6 @@
 # GarbageBPFilter 腾讯云部署指南
 
-> 适用版本：`package.json` v3.0.0 · 数据库迁移到 `050_vip_grants_audit.sql`
+> 适用版本：`package.json` v3.0.0 · 数据库迁移已至 `067_multiagent_ondemand.sql`
 > 部署方式：**Docker（推荐）** / PM2（备选）
 
 ---
@@ -14,7 +14,7 @@
 ## 1. 数据安全的三条不可变规则
 
 1. **数据库位置** ── `./data/app.db`（宿主机），通过 `./data:/app/data` 挂载进容器。`./data` 已在 `.gitignore` 中，git 操作不会动它。
-2. **迁移系统** ── `server/db/migrations/` 下 51 个增量 SQL（000–050），启动时自动跑未执行过的，**只前进不回退**，已有数据不动。所有迁移要么 `CREATE TABLE IF NOT EXISTS`、要么 `ALTER TABLE ADD COLUMN`，没有 `DROP TABLE` 或无 `WHERE` 的 `DELETE`。
+2. **迁移系统** ── `server/db/migrations/` 下一系列增量 SQL（000–067），启动时自动跑未执行过的，**只前进不回退**，已有数据不动。所有迁移要么 `CREATE TABLE IF NOT EXISTS`、要么 `ALTER TABLE ADD COLUMN`，没有 `DROP TABLE` 或无 `WHERE` 的 `DELETE`。
 3. **Docker 卷绑定** ── `docker-compose.yml` 用的是 bind mount（宿主机目录直挂），不是匿名 volume。**`docker-compose down` 安全，`docker-compose down -v` 危险**（`-v` 会删除任何匿名卷）。
 
 ---
@@ -35,6 +35,43 @@
 curl -fsSL https://get.docker.com | sh
 sudo systemctl enable --now docker
 ```
+
+---
+
+## 2.5 中国镜像加速（腾讯云北京 / 国内服务器构建必读）
+
+国内服务器直连 Docker Hub / npm / PyPI / Debian 源经常超时。构建镜像前做两步即可全程走国内镜像。
+
+### ① 基础镜像（node / python / nginx / alpine）→ 配 Docker registry 镜像（宿主机一次性）
+
+```bash
+sudo mkdir -p /etc/docker
+sudo tee /etc/docker/daemon.json >/dev/null <<'JSON'
+{
+  "registry-mirrors": [
+    "https://mirror.ccs.tencentyun.com",
+    "https://docker.m.daocloud.io",
+    "https://docker.1ms.run"
+  ]
+}
+JSON
+sudo systemctl restart docker
+```
+
+> `mirror.ccs.tencentyun.com` 是腾讯云内网 Docker Hub 镜像（CVM 上最快、免公网流量）；后两个是公网兜底。配完用 `docker info | grep -A3 "Registry Mirrors"` 确认生效。
+
+### ② 构建依赖（apt / npm / pip）→ `.env` 开关
+
+`Dockerfile` / `docker-compose.yml` 已内置**可开关**的镜像支持，默认走官方源（海外/CI 零影响）。国内服务器在 `.env` 里加三行：
+
+```bash
+CN_MIRROR=1                                            # Debian apt 切腾讯云镜像
+NPM_REGISTRY=https://registry.npmmirror.com            # npm 淘宝镜像
+PIP_INDEX=https://mirrors.tencentyun.com/pypi/simple   # pip 腾讯云内网镜像
+```
+
+> - 三个值由 compose 自动透传进 `docker build`，**改完必须带 `--build` 重建才生效**。
+> - 非腾讯云环境：`PIP_INDEX` 换 `https://pypi.tuna.tsinghua.edu.cn/simple`；`mirrors.tencentyun.com`（apt）仅腾讯云 CVM 内网可达，其它环境保持 `CN_MIRROR=0`、仅靠上面的 registry-mirror 即可。
 
 ---
 
@@ -62,7 +99,7 @@ cp .env.example .env
 | `PORT` | `3001` | 应用监听端口 |
 | `APP_BIND_HOST` | `127.0.0.1` | 应用端口宿主机绑定地址；**对外裸暴露请改成 `0.0.0.0`，但建议保持默认 + 走 Nginx** |
 | `DB_PATH` | `./data/app.db` | SQLite 文件路径（容器内为 `/app/data/app.db`） |
-| `JWT_EXPIRES_IN` | `12h` | Token 有效期 |
+| `JWT_EXPIRES_IN` | `24h` | Token 有效期 |
 | `DEFAULT_FREE_QUOTA` | `3` | 新用户注册赠送的分析次数 |
 | `ADMIN_USERNAME` / `ADMIN_PASSWORD` | – | 启动时自动创建/升级该账号为管理员（密码 ≥ 6 位） |
 | `DOC_SERVICE_URL` | – | 文档提取微服务地址；Docker 部署时由 compose 自动设为 `http://doc-service:8001`，**不需要在 .env 里填** |
@@ -262,6 +299,7 @@ docker-compose --profile production up -d --build  # 全部（含 Nginx + 定时
 - `026–034` 数据飞轮：agent_runs / projects_datalake / founders_datalake / agent_results
 - `035–044` 工作台 v2：workspace_projects / project_versions / project_notes / revoked_tokens / 索引优化 / skill_runs / teaser_shares
 - `045–050` VIP + 制度记忆 + 证据库：VIP grants / institutional_memory / structured_extracts / project_evidence_store / vip_grants_audit
+- `051–067` 论坛/撮合 + 徽章 + 评分校准 + 论坛分区/审核 + agent_runs 工作流列 + multiagent 按需生成（`bp_text` / `multiagent_cache` 列）
 
 **所有迁移都是新增表或加列，零破坏性。** 老代码遇到多余的新表也不会报错（select 不查就行）。
 

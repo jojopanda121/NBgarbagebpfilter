@@ -3,7 +3,7 @@
 //
 // 任何会改变分析结果语义的变更都应 bump PIPELINE_VERSION，包括：
 //   - prompts.js 中的提示词调整
-//   - scoring.js / scoringHarness.js / scoringEvidence.js 公式或默认值变更
+//   - scoring.js / scoringHarness.js 公式或默认值变更
 //   - SCORING_HARNESS 默认模式切换（off/shadow/on）
 //   - multiagent 输出结构变更
 //   - 主力模型更换
@@ -23,6 +23,10 @@
 //         scoringPolicy.js）；总分以分布呈现（中位+区间+置信度）+敏感性+triggered_rules。
 //         默认 shadow（开关 SCORING_AGG），对照块 scoring_agg_shadow。
 //         附带修复：_toScoringInput 漏传 S3_Rubric/Capital_Archetype/Scale_Mechanism。
-const PIPELINE_VERSION = "v4.7.0";
+// v4.8.0: 诚信一票否决（Integrity Veto）彻底移除——证伪/夸大只按计分表计入 S5 均值
+//         拉低诚信维度，不再硬封顶分数或强制改评级（LLM 对重大类别尤其财务易误判，
+//         否决误伤面太大）；multiagent 六专家深度尽调改为按需生成（multiagentService），
+//         分析阶段不再自动跑、投研结论不再喂评分/估值对比。语义变更 → bump 作废旧缓存。
+const PIPELINE_VERSION = "v4.8.0";
 
 module.exports = { PIPELINE_VERSION };

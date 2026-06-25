@@ -13,9 +13,10 @@ import {
   TrendingUp, DollarSign, Cpu, Shield, MessageSquare, FileBox,
   CheckCircle2, X, Trash2, ChevronDown, ChevronRight, Sparkles, Info,
   Brain, Wrench, FileText, Presentation, ClipboardList, Table2,
-  Image as ImageIcon,
+  Image as ImageIcon, RefreshCw,
 } from "lucide-react";
 import api from "../../services/api";
+import MultiagentReport from "../MultiagentReport";
 import { streamChatMessage } from "../../services/workspaceStream";
 import WorkspaceUsageBar from "./WorkspaceUsageBar";
 import ArtifactImagePreview from "./ArtifactImagePreview";
@@ -474,6 +475,7 @@ export default function WorkspaceTab({ taskId }) {
 
   return (
     <div className="space-y-3">
+      <MultiagentReportPanel taskId={taskId} />
       <CapabilityCard
         capabilities={capabilities}
         open={capOpen}
@@ -670,6 +672,112 @@ export default function WorkspaceTab({ taskId }) {
           />
         </aside>
       </div>
+    </div>
+  );
+}
+
+// ── 深度尽调报告（6 Agent，按需生成）──────────────────────────
+// 原先在 BP 分析后自动展示，现改为用户在工作区点按钮按需生成。
+function MultiagentReportPanel({ taskId }) {
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [data, setData] = useState(null);
+  const [error, setError] = useState(null);
+
+  const generate = async (regenerate = false) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const url = `/api/projects/${taskId}/multiagent${regenerate ? "/regenerate" : ""}`;
+      const res = regenerate ? await api.post(url, {}) : await api.get(url);
+      setData(res);
+      setOpen(true);
+    } catch (e) {
+      setError(e.message || "生成失败");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const multiagent = data?.multiagent || null;
+
+  return (
+    <div className="rounded-xl border border-[#EEF1F7] bg-white overflow-hidden">
+      <div className="flex items-center justify-between px-4 py-2.5">
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          className="flex items-center gap-2 text-sm text-[#0F1C36] hover:text-[#1B4FD8] transition-colors"
+        >
+          {open ? <ChevronDown className="w-4 h-4 text-[#8E9BB0]" /> : <ChevronRight className="w-4 h-4 text-[#8E9BB0]" />}
+          <Shield className="w-4 h-4 text-blue-600" />
+          <span className="font-medium">AI 深度尽调报告</span>
+          <span className="text-xs text-[#8E9BB0]">
+            {multiagent ? "已生成" : "6 个 AI 专家·按需生成"}
+          </span>
+        </button>
+        <div className="flex items-center gap-2">
+          {multiagent ? (
+            <button
+              type="button"
+              onClick={() => generate(true)}
+              disabled={loading}
+              className="px-3 py-1.5 text-sm bg-[#EEF1F7] hover:bg-[#E5E9F4] disabled:opacity-50 rounded-lg flex items-center gap-1.5 transition-colors"
+            >
+              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+              重新生成
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => generate(false)}
+              disabled={loading}
+              className="px-3 py-1.5 text-sm bg-[#1B4FD8] hover:bg-[#163069] text-white disabled:opacity-50 rounded-lg flex items-center gap-1.5 transition-colors"
+            >
+              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+              生成报告
+            </button>
+          )}
+        </div>
+      </div>
+
+      {open && (
+        <div className="border-t border-[#EEF1F7] px-4 py-3">
+          {loading && !multiagent && (
+            <div className="flex items-center justify-center py-10 text-sm text-[#4B5A72]">
+              <Loader2 className="w-5 h-5 animate-spin text-blue-500 mr-3" />
+              6 个 AI 专家正在深度分析（项目/创始人/财务/竞品/红旗/估值），约需 1-2 分钟...
+            </div>
+          )}
+          {error && (
+            <div className="py-6 text-center">
+              <p className="text-sm text-red-500 mb-3">{error}</p>
+              <button
+                type="button"
+                onClick={() => generate(false)}
+                className="px-4 py-2 bg-[#EEF1F7] hover:bg-[#E5E9F4] rounded-lg text-sm"
+              >
+                重试
+              </button>
+            </div>
+          )}
+          {!loading && !error && !multiagent && (
+            <p className="py-6 text-center text-sm text-[#8E9BB0]">
+              点击「生成报告」，让 6 个 AI 投资专家对本项目做一次深度尽调。
+            </p>
+          )}
+          {multiagent && (
+            <>
+              <MultiagentReport multiagent={multiagent} />
+              {data?.generated_at && (
+                <p className="mt-3 text-xs text-[#8E9BB0]">
+                  生成于 {new Date(data.generated_at).toLocaleString("zh-CN")}
+                </p>
+              )}
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 }

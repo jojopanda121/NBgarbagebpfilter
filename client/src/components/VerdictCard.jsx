@@ -86,27 +86,6 @@ function QualityBanner({ quality }) {
   );
 }
 
-function IntegrityVetoBanner({ veto, overriddenFrom }) {
-  if (!veto?.triggered) return null;
-  return (
-    <div className="mb-4 border border-red-600/50 bg-red-600/10 rounded-xl p-4 text-sm text-red-600">
-      <div className="font-bold mb-1">
-        ⛔ 诚信一票否决（Integrity Veto）：重大类别声明被证伪或严重夸大
-      </div>
-      <p className="mb-1">
-        财务/估值/合规类核心声明核查不通过。
-        {overriddenFrom ? `原始评分对应 ${overriddenFrom} 级，已强制降至 C 级。` : ""}
-        在公司就以下问题提供原始凭证（审计报告、银行流水、合同原件）之前，不建议推进投资流程。
-      </p>
-      {Array.isArray(veto.reasons) && veto.reasons.length > 0 && (
-        <ul className="list-disc pl-5 space-y-0.5">
-          {veto.reasons.map((r, i) => <li key={i}>{r}</li>)}
-        </ul>
-      )}
-    </div>
-  );
-}
-
 // 判断卡 v3：总分分布 + 政策契合度 + 敏感性 + 触发规则（SCORING_AGG=on 时后端下发）
 function JudgmentCardV3({ verdict }) {
   const dist = verdict.total_distribution;
@@ -203,7 +182,6 @@ const VerdictCard = memo(function VerdictCard({ result }) {
   return (
     <div>
     <QualityBanner quality={result.quality} />
-    <IntegrityVetoBanner veto={verdict.integrity_veto} overriddenFrom={verdict.grade_overridden_from} />
     <div className="bg-white border border-[#D8DCE8] rounded-2xl p-5 sm:p-8">
       <div className="flex flex-col md:flex-row items-center gap-6 sm:gap-8">
         <div className="text-center">

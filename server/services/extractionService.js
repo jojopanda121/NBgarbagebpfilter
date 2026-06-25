@@ -16,7 +16,12 @@ const { docServiceHeaders } = require("./docServiceAuth");
  */
 async function extractDocText(filePath, mode) {
   if (config.docServiceUrl) {
-    return extractViaService(filePath, mode);
+    try {
+      return await extractViaService(filePath, mode);
+    } catch (err) {
+      console.warn(`[Extraction] 文档提取服务失败，回落本地解析: ${err.message}`);
+      return extractViaSubprocess(filePath, mode);
+    }
   }
   return extractViaSubprocess(filePath, mode);
 }

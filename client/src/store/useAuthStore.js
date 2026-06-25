@@ -9,6 +9,12 @@ const USER_KEY = "bp_user";
 const PENDING_TASK_KEY = "bp_pending_task";
 const API_BASE = process.env.REACT_APP_API_URL || "";
 
+function clearStoredAuth() {
+  localStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem(USER_KEY);
+  localStorage.removeItem(PENDING_TASK_KEY);
+}
+
 const useAuthStore = create((set, get) => ({
   // 状态
   token: localStorage.getItem(TOKEN_KEY) || null,
@@ -35,11 +41,13 @@ const useAuthStore = create((set, get) => ({
       const resp = await fetch(`${API_BASE}/api/auth/me`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      if (!resp.ok) {
-        localStorage.removeItem(TOKEN_KEY);
-        localStorage.removeItem(USER_KEY);
-        localStorage.removeItem(PENDING_TASK_KEY);
+      if (resp.status === 401 || resp.status === 403) {
+        clearStoredAuth();
         set({ token: null, user: null, quota: null, initialized: true });
+        return;
+      }
+      if (!resp.ok) {
+        set({ initialized: true });
         return;
       }
       const data = await resp.json();
@@ -73,9 +81,7 @@ const useAuthStore = create((set, get) => ({
 
   // 登出
   logout: () => {
-    localStorage.removeItem(TOKEN_KEY);
-    localStorage.removeItem(USER_KEY);
-    localStorage.removeItem(PENDING_TASK_KEY);
+    clearStoredAuth();
     set({ token: null, user: null, quota: null });
   },
 

@@ -15,9 +15,12 @@ Docker 启动：
 import io
 import csv
 import os
+import re
 import tempfile
+import zipfile
 from pathlib import Path
 from typing import List, Optional
+from xml.etree import ElementTree as ET
 
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -35,6 +38,7 @@ DOC_SERVICE_TOKEN = os.environ.get("DOC_SERVICE_TOKEN", "")
 MAX_UPLOAD_BYTES = int(os.environ.get("DOC_MAX_UPLOAD_BYTES", str(50 * 1024 * 1024)))  # 与 Node 侧 50MB 对齐
 MAX_PDF_PAGES = int(os.environ.get("DOC_MAX_PDF_PAGES", "300"))
 MAX_OCR_PAGES = int(os.environ.get("DOC_MAX_OCR_PAGES", "40"))  # OCR 远贵于文本提取，单独限制
+IMAGE_EXTS = (".png", ".jpg", ".jpeg", ".bmp", ".gif", ".tif", ".tiff", ".webp")
 
 
 @app.middleware("http")
@@ -57,9 +61,87 @@ def _get_ocr():
     return _ocr_engine
 
 
+def extraction_fallback_text(file_path: str, mode: str, reason: str = "") -> str:
+    """最后兜底：保证调用方拿到可进入分析流程的文本，而不是解析异常。"""
+    filename = Path(file_path).name
+    try:
+        size = os.path.getsize(file_path)
+    except OSError:
+        size = 0
+    reason_line = f"解析提示：{reason}" if reason else "解析提示：常规文本层为空或不可读取。"
+    return "\n".join([
+        "【上传材料解析结果】",
+        f"文件名：{filename}",
+        f"文件格式：{mode}",
+        f"文件大小：{size} 字节",
+        reason_line,
+        "系统已接收该文件，但自动解析只能取得有限文本。请基于文件名、格式和已提取片段谨慎分析，并在结论中标注材料可读性不足；不要声称已读取到文件中未实际提取出的具体事实。",
+    ])
+
+
+def _ocr_image_bytes(image_bytes: bytes) -> str:
+    """Best-effort OCR：依赖缺失或识别失败时返回空字符串，不中断上传体验。"""
+    try:
+        ocr = _get_ocr()
+        result, _ = ocr(image_bytes)
+        if not result:
+            return ""
+        return "\n".join(line[1] for line in result if len(line) > 1 and line[1]).strip()
+    except Exception as e:
+        print(f"警告: 内嵌图片 OCR 失败: {e}")
+        return ""
+
+
+def _extract_ooxml_media_ocr(file_path: str, media_prefix: str, max_images: int = 40):
+    """对 PPTX/DOCX 内嵌图片做 OCR，覆盖整页截图型材料。"""
+    parts = []
+    try:
+        with zipfile.ZipFile(file_path) as zf:
+            names = [
+                n for n in zf.namelist()
+                if n.startswith(media_prefix) and n.lower().endswith(IMAGE_EXTS)
+            ]
+            for idx, name in enumerate(names[:max_images], start=1):
+                text = _ocr_image_bytes(zf.read(name))
+                if text:
+                    parts.append(f"[图片 OCR {idx}: {Path(name).name}]\n{text}")
+            if len(names) > max_images:
+                parts.append(f"...（内嵌图片超过 {max_images} 张，其余已跳过 OCR）")
+    except Exception as e:
+        print(f"警告: 读取 OOXML 内嵌图片失败: {e}")
+    return parts
+
+
+def _ooxml_xml_text(file_path: str, wanted_prefixes):
+    """从 OOXML XML 文本节点兜底提取内容。"""
+    def natural_key(name):
+        return [int(x) if x.isdigit() else x for x in re.split(r"(\d+)", name)]
+
+    with zipfile.ZipFile(file_path) as zf:
+        names = sorted(
+            (n for n in zf.namelist() if n.endswith(".xml") and n.startswith(tuple(wanted_prefixes))),
+            key=natural_key,
+        )
+        for name in names:
+            try:
+                root = ET.fromstring(zf.read(name))
+            except Exception:
+                continue
+            for elem in root.iter():
+                local = elem.tag.rsplit("}", 1)[-1]
+                if local not in {"t", "v", "instrText"}:
+                    continue
+                text = (elem.text or "").strip()
+                if text:
+                    yield text
+
+
 def extract_pdf_text(file_path: str) -> str:
     """从 PDF 提取文本，先尝试直接提取，文本过少时降级为 OCR"""
-    import fitz  # PyMuPDF
+    try:
+        import fitz  # PyMuPDF
+    except Exception as e:
+        return extraction_fallback_text(file_path, "pdf", f"PDF 解析依赖不可用：{e}")
 
     doc = fitz.open(file_path)
     if doc.page_count > MAX_PDF_PAGES:
@@ -81,7 +163,16 @@ def extract_pdf_text(file_path: str) -> str:
     # 如果每页平均文本不足 50 字符，尝试 OCR
     avg_chars = len(full_text) / max(len(pages_text), 1)
     if avg_chars < 50:
-        full_text = extract_pdf_ocr(file_path)
+        try:
+            ocr_text = extract_pdf_ocr(file_path)
+            if full_text.strip() and ocr_text:
+                full_text = ocr_text if len(ocr_text) > len(full_text) * 1.2 else full_text
+            else:
+                full_text = ocr_text or full_text
+        except Exception as e:
+            print(f"警告: PDF OCR 失败，返回文字层或兜底文本: {e}")
+            if not full_text.strip():
+                full_text = extraction_fallback_text(file_path, "pdf", f"PDF 文字层为空，OCR 失败：{e}")
 
     return full_text
 
@@ -110,49 +201,191 @@ def extract_pdf_ocr(file_path: str) -> str:
     return "\n".join(pages_text)
 
 
+def _normalize_pptx_text(text: str) -> str:
+    text = re.sub(r"[ \t\r\f\v]+", " ", (text or "")).strip()
+    return text
+
+
+def _remember_text(seen, text: str):
+    text = _normalize_pptx_text(text)
+    if text:
+        seen.add(text)
+
+
+def _append_unique(parts, seen, text: str):
+    text = _normalize_pptx_text(text)
+    if not text:
+        return
+    if text in seen:
+        return
+    seen.add(text)
+    parts.append(text)
+
+
+def _iter_pptx_shape_text(shape):
+    """递归提取 PPTX shape 文本，覆盖文本框、表格、组合形状。"""
+    if getattr(shape, "has_text_frame", False):
+        for para in shape.text_frame.paragraphs:
+            text = para.text.strip()
+            if text:
+                yield text
+
+    if getattr(shape, "has_table", False):
+        for row in shape.table.rows:
+            cells = []
+            for cell in row.cells:
+                cell_text = (cell.text or "").strip().replace("\n", " ")
+                cells.append(cell_text)
+            if any(cells):
+                yield " | ".join(cells)
+
+    child_shapes = getattr(shape, "shapes", None)
+    if child_shapes:
+        for child in child_shapes:
+            yield from _iter_pptx_shape_text(child)
+
+
+def _pptx_xml_fallback_text(file_path: str):
+    """
+    从 PPTX XML 兜底提取 DrawingML 文本。
+    python-pptx 不总能展开 SmartArt、图表缓存、部分嵌套对象；这些文本通常仍在
+    ppt/slides、ppt/charts、ppt/diagrams 或 notesSlides XML 内。
+    """
+    wanted_prefixes = (
+        "ppt/slides/slide",
+        "ppt/notesSlides/notesSlide",
+        "ppt/charts/chart",
+        "ppt/diagrams/data",
+    )
+
+    yield from _ooxml_xml_text(file_path, wanted_prefixes)
+
+
 def extract_pptx_text(file_path: str) -> str:
-    """从 PPTX 提取文本"""
+    """从 PPTX 提取文本：文本框、表格、组合形状、备注，并用 XML 兜底"""
     from pptx import Presentation
 
     prs = Presentation(file_path)
     slides_text = []
+    xml_seen = set()
 
-    for slide in prs.slides:
+    for slide_idx, slide in enumerate(prs.slides, start=1):
         slide_parts = []
+        slide_seen = set()
         for shape in slide.shapes:
-            if shape.has_text_frame:
-                for para in shape.text_frame.paragraphs:
-                    text = para.text.strip()
-                    if text:
-                        slide_parts.append(text)
+            for text in _iter_pptx_shape_text(shape):
+                _append_unique(slide_parts, slide_seen, text)
+                _remember_text(xml_seen, text)
+
+        if slide.has_notes_slide:
+            notes_frame = slide.notes_slide.notes_text_frame
+            if notes_frame:
+                notes_text = notes_frame.text.strip()
+                if notes_text:
+                    _append_unique(slide_parts, slide_seen, f"[备注] {notes_text}")
+                    _remember_text(xml_seen, notes_text)
+
         if slide_parts:
-            slides_text.append("\n".join(slide_parts))
+            slides_text.append(f"--- 第 {slide_idx} 页 ---\n" + "\n".join(slide_parts))
+
+    xml_parts = []
+    for text in _pptx_xml_fallback_text(file_path):
+        normalized = _normalize_pptx_text(text)
+        if any(normalized != existing and normalized in existing for existing in xml_seen):
+            continue
+        _append_unique(xml_parts, xml_seen, text)
+    if xml_parts:
+        slides_text.append("[PPTX XML 兜底文本]\n" + "\n".join(xml_parts))
+
+    current_len = len("\n".join(slides_text).strip())
+    if current_len < 200:
+        ocr_parts = _extract_ooxml_media_ocr(file_path, "ppt/media/")
+        if ocr_parts:
+            slides_text.append("[PPTX 内嵌图片 OCR]\n" + "\n\n".join(ocr_parts))
 
     return "\n\n".join(slides_text)
 
 
 def extract_docx_text(file_path: str) -> str:
     """从 DOCX 提取段落和表格文本"""
-    from docx import Document
-
-    doc = Document(file_path)
     parts = []
+    seen = set()
 
-    for para in doc.paragraphs:
-        text = para.text.strip()
-        if text:
-            parts.append(text)
+    try:
+        from docx import Document
+        doc = Document(file_path)
 
-    for table_idx, table in enumerate(doc.tables, 1):
-        rows = []
-        for row in table.rows:
-            cells = [cell.text.strip().replace("\n", " ") for cell in row.cells]
-            if any(cells):
-                rows.append(" | ".join(cells))
-        if rows:
-            parts.append(f"[表格 {table_idx}]\n" + "\n".join(rows))
+        for para in doc.paragraphs:
+            text = para.text.strip()
+            if text:
+                _append_unique(parts, seen, text)
+
+        for table_idx, table in enumerate(doc.tables, 1):
+            rows = []
+            for row in table.rows:
+                cells = [cell.text.strip().replace("\n", " ") for cell in row.cells]
+                if any(cells):
+                    rows.append(" | ".join(cells))
+            if rows:
+                _append_unique(parts, seen, f"[表格 {table_idx}]\n" + "\n".join(rows))
+    except Exception as e:
+        print(f"警告: python-docx 提取失败，继续 XML 兜底: {e}")
+
+    xml_parts = []
+    wanted_prefixes = (
+        "word/document",
+        "word/header",
+        "word/footer",
+        "word/footnotes",
+        "word/endnotes",
+        "word/comments",
+    )
+    try:
+        for text in _ooxml_xml_text(file_path, wanted_prefixes):
+            normalized = _normalize_pptx_text(text)
+            if any(normalized != existing and normalized in existing for existing in seen):
+                continue
+            _append_unique(xml_parts, seen, text)
+    except Exception as e:
+        print(f"警告: DOCX XML 兜底提取失败: {e}")
+    if xml_parts:
+        parts.append("[DOCX XML 兜底文本]\n" + "\n".join(xml_parts))
+
+    current_len = len("\n".join(parts).strip())
+    if current_len < 200:
+        ocr_parts = _extract_ooxml_media_ocr(file_path, "word/media/")
+        if ocr_parts:
+            parts.append("[DOCX 内嵌图片 OCR]\n" + "\n\n".join(ocr_parts))
 
     return "\n\n".join(parts)
+
+
+def extract_legacy_doc_text(file_path: str) -> str:
+    """
+    旧版 .doc 是 OLE/CFB 二进制格式。没有 LibreOffice/antiword 时无法完整还原版式，
+    这里做 best-effort 字符串提取，至少不让上传流程失败。
+    """
+    data = Path(file_path).read_bytes()
+    parts = []
+    seen = set()
+
+    for encoding in ("utf-16le", "gb18030", "utf-8", "latin1"):
+        try:
+            decoded = data.decode(encoding, errors="ignore")
+        except Exception:
+            continue
+        for match in re.finditer(r"[\u4e00-\u9fffA-Za-z0-9][\u4e00-\u9fffA-Za-z0-9\s，。、“”‘’：；！？（）()《》<>/%.,:;!?+\-_=·&@#￥$]{3,}", decoded):
+            text = re.sub(r"\s+", " ", match.group(0)).strip()
+            if len(text) < 4 or text in seen:
+                continue
+            seen.add(text)
+            parts.append(text)
+            if len(parts) >= 300:
+                break
+        if len("\n".join(parts)) > 200:
+            break
+
+    return "\n".join(parts).strip()
 
 
 def extract_xlsx_text(file_path: str) -> str:
@@ -211,13 +444,13 @@ async def extract_text(
 
     Args:
         file: 上传的 PDF 或 PPTX 文件
-        mode: 文件类型 ("pdf"、"pptx"、"docx"、"xlsx" 或 "csv")
+        mode: 文件类型 ("pdf"、"pptx"、"docx"、"doc"、"xlsx" 或 "csv")
 
     Returns:
         { "text": "提取的文本内容", "chars": 字符数 }
     """
-    if mode not in ("pdf", "pptx", "docx", "xlsx", "csv"):
-        raise HTTPException(status_code=400, detail="不支持的文件类型，仅支持 pdf/pptx/docx/xlsx/csv")
+    if mode not in ("pdf", "pptx", "docx", "doc", "xlsx", "csv"):
+        raise HTTPException(status_code=400, detail="不支持的文件类型，仅支持 pdf/pptx/docx/doc/xlsx/csv")
 
     # 流式落盘 + 大小上限：不把整个文件读进内存，超限立即终止
     suffix = f".{mode}"
@@ -250,6 +483,8 @@ async def extract_text(
             text = extract_pptx_text(tmp_path)
         elif mode == "docx":
             text = extract_docx_text(tmp_path)
+        elif mode == "doc":
+            text = extract_legacy_doc_text(tmp_path)
         elif mode == "xlsx":
             text = extract_xlsx_text(tmp_path)
         elif mode == "csv":
@@ -258,20 +493,24 @@ async def extract_text(
             text = extract_pdf_text(tmp_path)
 
         if not text or len(text.strip()) < 10:
-            raise HTTPException(
-                status_code=422,
-                detail="文档提取的文本过少，请检查文件是否包含有效内容",
-            )
+            text = extraction_fallback_text(tmp_path, mode, "文档提取的文本过少，已使用兜底材料说明。")
 
         return JSONResponse({
             "text": text,
             "chars": len(text),
+            "degraded": len(text.strip()) < 200,
         })
 
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"文档解析失败: {str(e)}")
+        text = extraction_fallback_text(tmp_path, mode, f"文档解析异常，已使用兜底材料说明：{str(e)}")
+        return JSONResponse({
+            "text": text,
+            "chars": len(text),
+            "degraded": True,
+            "warning": str(e),
+        })
     finally:
         # 清理临时文件
         try:

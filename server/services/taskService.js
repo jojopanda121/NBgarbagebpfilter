@@ -76,6 +76,7 @@ const ALLOWED_TASK_COLUMNS = new Set([
   "title", "industry_category", "file_hash", "total_score",
   "project_location", "client_ip", "project_stage", "adjusted_score",
   "next_followup_date", "archive_number",
+  "bp_text",
 ]);
 
 function updateTask(taskId, fields) {
@@ -191,6 +192,59 @@ function getTasksByUser(userId) {
   }
 }
 
+// ── 物理删除任务及其全部关联数据 ──────────────────────────────
+// 用户在历史中删除报告时调用：除从列表移除外，连同服务器上的关联数据一并
+// 物理删除（不再保留 deleted_at 软删行）。
+//
+// tasks 的多数子表通过 ON DELETE CASCADE 自动清理；少数例外需在此显式处理：
+//   · bp_company_links / prediction_validations —— FK 为 RESTRICT，存在引用行
+//     会直接阻断 DELETE FROM tasks，必须先删；
+//   · workspace_memory_* / scoring_calibration —— 仅有 task_id 列、无外键，
+//     不删会留下孤儿行。
+// 同时把 projects.latest_task_id / project_versions.task_id 指向本任务的悬空
+// 指针置空（projects 本身不随任务删除）。
+const TASK_CHILD_TABLES = [
+  ["bp_company_links", "task_id"],
+  ["prediction_validations", "task_id"],
+  ["workspace_memory_shared", "task_id"],
+  ["workspace_agent_working_memory", "task_id"],
+  ["workspace_memory_usage", "task_id"],
+  ["scoring_calibration", "task_id"],
+];
+
+function tableExists(db, name) {
+  return !!db
+    .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?")
+    .get(name);
+}
+
+/**
+ * 物理删除单个任务及其关联数据（事务内）。表名/列名均来自上方白名单，
+ * 不含用户输入，可安全插值。
+ */
+function hardDeleteTask(taskId) {
+  const db = getDb();
+  db.transaction(() => {
+    // 先清理无 cascade 的子表（RESTRICT 外键 + 无外键孤儿行）
+    for (const [table, col] of TASK_CHILD_TABLES) {
+      if (tableExists(db, table)) {
+        db.prepare(`DELETE FROM ${table} WHERE ${col} = ?`).run(taskId);
+      }
+    }
+    // 解除 projects / project_versions 对该任务的悬空指针
+    if (tableExists(db, "projects")) {
+      db.prepare("UPDATE projects SET latest_task_id = NULL WHERE latest_task_id = ?").run(taskId);
+    }
+    if (tableExists(db, "project_versions")) {
+      db.prepare("UPDATE project_versions SET task_id = NULL WHERE task_id = ?").run(taskId);
+    }
+    // 物理删除任务行；其余 CASCADE 子表（agent_runs、各 datalake 等）自动级联清理
+    db.prepare("DELETE FROM tasks WHERE id = ?").run(taskId);
+  })();
+  // 同步失效内存缓存
+  memoryTasks.delete(taskId);
+}
+
 // ── 启动时故障恢复 ────────────────────────────────────────────
 // 进程崩溃或重启后，将数据库中所有处于 running 状态的任务标记为
 // failed，防止它们永远卡在"进行中"。
@@ -255,4 +309,4 @@ const cleanupTimer = setInterval(() => {
 }, 600_000);
 if (typeof cleanupTimer.unref === "function") cleanupTimer.unref();
 
-module.exports = { createTask, updateTask, getTask, getTasksByUser };
+module.exports = { createTask, updateTask, getTask, getTasksByUser, hardDeleteTask };

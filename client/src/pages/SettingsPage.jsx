@@ -1,26 +1,17 @@
 import React, { useState, useEffect } from "react";
 import {
-  User,
-  Wallet,
   Lock,
   Loader2,
   CheckCircle,
   AlertCircle,
   Send,
-  Gift,
   Copy,
-  Shield,
-  Users,
   BarChart3,
-  MessageSquare,
-  Package,
-  Settings as SettingsIcon,
   Search,
   Trash2,
   Edit,
   Eye,
   X,
-  FileText,
   Megaphone,
   MapPin,
   TrendingUp,
@@ -29,31 +20,7 @@ import { useSearchParams } from "react-router-dom";
 import api from "../services/api";
 import useAuthStore from "../store/useAuthStore";
 import ProfileEditor from "./Forum/ProfileEditor";
-
-// Tab 配置
-const TABS = [
-  { key: "mystats", label: "我的数据", icon: BarChart3 },
-  { key: "account", label: "账户安全", icon: User },
-  { key: "forum", label: "论坛资料", icon: Users },
-  { key: "billing", label: "财务与额度", icon: Wallet },
-  { key: "token", label: "兑换额度", icon: Gift },
-  { key: "feedback", label: "意见反馈", icon: MessageSquare },
-];
-
-// 管理员专属 tab（管理员中心显示）
-const ADMIN_ONLY_TABS = [
-  { key: "users", label: "用户管理", icon: Users },
-  { key: "tasks", label: "分析记录", icon: FileText },
-  { key: "forum_admin", label: "论坛管理", icon: MessageSquare },
-  { key: "stats", label: "数据统计", icon: BarChart3 },
-  { key: "feature_usage", label: "功能使用", icon: TrendingUp },
-  { key: "admin_feedback", label: "反馈管理", icon: MessageSquare },
-  { key: "announcements", label: "公告管理", icon: Megaphone },
-  { key: "packages", label: "套餐配置", icon: Package },
-  { key: "site_content", label: "内容管理", icon: Edit },
-  { key: "settings", label: "系统设置", icon: SettingsIcon },
-  { key: "admin", label: "兑换码管理", icon: Shield },
-];
+import { ADMIN_SETTINGS_TABS, USER_SETTINGS_TABS } from "./settings/settingsTabs";
 
 export default function SettingsPage({ adminMode = false }) {
   const [searchParams] = useSearchParams();
@@ -481,7 +448,7 @@ export default function SettingsPage({ adminMode = false }) {
 
       {/* Tab 切换 */}
       <div className="flex gap-2 mb-6 border-b border-[#D8DCE8] pb-4 overflow-x-auto">
-        {(adminMode ? ADMIN_ONLY_TABS : TABS).map((tab) => (
+        {(adminMode ? ADMIN_SETTINGS_TABS : USER_SETTINGS_TABS).map((tab) => (
           <button
             key={tab.key}
             onClick={() => setActiveTab(tab.key)}
@@ -509,7 +476,7 @@ export default function SettingsPage({ adminMode = false }) {
           oldPassword={oldPassword} setOldPassword={setOldPassword}
           newPassword={newPassword} setNewPassword={setNewPassword}
           confirmPassword={confirmPassword} setConfirmPassword={setConfirmPassword}
-          loading={loading} setMessage={setMessage} setProfile={setProfile}
+          loading={loading} setLoading={setLoading} setMessage={setMessage} setProfile={setProfile}
         />
       )}
 
@@ -949,7 +916,7 @@ function MyStatsTab({ stats }) {
 }
 
 // 账户安全组件
-function AccountTab({ profile, email, setEmail, emailCode, setEmailCode, sendingEmailCode, emailCountdown, handleSendEmailCode, handleBindEmail, oldPassword, setOldPassword, newPassword, setNewPassword, confirmPassword, setConfirmPassword, loading, setMessage, setProfile }) {
+function AccountTab({ profile, email, setEmail, emailCode, setEmailCode, sendingEmailCode, emailCountdown, handleSendEmailCode, handleBindEmail, oldPassword, setOldPassword, newPassword, setNewPassword, confirmPassword, setConfirmPassword, loading, setLoading, setMessage, setProfile }) {
   const [uploading, setUploading] = useState(false);
   const fileInputRef = React.useRef(null);
 
@@ -1036,8 +1003,18 @@ function AccountTab({ profile, email, setEmail, emailCode, setEmailCode, sending
           <button onClick={async () => {
             if (newPassword !== confirmPassword) { setMessage({ type: "error", text: "两次密码不一致" }); return; }
             if (newPassword.length < 6) { setMessage({ type: "error", text: "密码至少6位" }); return; }
-            loading = true;
-            try { await api.put("/api/user/password", { oldPassword, newPassword }); setMessage({ type: "success", text: "密码修改成功" }); setOldPassword(""); setNewPassword(""); setConfirmPassword(""); } catch (err) { setMessage({ type: "error", text: err.message || "修改失败" }); } loading = false;
+            setLoading(true);
+            try {
+              await api.put("/api/user/password", { oldPassword, newPassword });
+              setMessage({ type: "success", text: "密码修改成功" });
+              setOldPassword("");
+              setNewPassword("");
+              setConfirmPassword("");
+            } catch (err) {
+              setMessage({ type: "error", text: err.message || "修改失败" });
+            } finally {
+              setLoading(false);
+            }
           }} disabled={loading || !oldPassword || !newPassword} className="flex items-center gap-2 px-4 py-2 bg-[#1B4FD8] hover:bg-[#163069] disabled:bg-[#E5E9F4] rounded-lg">
             {loading && <Loader2 className="w-4 h-4 animate-spin" />}修改密码
           </button>

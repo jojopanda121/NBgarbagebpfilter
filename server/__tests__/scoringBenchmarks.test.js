@@ -1,7 +1,7 @@
 // ============================================================
 // scoringBenchmarks.test.js — 标杆/反例总分级回归（投资判断内核 v3 验收）
 //
-// 验收口径（与用户确认）：用「排序 + 评级档位 + 一票否决」作硬约束，
+// 验收口径（与用户确认）：用「排序 + 评级档位」作硬约束，
 // **不钉死精确点分** —— 早期项目没有上帝视角分数，钉死点分=任务书自己禁止的
 // "调参逼近正确分数"。总分以分布呈现，点值仅参考。
 //
@@ -10,7 +10,8 @@
 //   2. 排序：五标杆 > 反例B(平庸SaaS) > 反例A(钢铁厂)
 //   3. 反例A 钢铁厂 评级 D（重资产+大投资不误给高分）
 //   4. 反例B 平庸SaaS 不得评 A（轻资产≠自动高分；高 S3 被无壁垒/无政策对冲）
-//   5. 反例C 财务造假 触发 Integrity Veto，评级封顶 C（无论其他维度多高）
+//   5. 反例C 财务造假 → 财务证伪拉低 S5(诚信维度)，但一票否决已移除，
+//      评级由分数决定，不再强制封顶 C
 // ============================================================
 
 const { scoreProject } = require("../scoring");
@@ -58,13 +59,11 @@ describe("反例回归 — 不被重资产/轻资产/政策误导", () => {
     expect(r.total_score).toBeLessThanOrEqual(78);
   });
 
-  test("反例C 财务造假：触发 Integrity Veto，评级封顶 C（其他维度再高也不得评 A/B）", () => {
+  test("反例C 财务造假：财务证伪拉低 S5(诚信)，但否决已移除——评级由分数决定，不再强制封顶", () => {
     const r = score("反例C_财务造假");
-    expect(r.integrity_veto).toBeTruthy();
-    expect(r.integrity_veto.triggered).toBe(true);
-    expect(["C", "D"]).toContain(r.grade);
-    expect(r.grade).not.toBe("A");
-    expect(r.grade).not.toBe("B");
+    expect(r.integrity_veto).toBeFalsy();
+    // 财务证伪把诚信维度(external_risk)拉到低位（重大组 0.7 权重）
+    expect(r.dimensions.external_risk.score).toBeLessThanOrEqual(35);
   });
 });
 

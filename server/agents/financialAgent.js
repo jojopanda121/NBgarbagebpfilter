@@ -7,7 +7,7 @@ const MAX_BP_CHARS = 20000;
 
 class FinancialAgent extends BaseAgent {
   constructor() {
-    super({ name: "financial", systemPrompt: PROMPT, maxTokens: 8192, useSearch: true });
+    super({ name: "financial", systemPrompt: PROMPT, maxTokens: 12000, useSearch: true });
   }
 
   buildSearchQueries({ extractedData }) {

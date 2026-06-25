@@ -27,9 +27,11 @@ const {
   DIMENSION_ANALYSIS_PROMPT,
 } = require("../utils/prompts");
 
-const MAX_CLAIMS_PER_BATCH = 6; // 每批最多6条声明，防止输出截断导致JSON解析失败
-const MAX_CONCURRENT_BATCHES = 5; // 最多5个并发批次
-const PARALLEL_TASK_TIMEOUT_MS = 8 * 60 * 1000; // 单路并行任务上限 8min，避免一路 hang 拖死整个分析
+const MAX_CLAIMS_PER_BATCH = 6; // 每批最多6条声明，截断时按"已完成条数"做残片抢救+重试剩余
+const MAX_CONCURRENT_BATCHES = 8; // 并发批次（M3 限流 RPM 200/TPM 10M，8 路仍有大量余量）
+// 单路并行任务上限 11min：必须 > 单次 LLM 请求超时上限（calcTimeout 封顶 600s/10min），
+// 否则放大 max_tokens 后的慢请求会被本壳子提前 kill，误判为失败。
+const PARALLEL_TASK_TIMEOUT_MS = 11 * 60 * 1000;
 
 // ── 不可信文档边界（与 prompts.js 的 UNTRUSTED_DOC_GUARD 配对）──────
 // BP 原文进入任何 prompt 前必须包裹，防止文档内指令越权成为模型指令。
@@ -211,7 +213,7 @@ function compressVerdicts(verdicts) {
   const sorted = [...verdicts].sort(
     (a, b) => (severityOrder[a.severity] ?? 1) - (severityOrder[b.severity] ?? 1)
   );
-  return sorted.slice(0, 15).map(
+  return sorted.slice(0, 30).map(
     ({
       category, original_claim, verdict, diff, severity, score_impact,
       evidence_status, attempted_sources, source_boundary, missing_fields, next_dd_action,
@@ -228,7 +230,7 @@ async function verifySingleClaim(claim, bpContext, batchLabel) {
     const raw = await callLLM(
       CLAIM_VERDICT_BATCH_PROMPT + "\n\n【重要】请严格只输出 JSON 数组，数组中只有一个元素。",
       `${bpContext}\n\n待核查声明：\n${JSON.stringify([claim], null, 2)}`,
-      4096
+      8000
     );
     const parsed = extractJsonArray(raw);
     if (parsed && parsed.length > 0) return parsed[0];
@@ -241,6 +243,25 @@ async function verifySingleClaim(claim, bpContext, batchLabel) {
     ai_research: "核查失败，无法验证", verdict: "存疑",
     diff: "核查失败", severity: "中", score_impact: "无法评估",
   };
+}
+
+/**
+ * 把一批核查的原始输出切成"已完成的 verdict"和"还没做完、需重试的 claim"。
+ * M3 截断时 extractJsonArray 会修复并返回已完成的前 N 条 verdict（与输入
+ * claim 顺序一致）；据此保留前 N 条、把剩余 (batch.length - N) 条留待重试，
+ * 而不是整批丢弃——这是把核查失败率压到接近 0 的关键。
+ * @returns {{ verdicts: object[], remaining: object[] }}
+ */
+function splitBatchVerdicts(raw, batch) {
+  const parsed = extractJsonArray(raw);
+  if (!Array.isArray(parsed) || parsed.length === 0) {
+    return { verdicts: [], remaining: batch };
+  }
+  if (parsed.length >= batch.length) {
+    return { verdicts: parsed.slice(0, batch.length), remaining: [] };
+  }
+  // 部分完成（截断）：保留已完成的，剩余 claim 留待重试
+  return { verdicts: parsed, remaining: batch.slice(parsed.length) };
 }
 
 /** Agent B 核心调度函数 + 深度研究并行 */
@@ -272,81 +293,69 @@ async function runAgentBWithBatchingAndResearch(extractedData, bpText, onProgres
     const hasPriorityClaim = batch.some((c) =>
       ["critical", "high"].includes(String(c?.priority || "").toLowerCase())
     );
-    if (!hasPriorityClaim) return callLLM(sysPrompt, userInput, 6144);
+    if (!hasPriorityClaim) return callLLM(sysPrompt, userInput, 16000);
 
     const preSearchQueries = batch
       .filter((c) => ["critical", "high"].includes(String(c?.priority || "").toLowerCase()))
       .map((c) => c?.verification_harness?.minimax_research_prompt || c?.verification_harness?.kimi_research_prompt)
       .filter(Boolean)
       .slice(0, 3);
-    return callLLMWithSearch(sysPrompt, userInput, { maxTokens: 6144, preSearchQueries })
+    return callLLMWithSearch(sysPrompt, userInput, { maxTokens: 16000, preSearchQueries })
       .then((r) => r.text);
   };
 
   // M8: 外层 try/catch 兜底 Promise.all 内部不可达异常（如 p-limit 自身错误）
-  let batchResults;
+  let batchOutcomes;
   try {
-    batchResults = await Promise.all(
+    batchOutcomes = await Promise.all(
       batches.map((batch, batchIdx) =>
         limit(() =>
-          verifyBatch(batch, batchIdx).then((raw) => {
-            const parsed = extractJsonArray(raw);
-            if (!parsed) {
-              return { failed: true, batch, batchIdx };
-            }
-            return { failed: false, results: parsed };
-          }).catch(() => {
-            return { failed: true, batch, batchIdx };
-          })
+          verifyBatch(batch, batchIdx)
+            // 残片抢救：截断时保留已完成的前 N 条 verdict，剩余 claim 留待重试
+            .then((raw) => ({ batchIdx, ...splitBatchVerdicts(raw, batch) }))
+            .catch(() => ({ batchIdx, verdicts: [], remaining: batch }))
         )
       )
     );
   } catch (err) {
-    logger.error("[B.1] 批量并发调度本身异常，全部降级为失败批次:", err.message);
-    batchResults = batches.map((batch, batchIdx) => ({ failed: true, batch, batchIdx }));
+    logger.error("[B.1] 批量并发调度本身异常，全部降级为重试:", err.message);
+    batchOutcomes = batches.map((batch, batchIdx) => ({ batchIdx, verdicts: [], remaining: batch }));
   }
 
-  // Phase 1.5: 失败批次重试 — 先整体重试，再逐条降级
+  // 收集首轮已完成的 verdict，以及需要重试的剩余 claim（失败批次 + 截断残片）
   const allClaimVerdicts = [];
-  const failedBatches = [];
-
-  for (const br of batchResults) {
-    if (br.failed) {
-      failedBatches.push(br);
-    } else {
-      allClaimVerdicts.push(...br.results);
-    }
+  const remainingClaims = [];
+  for (const bo of batchOutcomes) {
+    allClaimVerdicts.push(...bo.verdicts);
+    for (const claim of bo.remaining) remainingClaims.push(claim);
   }
 
-  if (failedBatches.length > 0) {
-    logger.warn(`[B.1] ${failedBatches.length} 个批次解析失败，启动重试...`);
-    onProgress({ type: "progress", stage: "claim_verify", percentage: 50, message: `${failedBatches.length} 个批次核查失败，重试中...` });
+  // Phase 1.5: 重试剩余 claim — 重新分批整体重试（大预算）→ 残片抢救 → 逐条降级
+  if (remainingClaims.length > 0) {
+    logger.warn(`[B.1] ${remainingClaims.length} 条声明首轮未完成（失败/截断），启动重试...`);
+    onProgress({ type: "progress", stage: "claim_verify", percentage: 50, message: `${remainingClaims.length} 条声明核查未完成，重试中...` });
 
-    for (const fb of failedBatches) {
-      // 整体重试一次
-      let retrySuccess = false;
+    const retryBatches = [];
+    for (let i = 0; i < remainingClaims.length; i += MAX_CLAIMS_PER_BATCH) {
+      retryBatches.push(remainingClaims.slice(i, i + MAX_CLAIMS_PER_BATCH));
+    }
+
+    for (const rb of retryBatches) {
+      let got = [];
       try {
         const retryRaw = await callLLM(
           CLAIM_VERDICT_BATCH_PROMPT + "\n\n【紧急提醒】请严格只输出 JSON 数组，不要输出任何其他内容。",
-          `${bpContext}\n\n待核查声明批次 ${fb.batchIdx + 1}/${batchCount}（重试）：\n${JSON.stringify(fb.batch, null, 2)}`,
-          8192
+          `${bpContext}\n\n待核查声明（重试）：\n${JSON.stringify(rb, null, 2)}`,
+          16000
         );
-        const retryParsed = extractJsonArray(retryRaw);
-        if (retryParsed) {
-          allClaimVerdicts.push(...retryParsed);
-          retrySuccess = true;
-        }
+        got = splitBatchVerdicts(retryRaw, rb).verdicts;
       } catch (err) {
-        logger.warn(`[B.1] 批次 ${fb.batchIdx + 1} 整体重试失败: ${err.message}`);
+        logger.warn(`[B.1] 剩余声明整体重试失败: ${err.message}`);
       }
-
-      // 整体重试仍失败，逐条核查
-      if (!retrySuccess) {
-        logger.warn(`[B.1] 批次 ${fb.batchIdx + 1} 整体重试失败，拆分为单条核查...`);
-        for (const claim of fb.batch) {
-          const singleResult = await verifySingleClaim(claim, bpContext, `批次${fb.batchIdx + 1}`);
-          allClaimVerdicts.push(singleResult);
-        }
+      allClaimVerdicts.push(...got);
+      // 重试后仍缺的，逐条降级核查（保证每条 claim 都有结论）
+      for (const claim of rb.slice(got.length)) {
+        allClaimVerdicts.push(await verifySingleClaim(claim, bpContext, "重试剩余"));
       }
     }
   }
@@ -416,7 +425,7 @@ async function runAgentBWithBatchingAndResearch(extractedData, bpText, onProgres
         onProgress({ type: "progress", stage: "scoring_retry2", percentage: 76, message: "精简模式评分中..." });
         const minimalInput = [
           `【BP提取数据】\n${JSON.stringify(extractedData, null, 2)}`,
-          `\n\n【声明核查报告（top-10）】\n${JSON.stringify(compressedVerdicts.slice(0, 10), null, 2)}`,
+          `\n\n【声明核查报告（top-25）】\n${JSON.stringify(compressedVerdicts.slice(0, 25), null, 2)}`,
         ].join("");
         const retry2Raw = await callLLM(EXPERT_JUDGE_MINIMAL_PROMPT, minimalInput, 4096);
         result = extractJson(retry2Raw);
@@ -1019,9 +1028,9 @@ async function runPipeline(bpText, onProgress, taskId = null, userId = null) {
       const dimInput = [
         `【项目信息】${extractedData.company_name || "未知公司"} — ${extractedData.industry || "未知赛道"}`,
         `\n\n【评分数据】\n${JSON.stringify(validatedData.validated_data, null, 2)}`,
-        `\n\n【声明核查报告（top-15）】\n${JSON.stringify((claimVerdicts || []).slice(0, 15).map(v => ({ claim: v.original_claim || v.bp_claim, verdict: v.verdict, diff: v.diff })), null, 2)}`,
+        `\n\n【声明核查报告（top-30）】\n${JSON.stringify((claimVerdicts || []).slice(0, 30).map(v => ({ claim: v.original_claim || v.bp_claim, verdict: v.verdict, diff: v.diff })), null, 2)}`,
       ].join("");
-      const dimRaw = await callLLM(DIMENSION_ANALYSIS_PROMPT, dimInput, 8000);
+      const dimRaw = await callLLM(DIMENSION_ANALYSIS_PROMPT, dimInput, 12000);
       const dimResult = extractJson(dimRaw);
       if (dimResult) {
         for (const key of dimKeys) {

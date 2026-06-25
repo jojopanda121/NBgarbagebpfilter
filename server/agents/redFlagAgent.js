@@ -7,7 +7,7 @@ const MAX_BP_CHARS = 20000;
 
 class RedFlagAgent extends BaseAgent {
   constructor() {
-    super({ name: "red_flag", systemPrompt: PROMPT, maxTokens: 8192 });
+    super({ name: "red_flag", systemPrompt: PROMPT, maxTokens: 12000 });
   }
 
   buildUserMessage({ bpFullText, extractedData: _extractedData, priorAgentOutputs = {} }) {

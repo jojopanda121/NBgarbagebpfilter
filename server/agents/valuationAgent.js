@@ -21,7 +21,7 @@ function getIndustryBenchmarks(industry, stage) {
 
 class ValuationAgent extends BaseAgent {
   constructor() {
-    super({ name: "valuation", systemPrompt: PROMPT, maxTokens: 10000, useSearch: true });
+    super({ name: "valuation", systemPrompt: PROMPT, maxTokens: 14000, useSearch: true });
   }
 
   buildSearchQueries({ extractedData }) {

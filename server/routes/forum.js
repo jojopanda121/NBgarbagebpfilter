@@ -11,6 +11,8 @@ const { requireAuth, optionalAuth } = require("../middleware/auth");
 const forum = require("../services/forumService");
 const badges = require("../services/badgeService");
 const messages = require("../services/forumMessageService");
+const reports = require("../services/forumReportService");
+const notifications = require("../services/notificationService");
 const { getDb } = require("../db");
 
 const router = Router();
@@ -116,6 +118,45 @@ router.post("/posts/:id/bookmark", requireAuth, handle((req) =>
 
 router.post("/report", requireAuth, handle((req) =>
   forum.reportTarget({ userId: req.user.id, targetType: req.body.target_type, targetId: Number(req.body.target_id), reason: req.body.reason })
+));
+
+// ── 表情回应(emoji + 贴纸)──
+router.post("/react", requireAuth, writeLimiter, handle((req) =>
+  forum.toggleReaction({
+    userId: req.user.id,
+    targetType: req.body.target_type,
+    targetId: Number(req.body.target_id),
+    reaction: req.body.reaction,
+  })
+));
+
+// ── 完整报告:申请 / 授权解锁 / 撤销 / 查看 / 我的报告库 ──
+router.post("/posts/:id/report-request", requireAuth, writeLimiter, handle((req) =>
+  reports.requestReport({ postId: Number(req.params.id), requesterId: req.user.id })
+));
+router.post("/posts/:id/grant-report", requireAuth, handle((req) =>
+  reports.grantReport({ postId: Number(req.params.id), granterId: req.user.id, granteeId: Number(req.body.grantee_id) })
+));
+router.post("/posts/:id/revoke-report", requireAuth, handle((req) =>
+  reports.revokeReport({ postId: Number(req.params.id), granterId: req.user.id, granteeId: Number(req.body.grantee_id) })
+));
+router.get("/posts/:id/report", requireAuth, handle((req) =>
+  reports.getUnlockedReport({ postId: Number(req.params.id), viewerId: req.user.id })
+));
+router.get("/reports", requireAuth, handle((req) => reports.listMyReports(req.user.id)));
+
+// ── 站内通知 ──
+router.get("/notifications", requireAuth, handle((req) =>
+  notifications.listNotifications(req.user.id, {
+    unreadOnly: req.query.unread === "1" || req.query.unread === "true",
+    page: Number(req.query.page) || 1,
+  })
+));
+router.get("/notifications/unread-count", requireAuth, handle((req) =>
+  notifications.unreadCount(req.user.id)
+));
+router.post("/notifications/read", requireAuth, handle((req) =>
+  notifications.markRead(req.user.id, Array.isArray(req.body.ids) ? req.body.ids : null)
 ));
 
 // ── 撮合 ──

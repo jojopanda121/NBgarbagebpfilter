@@ -3,6 +3,7 @@ import React from "react";
 import { Outlet, useNavigate, useLocation } from "react-router-dom";
 import Header from "../../components/layout/Header";
 import useAuthStore from "../../store/useAuthStore";
+import NotificationBell from "../../components/forum/NotificationBell";
 import { Handshake, UserCircle, Landmark, MessageSquare } from "lucide-react";
 
 export default function ForumLayout() {
@@ -24,6 +25,7 @@ export default function ForumLayout() {
           </button>
           {token && (
             <div className="flex items-center gap-1.5">
+              <NotificationBell />
               <button onClick={() => navigate("/forum/messages")}
                 className="flex items-center gap-1 px-2.5 py-1.5 text-xs text-[#4B5A72] hover:bg-[#EEF1F7] rounded-lg">
                 <MessageSquare className="w-4 h-4" /> 消息

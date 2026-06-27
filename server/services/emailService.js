@@ -1,6 +1,8 @@
 // ============================================================
-// server/services/emailService.js — 邮箱验证码服务
+// server/services/emailService.js — 邮箱发送服务
 // 使用腾讯云 SES API 发送邮件（TC3-HMAC-SHA256 签名）
+//   - sendEmailCode：验证码（模板模式，TriggerType=1）
+//   - sendForumNotificationEmail：论坛通知（Simple 内容模式，best-effort）
 // ============================================================
 
 const crypto = require("crypto");
@@ -18,19 +20,19 @@ const SES_CONFIG = {
 
 const CODE_EXPIRE_TIME = 5 * 60 * 1000; // 5 分钟
 
+function isSesConfigured() {
+  return !!(SES_CONFIG.secretId && SES_CONFIG.secretKey && SES_CONFIG.fromEmail);
+}
+
 /**
  * 发送邮箱验证码
  */
 async function sendEmailCode(toEmail) {
-  if (!SES_CONFIG.secretId || !SES_CONFIG.secretKey || !SES_CONFIG.fromEmail) {
+  if (!isSesConfigured()) {
     throw new Error("邮箱服务未配置，请联系管理员设置腾讯云 SES");
   }
   if (!SES_CONFIG.templateId) {
     throw new Error("邮箱模板未配置，请在腾讯云 SES 控制台创建模板并设置 TENCENT_SES_TEMPLATE_ID");
-  }
-
-  if (!SES_CONFIG.templateId) {
-    throw new Error("邮箱模板未配置，请设置 TENCENT_SES_TEMPLATE_ID");
   }
 
   const code = Math.floor(100000 + Math.random() * 900000).toString();
@@ -40,7 +42,16 @@ async function sendEmailCode(toEmail) {
 
   // 调用腾讯云 SES API 发送（使用模板）
   try {
-    await sendViaTencentSES(toEmail, code);
+    await sesSendEmail({
+      FromEmailAddress: SES_CONFIG.fromEmail,
+      Destination: [toEmail],
+      Template: {
+        TemplateID: SES_CONFIG.templateId,
+        TemplateData: JSON.stringify({ code }),
+      },
+      Subject: "验证码",
+      TriggerType: 1, // 触发类邮件（验证码）
+    });
     return { success: true, expiresIn: CODE_EXPIRE_TIME / 1000 };
   } catch (err) {
     // H7: 仅记录消息文本，避免把含 Authorization 头的 err 对象整体写入日志
@@ -53,25 +64,44 @@ async function sendEmailCode(toEmail) {
 }
 
 /**
- * 腾讯云 SES SendEmail 实现（模板发送模式）
+ * 发送论坛通知邮件（Simple 内容模式，best-effort）。
+ * 未配置 SES 时静默跳过（返回 {skipped:true}），绝不抛错 —— 调用方按 best-effort 处理。
+ * 注意：Simple 模式需发件域已在腾讯云 SES 审核通过。
+ * @param {string} toEmail
+ * @param {{subject:string, body:string}} opts  body 为纯文本（也用作 HTML 段落）
  */
-async function sendViaTencentSES(toEmail, code) {
+async function sendForumNotificationEmail(toEmail, { subject, body }) {
+  if (!isSesConfigured()) return { skipped: true, reason: "ses_not_configured" };
+  if (!toEmail) return { skipped: true, reason: "no_recipient" };
+  const text = String(body || "");
+  const html = `<div style="font-family:sans-serif;line-height:1.7;color:#222">${escapeHtml(text).replace(/\n/g, "<br>")}</div>`;
+  return sesSendEmail({
+    FromEmailAddress: SES_CONFIG.fromEmail,
+    Destination: [toEmail],
+    Subject: String(subject || "论坛通知"),
+    Simple: {
+      Html: Buffer.from(html, "utf-8").toString("base64"),
+      Text: Buffer.from(text, "utf-8").toString("base64"),
+    },
+    TriggerType: 2, // 非触发类（通知）
+  });
+}
+
+function escapeHtml(s) {
+  return String(s)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+
+/**
+ * 腾讯云 SES SendEmail 通用实现（TC3-HMAC-SHA256 签名）。
+ * payload 由调用方按模板/Simple 模式构造。
+ */
+async function sesSendEmail(payload) {
   const endpoint = "ses.tencentcloudapi.com";
   const service = "ses";
   const action = "SendEmail";
   const version = "2020-10-02";
-
-  // 请求体：使用 Template 代替 Simple，满足腾讯云 SES 模板发送要求
-  const payload = {
-    FromEmailAddress: SES_CONFIG.fromEmail,
-    Destination: [toEmail],
-    Template: {
-      TemplateID: SES_CONFIG.templateId,
-      TemplateData: JSON.stringify({ code }),
-    },
-    Subject: "验证码",
-    TriggerType: 1, // 触发类邮件（验证码）
-  };
 
   const payloadStr = JSON.stringify(payload);
   const timestamp = Math.floor(Date.now() / 1000);
@@ -145,7 +175,7 @@ async function sendViaTencentSES(toEmail, code) {
     throw new Error("邮件发送失败，请稍后重试");
   }
 
-  console.log(`[EmailService] 邮件已发送至 ${toEmail}, MessageId: ${result.Response?.MessageId}`);
+  console.log(`[EmailService] 邮件已发送, MessageId: ${result.Response?.MessageId}`);
   return result;
 }
 
@@ -179,6 +209,7 @@ function canSendEmailCode(email) {
 
 module.exports = {
   sendEmailCode,
+  sendForumNotificationEmail,
   verifyEmailCode,
   canSendEmailCode,
   SES_CONFIG,

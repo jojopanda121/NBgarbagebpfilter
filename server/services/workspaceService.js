@@ -677,8 +677,16 @@ function formatHistory(history, max) {
 // 由 registry 声明哪些专家可使用服务端 MiniMax web_search 预检索。
 const SEARCH_ENABLED_AGENTS = getSearchEnabledAgents();
 
-function stripModelToolCalls(text = "") {
+// M3 是推理模型, 会把推理写成 <think> 正文。剥掉闭合的 <think>…</think>,
+// 以及被 max_tokens 截断、未闭合一直拖到结尾的 <think>（否则原始推理会当答案泄露）。
+function stripThinkBlocks(text = "") {
   return text
+    .replace(/<think>[\s\S]*?<\/think>/gi, "")
+    .replace(/<think>[\s\S]*$/i, "");
+}
+
+function stripModelToolCalls(text = "") {
+  return stripThinkBlocks(text)
     .replace(/<tool_call>[\s\S]*?<\/tool_call>/gi, "")
     .replace(/<minimax:tool_call>[\s\S]*?<\/minimax:tool_call>/gi, "")
     .replace(/<TOOL_CALL>[\s\S]*?<\/TOOL_CALL>/g, "")
@@ -1196,8 +1204,18 @@ async function runHostAgentic({
     }
   }
 
-  if (!text.trim() && toolResultContext.trim()) {
-    console.warn("[Workspace] host 工具调用后未产出正文，启动无工具综合兜底");
+  // M3 常把推理写成 <think> 正文、烧光 max_tokens 也不出结论。先剥掉 <think> 看是否
+  // 真有给用户看的正文（保留 <TOOL_CALL>，下游 used_tools=false 降级路径还要解析）。
+  if (artifacts.length === 0) {
+    text = stripThinkBlocks(text).trim();
+  }
+
+  // 剥完为空 = think-only 或被 max_tokens 截断没产出结论 → 强制一次"关思考、直接出结论"
+  // 的兜底合成。不再要求必须有 toolResultContext：纯对话/检索为空也能从项目上下文+专家意见合成。
+  if (!text.trim() && artifacts.length === 0) {
+    console.warn(
+      `[Workspace] host 未产出有效正文（stop_reason=${result?.stop_reason}，多为 M3 把预算烧在 <think>），启动综合兜底`
+    );
     const fallbackUser = [
       "# 项目上下文",
       projectCtx,
@@ -1207,19 +1225,23 @@ async function runHostAgentic({
       "",
       "# 专家意见",
       expertBlock,
+      ...(toolResultContext.trim() ? ["", "# 工具结果", toolResultContext] : []),
       "",
-      "# 工具结果",
-      toolResultContext,
-      "",
-      "请基于上述工具结果和项目上下文，直接给用户一段中文最终答复。不要再调用工具，不要输出 thinking，不要解释工具过程；如果检索结果相关性不足，要明确说明并给出可执行的下一步检索/尽调建议。",
+      "请基于上述项目上下文与已有信息，直接给用户一段中文最终答复。不要再调用工具，不要输出 <think> 或任何思考过程，不要解释工具过程；如果信息或检索结果不足，要明确说明并给出可执行的下一步检索/尽调建议。",
     ].join("\n");
     const fallbackText = await callLLM(
-      `${WORKSPACE_HOST_SYSTEM_PROMPT}\n\n你现在处于工具调用后的最终综合阶段：只能输出给用户看的正文，严禁继续搜索或输出工具调用。`,
+      `${WORKSPACE_HOST_SYSTEM_PROMPT}\n\n你现在处于最终综合阶段：只能输出给用户看的正文，严禁继续搜索、严禁输出 <think> 或工具调用。`,
       fallbackUser,
-      1800
+      2400
     );
     text = stripModelToolCalls(fallbackText || "").trim();
     if (text) onEvent({ type: "text_delta", text });
+  }
+
+  // 最终安全网：兜底也没救回来时给一句诚实说明，绝不返回空白答复。
+  if (!text.trim() && artifacts.length === 0) {
+    text = "抱歉，这次没有成功产出结论（模型把额度用在了内部推理上）。请重发一次，或把问题拆细一点再问。";
+    onEvent({ type: "text_delta", text });
   }
 
   // 没开 tools 的降级路径：从 text 里抓 <TOOL_CALL>

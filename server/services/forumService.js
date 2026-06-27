@@ -14,11 +14,37 @@
 const { getDb } = require("../db");
 const badgeService = require("./badgeService");
 const forumMessageService = require("./forumMessageService");
+const notificationService = require("./notificationService");
 
 const GUEST_LIST_LIMIT = 6;       // 游客最多看前 6 条
 const GUEST_BODY_CHARS = 140;     // 游客正文截断长度
 const VALID_CATEGORIES = ["project", "discussion", "market"];
 const VALID_USER_TYPES = ["investor", "founder", "fa", "unset"];
+
+// ── 表情回应白名单(社区趣味层;只在社区区,不进报告/风险/免责)──
+// emoji 走 'emoji:<char>';定制卡通贴纸走 'sticker:<id>',id 必须与前端注册表一致。
+const REACTION_EMOJIS = [
+  "👍", "❤️", "😂", "🔥", "👏", "🎉", "💡", "🤔", "👀", "🚀",
+  "😮", "😅", "🙏", "💪", "🤝", "📈", "📉", "💰", "🧐", "🥲",
+];
+const STICKER_IDS = [
+  "bullish", "pass", "show-me-bp", "valuation-wild", "old-leek",
+  "due-diligence", "money-eyes", "skeptical", "congrats", "thinking",
+];
+const REACTION_EMOJI_SET = new Set(REACTION_EMOJIS);
+const STICKER_ID_SET = new Set(STICKER_IDS);
+
+// 纯函数:校验 reaction 是否在白名单(防注入)。jest 可测。
+function isValidReaction(reaction) {
+  if (typeof reaction !== "string") return false;
+  const i = reaction.indexOf(":");
+  if (i < 0) return false;
+  const kind = reaction.slice(0, i);
+  const val = reaction.slice(i + 1);
+  if (kind === "emoji") return REACTION_EMOJI_SET.has(val);
+  if (kind === "sticker") return STICKER_ID_SET.has(val);
+  return false;
+}
 
 // ── 工具：解析 JSON 安全 ──
 function safeParse(str, fallback = null) {
@@ -386,6 +412,7 @@ function getPostDetail(postId, viewerId) {
   }
 
   post.body = r.body || "";
+  post.reactions = getReactionsFor("post", postId, viewerId);
   const liked = !!db.prepare(
     "SELECT 1 FROM forum_likes WHERE user_id = ? AND target_type = 'post' AND target_id = ?"
   ).get(viewerId, postId);
@@ -445,6 +472,7 @@ function listComments(postId, viewerId) {
     parent_id: c.parent_id,
     body: c.body,
     like_count: c.like_count,
+    reactions: getReactionsFor("comment", c.id, viewerId),
     created_at: c.created_at,
     author: { id: c.author_id, name: c.display_name || c.username || "用户", user_type: c.user_type || "unset", type_verified: !!c.type_verified, avatar_url: c.avatar_url || null },
     is_author: !!viewerId && c.author_id === viewerId,
@@ -537,6 +565,45 @@ function reportTarget({ userId, targetType, targetId, reason }) {
 }
 
 // ============================================================
+// 表情回应(emoji + 定制贴纸,社区趣味层)
+// ============================================================
+/** 聚合某目标的表情:[{ reaction, count, mine }]。viewerId 为空 → mine 恒 false。 */
+function getReactionsFor(targetType, targetId, viewerId = null) {
+  const db = getDb();
+  const rows = db.prepare(
+    `SELECT reaction, COUNT(*) AS count,
+            MAX(CASE WHEN user_id = ? THEN 1 ELSE 0 END) AS mine
+     FROM forum_reactions WHERE target_type = ? AND target_id = ?
+     GROUP BY reaction ORDER BY count DESC, reaction ASC`
+  ).all(viewerId || -1, targetType, targetId);
+  return rows.map((r) => ({ reaction: r.reaction, count: r.count, mine: !!r.mine }));
+}
+
+/** 切换表情:再点同一个即取消。reaction 走白名单防注入。 */
+function toggleReaction({ userId, targetType, targetId, reaction }) {
+  if (!["post", "comment"].includes(targetType)) throw badRequest("类型错误");
+  if (!isValidReaction(reaction)) throw badRequest("不支持的表情");
+  const db = getDb();
+  const table = targetType === "post" ? "forum_posts" : "forum_comments";
+  const target = db.prepare(`SELECT id FROM ${table} WHERE id = ?`).get(targetId);
+  if (!target) throw notFound("目标不存在");
+
+  const exists = db.prepare(
+    "SELECT 1 FROM forum_reactions WHERE user_id = ? AND target_type = ? AND target_id = ? AND reaction = ?"
+  ).get(userId, targetType, targetId, reaction);
+  if (exists) {
+    db.prepare(
+      "DELETE FROM forum_reactions WHERE user_id = ? AND target_type = ? AND target_id = ? AND reaction = ?"
+    ).run(userId, targetType, targetId, reaction);
+  } else {
+    db.prepare(
+      "INSERT OR IGNORE INTO forum_reactions (user_id, target_type, target_id, reaction) VALUES (?, ?, ?, ?)"
+    ).run(userId, targetType, targetId, reaction);
+  }
+  return { reactions: getReactionsFor(targetType, targetId, userId), mine_active: !exists };
+}
+
+// ============================================================
 // 撮合
 // ============================================================
 function expressInterest({ postId, userId, message }) {
@@ -557,6 +624,19 @@ function expressInterest({ postId, userId, message }) {
     if (/UNIQUE/.test(e.message)) throw badRequest("你已对该项目表达过意向");
     throw e;
   }
+
+  // 通知发帖人「有人对你项目感兴趣」(best-effort,失败不阻断意向)
+  try {
+    const meta = db.prepare("SELECT title, codename FROM forum_posts WHERE id = ?").get(postId);
+    notificationService.notify({
+      userId: post.author_id, type: "interest_received", actorId: userId, postId,
+      payload: {
+        post_title: meta?.title || null, codename: meta?.codename || null,
+        actor_name: notificationService.actorName(userId), message: (message || "").slice(0, 80),
+      },
+      email: true,
+    });
+  } catch (e) { console.error("[Forum] notify interest failed:", e.message); }
   return { ok: true };
 }
 
@@ -578,6 +658,19 @@ function respondInterest({ connectionId, userId, accept }) {
       const conv = forumMessageService.openConversationOnAccept(conn.owner_id, conn.initiator_id);
       conversationId = conv?.id ?? null;
     } catch (e) { console.error("[Forum] open conversation on accept failed:", e.message); }
+
+    // 通知发起人「你的意向已被同意」(best-effort)
+    try {
+      const meta = db.prepare("SELECT title, codename FROM forum_posts WHERE id = ?").get(conn.post_id);
+      notificationService.notify({
+        userId: conn.initiator_id, type: "interest_accepted", actorId: conn.owner_id, postId: conn.post_id,
+        payload: {
+          post_title: meta?.title || null, codename: meta?.codename || null,
+          actor_name: notificationService.actorName(conn.owner_id),
+        },
+        email: true,
+      });
+    } catch (e) { console.error("[Forum] notify accept failed:", e.message); }
   }
   return { ok: true, status: accept ? "accepted" : "declined", conversation_id: conversationId };
 }
@@ -713,6 +806,7 @@ module.exports = {
   deleteComment,
   toggleLike,
   toggleBookmark,
+  toggleReaction,
   reportTarget,
   expressInterest,
   respondInterest,
@@ -720,6 +814,6 @@ module.exports = {
   getMyProfile,
   updateMyProfile,
   getPublicProfile,
-  // 测试用
-  _internal: { buildSnapshotFromTask, scrubText, generateCodename },
+  // forumReportService 复用脱敏原语 + 测试用
+  _internal: { buildSnapshotFromTask, scrubText, collectIdentifiers, safeParse, generateCodename, isValidReaction },
 };

@@ -42,12 +42,36 @@ const forumApi = {
   report: (targetType, targetId, reason) =>
     api.post("/api/forum/report", { target_type: targetType, target_id: targetId, reason }),
 
+  // 表情回应（emoji + 贴纸）
+  react: (targetType, targetId, reaction) =>
+    api.post("/api/forum/react", { target_type: targetType, target_id: targetId, reaction }),
+
   // 撮合
   expressInterest: (postId, message) =>
     api.post(`/api/forum/posts/${postId}/interest`, { message }),
   respondInterest: (connectionId, accept) =>
     api.post(`/api/forum/connections/${connectionId}/respond`, { accept }),
   listConnections: () => api.get("/api/forum/connections"),
+
+  // 完整报告：申请 / 授权解锁 / 撤销 / 查看 / 我的报告库
+  requestReport: (postId) => api.post(`/api/forum/posts/${postId}/report-request`, {}),
+  grantReport: (postId, granteeId) =>
+    api.post(`/api/forum/posts/${postId}/grant-report`, { grantee_id: granteeId }),
+  revokeReport: (postId, granteeId) =>
+    api.post(`/api/forum/posts/${postId}/revoke-report`, { grantee_id: granteeId }),
+  getUnlockedReport: (postId) => api.get(`/api/forum/posts/${postId}/report`),
+  listMyReports: () => api.get("/api/forum/reports"),
+
+  // 站内通知
+  listNotifications: ({ unread = false, page = 1 } = {}) => {
+    const qs = new URLSearchParams();
+    if (unread) qs.set("unread", "1");
+    if (page) qs.set("page", String(page));
+    return api.get(`/api/forum/notifications?${qs.toString()}`);
+  },
+  notificationsUnreadCount: () => api.get("/api/forum/notifications/unread-count"),
+  markNotificationsRead: (ids = null) =>
+    api.post("/api/forum/notifications/read", ids ? { ids } : {}),
 
   // 资料
   getMyProfile: () => api.get("/api/forum/profile"),

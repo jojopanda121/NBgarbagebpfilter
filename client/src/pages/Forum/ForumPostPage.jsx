@@ -1,7 +1,7 @@
 // ForumPostPage — 帖子详情：评分快照 + 正文 + 撮合 + 评论 + 游客软墙
 import React, { useEffect, useState, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { Loader2, Heart, Bookmark, Flag, Handshake, Trash2, ArrowLeft, Send } from "lucide-react";
+import { Loader2, Heart, Bookmark, Flag, Handshake, Trash2, ArrowLeft, Send, FileText, Smile } from "lucide-react";
 import forumApi from "../../services/forumApi";
 import useAuthStore from "../../store/useAuthStore";
 import ScoreSnapshotCard from "../../components/forum/ScoreSnapshotCard";
@@ -10,8 +10,21 @@ import Avatar from "../../components/forum/Avatar";
 import BadgeList from "../../components/forum/BadgeList";
 import RegistrationGate from "../../components/forum/RegistrationGate";
 import ForumDisclaimer from "../../components/forum/ForumDisclaimer";
+import ReactionBar from "../../components/forum/ReactionBar";
+import UnlockedReportModal from "../../components/forum/UnlockedReportModal";
+import { Sticker, STICKERS } from "../../components/forum/stickers/registry";
 import InterestModal from "./InterestModal";
 import { categoryMeta } from "../../constants/forum";
+
+// 评论正文里的 [[sticker:id]] token → 渲染成贴纸
+function renderCommentBody(body) {
+  const parts = String(body || "").split(/(\[\[sticker:[a-z-]+\]\])/g);
+  return parts.map((p, i) => {
+    const m = p.match(/^\[\[sticker:([a-z-]+)\]\]$/);
+    if (m) return <Sticker key={i} id={m[1]} size={40} className="align-middle mx-0.5" />;
+    return <span key={i}>{p}</span>;
+  });
+}
 
 export default function ForumPostPage() {
   const { id } = useParams();
@@ -25,6 +38,8 @@ export default function ForumPostPage() {
   const [commentText, setCommentText] = useState("");
   const [posting, setPosting] = useState(false);
   const [showInterest, setShowInterest] = useState(false);
+  const [showReport, setShowReport] = useState(false);
+  const [showCommentStickers, setShowCommentStickers] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -87,6 +102,34 @@ export default function ForumPostPage() {
     load();
   }
 
+  // 完整报告:作者/已解锁 → 打开;否则 → 申请(通知发帖人)
+  async function openReport() {
+    if (!token) return navigate("/login");
+    if (post.is_author) { setShowReport(true); return; }
+    try {
+      await forumApi.getUnlockedReport(post.id);
+      setShowReport(true);
+    } catch (probeErr) {
+      if (probeErr.status !== 403) { alert(probeErr.message || "无法打开报告"); return; }
+      try {
+        const r = await forumApi.requestReport(post.id);
+        if (r.already_unlocked) { setShowReport(true); return; }
+        alert("已向发帖人申请完整报告，TA 同意后你会收到通知");
+      } catch { alert("申请失败，请稍后再试"); }
+    }
+  }
+
+  function setPostReactions(reactions) {
+    setData((d) => ({ ...d, post: { ...d.post, reactions } }));
+  }
+  function setCommentReactions(cid, reactions) {
+    setData((d) => ({ ...d, comments: d.comments.map((c) => (c.id === cid ? { ...c, reactions } : c)) }));
+  }
+  function insertSticker(id) {
+    setCommentText((t) => `${t}[[sticker:${id}]]`);
+    setShowCommentStickers(false);
+  }
+
   return (
     <div className="max-w-3xl mx-auto px-4 py-5">
       <button onClick={() => navigate("/forum")} className="flex items-center gap-1 text-xs text-[#8E9BB0] hover:text-[#0D2145] mb-3">
@@ -135,23 +178,36 @@ export default function ForumPostPage() {
 
         {/* 操作栏 */}
         {!gated && (
-          <div className="flex items-center gap-2 mt-5 pt-4 border-t border-[#EEF1F7]">
-            <Action onClick={toggleLike} active={viewer.liked} icon={Heart}>{post.like_count}</Action>
-            <Action onClick={toggleBookmark} active={viewer.bookmarked} icon={Bookmark}>收藏</Action>
-            <Action onClick={report} icon={Flag}>举报</Action>
-            <div className="flex-1" />
-            {post.is_author ? (
-              <Action onClick={handleDelete} icon={Trash2} danger>删除</Action>
-            ) : (
-              // 私信已门控：先「我有兴趣」，发帖人同意后才解锁站内私信（在「撮合」里进入对话）
-              post.allow_contact && (
-                <button onClick={() => (token ? setShowInterest(true) : navigate("/login"))}
-                  className="flex items-center gap-1.5 px-4 py-2 text-sm bg-[#1B4FD8] hover:bg-[#163069] text-white rounded-lg font-semibold">
-                  <Handshake className="w-4 h-4" /> 我有兴趣
-                </button>
-              )
-            )}
-          </div>
+          <>
+            <div className="flex items-center gap-2 mt-5 pt-4 border-t border-[#EEF1F7]">
+              <Action onClick={toggleLike} active={viewer.liked} icon={Heart}>{post.like_count}</Action>
+              <Action onClick={toggleBookmark} active={viewer.bookmarked} icon={Bookmark}>收藏</Action>
+              <Action onClick={report} icon={Flag}>举报</Action>
+              <div className="flex-1" />
+              {/* 完整报告:作者预览 / 他人申请查看（授权解锁后可看） */}
+              {post.score && (
+                <Action onClick={openReport} icon={FileText}>
+                  {post.is_author ? "预览完整报告" : "完整报告"}
+                </Action>
+              )}
+              {post.is_author ? (
+                <Action onClick={handleDelete} icon={Trash2} danger>删除</Action>
+              ) : (
+                // 私信已门控：先「我有兴趣」，发帖人同意后才解锁站内私信（在「撮合」里进入对话）
+                post.allow_contact && (
+                  <button onClick={() => (token ? setShowInterest(true) : navigate("/login"))}
+                    className="flex items-center gap-1.5 px-4 py-2 text-sm bg-[#1B4FD8] hover:bg-[#163069] text-white rounded-lg font-semibold">
+                    <Handshake className="w-4 h-4" /> 我有兴趣
+                  </button>
+                )
+              )}
+            </div>
+            {/* 表情回应（社区趣味层） */}
+            <div className="mt-3">
+              <ReactionBar reactions={post.reactions || []} targetType="post" targetId={post.id}
+                disabled={!token} onChange={setPostReactions} />
+            </div>
+          </>
         )}
       </article>
 
@@ -166,11 +222,29 @@ export default function ForumPostPage() {
           <h2 className="text-sm font-semibold text-[#0D2145] mb-3">评论 {comments.length > 0 && `(${comments.length})`}</h2>
 
           {token ? (
-            <div className="flex gap-2 mb-4">
+            <div className="flex gap-2 mb-4 items-start">
               <input value={commentText} onChange={(e) => setCommentText(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && submitComment()}
                 placeholder="友善交流，理性讨论…"
                 className="flex-1 border border-[#D8DCE8] rounded-lg px-3 py-2 text-sm" />
+              <div className="relative">
+                <button onClick={() => setShowCommentStickers((s) => !s)} aria-label="插入贴纸"
+                  className="px-2.5 py-2 border border-[#D8DCE8] rounded-lg text-[#8E9BB0] hover:text-[#1B4FD8] hover:border-[#1B4FD8]">
+                  <Smile className="w-4 h-4" />
+                </button>
+                {showCommentStickers && (
+                  <>
+                    <div className="fixed inset-0 z-10" onClick={() => setShowCommentStickers(false)} />
+                    <div className="absolute z-20 mt-1 right-0 w-56 bg-white border border-[#D8DCE8] rounded-xl shadow-lg p-2 grid grid-cols-5 gap-1">
+                      {STICKERS.map((s) => (
+                        <button key={s.id} title={s.label} onClick={() => insertSticker(s.id)} className="hover:bg-[#EEF1F7] rounded p-0.5">
+                          <Sticker id={s.id} size={28} />
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
               <button onClick={submitComment} disabled={posting || !commentText.trim()}
                 className="px-3 py-2 bg-[#1B4FD8] hover:bg-[#163069] disabled:opacity-50 text-white rounded-lg flex items-center gap-1.5 text-sm">
                 {posting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
@@ -182,7 +256,9 @@ export default function ForumPostPage() {
 
           <div className="space-y-3">
             {comments.length === 0 ? (
-              <div className="text-xs text-[#8E9BB0] text-center py-6">还没有评论，来说两句</div>
+              <div className="text-xs text-[#8E9BB0] text-center py-6 flex flex-col items-center gap-2">
+                <Sticker id="thinking" size={44} /> 还没有评论，来抢沙发~
+              </div>
             ) : comments.map((c) => (
               <div key={c.id} className="bg-white border border-[#EEF1F7] rounded-lg px-3 py-2.5">
                 <div className="flex items-center justify-between">
@@ -196,7 +272,11 @@ export default function ForumPostPage() {
                     <button onClick={() => deleteComment(c.id)} className="text-[#8E9BB0] hover:text-rose-500"><Trash2 className="w-3.5 h-3.5" /></button>
                   )}
                 </div>
-                <p className="text-sm text-[#0D2145] mt-1 whitespace-pre-line">{c.body}</p>
+                <p className="text-sm text-[#0D2145] mt-1 whitespace-pre-line">{renderCommentBody(c.body)}</p>
+                <div className="mt-2">
+                  <ReactionBar reactions={c.reactions || []} targetType="comment" targetId={c.id}
+                    disabled={!token} onChange={(rs) => setCommentReactions(c.id, rs)} />
+                </div>
               </div>
             ))}
           </div>
@@ -208,6 +288,10 @@ export default function ForumPostPage() {
       {showInterest && (
         <InterestModal post={post} onClose={() => setShowInterest(false)}
           onDone={() => { setShowInterest(false); alert("已发送意向，等待对方同意后即可交换联系方式并私信"); }} />
+      )}
+
+      {showReport && (
+        <UnlockedReportModal postId={post.id} onClose={() => setShowReport(false)} />
       )}
     </div>
   );

@@ -20,10 +20,15 @@ export const getGradeStyle = (grade) => {
   return { bg: "bg-red-500/10", border: "border-red-500/20" };
 };
 
-/** 分数 → 文字颜色（纯展示渐变，与评级无关） */
-export const getScoreColor = (s) =>
-  s >= 70 ? "text-emerald-400" : s >= 50 ? "text-yellow-400" : "text-red-400";
+// 分数 → 颜色：阈值与后端评级带对齐（A≥75 绿 / B≥60 蓝 / C≥50 黄 / D<50 红）。
+// 这样"同一分数 / 同一评级"在全站永远同色——绿=强烈推荐、蓝=谨慎推荐、黄=观望、红=放弃。
+// 阈值真源在 server/config/scoringTables.js GRADE_THRESHOLDS（前端无法直接 import 服务端配置，
+// 改阈值时两边一起改）。
 
-/** 分数 → 进度环颜色 */
+/** 分数 → 文字颜色（与评级带一致） */
+export const getScoreColor = (s) =>
+  s >= 75 ? "text-emerald-400" : s >= 60 ? "text-blue-400" : s >= 50 ? "text-yellow-400" : "text-red-400";
+
+/** 分数 → 进度环 / 实心色（与评级带一致） */
 export const getScoreBg = (s) =>
-  s >= 70 ? "#34d399" : s >= 50 ? "#fbbf24" : "#f87171";
+  s >= 75 ? "#34d399" : s >= 60 ? "#3b82f6" : s >= 50 ? "#fbbf24" : "#f87171";

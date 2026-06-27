@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import api from "../services/api";
 import useAuthStore from "../store/useAuthStore";
+import { getScoreColor } from "../utils/scoreHelpers";
 
 const ChinaMap = lazy(() => import("../components/dashboard/ChinaMap"));
 
@@ -273,9 +274,7 @@ export default function PlatformStatsPage() {
                         </div>
                         <div className="flex items-center gap-3 shrink-0 ml-3">
                           {proj.total_score != null && (
-                            <span className={`text-sm font-bold ${
-                              proj.total_score >= 75 ? "text-emerald-400" : proj.total_score >= 50 ? "text-yellow-400" : "text-red-400"
-                            }`}>{Math.round(proj.total_score)}分</span>
+                            <span className={`text-sm font-bold ${getScoreColor(proj.total_score)}`}>{Math.round(proj.total_score)}分</span>
                           )}
                           <span className="text-xs text-[#8E9BB0]">{new Date(proj.created_at).toLocaleDateString("zh-CN")}</span>
                           <ChevronRight className="w-4 h-4 text-[#8E9BB0]" />

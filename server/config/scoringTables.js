@@ -146,12 +146,17 @@ const AGG_TRACK_WEIGHTS = {
 };
 const AGG_DEFAULT_TRACK = "general";
 
+// ---------- 评级分数带（唯一真源）----------
+// scoring.getGrade 与 scoringAggregate._gradeFromScore 共用，杜绝两处阈值漂移。
+// A ≥75 | B 60-74 | C 50-59 | D <50
+const GRADE_THRESHOLDS = { A: 75, B: 60, C: 50 };
+
 // ---------- 卓越加成 + A 级共振 gate ----------
 const AGG_EXCELLENCE_THRESHOLD = 90; // 维度≥此值算"卓越"
 const AGG_EXCELLENCE_ALPHA = 2;      // 每有一维卓越，基础分 + α
 const AGG_EXCELLENCE_BONUS_CAP = 6;  // 卓越加成上限（最多顶 3 维）
 const AGG_RESONANCE_GATE_N = 2;      // A 级要求至少 N 维 ≥ 共振阈值
-const AGG_RESONANCE_GATE_SCORE = 80; // 共振阈值
+const AGG_RESONANCE_GATE_SCORE = 75; // 共振阈值（与 A 评级阈值对齐）
 
 // ---------- 分布与置信度（早期项目假精度 → 总分以分布呈现）----------
 // 区间半宽 δ = 基础 + (1−平均coverage)×放大；coverage 越低，区间越宽、置信越低。
@@ -245,6 +250,7 @@ module.exports = {
   // 聚合层（方案乙）
   AGG_TRACK_WEIGHTS,
   AGG_DEFAULT_TRACK,
+  GRADE_THRESHOLDS,
   AGG_EXCELLENCE_THRESHOLD,
   AGG_EXCELLENCE_ALPHA,
   AGG_EXCELLENCE_BONUS_CAP,

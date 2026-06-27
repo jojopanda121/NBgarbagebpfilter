@@ -191,8 +191,10 @@ const DimensionBars = memo(function DimensionBars({ dimensions }) {
             <div className="flex-1 h-2 bg-[#EEF1F7] rounded-full overflow-hidden">
               <div
                 className={`h-full rounded-full transition-all duration-700 ${
-                  dim.score >= 70
+                  dim.score >= 75
                     ? "bg-emerald-500"
+                    : dim.score >= 60
+                    ? "bg-blue-500"
                     : dim.score >= 50
                     ? "bg-yellow-500"
                     : "bg-red-500"

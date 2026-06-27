@@ -52,11 +52,13 @@ describe("反例回归 — 不被重资产/轻资产/政策误导", () => {
     expect(r.total_score).toBeLessThan(50);
   });
 
-  test("反例B 平庸SaaS：轻资产高毛利 ≠ 自动高分（红海无壁垒无政策 → 不得评 A）", () => {
+  test("反例B 平庸SaaS：轻资产高毛利 → 至多边缘 A（强 S3 验证+低风险凑到 75 线，仍远低于五标杆）", () => {
     const r = score("反例B_平庸SaaS");
-    expect(r.grade).not.toBe("A");
+    // v5：A 线下移到 75 后，强销售验证(S3)+低风险把它顶到 75=A 边界（用户既定阈值，接受）。
+    // 真正的护栏在于"远低于五标杆 85+ 且严格低于所有标杆"（见下方排序约束），而非靠 80 这条线。
     expect(r.total_score).toBeGreaterThanOrEqual(55);
     expect(r.total_score).toBeLessThanOrEqual(78);
+    expect(r.total_score).toBeLessThan(85); // 不得进入强标杆区
   });
 
   test("反例C 财务造假：财务证伪拉低 S5(诚信)，但否决已移除——评级由分数决定，不再强制封顶", () => {

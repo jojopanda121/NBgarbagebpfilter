@@ -66,10 +66,16 @@ export function useAnalysisPipeline() {
     setBackgroundProcessing,
     setAgentStatuses,
     setAgentSummaries,
+    beginRun,
   } = useAnalysisStore();
 
   const startTimeRef = useRef(null);
   const analyzingRef = useRef(false);
+
+  // 组件卸载时停止本实例触发的轮询，避免离开页面后僵尸循环继续写全局 store
+  useEffect(() => {
+    return () => { analyzingRef.current = false; };
+  }, []);
 
   // 慢速爬行 + ETA
   useEffect(() => {
@@ -118,13 +124,20 @@ export function useAnalysisPipeline() {
     } catch (_) { /* 静默失败，不影响主轮询 */ }
   }, [setAgentStatuses, setAgentSummaries]);
 
-  /** 核心轮询逻辑，传入 taskId 开始轮询 */
-  const pollUntilDone = useCallback(async (taskId) => {
+  /**
+   * 核心轮询逻辑，传入 taskId 开始轮询。
+   * gen 为本轮的世代号：一旦全局 analysisGeneration 不再等于 gen
+   * （被新一轮分析或 reset 取代），立即停止写入并退出，避免并发循环污染 store。
+   */
+  const pollUntilDone = useCallback(async (taskId, gen) => {
     let consecutiveErrors = 0;
     let pollCount = 0;
     agentPollStartedRef.current = false;
 
-    while (analyzingRef.current) {
+    const isActive = () =>
+      analyzingRef.current && useAnalysisStore.getState().analysisGeneration === gen;
+
+    while (isActive()) {
       pollCount++;
       if (pollCount > MAX_POLL_COUNT) {
         // 不抛出错误，改为提示后台处理中（不清除 pendingTask，下次可恢复）
@@ -133,7 +146,7 @@ export function useAnalysisPipeline() {
         return;
       }
       await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
-      if (!analyzingRef.current) break;
+      if (!isActive()) break;
 
       let taskData;
       try {
@@ -146,6 +159,9 @@ export function useAnalysisPipeline() {
         }
         continue;
       }
+
+      // 网络请求期间本轮可能已被取代（新一轮分析 / reset）；若是则丢弃结果，不写 store
+      if (!isActive()) return;
 
       const currentProgress = useAnalysisStore.getState().progress;
       if (taskData.percentage > currentProgress) {
@@ -191,6 +207,8 @@ export function useAnalysisPipeline() {
   const startAnalysis = useCallback(async () => {
     if (!file) return;
 
+    // 递增世代号，作废任何仍在跑的旧轮询循环（僵尸循环 / 上一轮 resume）
+    const gen = beginRun();
     startTimeRef.current = Date.now();
     analyzingRef.current = true;
 
@@ -209,8 +227,13 @@ export function useAnalysisPipeline() {
         const body = await api.uploadFile(file);
         taskId = body.taskId;
       } catch (err) {
-        if (err instanceof ApiError && (err.status === 4031 || err.status === 4032)) {
-          return; // 业务拦截，弹层已通过 store 触发
+        if (err instanceof ApiError && err.status === 4031) {
+          return; // 未绑定邮箱：apiHelpers 已触发绑定引导弹层，静默退出即可
+        }
+        if (err instanceof ApiError && err.status === 4032) {
+          // 额度不足：apiHelpers 不会弹层，必须显式提示，否则用户点了分析却毫无反馈
+          setError(err.message || "额度不足，请前往「设置 → 额度」兑换后再试");
+          return;
         }
         throw err;
       }
@@ -222,7 +245,7 @@ export function useAnalysisPipeline() {
       setProgressMessage("任务已提交，分析在后台进行中...");
 
       // Step 2: 轮询
-      await pollUntilDone(taskId);
+      await pollUntilDone(taskId, gen);
     } catch (err) {
       localStorage.removeItem(PENDING_TASK_KEY);
       if (err.name === "AbortError") {
@@ -233,18 +256,23 @@ export function useAnalysisPipeline() {
         setError(err.message || "分析失败，请重试");
       }
     } finally {
-      analyzingRef.current = false;
-      // 如果是后台处理中，保持 analyzing 状态让 UI 显示提示
-      if (!useAnalysisStore.getState().backgroundProcessing) {
-        setAnalyzing(false);
+      // 仅当本轮仍是最新世代时才收尾，避免误关掉已接管的新一轮分析
+      if (useAnalysisStore.getState().analysisGeneration === gen) {
+        analyzingRef.current = false;
+        // 如果是后台处理中，保持 analyzing 状态让 UI 显示提示
+        if (!useAnalysisStore.getState().backgroundProcessing) {
+          setAnalyzing(false);
+        }
       }
     }
-  }, [file, setAnalyzing, setCurrentStep, setProgress, setEta, setProgressMessage, setResult, setError, pollUntilDone]);
+  }, [file, beginRun, setAnalyzing, setCurrentStep, setProgress, setEta, setProgressMessage, setResult, setError, pollUntilDone]);
 
   /** 恢复对已提交任务的轮询（用户返回页面时调用） */
   const resumeAnalysis = useCallback(async (taskId) => {
-    if (!taskId || analyzingRef.current) return;
+    // 已有分析在跑（本实例或其它实例）就不再起重复循环，避免并发污染全局 store
+    if (!taskId || analyzingRef.current || useAnalysisStore.getState().analyzing) return;
 
+    const gen = beginRun();
     startTimeRef.current = Date.now();
     analyzingRef.current = true;
 
@@ -257,15 +285,18 @@ export function useAnalysisPipeline() {
     setProgressMessage("正在恢复分析进度...");
 
     try {
-      await pollUntilDone(taskId);
+      await pollUntilDone(taskId, gen);
     } catch (err) {
       localStorage.removeItem(PENDING_TASK_KEY);
       setError(err.message || "恢复分析失败，请在历史记录中查看");
     } finally {
-      analyzingRef.current = false;
-      setAnalyzing(false);
+      // 仅当本轮仍是最新世代时才收尾，避免误关掉已接管的新一轮分析
+      if (useAnalysisStore.getState().analysisGeneration === gen) {
+        analyzingRef.current = false;
+        setAnalyzing(false);
+      }
     }
-  }, [setAnalyzing, setCurrentStep, setProgress, setEta, setProgressMessage, setResult, setError, pollUntilDone]);
+  }, [beginRun, setAnalyzing, setCurrentStep, setProgress, setEta, setProgressMessage, setResult, setError, pollUntilDone]);
 
   return { startAnalysis, resumeAnalysis, getPendingTask };
 }

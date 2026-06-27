@@ -60,9 +60,9 @@ router.get("/platform", (req, res) => {
     const gradeRows = db.prepare(`
       SELECT
         CASE
-          WHEN total_score >= 85 THEN 'A'
-          WHEN total_score >= 70 THEN 'B'
-          WHEN total_score >= 60 THEN 'C'
+          WHEN total_score >= 75 THEN 'A'
+          WHEN total_score >= 60 THEN 'B'
+          WHEN total_score >= 50 THEN 'C'
           ELSE 'D'
         END as grade,
         COUNT(*) as cnt
@@ -202,9 +202,9 @@ router.get("/sector", (req, res) => {
     const gradeRows = db.prepare(`
       SELECT
         CASE
-          WHEN total_score >= 85 THEN 'A'
-          WHEN total_score >= 70 THEN 'B'
-          WHEN total_score >= 60 THEN 'C'
+          WHEN total_score >= 75 THEN 'A'
+          WHEN total_score >= 60 THEN 'B'
+          WHEN total_score >= 50 THEN 'C'
           ELSE 'D'
         END as grade,
         COUNT(*) as cnt

@@ -21,11 +21,11 @@ describe("aggregate — 方案乙非线性聚合", () => {
     expect(r.grade).toBe("A");
   });
 
-  test("A 级共振 gate：中位达 A 但仅 1 维≥80 → 降为 B", () => {
+  test("A 级共振 gate：中位达 A 但仅 1 维≥75 → 降为 B", () => {
     // 单维独大（S6/政策抬高的 S1）但其余平庸
     const r = aggregate({ scores: { S1: 100, S2: 60, S3: 60, S4: 62, S5: 62 }, track: "general" });
     expect(r.resonance_gate.dims_ge_threshold).toBe(1);
-    if (r.total_median >= 80) expect(r.grade).toBe("B");
+    if (r.total_median >= 75) expect(r.grade).toBe("B");
   });
 
   test("硬科技权重下调 S3、上调 S2（同分布下 S2 强的项目总分更高）", () => {
@@ -62,9 +62,10 @@ describe("aggregate — 方案乙非线性聚合", () => {
     expect(r.sensitivity.length).toBeLessThanOrEqual(3);
   });
 
-  test("_gradeFromScore 阈值与 getGrade 一致", () => {
-    expect(_gradeFromScore(80)).toBe("A");
-    expect(_gradeFromScore(65)).toBe("B");
+  test("_gradeFromScore 阈值与 getGrade 一致（A≥75 / B 60-74 / C 50-59 / D <50）", () => {
+    expect(_gradeFromScore(75)).toBe("A");
+    expect(_gradeFromScore(74)).toBe("B");
+    expect(_gradeFromScore(60)).toBe("B");
     expect(_gradeFromScore(50)).toBe("C");
     expect(_gradeFromScore(49)).toBe("D");
   });

@@ -240,20 +240,20 @@ describe("calculateTotalScore", () => {
   });
 });
 
-describe("getGrade (v4.1 adjusted boundaries)", () => {
-  test("A grade for score >= 80", () => {
-    expect(getGrade(80).grade).toBe("A");
+describe("getGrade (v5 adjusted boundaries: A≥75 / B 60-74 / C 50-59 / D <50)", () => {
+  test("A grade for score >= 75", () => {
+    expect(getGrade(75).grade).toBe("A");
     expect(getGrade(100).grade).toBe("A");
   });
 
-  test("B grade for score 65-79", () => {
-    expect(getGrade(65).grade).toBe("B");
-    expect(getGrade(79).grade).toBe("B");
+  test("B grade for score 60-74", () => {
+    expect(getGrade(60).grade).toBe("B");
+    expect(getGrade(74).grade).toBe("B");
   });
 
-  test("C grade for score 50-64", () => {
+  test("C grade for score 50-59", () => {
     expect(getGrade(50).grade).toBe("C");
-    expect(getGrade(64).grade).toBe("C");
+    expect(getGrade(59).grade).toBe("C");
   });
 
   test("D grade for score < 50", () => {

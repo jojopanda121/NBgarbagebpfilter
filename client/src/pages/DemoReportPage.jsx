@@ -41,10 +41,10 @@ AI 文档处理赛道近年来发展迅速，预计到 2025 年市场规模将�
 建议进一步核实 BP 中提到的客户案例数据，并关注竞品动态。`,
   verdict: {
     total_score: 62,
-    grade: "C",
-    grade_label: "中等风险",
+    grade: "B",
+    grade_label: "谨慎推荐 (Proceed with DD)",
     grade_action: "建议深入尽调后决策，关注团队执行力和产品落地能力",
-    grade_color: "text-yellow-500",
+    grade_color: "text-blue-500",
     verdict_summary: "项目有一定技术亮点，但存在估值偏高、市场竞争风险等问题",
     dimensions: {
       timing_ceiling: {

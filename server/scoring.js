@@ -459,11 +459,11 @@ function calculateTotalScore(S1, S2, S3, S4, S5) {
 /**
  * 纯分数评级 A/B/C/D
  *
- * A ≥ 80 | B ≥ 65 | C ≥ 50 | D < 50
+ * A ≥ 75 | B 60-74 | C 50-59 | D < 50
  *
- * v4.1 调整：旧阈值 (A≥85) 导致现实中几乎没有项目能进入 Fast Track，
- * 不符合 VC 实际工作流。新阈值让优秀项目能进 A 级，同时 D 级下限降至 50，
- * 让评级分布更合理。
+ * 阈值取自 scoringTables.GRADE_THRESHOLDS（唯一真源，与 scoringAggregate 同步）。
+ * v5 调整：A 线 80→75、B 线 65→60，让"强烈推荐"档不再形同虚设，评级分布更贴近 VC 实操；
+ * C/D 分界保持 50。颜色与评级一一对应（A 绿 / B 蓝 / C 黄 / D 红），前端据此对齐。
  *
  * @param {number} totalScore - 总分 (0-100)
  * @returns {{ grade, label, action, color }}
@@ -471,21 +471,21 @@ function calculateTotalScore(S1, S2, S3, S4, S5) {
 function getGrade(totalScore) {
   const score = Number(totalScore) || 0;
 
-  if (score >= 80) {
+  if (score >= T.GRADE_THRESHOLDS.A) {
     return {
       grade: "A",
       label: "强烈推荐投资 (Fast Track)",
       action: "立刻推进：建议 24 小时内约见创始人，同步启动业务尽调（客户访谈、竞品验证）和财务尽调（审计底稿、银行流水），并行开始估值建模。优先关注收入确认方式与客户集中度。",
       color: "#10b981",
     };
-  } else if (score >= 65) {
+  } else if (score >= T.GRADE_THRESHOLDS.B) {
     return {
       grade: "B",
       label: "谨慎推荐 (Proceed with DD)",
       action: "安排创始人面谈，重点考察团队对行业周期的认知深度与战略定力。要求提供近 12 个月的月度财务明细，验证单位经济模型（LTV/CAC、毛利率、回款周期），同步启动竞品客户交叉验证。",
       color: "#3b82f6",
     };
-  } else if (score >= 50) {
+  } else if (score >= T.GRADE_THRESHOLDS.C) {
     return {
       grade: "C",
       label: "观望跟踪 (Keep In View)",

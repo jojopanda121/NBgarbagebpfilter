@@ -67,6 +67,8 @@ function ScoreCircle({ score }) {
   const color =
     score >= 75
       ? "text-emerald-400 border-emerald-500/40"
+      : score >= 60
+      ? "text-blue-400 border-blue-500/40"
       : score >= 50
       ? "text-yellow-400 border-yellow-500/40"
       : "text-red-400 border-red-500/40";

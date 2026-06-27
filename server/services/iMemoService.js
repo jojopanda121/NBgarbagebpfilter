@@ -12,9 +12,9 @@ const { getDb } = require("../db");
  */
 function scoreToBand(score) {
   if (score == null) return "暂无数据";
-  if (score >= 85) return `${score}分（优秀）`;
-  if (score >= 70) return `${score}分（良好）`;
-  if (score >= 60) return `${score}分（一般）`;
+  if (score >= 75) return `${score}分（优秀）`;
+  if (score >= 60) return `${score}分（良好）`;
+  if (score >= 50) return `${score}分（一般）`;
   return `${score}分（较弱）`;
 }
 

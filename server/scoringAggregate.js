@@ -34,11 +34,11 @@ const DIM_LABELS = {
   S4: "团队基因", S5: "BP诚信度",
 };
 
-/** 中位分 → 评级（与 scoring.js getGrade 同阈值，留共振 gate 给 aggregate） */
+/** 中位分 → 评级（阈值取自 scoringTables.GRADE_THRESHOLDS，与 scoring.js getGrade 同源；留共振 gate 给 aggregate） */
 function _gradeFromScore(score) {
-  if (score >= 80) return "A";
-  if (score >= 65) return "B";
-  if (score >= 50) return "C";
+  if (score >= T.GRADE_THRESHOLDS.A) return "A";
+  if (score >= T.GRADE_THRESHOLDS.B) return "B";
+  if (score >= T.GRADE_THRESHOLDS.C) return "C";
   return "D";
 }
 

@@ -4,7 +4,7 @@
 
 const bcrypt = require("bcryptjs");
 const { getDb } = require("../db");
-const { getUserById, isEmailTaken, isPhoneTaken, updateUserProfile, updateUserPassword } = require("../services/userService");
+const { getUserById, updateUserProfile, updateUserPassword } = require("../services/userService");
 const { getUserQuota } = require("../services/quotaService");
 const { getOrCreateInviteCode, getReferralStats } = require("../services/referralService");
 const config = require("../config");
@@ -36,25 +36,19 @@ function getProfile(req, res) {
 function updateProfile(req, res) {
   const { email, phone, nickname } = req.body;
 
-  // 检查邮箱是否已被其他用户使用
-  if (email && isEmailTaken(email, req.user.id)) {
-    return res.status(400).json({ error: "邮箱已被其他用户使用" });
-  }
-
-  // 检查手机号是否已被其他用户使用
-  if (phone && isPhoneTaken(phone, req.user.id)) {
-    return res.status(400).json({ error: "手机号已被其他用户使用" });
+  // 邮箱/手机号属于可用于找回密码和风控的联系方式，必须走验证码绑定流程。
+  if (email !== undefined || phone !== undefined) {
+    return res.status(400).json({ error: "联系方式请通过验证码绑定接口更新" });
   }
 
   const updates = {};
 
-  if (email !== undefined) updates.email = email;
-  if (phone !== undefined) updates.phone = phone;
-  if (nickname !== undefined) updates.nickname = nickname;
-
-  // 如果绑定了邮箱或手机，更新 contact_bound 状态
-  if (email || phone) {
-    updates.contact_bound = 1;
+  if (nickname !== undefined) {
+    const normalized = String(nickname).trim();
+    if (normalized.length > 32) {
+      return res.status(400).json({ error: "昵称不能超过 32 个字符" });
+    }
+    updates.nickname = normalized;
   }
 
   if (Object.keys(updates).length === 0) {
@@ -326,6 +320,10 @@ function uploadAvatar(req, res) {
 
   try {
     const ext = path.extname(req.file.originalname || ".png").toLowerCase();
+    if (!isValidImageMagic(req.file.path, ext)) {
+      try { fs.unlinkSync(req.file.path); } catch {}
+      return res.status(400).json({ error: "图片内容校验失败" });
+    }
     const hash = crypto.randomBytes(8).toString("hex");
     const filename = `avatar_${req.user.id}_${hash}${ext}`;
     const avatarsDir = path.join(config.uploadsDir, "avatars");
@@ -354,6 +352,31 @@ function uploadAvatar(req, res) {
   } catch {
     try { fs.unlinkSync(req.file.path); } catch {}
     res.status(500).json({ error: "头像上传失败" });
+  }
+}
+
+function isValidImageMagic(filePath, ext) {
+  const fs = require("fs");
+  const fd = fs.openSync(filePath, "r");
+  try {
+    const head = Buffer.alloc(12);
+    fs.readSync(fd, head, 0, 12, 0);
+    if (ext === ".png") {
+      return head[0] === 0x89 && head[1] === 0x50 && head[2] === 0x4e && head[3] === 0x47;
+    }
+    if (ext === ".jpg" || ext === ".jpeg") {
+      return head[0] === 0xff && head[1] === 0xd8 && head[2] === 0xff;
+    }
+    if (ext === ".gif") {
+      const sig = head.slice(0, 6).toString("ascii");
+      return sig === "GIF87a" || sig === "GIF89a";
+    }
+    if (ext === ".webp") {
+      return head.slice(0, 4).toString("ascii") === "RIFF" && head.slice(8, 12).toString("ascii") === "WEBP";
+    }
+    return false;
+  } finally {
+    fs.closeSync(fd);
   }
 }
 

@@ -70,6 +70,7 @@ function updateUserProfile(userId, updates) {
   const db = getDb();
   const fields = [];
   const values = [];
+  const columns = new Set(db.prepare("PRAGMA table_info(users)").all().map((col) => col.name));
 
   if (updates.email !== undefined) {
     fields.push("email = ?");
@@ -80,8 +81,13 @@ function updateUserProfile(userId, updates) {
     values.push(updates.phone);
   }
   if (updates.nickname !== undefined) {
-    fields.push("nickname = ?");
-    values.push(updates.nickname);
+    if (columns.has("nickname")) {
+      fields.push("nickname = ?");
+      values.push(updates.nickname);
+    } else if (columns.has("display_name")) {
+      fields.push("display_name = ?");
+      values.push(updates.nickname);
+    }
   }
 
   if (fields.length === 0) return;

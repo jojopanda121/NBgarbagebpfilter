@@ -21,6 +21,29 @@
 // 如改用 Vite 构建，请同步修改 server/index.js 中的 clientBuildDir 路径
 // ============================================================
 
+const fs = require('fs');
+const path = require('path');
+
+function loadLocalEnv() {
+  const envPath = path.join(__dirname, '.env');
+  if (!fs.existsSync(envPath)) return;
+  for (const rawLine of fs.readFileSync(envPath, 'utf8').split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith('#')) continue;
+    const eq = line.indexOf('=');
+    if (eq <= 0) continue;
+    const key = line.slice(0, eq).trim();
+    const value = line.slice(eq + 1).trim().replace(/^['"]|['"]$/g, '');
+    if (key && process.env[key] === undefined) process.env[key] = value;
+  }
+}
+
+loadLocalEnv();
+
+const DOC_SERVICE_HOST = process.env.DOC_SERVICE_HOST || '127.0.0.1';
+const DOC_SERVICE_PORT = process.env.DOC_SERVICE_PORT || '8001';
+const DOC_SERVICE_LOCAL_URL = `http://${DOC_SERVICE_HOST}:${DOC_SERVICE_PORT}`;
+
 module.exports = {
   apps: [
     {
@@ -77,6 +100,7 @@ module.exports = {
       env_production: {
         NODE_ENV: 'production',
         PORT: 8080,
+        DOC_SERVICE_URL: process.env.DOC_SERVICE_URL || DOC_SERVICE_LOCAL_URL,
         // API Key 等敏感变量从 .env 文件加载（server/index.js 第7行自动 dotenv）
         // 不要把真实 Key 写在本文件中
       },
@@ -85,12 +109,13 @@ module.exports = {
       env_development: {
         NODE_ENV: 'development',
         PORT: 3001,
+        DOC_SERVICE_URL: process.env.DOC_SERVICE_URL || DOC_SERVICE_LOCAL_URL,
       },
     },
     {
       name: 'doc-service',
       script: 'python3',
-      args: '-m uvicorn main:app --host 0.0.0.0 --port 8001',
+      args: `-m uvicorn main:app --host ${DOC_SERVICE_HOST} --port ${DOC_SERVICE_PORT}`,
       cwd: `${__dirname}/doc-service`,
       instances: 1,
       exec_mode: 'fork',
@@ -104,8 +129,12 @@ module.exports = {
       out_file: './logs/doc-service-out.log',
       merge_logs: true,
       log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
-      env_production: {},
-      env_development: {},
+      env_production: {
+        DOC_SERVICE_TOKEN: process.env.DOC_SERVICE_TOKEN || '',
+      },
+      env_development: {
+        DOC_SERVICE_TOKEN: process.env.DOC_SERVICE_TOKEN || '',
+      },
     },
   ],
 };

@@ -10,7 +10,12 @@ ARG NPM_REGISTRY=https://registry.npmjs.org
 WORKDIR /app
 
 COPY client/package*.json ./client/
-RUN cd client && npm ci --registry="$NPM_REGISTRY"
+# react-snap 预渲染依赖 puppeteer，npm ci 时会下载 ~150MB Chromium，国内网络常超时/被墙。
+# 国内构建设 SKIP_CHROMIUM=1 跳过（react-snap 预渲染降级，不影响构建产物）；默认 0，海外/CI 不受影响。
+ARG SKIP_CHROMIUM=0
+RUN cd client && \
+    if [ "$SKIP_CHROMIUM" = "1" ]; then export PUPPETEER_SKIP_DOWNLOAD=1 PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true; fi && \
+    npm ci --registry="$NPM_REGISTRY"
 
 COPY client/ ./client/
 RUN cd client && npm run build

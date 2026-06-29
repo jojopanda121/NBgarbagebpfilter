@@ -11,6 +11,8 @@ const { createTask, updateTask } = require("../services/taskService");
 const { deductQuota, refundQuota } = require("../middleware/quota");
 const { PIPELINE_VERSION } = require("../config/versions");
 const inflightTasks = require("../runtime/inflightTasks");
+const analysisQueue = require("../services/analysisQueue");
+const breaker = require("../services/llmCircuitBreaker");
 
 /** 计算文件内容的 SHA256 哈希（流式，避免 readFileSync 大文件阻塞事件循环） */
 function computeFileHash(filePath) {
@@ -129,6 +131,122 @@ function admitAnalysis({ userId, isAdmin, fileHash }) {
   })();
 }
 
+/** 失败收尾：标记任务 error + 退额度。非用户原因（限流/余额/排队超时）失败不应扣次数。 */
+function failTask({ taskId, userId, isAdmin, quotaDeductType, message }) {
+  try {
+    updateTask(taskId, { status: "error", error: message || "服务器内部错误" });
+  } catch (_) { /* ignore */ }
+  if (userId && !isAdmin && quotaDeductType) {
+    try { refundQuota(userId, quotaDeductType); } catch (_) { /* ignore */ }
+  }
+}
+
+/** 把上游错误映射成对用户友好的失败文案（区分余额耗尽 / 高峰限流 / 其他）。 */
+function describeJobError(err) {
+  const kind = breaker.classify(err);
+  if (kind === "depleted") return breaker.DEPLETED_USER_MSG;
+  if (kind === "overload") return "当前正值使用高峰，AI 服务繁忙，分析未能及时完成，请稍后重试。本次未消耗您的分析次数。";
+  return err?.message || "服务器内部错误";
+}
+
+/**
+ * 后台分析作业：拿到全局并发槽后执行。从 analyze() 的内联 IIFE 抽出，
+ * 以便经 analysisQueue 做全局并发限流 + 排队。
+ */
+async function runAnalysisJob(ctx) {
+  const {
+    task, userId, isAdmin, quotaDeductType,
+    filePath, fileMode, originalName, fileSize, directText, clientIp, fileHash,
+  } = ctx;
+
+  inflightTasks.register(task.id);
+  let bpText = "";
+  try {
+    if (filePath) {
+      try {
+        bpText = await extractDocText(filePath, fileMode);
+      } catch (pyErr) {
+        const errMsg = pyErr.message || "未知错误";
+        let userMessage = errMsg;
+        try {
+          const p = JSON.parse(errMsg);
+          if (p.error) userMessage = p.error;
+        } catch {}
+        console.warn(`[Analyze] 文档解析失败，使用兜底文本继续分析: ${userMessage}`);
+        bpText = buildAnalysisFallbackText({
+          filePath, fileMode, originalName, fileSize, reason: userMessage,
+        });
+      } finally {
+        // M5: 异步清理临时文件，避免阻塞事件循环
+        fs.promises.unlink(filePath).catch((err) => {
+          console.warn(`[Analyze] 临时文件清理失败: ${filePath}`, err.message);
+        });
+      }
+    } else {
+      bpText = directText;
+    }
+
+    if (!bpText || bpText.length < 50) {
+      bpText = buildAnalysisFallbackText({
+        filePath, fileMode, originalName, fileSize,
+        reason: `提取文本较短（${bpText?.length || 0} 字符），已使用兜底材料说明继续分析。`,
+        extractedText: bpText,
+      });
+    }
+
+    const onProgress = ({ type, stage, percentage, message }) => {
+      if (type === "progress") updateTask(task.id, { stage, percentage, message });
+    };
+
+    const result = await runPipeline(bpText, onProgress, task.id, userId);
+
+    // 保存额外的任务元数据（title, industry_category, client_ip, file_hash）
+    const extraFields = {
+      status: "complete",
+      percentage: 100,
+      stage: "complete",
+      message: "分析完成！",
+      result,
+      // 持久化 BP 原文：深度尽调 6 Agent 改为按需触发，需要能取回原文重跑
+      bp_text: bpText,
+    };
+
+    // 安全写入新字段（列可能尚未通过迁移创建；M13: 严格类型检查防 verdict=null 导致空指针）
+    try {
+      if (result && typeof result === "object") {
+        if (typeof result.title === "string" && result.title) extraFields.title = result.title;
+        // 多标签分类：以 JSON 数组存储
+        if (Array.isArray(result.industry_categories) && result.industry_categories.length > 0) {
+          extraFields.industry_category = JSON.stringify(result.industry_categories);
+        } else if (typeof result.industry_category === "string" && result.industry_category) {
+          extraFields.industry_category = result.industry_category;
+        }
+        if (fileHash) extraFields.file_hash = fileHash;
+        // total_score 独立字段（便于排行榜查询）
+        const totalScore = result.verdict && typeof result.verdict === "object"
+          ? result.verdict.total_score
+          : null;
+        if (totalScore != null && Number.isFinite(Number(totalScore))) {
+          extraFields.total_score = Number(totalScore);
+        }
+        // 项目所在地
+        if (typeof result.project_location === "string" && result.project_location) {
+          extraFields.project_location = result.project_location;
+        }
+      }
+      // 客户端 IP（已在响应前提取）
+      if (clientIp) extraFields.client_ip = clientIp;
+    } catch (_) { /* ignore - new columns may not exist yet */ }
+
+    updateTask(task.id, extraFields);
+  } catch (err) {
+    console.error(`[任务 ${task.id.slice(0, 8)}] 错误:`, err.message);
+    failTask({ taskId: task.id, userId, isAdmin, quotaDeductType, message: describeJobError(err) });
+  } finally {
+    inflightTasks.unregister(task.id);
+  }
+}
+
 /** POST /api/analyze — 上传文件并启动分析 */
 async function analyze(req, res) {
   // 输入验证
@@ -199,6 +317,22 @@ async function analyze(req, res) {
     }
   }
 
+  // 服务整体不可用的快速拦截（在扣额度之前，保证不消耗用户次数）：
+  //   · 余额/额度耗尽（Token Plan 每 5h 恢复，等待无意义）→ 明确提示，不建任务
+  //   · 排队已满 → 让用户稍后再来，避免任务无限堆积
+  if (breaker.isDepleted()) {
+    cleanupUpload();
+    return res.status(503).json({ error: breaker.DEPLETED_USER_MSG, code: 5031, retry_later: true });
+  }
+  if (analysisQueue.isQueueFull()) {
+    cleanupUpload();
+    return res.status(503).json({
+      error: "当前分析排队人数较多，请稍后再试。本次未消耗您的分析次数。",
+      code: 5032,
+      retry_later: true,
+    });
+  }
+
   // 准入事务：去重 → 扣额度 → 建任务（原子）
   let admission;
   try {
@@ -250,113 +384,26 @@ async function analyze(req, res) {
 
   res.json({ taskId: task.id });
 
-  // H1: 立即链式注册 .catch，确保 IIFE 任何同步/异步异常都不会触发 unhandledRejection
-  inflightTasks.register(task.id);
-  (async () => {
-    let bpText = "";
-    try {
-      if (filePath) {
-        try {
-          bpText = await extractDocText(filePath, fileMode);
-        } catch (pyErr) {
-          const errMsg = pyErr.message || "未知错误";
-          let userMessage = errMsg;
-          try {
-            const p = JSON.parse(errMsg);
-            if (p.error) userMessage = p.error;
-          } catch {}
-          console.warn(`[Analyze] 文档解析失败，使用兜底文本继续分析: ${userMessage}`);
-          bpText = buildAnalysisFallbackText({
-            filePath,
-            fileMode,
-            originalName,
-            fileSize,
-            reason: userMessage,
-          });
-        } finally {
-          // M5: 异步清理临时文件，避免阻塞事件循环
-          fs.promises.unlink(filePath).catch((err) => {
-            console.warn(`[Analyze] 临时文件清理失败: ${filePath}`, err.message);
-          });
-        }
-      } else {
-        bpText = directText;
-      }
-
-      if (!bpText || bpText.length < 50) {
-        bpText = buildAnalysisFallbackText({
-          filePath,
-          fileMode,
-          originalName,
-          fileSize,
-          reason: `提取文本较短（${bpText?.length || 0} 字符），已使用兜底材料说明继续分析。`,
-          extractedText: bpText,
-        });
-      }
-
-      const onProgress = ({ type, stage, percentage, message }) => {
-        if (type === "progress") updateTask(task.id, { stage, percentage, message });
-      };
-
-      const result = await runPipeline(bpText, onProgress, task.id, userId);
-
-      // 保存额外的任务元数据（title, industry_category, client_ip, file_hash）
-      const extraFields = {
-        status: "complete",
-        percentage: 100,
-        stage: "complete",
-        message: "分析完成！",
-        result,
-        // 持久化 BP 原文：深度尽调 6 Agent 改为按需触发，需要能取回原文重跑
-        bp_text: bpText,
-      };
-
-      // 安全写入新字段（列可能尚未通过迁移创建；M13: 严格类型检查防 verdict=null 导致空指针）
-      try {
-        if (result && typeof result === "object") {
-          if (typeof result.title === "string" && result.title) extraFields.title = result.title;
-          // 多标签分类：以 JSON 数组存储
-          if (Array.isArray(result.industry_categories) && result.industry_categories.length > 0) {
-            extraFields.industry_category = JSON.stringify(result.industry_categories);
-          } else if (typeof result.industry_category === "string" && result.industry_category) {
-            extraFields.industry_category = result.industry_category;
-          }
-          if (fileHash) extraFields.file_hash = fileHash;
-          // total_score 独立字段（便于排行榜查询）
-          const totalScore = result.verdict && typeof result.verdict === "object"
-            ? result.verdict.total_score
-            : null;
-          if (totalScore != null && Number.isFinite(Number(totalScore))) {
-            extraFields.total_score = Number(totalScore);
-          }
-          // 项目所在地
-          if (typeof result.project_location === "string" && result.project_location) {
-            extraFields.project_location = result.project_location;
-          }
-        }
-        // 客户端 IP（已在响应前提取）
-        if (clientIp) extraFields.client_ip = clientIp;
-      } catch (_) { /* ignore - new columns may not exist yet */ }
-
-      updateTask(task.id, extraFields);
-    } catch (err) {
-      console.error(`[任务 ${task.id.slice(0, 8)}] 错误:`, err.message);
-      updateTask(task.id, { status: "error", error: err.message || "服务器内部错误" });
-      // 分析失败时退还额度（管理员无需退还）
-      if (userId && !isAdmin && quotaDeductType) {
-        refundQuota(userId, quotaDeductType);
-      }
-    } finally {
-      inflightTasks.unregister(task.id);
-    }
-  })().catch((err) => {
-    // H1 兜底：链式注册，确保即便 IIFE 在 await 之前同步抛出也能被捕获
-    console.error(`[任务 ${task.id.slice(0, 8)}] 未捕获异常:`, err && err.stack ? err.stack : err);
-    try {
-      inflightTasks.unregister(task.id);
-      updateTask(task.id, { status: "error", error: "服务器内部错误" });
-      if (userId && !isAdmin && quotaDeductType) refundQuota(userId, quotaDeductType);
-    } catch (_) { /* ignore */ }
+  // 经全局并发闸提交后台分析：高峰期自动排队（task.message 显示位次），
+  // 拿到执行槽后才真正开跑，从源头避免把 MiniMax 打到限流。
+  const jobCtx = {
+    task, userId, isAdmin, quotaDeductType,
+    filePath, fileMode, originalName, fileSize, directText, clientIp, fileHash,
+  };
+  analysisQueue.submit(task.id, () => runAnalysisJob(jobCtx), {
+    onTimeout: (taskId) => {
+      // 排队超时：作业尚未开跑，清理临时文件 + 标失败 + 退额度
+      if (filePath) fs.promises.unlink(filePath).catch(() => {});
+      failTask({
+        taskId, userId, isAdmin, quotaDeductType,
+        message: "当前使用高峰，排队等待超时，请稍后重试。本次未消耗您的分析次数。",
+      });
+    },
+  }).catch((err) => {
+    // 兜底：队列调度层自身异常（p-limit / 同步抛出）
+    console.error(`[任务 ${task.id.slice(0, 8)}] 队列调度异常:`, err && err.stack ? err.stack : err);
+    failTask({ taskId: task.id, userId, isAdmin, quotaDeductType, message: "服务器内部错误" });
+    try { inflightTasks.unregister(task.id); } catch (_) { /* ignore */ }
   });
 }
 

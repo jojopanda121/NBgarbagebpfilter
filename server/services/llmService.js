@@ -9,6 +9,7 @@ const { runWebSearch, formatSearchContext } = require("./webSearchService");
 const { extractJson } = require("../utils/jsonParser");
 const jsonSchema = require("../utils/jsonSchema");
 const { createLLMClient } = require("../utils/llmClient");
+const breaker = require("./llmCircuitBreaker");
 
 const llm = createLLMClient({
   apiKey: config.minimaxApiKey,
@@ -33,10 +34,24 @@ function getLlmStats() {
 
 if (llm && llm.messages && typeof llm.messages.create === "function") {
   const _origCreate = llm.messages.create.bind(llm.messages);
+
+  // 熔断器探活：直连底层 create（绕过 gate 与计量），HTTP 层被接受即视为已恢复。
+  // max_tokens 取一个安全小值（过小可能在健康服务上触发 400，反而把熔断卡死）。
+  breaker.setProbe(() => _origCreate({
+    model: config.minimaxModel,
+    max_tokens: 16,
+    messages: [{ role: "user", content: "ping" }],
+  }));
+
   llm.messages.create = async function instrumentedCreate(body, ...rest) {
+    // 唯一卡点：所有 callLLM* 都经此。熔断打开时在真正请求前先 gate
+    //   · depleted → 立即抛（等额度恢复无意义）
+    //   · overload → 等后台探活恢复，超预算再抛（可重试）
+    await breaker.gateBeforeCreate();
     const start = Date.now();
     try {
       const resp = await _origCreate(body, ...rest);
+      breaker.recordSuccess();
       const latency = Date.now() - start;
       _llmStats.calls += 1;
       _llmStats.total_latency_ms += latency;
@@ -57,6 +72,7 @@ if (llm && llm.messages && typeof llm.messages.create === "function") {
       }));
       return resp;
     } catch (err) {
+      breaker.recordFailure(err);
       _llmStats.calls += 1;
       _llmStats.errors += 1;
       console.warn(JSON.stringify({
@@ -211,9 +227,11 @@ function normalizeLLMError(err) {
     e.permanent = true;
     return e;
   }
-  if (status === 429) {
-    return new Error("LLM 服务限流，请稍后重试");
-  }
+  // 余额/额度耗尽 vs 短时限流：返回带 llmState 的类型化错误，让上层（分析控制器）
+  // 据此分流用户文案——而不是把 429 拍平成丢了 status 的普通 Error。
+  const kind = breaker.classify(err);
+  if (kind === "depleted") return new breaker.LLMDepletedError();
+  if (kind === "overload") return new breaker.LLMOverloadError();
   return err;
 }
 

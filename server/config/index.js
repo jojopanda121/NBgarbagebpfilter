@@ -68,6 +68,22 @@ const config = {
   kimiModelLight: process.env.MINIMAX_MODEL_LIGHT || "",
   kimiApiHost: process.env.MINIMAX_API_HOST || process.env.MINIMAX_BASE_URL || "https://api.minimaxi.com/v1",
 
+  // ── 分析并发闸 + LLM 熔断器（高峰期排队 / 限流 / 余额耗尽降级）──────────
+  // 同时进行的分析数上限（从源头防止把 MiniMax 打到 429）。
+  analysisMaxConcurrency: parseInt(process.env.ANALYSIS_MAX_CONCURRENCY, 10) || 2,
+  // 排队上限：超过则准入阶段直接 503，让用户稍后再来，而不是无限堆积。
+  analysisMaxQueue: parseInt(process.env.ANALYSIS_MAX_QUEUE, 10) || 50,
+  // 单个任务最长排队等待（毫秒），超时标失败并退额度。默认 20 分钟。
+  analysisMaxQueueWaitMs: parseInt(process.env.ANALYSIS_MAX_QUEUE_WAIT_MS, 10) || 20 * 60 * 1000,
+  // 连续多少次 overload(429/5xx/超时) 失败后打开熔断。
+  llmBreakerFailThreshold: parseInt(process.env.LLM_BREAKER_FAIL_THRESHOLD, 10) || 3,
+  // 熔断打开时，单次 create 最多等待恢复的时长（毫秒）。默认 120 秒。
+  llmOverloadCallWaitMs: parseInt(process.env.LLM_OVERLOAD_CALL_WAIT_MS, 10) || 120 * 1000,
+  // 熔断打开后后台探活间隔（毫秒）。默认 60 秒。
+  llmBreakerProbeMs: parseInt(process.env.LLM_BREAKER_PROBE_MS, 10) || 60 * 1000,
+  // 余额/额度耗尽错误识别正则（可选；不配则用内置默认）。
+  llmDepletedErrorPattern: process.env.LLM_DEPLETED_ERROR_PATTERN || "",
+
   // 企查查 Agent（企业追踪数据源）
   qccApiKey: process.env.QCC_API_KEY || "",
   qccEnabled: !!process.env.QCC_API_KEY,

@@ -235,6 +235,12 @@ export function useAnalysisPipeline() {
           setError(err.message || "额度不足，请前往「设置 → 额度」兑换后再试");
           return;
         }
+        if (err instanceof ApiError && err.status === 503) {
+          // 服务繁忙 / AI 用量暂时用尽 / 排队已满：后端已给出友好文案，
+          // 这不是"分析失败"，直接展示提示并静默退出（本次未消耗次数）。
+          setError(err.message || "AI 服务当前繁忙，请稍后再试");
+          return;
+        }
         throw err;
       }
 

@@ -6,6 +6,7 @@ import { useNavigate } from "react-router-dom";
 import { X, Loader2 } from "lucide-react";
 import forumApi from "../../services/forumApi";
 import ForumDisclaimer from "../../components/forum/ForumDisclaimer";
+import AttachmentUploader from "../../components/forum/AttachmentUploader";
 import { FORUM_CATEGORIES } from "../../constants/forum";
 
 export default function NewDiscussionModal({ onClose, onCreated }) {
@@ -18,6 +19,7 @@ export default function NewDiscussionModal({ onClose, onCreated }) {
   const [body, setBody] = useState("");
   const [allowContact] = useState(true);   // 纯文字帖默认开放撮合
   const [publicContact, setPublicContact] = useState("");
+  const [attachments, setAttachments] = useState([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
 
@@ -30,6 +32,7 @@ export default function NewDiscussionModal({ onClose, onCreated }) {
         category, title: title.trim(), body,
         allow_contact: allowContact,
         public_contact: publicContact.trim() || undefined,
+        attachments: attachments.length ? attachments : undefined,
       });
       onCreated?.();
       navigate(`/forum/post/${post.id}`);
@@ -71,6 +74,11 @@ export default function NewDiscussionModal({ onClose, onCreated }) {
             <textarea className="w-full border border-[#D8DCE8] rounded-lg px-3 py-2 text-sm h-32 resize-none"
               value={body} onChange={(e) => setBody(e.target.value)} maxLength={20000} placeholder="说点什么…" />
           </label>
+
+          <div>
+            <div className="text-xs text-[#0D2145] mb-1.5">附件（选填）</div>
+            <AttachmentUploader value={attachments} onChange={setAttachments} scope="post" disabled={submitting} />
+          </div>
 
           {category === "market" && (
             <label className="block text-sm">

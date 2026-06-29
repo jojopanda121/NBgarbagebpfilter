@@ -30,9 +30,16 @@ const forumApi = {
   createPost: (payload) => api.post("/api/forum/posts", payload),
   deletePost: (id) => api.delete(`/api/forum/posts/${id}`),
 
+  // 附件上传（图片 + 文档）。返回 { url, kind, name, mime, size }
+  uploadAttachment: (file) => {
+    const fd = new FormData();
+    fd.append("file", file);
+    return api.upload("/api/forum/upload", fd);
+  },
+
   // 评论
-  addComment: (postId, { body, parentId } = {}) =>
-    api.post(`/api/forum/posts/${postId}/comments`, { body, parent_id: parentId }),
+  addComment: (postId, { body, parentId, attachments } = {}) =>
+    api.post(`/api/forum/posts/${postId}/comments`, { body, parent_id: parentId, attachments }),
   deleteComment: (id) => api.delete(`/api/forum/comments/${id}`),
 
   // 互动

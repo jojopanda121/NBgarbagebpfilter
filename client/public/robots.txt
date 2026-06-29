@@ -1,21 +1,51 @@
 # https://www.garbagebpfilter.cn robots
-User-agent: *
-Allow: /$
-Allow: /demo
-Allow: /login
-Allow: /forgot-password
-Allow: /about
-Allow: /privacy
-Allow: /terms
+#
+# 公开可索引：营销页 + 论坛（含帖子详情，内容为脱敏后的公开讨论）。
+# 私有封死：项目分析结果 / 报告 / teaser / 登录后工作台 / API / 文档附件。
 
-# 私有 / 登录后区域与个性化内容，不收录
+User-agent: *
+Allow: /
 Disallow: /app/
 Disallow: /admin
 Disallow: /settings
 Disallow: /report/
 Disallow: /project/
 Disallow: /teaser/
-Disallow: /uploads/
 Disallow: /api/
+# 论坛：帖子与列表可收录；个人中心 / 私信 / 个人主页不收录（个性化 / 隐私）
+Disallow: /forum/me
+Disallow: /forum/messages
+Disallow: /forum/u/
+# 上传目录：放行论坛贴图（便于图片搜索抓取），不收录头像与文档附件
+Allow: /uploads/forum/
+Disallow: /uploads/avatars/
+
+# ── 明确欢迎主流 AI / 大模型爬虫（策略同上：论坛开放、项目结果封死）──
+# 仅作显式信号；未列出的 AI 爬虫回落到 User-agent: * 规则。
+User-agent: GPTBot
+User-agent: ChatGPT-User
+User-agent: OAI-SearchBot
+User-agent: ClaudeBot
+User-agent: anthropic-ai
+User-agent: Claude-Web
+User-agent: PerplexityBot
+User-agent: Google-Extended
+User-agent: Applebot-Extended
+User-agent: Bytespider
+User-agent: Amazonbot
+User-agent: CCBot
+User-agent: cohere-ai
+Allow: /
+Disallow: /app/
+Disallow: /admin
+Disallow: /settings
+Disallow: /report/
+Disallow: /project/
+Disallow: /teaser/
+Disallow: /api/
+Disallow: /forum/me
+Disallow: /forum/messages
+Disallow: /forum/u/
 
 Sitemap: https://www.garbagebpfilter.cn/sitemap.xml
+Sitemap: https://www.garbagebpfilter.cn/sitemap-forum.xml

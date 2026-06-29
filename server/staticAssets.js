@@ -3,6 +3,7 @@ const fs = require("fs");
 const path = require("path");
 
 const config = require("./config");
+const { mountForumSeo } = require("./seo/forumSeo");
 
 function ensureUploadsDir() {
   const uploadsDir = config.uploadsDir;
@@ -51,6 +52,8 @@ function mountClientBuild(app) {
 
 function mountStaticAssets(app) {
   mountUploads(app);
+  // 论坛 SEO 注入 + 动态 sitemap 必须在 SPA 兜底(catch-all)之前注册
+  mountForumSeo(app);
   return mountClientBuild(app);
 }
 

@@ -5,14 +5,20 @@
 // 登录后看完整。写操作(发帖/评论/点赞/撮合)一律 requireAuth。
 // ============================================================
 
+const os = require("os");
+const path = require("path");
 const { Router } = require("express");
 const rateLimit = require("express-rate-limit");
+const multer = require("multer");
 const { requireAuth, optionalAuth } = require("../middleware/auth");
+const config = require("../config");
 const forum = require("../services/forumService");
 const badges = require("../services/badgeService");
 const messages = require("../services/forumMessageService");
 const reports = require("../services/forumReportService");
 const notifications = require("../services/notificationService");
+const uploads = require("../services/forumUploadService");
+const { kindForExt } = require("../utils/fileMagic");
 const { getDb } = require("../db");
 
 const router = Router();
@@ -25,6 +31,42 @@ const writeLimiter = rateLimit({
   legacyHeaders: false,
   message: { error: "操作过于频繁，请稍后再试" },
 });
+
+// 附件上传限频（独立于发帖：每分钟最多 30 次上传）
+const uploadLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "上传过于频繁，请稍后再试" },
+});
+
+// 附件上传：扩展名白名单先挡一道，magic 校验在 service 层兜底。
+// multer 上限取文档上限（图片在 service 层收紧到更小阈值）。
+const attachmentUpload = multer({
+  dest: os.tmpdir(),
+  limits: { fileSize: config.forumUpload.fileMaxBytes },
+  fileFilter: (_req, file, cb) => {
+    const ext = path.extname(file.originalname || "").toLowerCase();
+    if (kindForExt(ext)) cb(null, true);
+    else cb(new Error("不支持的文件类型（仅图片与 pdf/office 文档）"));
+  },
+});
+
+// 把 multer 抛出的错误（超限/类型）转成 400 JSON；成功则落盘并回附件描述符。
+function handleUpload(req, res) {
+  attachmentUpload.single("file")(req, res, (err) => {
+    if (err) {
+      const tooBig = err.code === "LIMIT_FILE_SIZE";
+      return res.status(400).json({ error: tooBig ? "文件过大（图片≤5MB，文档≤20MB）" : (err.message || "上传失败") });
+    }
+    try {
+      res.json(uploads.storeUpload(req.file));
+    } catch (e) {
+      res.status(e.status || 500).json({ error: e.message || "上传失败" });
+    }
+  });
+}
 
 // 统一把 service 抛出的 {status,message} 转成 HTTP 响应
 function handle(fn) {
@@ -65,6 +107,9 @@ router.get("/posts/:id", optionalAuth, handle((req) =>
   forum.getPostDetail(Number(req.params.id), req.user?.id || null)
 ));
 
+// ── 附件上传（图片 + 文档）──
+router.post("/upload", requireAuth, uploadLimiter, handleUpload);
+
 // ── 发帖 ──
 router.post("/posts", requireAuth, writeLimiter, handle((req) =>
   forum.createPost({
@@ -77,6 +122,7 @@ router.post("/posts", requireAuth, writeLimiter, handle((req) =>
     showCompanyName: !!req.body.show_company_name,
     allowContact: req.body.allow_contact !== false,
     publicContact: req.body.public_contact,
+    attachments: req.body.attachments,
   })
 ));
 
@@ -100,6 +146,7 @@ router.post("/posts/:id/comments", requireAuth, writeLimiter, handle((req) =>
     userId: req.user.id,
     body: req.body.body,
     parentId: req.body.parent_id ? Number(req.body.parent_id) : null,
+    attachments: req.body.attachments,
   })
 ));
 

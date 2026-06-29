@@ -11,6 +11,7 @@ import UserTypeBadge from "../../components/forum/UserTypeBadge";
 import Avatar from "../../components/forum/Avatar";
 import BadgeList from "../../components/forum/BadgeList";
 import RegistrationGate from "../../components/forum/RegistrationGate";
+import Seo from "../../components/Seo";
 import ProfileEditor from "./ProfileEditor";
 import ConnectionsPanel from "./ConnectionsPanel";
 
@@ -19,10 +20,18 @@ export default function ForumProfilePage() {
   const isMe = !id;
   const token = useAuthStore((s) => s.token);
 
-  if (isMe && !token) {
-    return <div className="max-w-3xl mx-auto px-4 py-10"><RegistrationGate message="登录后管理你的论坛资料与撮合" /></div>;
-  }
-  return isMe ? <MyProfile /> : <PublicProfile userId={Number(id)} />;
+  // 个人主页 / 我的论坛属个性化页面，不收录（robots 已 Disallow，这里再加 noindex 兜底）
+  const content =
+    isMe && !token
+      ? <div className="max-w-3xl mx-auto px-4 py-10"><RegistrationGate message="登录后管理你的论坛资料与撮合" /></div>
+      : isMe ? <MyProfile /> : <PublicProfile userId={Number(id)} />;
+
+  return (
+    <>
+      <Seo title="论坛个人主页" noindex path={isMe ? "/forum/me" : `/forum/u/${id}`} />
+      {content}
+    </>
+  );
 }
 
 // ── 我的 ──
@@ -57,7 +66,6 @@ function MyProfile() {
 // ── 他人公开主页 ──
 function PublicProfile({ userId }) {
   const navigate = useNavigate();
-  const token = useAuthStore((s) => s.token);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
 

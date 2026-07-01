@@ -9,6 +9,7 @@ import useAuthStore from "../../store/useAuthStore";
 import Avatar from "../../components/forum/Avatar";
 import UserTypeBadge from "../../components/forum/UserTypeBadge";
 import RegistrationGate from "../../components/forum/RegistrationGate";
+import Seo from "../../components/Seo";
 
 export default function MessagesPage() {
   const token = useAuthStore((s) => s.token);
@@ -122,6 +123,7 @@ export default function MessagesPage() {
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-5">
+      <Seo title="站内私信" noindex path="/forum/messages" />
       <button onClick={() => navigate("/forum")} className="flex items-center gap-1 text-xs text-[#8E9BB0] hover:text-[#0D2145] mb-3">
         <ArrowLeft className="w-4 h-4" /> 返回论坛
       </button>

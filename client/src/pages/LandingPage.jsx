@@ -245,6 +245,7 @@ export default function LandingPage() {
           <a href="#workspace">多 Agent 工作区</a>
           <a href="#pipeline">投资流程</a>
           <a href="#pricing">定价</a>
+          <a href="/forum">投资人论坛</a>
         </div>
         <div className="lp-nav-right">
           <button className="lp-btn-ghost" onClick={() => navigate("/login")}>登录</button>
@@ -905,6 +906,7 @@ export default function LandingPage() {
           <div className="lp-footer-col">
             <h4>资源</h4>
             <ul>
+              <li><a href="/forum">投资人论坛</a></li>
               <li><a href="/demo">演示报告</a></li>
               <li><a href="#pipeline">使用文档</a></li>
               <li><a href="#features">更新日志</a></li>

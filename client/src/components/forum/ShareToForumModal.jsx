@@ -15,6 +15,7 @@ import { X, Loader2, ShieldCheck } from "lucide-react";
 import forumApi from "../../services/forumApi";
 import ScoreSnapshotCard from "./ScoreSnapshotCard";
 import ForumDisclaimer from "./ForumDisclaimer";
+import AttachmentUploader from "./AttachmentUploader";
 
 export default function ShareToForumModal({ taskId, defaultTitle = "", onClose }) {
   const navigate = useNavigate();
@@ -22,6 +23,7 @@ export default function ShareToForumModal({ taskId, defaultTitle = "", onClose }
   const [showCompanyName, setShowCompanyName] = useState(false);
   const [title, setTitle] = useState(defaultTitle);
   const [body, setBody] = useState("");
+  const [attachments, setAttachments] = useState([]);
   const [allowContact, setAllowContact] = useState(true);
   const [publicContact, setPublicContact] = useState("");
 
@@ -59,6 +61,7 @@ export default function ShareToForumModal({ taskId, defaultTitle = "", onClose }
         show_company_name: showCompanyName,
         allow_contact: allowContact,
         public_contact: publicContact.trim() || undefined,
+        attachments: attachments.length ? attachments : undefined,
       });
       onClose?.();
       navigate(`/forum/post/${post.id}`);
@@ -128,6 +131,15 @@ export default function ShareToForumModal({ taskId, defaultTitle = "", onClose }
                 value={body} onChange={(e) => setBody(e.target.value)} maxLength={20000}
                 placeholder="可补充融资进展、想找什么样的投资人等。注意：正文也会做公司名/项目名脱敏兜底。" />
             </label>
+
+            {/* 附件（选填）。注意：附件不做自动脱敏，匿名/半披露时需发帖人自行把关 */}
+            <div>
+              <div className="text-xs text-[#0D2145] mb-1">附件（选填）</div>
+              <AttachmentUploader value={attachments} onChange={setAttachments} scope="post" disabled={submitting} />
+              <p className="text-[11px] text-[#C2410C] mt-1.5">
+                附件<b>不会自动脱敏</b>，仅登录用户可见。{disclosureLabel !== "完全公开" && "当前为脱敏发帖，请勿上传含公司/项目名的文件（如原始 BP、Logo）。"}
+              </p>
+            </div>
           </section>
 
           {/* 撮合设置 */}

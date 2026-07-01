@@ -12,6 +12,9 @@ import RegistrationGate from "../../components/forum/RegistrationGate";
 import ForumDisclaimer from "../../components/forum/ForumDisclaimer";
 import ReactionBar from "../../components/forum/ReactionBar";
 import UnlockedReportModal from "../../components/forum/UnlockedReportModal";
+import AttachmentList from "../../components/forum/AttachmentList";
+import AttachmentUploader from "../../components/forum/AttachmentUploader";
+import Seo from "../../components/Seo";
 import { Sticker, STICKERS } from "../../components/forum/stickers/registry";
 import InterestModal from "./InterestModal";
 import { categoryMeta } from "../../constants/forum";
@@ -36,6 +39,7 @@ export default function ForumPostPage() {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
   const [commentText, setCommentText] = useState("");
+  const [commentAttachments, setCommentAttachments] = useState([]);
   const [posting, setPosting] = useState(false);
   const [showInterest, setShowInterest] = useState(false);
   const [showReport, setShowReport] = useState(false);
@@ -61,6 +65,7 @@ export default function ForumPostPage() {
   const { post, comments, viewer, gated } = data;
   const cat = categoryMeta(post.category);
   const CatIcon = cat.Icon;
+  const seoDesc = (post.body || "").trim().slice(0, 150) || `${post.title}（${cat.label}）— 垃圾BP过滤机投资人论坛`;
 
   async function toggleLike() {
     if (!token) return navigate("/login");
@@ -88,11 +93,15 @@ export default function ForumPostPage() {
   }
   async function submitComment() {
     if (!token) return navigate("/login");
-    if (!commentText.trim()) return;
+    if (!commentText.trim() && commentAttachments.length === 0) return;
     setPosting(true);
     try {
-      await forumApi.addComment(post.id, { body: commentText.trim() });
+      await forumApi.addComment(post.id, {
+        body: commentText.trim(),
+        attachments: commentAttachments.length ? commentAttachments : undefined,
+      });
       setCommentText("");
+      setCommentAttachments([]);
       load();
     } finally { setPosting(false); }
   }
@@ -132,6 +141,7 @@ export default function ForumPostPage() {
 
   return (
     <div className="max-w-3xl mx-auto px-4 py-5">
+      <Seo title={post.title} description={seoDesc} path={`/forum/post/${post.id}`} type="article" />
       <button onClick={() => navigate("/forum")} className="flex items-center gap-1 text-xs text-[#8E9BB0] hover:text-[#0D2145] mb-3">
         <ArrowLeft className="w-4 h-4" /> 返回论坛
       </button>
@@ -168,6 +178,9 @@ export default function ForumPostPage() {
         {post.body && (
           <div className="mt-4 text-sm text-[#0D2145] leading-relaxed whitespace-pre-line">{post.body}</div>
         )}
+
+        {/* 附件（图片 + 文档，仅登录可见）*/}
+        {!gated && post.attachments?.length > 0 && <AttachmentList attachments={post.attachments} />}
 
         {/* 公开联系方式 */}
         {post.public_contact && (
@@ -222,33 +235,36 @@ export default function ForumPostPage() {
           <h2 className="text-sm font-semibold text-[#0D2145] mb-3">评论 {comments.length > 0 && `(${comments.length})`}</h2>
 
           {token ? (
-            <div className="flex gap-2 mb-4 items-start">
-              <input value={commentText} onChange={(e) => setCommentText(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && submitComment()}
-                placeholder="友善交流，理性讨论…"
-                className="flex-1 border border-[#D8DCE8] rounded-lg px-3 py-2 text-sm" />
-              <div className="relative">
-                <button onClick={() => setShowCommentStickers((s) => !s)} aria-label="插入贴纸"
-                  className="px-2.5 py-2 border border-[#D8DCE8] rounded-lg text-[#8E9BB0] hover:text-[#1B4FD8] hover:border-[#1B4FD8]">
-                  <Smile className="w-4 h-4" />
+            <div className="mb-4 space-y-2">
+              <div className="flex gap-2 items-start">
+                <input value={commentText} onChange={(e) => setCommentText(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && submitComment()}
+                  placeholder="友善交流，理性讨论…"
+                  className="flex-1 border border-[#D8DCE8] rounded-lg px-3 py-2 text-sm" />
+                <div className="relative">
+                  <button onClick={() => setShowCommentStickers((s) => !s)} aria-label="插入贴纸"
+                    className="px-2.5 py-2 border border-[#D8DCE8] rounded-lg text-[#8E9BB0] hover:text-[#1B4FD8] hover:border-[#1B4FD8]">
+                    <Smile className="w-4 h-4" />
+                  </button>
+                  {showCommentStickers && (
+                    <>
+                      <div className="fixed inset-0 z-10" onClick={() => setShowCommentStickers(false)} />
+                      <div className="absolute z-20 mt-1 right-0 w-56 bg-white border border-[#D8DCE8] rounded-xl shadow-lg p-2 grid grid-cols-5 gap-1">
+                        {STICKERS.map((s) => (
+                          <button key={s.id} title={s.label} onClick={() => insertSticker(s.id)} className="hover:bg-[#EEF1F7] rounded p-0.5">
+                            <Sticker id={s.id} size={28} />
+                          </button>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </div>
+                <button onClick={submitComment} disabled={posting || (!commentText.trim() && commentAttachments.length === 0)}
+                  className="px-3 py-2 bg-[#1B4FD8] hover:bg-[#163069] disabled:opacity-50 text-white rounded-lg flex items-center gap-1.5 text-sm">
+                  {posting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
                 </button>
-                {showCommentStickers && (
-                  <>
-                    <div className="fixed inset-0 z-10" onClick={() => setShowCommentStickers(false)} />
-                    <div className="absolute z-20 mt-1 right-0 w-56 bg-white border border-[#D8DCE8] rounded-xl shadow-lg p-2 grid grid-cols-5 gap-1">
-                      {STICKERS.map((s) => (
-                        <button key={s.id} title={s.label} onClick={() => insertSticker(s.id)} className="hover:bg-[#EEF1F7] rounded p-0.5">
-                          <Sticker id={s.id} size={28} />
-                        </button>
-                      ))}
-                    </div>
-                  </>
-                )}
               </div>
-              <button onClick={submitComment} disabled={posting || !commentText.trim()}
-                className="px-3 py-2 bg-[#1B4FD8] hover:bg-[#163069] disabled:opacity-50 text-white rounded-lg flex items-center gap-1.5 text-sm">
-                {posting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-              </button>
+              <AttachmentUploader value={commentAttachments} onChange={setCommentAttachments} scope="comment" disabled={posting} />
             </div>
           ) : (
             <div className="mb-4"><RegistrationGate message="登录后参与评论" /></div>
@@ -273,6 +289,7 @@ export default function ForumPostPage() {
                   )}
                 </div>
                 <p className="text-sm text-[#0D2145] mt-1 whitespace-pre-line">{renderCommentBody(c.body)}</p>
+                {c.attachments?.length > 0 && <AttachmentList attachments={c.attachments} compact />}
                 <div className="mt-2">
                   <ReactionBar reactions={c.reactions || []} targetType="comment" targetId={c.id}
                     disabled={!token} onChange={(rs) => setCommentReactions(c.id, rs)} />

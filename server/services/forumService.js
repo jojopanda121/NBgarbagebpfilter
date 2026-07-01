@@ -15,6 +15,7 @@ const { getDb } = require("../db");
 const badgeService = require("./badgeService");
 const forumMessageService = require("./forumMessageService");
 const notificationService = require("./notificationService");
+const uploads = require("./forumUploadService");
 
 const GUEST_LIST_LIMIT = 6;       // 游客最多看前 6 条
 const GUEST_BODY_CHARS = 140;     // 游客正文截断长度
@@ -177,13 +178,16 @@ function createPost(args) {
   const {
     userId, category = "project", title, body = "",
     taskId, showProjectName = false, showCompanyName = false,
-    allowContact = true, publicContact = "",
+    allowContact = true, publicContact = "", attachments,
   } = args;
 
   if (!VALID_CATEGORIES.includes(category)) throw badRequest("板块不存在");
   if (!title || !title.trim()) throw badRequest("请填写标题");
   if (title.length > 120) throw badRequest("标题过长");
   if ((body || "").length > 20000) throw badRequest("正文过长");
+
+  // 附件复核（只接受本站上传产物 + 数量上限）；非法直接抛 400
+  const cleanAttachments = uploads.sanitizeAttachments(attachments, "post");
 
   let snapshot = null;
   let codename = null;
@@ -239,15 +243,16 @@ function createPost(args) {
     `INSERT INTO forum_posts
       (author_id, category, title, body, task_id, score_snapshot, score_source,
        disclosure_level, show_project_name, show_company_name, codename, teaser_payload,
-       allow_contact, public_contact, score_total, industry, region)
-     VALUES (?, ?, ?, ?, ?, ?, 'platform', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+       allow_contact, public_contact, score_total, industry, region, attachments)
+     VALUES (?, ?, ?, ?, ?, ?, 'platform', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     userId, category, title.trim(), scrubbedBody, resolvedTaskId,
     snapshot ? JSON.stringify(snapshot) : null,
     disclosureLevel, showProjectName ? 1 : 0, showCompanyName ? 1 : 0,
     codename, teaserPayload,
     allowContact ? 1 : 0, (publicContact || "").trim() || null,
-    scoreTotal, industry, region
+    scoreTotal, industry, region,
+    cleanAttachments ? JSON.stringify(cleanAttachments) : null
   );
 
   // 发帖后顺手重算徽章（用户活跃度/总量可能变化），失败不影响发帖
@@ -412,6 +417,7 @@ function getPostDetail(postId, viewerId) {
   }
 
   post.body = r.body || "";
+  post.attachments = safeParse(r.attachments, []) || [];   // 附件仅登录可见（游客分支不含）
   post.reactions = getReactionsFor("post", postId, viewerId);
   const liked = !!db.prepare(
     "SELECT 1 FROM forum_likes WHERE user_id = ? AND target_type = 'post' AND target_id = ?"
@@ -443,6 +449,7 @@ function getPostById(postId, viewerId) {
     like_count: r.like_count, comment_count: r.comment_count,
     interest_count: r.interest_count, view_count: r.view_count,
     created_at: r.created_at, is_author: r.author_id === viewerId,
+    attachments: safeParse(r.attachments, []) || [],
   };
 }
 
@@ -471,6 +478,7 @@ function listComments(postId, viewerId) {
     id: c.id,
     parent_id: c.parent_id,
     body: c.body,
+    attachments: safeParse(c.attachments, []) || [],
     like_count: c.like_count,
     reactions: getReactionsFor("comment", c.id, viewerId),
     created_at: c.created_at,
@@ -479,10 +487,12 @@ function listComments(postId, viewerId) {
   }));
 }
 
-function addComment({ postId, userId, body, parentId = null }) {
+function addComment({ postId, userId, body, parentId = null, attachments }) {
   const db = getDb();
-  if (!body || !body.trim()) throw badRequest("评论不能为空");
-  if (body.length > 4000) throw badRequest("评论过长");
+  const cleanAttachments = uploads.sanitizeAttachments(attachments, "comment");
+  // 评论允许"只发图、不写字"：有图时正文可空
+  if ((!body || !body.trim()) && !cleanAttachments) throw badRequest("评论不能为空");
+  if ((body || "").length > 4000) throw badRequest("评论过长");
   const post = db.prepare("SELECT id, status FROM forum_posts WHERE id = ?").get(postId);
   if (!post || post.status !== "published") throw notFound("帖子不存在");
   if (parentId) {
@@ -491,8 +501,8 @@ function addComment({ postId, userId, body, parentId = null }) {
   }
   const info = db.transaction(() => {
     const r = db.prepare(
-      "INSERT INTO forum_comments (post_id, author_id, parent_id, body) VALUES (?, ?, ?, ?)"
-    ).run(postId, userId, parentId, body.trim());
+      "INSERT INTO forum_comments (post_id, author_id, parent_id, body, attachments) VALUES (?, ?, ?, ?, ?)"
+    ).run(postId, userId, parentId, (body || "").trim(), cleanAttachments ? JSON.stringify(cleanAttachments) : null);
     db.prepare("UPDATE forum_posts SET comment_count = comment_count + 1 WHERE id = ?").run(postId);
     return r;
   })();
@@ -501,7 +511,7 @@ function addComment({ postId, userId, body, parentId = null }) {
      FROM forum_comments c LEFT JOIN users u ON u.id = c.author_id WHERE c.id = ?`
   ).get(info.lastInsertRowid);
   return {
-    id: c.id, parent_id: c.parent_id, body: c.body, like_count: 0, created_at: c.created_at,
+    id: c.id, parent_id: c.parent_id, body: c.body, attachments: cleanAttachments || [], like_count: 0, created_at: c.created_at,
     author: { id: c.author_id, name: c.display_name || c.username || "用户", user_type: c.user_type || "unset", type_verified: !!c.type_verified, avatar_url: c.avatar_url || null },
     is_author: true,
   };
@@ -789,6 +799,51 @@ function getPublicProfile(targetUserId, viewerId) {
   };
 }
 
+// ============================================================
+// SEO 只读视图（服务端为无 JS 爬虫注入 HTML 用）
+//   —— 不计 view、不返回评论/联系方式/附件，只给公开可索引的标题 + 截断摘要。
+//   暴露面与「游客软墙」对齐：脱敏正文已在发帖时落库，这里只截断。
+// ============================================================
+
+// 单帖 SEO 数据；不存在/已下架返回 null。
+function getPostSeo(postId) {
+  const db = getDb();
+  const r = db.prepare(
+    "SELECT id, category, title, body, codename, created_at, updated_at, score_total FROM forum_posts WHERE id = ? AND status = 'published'"
+  ).get(postId);
+  if (!r) return null;
+  return {
+    id: r.id,
+    category: r.category,
+    title: r.title,
+    codename: r.codename || null,
+    excerpt: (r.body || "").slice(0, GUEST_BODY_CHARS),
+    score_total: r.score_total != null ? r.score_total : null,
+    created_at: r.created_at,
+    updated_at: r.updated_at || r.created_at,
+  };
+}
+
+// 最近公开帖（列表页 SEO + sitemap 用）。limit 上限保护。
+function listRecentForSeo(limit = 50) {
+  const db = getDb();
+  const n = Math.min(Math.max(1, limit), 500);
+  const rows = db.prepare(
+    `SELECT id, category, title, body, codename, created_at, updated_at
+     FROM forum_posts WHERE status = 'published'
+     ORDER BY pinned DESC, created_at DESC LIMIT ?`
+  ).all(n);
+  return rows.map((r) => ({
+    id: r.id,
+    category: r.category,
+    title: r.title,
+    codename: r.codename || null,
+    excerpt: (r.body || "").slice(0, 80),
+    created_at: r.created_at,
+    updated_at: r.updated_at || r.created_at,
+  }));
+}
+
 // ── 错误工具（带 status 给路由层）──
 function err(status, message) { const e = new Error(message); e.status = status; return e; }
 function badRequest(m) { return err(400, m); }
@@ -797,6 +852,8 @@ function notFound(m) { return err(404, m); }
 
 module.exports = {
   createPost,
+  getPostSeo,
+  listRecentForSeo,
   previewSnapshot,
   listPosts,
   getPostDetail,

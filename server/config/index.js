@@ -109,6 +109,18 @@ const config = {
   encryptionKey: process.env.ENCRYPTION_KEY || "",
   piiSalt: process.env.PII_SALT || "",
   enablePiiEncryption: process.env.ENABLE_PII_ENCRYPTION === "1",
+
+  // 站点规范域名（SEO：canonical / og:url / sitemap 用）。与前端 siteMeta 默认一致。
+  siteUrl: (process.env.SITE_URL || process.env.REACT_APP_SITE_URL || "https://www.garbagebpfilter.cn").replace(/\/+$/, ""),
+
+  // 论坛附件上传上限（字节）。图片与文档分别限制；数量在 service 层强制。
+  forumUpload: {
+    imageMaxBytes: parseInt(process.env.FORUM_IMAGE_MAX_BYTES, 10) || 5 * 1024 * 1024,   // 图片 5MB
+    fileMaxBytes: parseInt(process.env.FORUM_FILE_MAX_BYTES, 10) || 20 * 1024 * 1024,    // 文档 20MB
+    postMaxImages: 9,
+    postMaxFiles: 3,
+    commentMaxImages: 1,
+  },
 };
 
 // ── 生产环境安全检查 ──

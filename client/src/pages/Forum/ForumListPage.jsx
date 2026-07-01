@@ -6,6 +6,7 @@ import useAuthStore from "../../store/useAuthStore";
 import ForumPostCard from "../../components/forum/ForumPostCard";
 import RegistrationGate from "../../components/forum/RegistrationGate";
 import ForumDisclaimer from "../../components/forum/ForumDisclaimer";
+import Seo from "../../components/Seo";
 import NewDiscussionModal from "./NewDiscussionModal";
 import { FORUM_CATEGORIES, SORT_OPTIONS } from "../../constants/forum";
 
@@ -38,6 +39,11 @@ export default function ForumListPage() {
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-5">
+      <Seo
+        title="投资人论坛 — 优质项目 / 行业讨论 / 找钱找项目"
+        description="垃圾BP过滤机投资人社区：带平台实测评分的优质项目、一级市场赛道讨论，以及找钱/找项目供需对接。内容公开可检索，登录后参与讨论与撮合。"
+        path="/forum"
+      />
       {/* 顶部说明 + 发帖 */}
       <div className="flex items-start justify-between gap-3 mb-4">
         <p className="text-xs text-[#4B5A72] mt-0.5">高分项目 · 行业交流 · 投融资撮合。论坛分数均为平台实测脱敏快照。</p>

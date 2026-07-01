@@ -22,7 +22,7 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -i "$PIP_INDEX" -r requirements.txt
 
-COPY *.py .
+COPY *.py ./
 
 # 以非 root 用户运行（安全加固）
 RUN groupadd -r appuser && useradd -r -g appuser appuser

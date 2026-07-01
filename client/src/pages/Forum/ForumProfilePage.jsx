@@ -57,7 +57,6 @@ function MyProfile() {
 // ── 他人公开主页 ──
 function PublicProfile({ userId }) {
   const navigate = useNavigate();
-  const token = useAuthStore((s) => s.token);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
 

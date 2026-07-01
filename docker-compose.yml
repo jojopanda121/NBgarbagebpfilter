@@ -36,6 +36,7 @@ services:
         CN_MIRROR: ${CN_MIRROR:-0}
         NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmjs.org}
         PIP_INDEX: ${PIP_INDEX:-https://pypi.org/simple}
+        SKIP_CHROMIUM: ${SKIP_CHROMIUM:-0}
     container_name: bp-filter-app
     restart: always
     # H9: 默认仅绑定本地回环，避免越过 Nginx 直接暴露应用端口；

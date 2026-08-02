@@ -2,11 +2,28 @@ import React, { useState, useEffect, useCallback } from "react";
 import { Navigate } from "react-router-dom";
 import useAuthStore from "../store/useAuthStore";
 import api from "../services/api";
+import { API_BASE } from "../constants";
 import {
-  Database, Building2, Activity, Download, RefreshCw,
-  ChevronLeft, ChevronRight, Search, ToggleLeft, ToggleRight,
-  AlertTriangle, CheckCircle2, XCircle, Clock, BarChart3,
-  Eye, Play, FileJson, TrendingUp, Shield,
+  Database,
+  Building2,
+  Activity,
+  Download,
+  RefreshCw,
+  ChevronLeft,
+  ChevronRight,
+  Search,
+  ToggleLeft,
+  ToggleRight,
+  AlertTriangle,
+  CheckCircle2,
+  XCircle,
+  Clock,
+  BarChart3,
+  Eye,
+  Play,
+  FileJson,
+  TrendingUp,
+  Shield,
 } from "lucide-react";
 
 // ── 统计卡片 ──
@@ -133,15 +150,32 @@ function OverviewTab() {
   if (loading) return <LoadingSpinner />;
   if (!data) return <EmptyState message="暂无追踪数据" />;
 
-  const { total_companies, status_distribution, prediction_accuracy, recent_snapshots, corpus_stats } = data;
+  const {
+    total_companies,
+    status_distribution,
+    prediction_accuracy,
+    recent_snapshots,
+    corpus_stats,
+  } = data;
 
   return (
     <div className="space-y-6">
       {/* 核心指标 */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
         <StatCard icon={Building2} label="追踪企业" value={total_companies} color="blue" />
-        <StatCard icon={Database} label="BP 语料" value={corpus_stats.total_bp_records} sub={`${(corpus_stats.total_characters / 10000).toFixed(1)} 万字`} color="purple" />
-        <StatCard icon={TrendingUp} label="验证次数" value={prediction_accuracy.total_validations} color="green" />
+        <StatCard
+          icon={Database}
+          label="BP 语料"
+          value={corpus_stats.total_bp_records}
+          sub={`${(corpus_stats.total_characters / 10000).toFixed(1)} 万字`}
+          color="purple"
+        />
+        <StatCard
+          icon={TrendingUp}
+          label="验证次数"
+          value={prediction_accuracy.total_validations}
+          color="green"
+        />
         <StatCard
           icon={Activity}
           label="平均误差"
@@ -182,10 +216,17 @@ function OverviewTab() {
           ) : (
             <div className="space-y-2">
               {Object.entries(prediction_accuracy.grade_distribution).map(([grade, count]) => {
-                const gradeColors = { A: "text-emerald-400", B: "text-blue-400", C: "text-amber-400", D: "text-red-400" };
+                const gradeColors = {
+                  A: "text-emerald-400",
+                  B: "text-blue-400",
+                  C: "text-amber-400",
+                  D: "text-red-400",
+                };
                 return (
                   <div key={grade} className="flex items-center justify-between">
-                    <span className={`font-bold ${gradeColors[grade] || "text-[#4B5A72]"}`}>评级 {grade}</span>
+                    <span className={`font-bold ${gradeColors[grade] || "text-[#4B5A72]"}`}>
+                      评级 {grade}
+                    </span>
                     <span className="text-[#0D2145] font-medium">{count} 次</span>
                   </div>
                 );
@@ -216,8 +257,12 @@ function OverviewTab() {
                   <tr key={s.id} className="border-t border-[#EEF1F7]">
                     <td className="py-2 pr-4 text-[#0D2145]">{s.company_name}</td>
                     <td className="py-2 pr-4">{s.snapshot_date?.slice(0, 10)}</td>
-                    <td className="py-2 pr-4"><StatusBadge status={s.operating_status} /></td>
-                    <td className="py-2">{s.confidence ? `${(s.confidence * 100).toFixed(0)}%` : "—"}</td>
+                    <td className="py-2 pr-4">
+                      <StatusBadge status={s.operating_status} />
+                    </td>
+                    <td className="py-2">
+                      {s.confidence ? `${(s.confidence * 100).toFixed(0)}%` : "—"}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -247,7 +292,8 @@ function CompaniesTab() {
     setLoading(true);
     const params = new URLSearchParams({ page, pageSize });
     if (search) params.set("search", search);
-    api.get(`/api/admin/tracking/companies?${params}`)
+    api
+      .get(`/api/admin/tracking/companies?${params}`)
       .then((res) => {
         setCompanies(res.data);
         setTotal(res.total);
@@ -256,7 +302,9 @@ function CompaniesTab() {
       .finally(() => setLoading(false));
   }, [page, search]);
 
-  useEffect(() => { fetchCompanies(); }, [fetchCompanies]);
+  useEffect(() => {
+    fetchCompanies();
+  }, [fetchCompanies]);
 
   const toggleTracking = async (id) => {
     try {
@@ -299,7 +347,10 @@ function CompaniesTab() {
             placeholder="搜索企业名称或行业..."
             className="w-full pl-9 pr-4 py-2 bg-white border border-[#D8DCE8] rounded-lg text-[#0D2145] text-sm placeholder:text-[#8E9BB0] focus:border-blue-500/50 focus:outline-none"
             value={search}
-            onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setPage(1);
+            }}
           />
         </div>
         <button
@@ -318,14 +369,16 @@ function CompaniesTab() {
 
       {/* 季度追踪结果 */}
       {quarterlyResult && (
-        <div className={`rounded-lg p-3 text-sm ${quarterlyResult.error ? "bg-red-500/10 border border-red-500/20 text-red-400" : "bg-emerald-500/10 border border-emerald-500/20 text-emerald-400"}`}>
+        <div
+          className={`rounded-lg p-3 text-sm ${quarterlyResult.error ? "bg-red-500/10 border border-red-500/20 text-red-400" : "bg-emerald-500/10 border border-emerald-500/20 text-emerald-400"}`}
+        >
           {quarterlyResult.error ? (
             <span>执行失败：{quarterlyResult.error}</span>
           ) : (
             <span>
-              追踪完成：共 {quarterlyResult.total_companies} 家企业，
-              创建 {quarterlyResult.snapshots_created} 个快照，
-              生成 {quarterlyResult.validations_generated} 条验证，
+              追踪完成：共 {quarterlyResult.total_companies} 家企业， 创建{" "}
+              {quarterlyResult.snapshots_created} 个快照， 生成{" "}
+              {quarterlyResult.validations_generated} 条验证，
               {quarterlyResult.errors > 0 ? `${quarterlyResult.errors} 个错误` : "无错误"}
             </span>
           )}
@@ -333,12 +386,12 @@ function CompaniesTab() {
       )}
 
       {/* 企业详情弹层 */}
-      {detail && (
-        <CompanyDetailModal detail={detail} onClose={() => setDetail(null)} />
-      )}
+      {detail && <CompanyDetailModal detail={detail} onClose={() => setDetail(null)} />}
 
       {/* 企业列表 */}
-      {loading ? <LoadingSpinner /> : (
+      {loading ? (
+        <LoadingSpinner />
+      ) : (
         <>
           <div className="bg-white border border-[#D8DCE8] rounded-xl overflow-hidden">
             <div className="overflow-x-auto">
@@ -356,33 +409,44 @@ function CompaniesTab() {
                 </thead>
                 <tbody className="text-[#0F1C36]">
                   {companies.length === 0 ? (
-                    <tr><td colSpan={7} className="p-8 text-center text-[#8E9BB0]">暂无企业数据</td></tr>
-                  ) : companies.map((c) => (
-                    <tr key={c.id} className="border-t border-[#EEF1F7] hover:bg-white/[0.02]">
-                      <td className="p-3 text-[#0D2145] font-medium">{c.company_name}</td>
-                      <td className="p-3 text-xs">{c.industry_tags || "—"}</td>
-                      <td className="p-3"><StatusBadge status={c.current_status} /></td>
-                      <td className="p-3">{c.bp_count}</td>
-                      <td className="p-3">{c.snapshot_count}</td>
-                      <td className="p-3">
-                        <button onClick={() => toggleTracking(c.id)} className="text-[#4B5A72] hover:text-[#0D2145] transition">
-                          {c.tracking_enabled ? (
-                            <ToggleRight className="w-5 h-5 text-emerald-400" />
-                          ) : (
-                            <ToggleLeft className="w-5 h-5" />
-                          )}
-                        </button>
-                      </td>
-                      <td className="p-3">
-                        <button
-                          onClick={() => viewDetail(c.id)}
-                          className="flex items-center gap-1 text-blue-400 hover:text-blue-300 text-xs transition"
-                        >
-                          <Eye className="w-3.5 h-3.5" /> 详情
-                        </button>
+                    <tr>
+                      <td colSpan={7} className="p-8 text-center text-[#8E9BB0]">
+                        暂无企业数据
                       </td>
                     </tr>
-                  ))}
+                  ) : (
+                    companies.map((c) => (
+                      <tr key={c.id} className="border-t border-[#EEF1F7] hover:bg-white/[0.02]">
+                        <td className="p-3 text-[#0D2145] font-medium">{c.company_name}</td>
+                        <td className="p-3 text-xs">{c.industry_tags || "—"}</td>
+                        <td className="p-3">
+                          <StatusBadge status={c.current_status} />
+                        </td>
+                        <td className="p-3">{c.bp_count}</td>
+                        <td className="p-3">{c.snapshot_count}</td>
+                        <td className="p-3">
+                          <button
+                            onClick={() => toggleTracking(c.id)}
+                            className="text-[#4B5A72] hover:text-[#0D2145] transition"
+                          >
+                            {c.tracking_enabled ? (
+                              <ToggleRight className="w-5 h-5 text-emerald-400" />
+                            ) : (
+                              <ToggleLeft className="w-5 h-5" />
+                            )}
+                          </button>
+                        </td>
+                        <td className="p-3">
+                          <button
+                            onClick={() => viewDetail(c.id)}
+                            className="flex items-center gap-1 text-blue-400 hover:text-blue-300 text-xs transition"
+                          >
+                            <Eye className="w-3.5 h-3.5" /> 详情
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
                 </tbody>
               </table>
             </div>
@@ -400,7 +464,9 @@ function CompaniesTab() {
                 >
                   <ChevronLeft className="w-4 h-4" />
                 </button>
-                <span className="text-[#0F1C36]">{page} / {totalPages}</span>
+                <span className="text-[#0F1C36]">
+                  {page} / {totalPages}
+                </span>
                 <button
                   onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                   disabled={page >= totalPages}
@@ -422,7 +488,10 @@ function CompanyDetailModal({ detail, onClose }) {
   const { company, snapshots, bp_links, validations } = detail;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={onClose}>
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+      onClick={onClose}
+    >
       <div
         className="bg-white border border-[#D8DCE8] rounded-2xl max-w-3xl w-full max-h-[80vh] overflow-y-auto p-6"
         onClick={(e) => e.stopPropagation()}
@@ -430,7 +499,9 @@ function CompanyDetailModal({ detail, onClose }) {
         <div className="flex items-center justify-between mb-4">
           <div>
             <h2 className="text-lg font-bold text-[#0D2145]">{company.company_name}</h2>
-            <p className="text-sm text-[#4B5A72]">{company.industry_tags || "未分类"} · {company.city || "未知地区"}</p>
+            <p className="text-sm text-[#4B5A72]">
+              {company.industry_tags || "未分类"} · {company.city || "未知地区"}
+            </p>
           </div>
           <StatusBadge status={company.current_status} />
         </div>
@@ -450,12 +521,19 @@ function CompanyDetailModal({ detail, onClose }) {
         {/* BP 链接 */}
         {bp_links.length > 0 && (
           <div className="mb-4">
-            <h3 className="text-sm font-medium text-[#0D2145] mb-2">关联 BP 分析 ({bp_links.length})</h3>
+            <h3 className="text-sm font-medium text-[#0D2145] mb-2">
+              关联 BP 分析 ({bp_links.length})
+            </h3>
             <div className="space-y-1">
               {bp_links.map((link) => (
-                <div key={link.id} className="flex items-center justify-between bg-white/5 rounded-lg px-3 py-2 text-sm">
+                <div
+                  key={link.id}
+                  className="flex items-center justify-between bg-white/5 rounded-lg px-3 py-2 text-sm"
+                >
                   <span className="text-[#0F1C36]">任务 {link.task_id?.slice(0, 8)}</span>
-                  <span className="text-[#0D2145] font-medium">{link.ai_total_score ? `${link.ai_total_score} 分` : "—"}</span>
+                  <span className="text-[#0D2145] font-medium">
+                    {link.ai_total_score ? `${link.ai_total_score} 分` : "—"}
+                  </span>
                 </div>
               ))}
             </div>
@@ -465,10 +543,15 @@ function CompanyDetailModal({ detail, onClose }) {
         {/* 快照时间线 */}
         {snapshots.length > 0 && (
           <div className="mb-4">
-            <h3 className="text-sm font-medium text-[#0D2145] mb-2">快照时间线 ({snapshots.length})</h3>
+            <h3 className="text-sm font-medium text-[#0D2145] mb-2">
+              快照时间线 ({snapshots.length})
+            </h3>
             <div className="space-y-1 max-h-48 overflow-y-auto">
               {snapshots.map((snap) => (
-                <div key={snap.id} className="flex items-center justify-between bg-white/5 rounded-lg px-3 py-2 text-sm">
+                <div
+                  key={snap.id}
+                  className="flex items-center justify-between bg-white/5 rounded-lg px-3 py-2 text-sm"
+                >
                   <span className="text-[#0F1C36]">{snap.snapshot_date?.slice(0, 10)}</span>
                   <StatusBadge status={snap.operating_status} />
                 </div>
@@ -480,15 +563,24 @@ function CompanyDetailModal({ detail, onClose }) {
         {/* 验证记录 */}
         {validations.length > 0 && (
           <div>
-            <h3 className="text-sm font-medium text-[#0D2145] mb-2">预测验证 ({validations.length})</h3>
+            <h3 className="text-sm font-medium text-[#0D2145] mb-2">
+              预测验证 ({validations.length})
+            </h3>
             <div className="space-y-1">
               {validations.map((v) => (
-                <div key={v.id} className="flex items-center justify-between bg-white/5 rounded-lg px-3 py-2 text-sm">
+                <div
+                  key={v.id}
+                  className="flex items-center justify-between bg-white/5 rounded-lg px-3 py-2 text-sm"
+                >
                   <div>
-                    <span className="text-[#0F1C36]">预测 {v.prediction_score} → 实际 {v.outcome_score}</span>
+                    <span className="text-[#0F1C36]">
+                      预测 {v.prediction_score} → 实际 {v.outcome_score}
+                    </span>
                     <span className="text-[#8E9BB0] ml-2">({v.months_elapsed} 个月后)</span>
                   </div>
-                  <span className={`font-medium ${v.score_error > 30 ? "text-red-400" : v.score_error > 15 ? "text-amber-400" : "text-emerald-400"}`}>
+                  <span
+                    className={`font-medium ${v.score_error > 30 ? "text-red-400" : v.score_error > 15 ? "text-amber-400" : "text-emerald-400"}`}
+                  >
                     误差 {v.score_error?.toFixed(1)}
                   </span>
                 </div>
@@ -497,7 +589,10 @@ function CompanyDetailModal({ detail, onClose }) {
           </div>
         )}
 
-        <button onClick={onClose} className="mt-4 w-full py-2 bg-white/10 hover:bg-white/20 rounded-lg text-sm text-[#0D2145] transition">
+        <button
+          onClick={onClose}
+          className="mt-4 w-full py-2 bg-white/10 hover:bg-white/20 rounded-lg text-sm text-[#0D2145] transition"
+        >
           关闭
         </button>
       </div>
@@ -517,7 +612,8 @@ function ValidationsTab() {
 
   useEffect(() => {
     setLoading(true);
-    api.get(`/api/admin/tracking/validations?page=${page}&pageSize=${pageSize}`)
+    api
+      .get(`/api/admin/tracking/validations?page=${page}&pageSize=${pageSize}`)
       .then((res) => {
         setValidations(res.data);
         setTotal(res.total);
@@ -549,29 +645,47 @@ function ValidationsTab() {
             </thead>
             <tbody className="text-[#0F1C36]">
               {validations.length === 0 ? (
-                <tr><td colSpan={8} className="p-8 text-center text-[#8E9BB0]">暂无回测数据，请先运行季度追踪</td></tr>
-              ) : validations.map((v) => (
-                <tr key={v.id} className="border-t border-[#EEF1F7]">
-                  <td className="p-3 text-[#0D2145]">{v.company_name}</td>
-                  <td className="p-3 font-medium">{v.prediction_score}</td>
-                  <td className="p-3">
-                    <span className={`font-bold ${
-                      v.prediction_grade === "A" ? "text-emerald-400" :
-                      v.prediction_grade === "B" ? "text-blue-400" :
-                      v.prediction_grade === "C" ? "text-amber-400" : "text-red-400"
-                    }`}>{v.prediction_grade}</span>
+                <tr>
+                  <td colSpan={8} className="p-8 text-center text-[#8E9BB0]">
+                    暂无回测数据，请先运行季度追踪
                   </td>
-                  <td className="p-3">{v.outcome_score}</td>
-                  <td className="p-3"><StatusBadge status={v.outcome_status} /></td>
-                  <td className="p-3">
-                    <span className={`font-medium ${v.score_error > 30 ? "text-red-400" : v.score_error > 15 ? "text-amber-400" : "text-emerald-400"}`}>
-                      {v.score_error?.toFixed(1)}
-                    </span>
-                  </td>
-                  <td className="p-3">{v.months_elapsed}</td>
-                  <td className="p-3 text-xs">{v.validation_date?.slice(0, 10)}</td>
                 </tr>
-              ))}
+              ) : (
+                validations.map((v) => (
+                  <tr key={v.id} className="border-t border-[#EEF1F7]">
+                    <td className="p-3 text-[#0D2145]">{v.company_name}</td>
+                    <td className="p-3 font-medium">{v.prediction_score}</td>
+                    <td className="p-3">
+                      <span
+                        className={`font-bold ${
+                          v.prediction_grade === "A"
+                            ? "text-emerald-400"
+                            : v.prediction_grade === "B"
+                              ? "text-blue-400"
+                              : v.prediction_grade === "C"
+                                ? "text-amber-400"
+                                : "text-red-400"
+                        }`}
+                      >
+                        {v.prediction_grade}
+                      </span>
+                    </td>
+                    <td className="p-3">{v.outcome_score}</td>
+                    <td className="p-3">
+                      <StatusBadge status={v.outcome_status} />
+                    </td>
+                    <td className="p-3">
+                      <span
+                        className={`font-medium ${v.score_error > 30 ? "text-red-400" : v.score_error > 15 ? "text-amber-400" : "text-emerald-400"}`}
+                      >
+                        {v.score_error?.toFixed(1)}
+                      </span>
+                    </td>
+                    <td className="p-3">{v.months_elapsed}</td>
+                    <td className="p-3 text-xs">{v.validation_date?.slice(0, 10)}</td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>
@@ -581,11 +695,21 @@ function ValidationsTab() {
         <div className="flex items-center justify-between text-sm">
           <span className="text-[#4B5A72]">共 {total} 条记录</span>
           <div className="flex items-center gap-2">
-            <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1} className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 disabled:opacity-30 text-[#0F1C36] transition">
+            <button
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={page <= 1}
+              className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 disabled:opacity-30 text-[#0F1C36] transition"
+            >
               <ChevronLeft className="w-4 h-4" />
             </button>
-            <span className="text-[#0F1C36]">{page} / {totalPages}</span>
-            <button onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page >= totalPages} className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 disabled:opacity-30 text-[#0F1C36] transition">
+            <span className="text-[#0F1C36]">
+              {page} / {totalPages}
+            </span>
+            <button
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              disabled={page >= totalPages}
+              className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 disabled:opacity-30 text-[#0F1C36] transition"
+            >
               <ChevronRight className="w-4 h-4" />
             </button>
           </div>
@@ -607,7 +731,7 @@ function ExportTab() {
     setExporting(true);
     try {
       const res = await fetch(
-        `${window.__API_BASE || ""}/api/admin/tracking/export?months=${months}&format=${format}`,
+        `${API_BASE}/api/admin/tracking/export?months=${months}&format=${format}`,
         {
           headers: {
             Authorization: `Bearer ${useAuthStore.getState().token}`,
@@ -661,11 +785,25 @@ function ExportTab() {
           <label className="block text-sm text-[#4B5A72] mb-1">导出格式</label>
           <div className="flex gap-3">
             <label className="flex items-center gap-2 cursor-pointer">
-              <input type="radio" name="format" value="jsonl" checked={format === "jsonl"} onChange={(e) => setFormat(e.target.value)} className="accent-blue-500" />
+              <input
+                type="radio"
+                name="format"
+                value="jsonl"
+                checked={format === "jsonl"}
+                onChange={(e) => setFormat(e.target.value)}
+                className="accent-blue-500"
+              />
               <span className="text-sm text-[#0D2145]">JSONL（微调推荐）</span>
             </label>
             <label className="flex items-center gap-2 cursor-pointer">
-              <input type="radio" name="format" value="json" checked={format === "json"} onChange={(e) => setFormat(e.target.value)} className="accent-blue-500" />
+              <input
+                type="radio"
+                name="format"
+                value="json"
+                checked={format === "json"}
+                onChange={(e) => setFormat(e.target.value)}
+                className="accent-blue-500"
+              />
               <span className="text-sm text-[#0D2145]">JSON</span>
             </label>
           </div>
@@ -676,7 +814,11 @@ function ExportTab() {
           disabled={exporting}
           className="w-full flex items-center justify-center gap-2 py-2.5 bg-[#1B4FD8] hover:bg-[#163069] disabled:opacity-50 rounded-lg text-sm text-[#0D2145] font-medium transition"
         >
-          {exporting ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+          {exporting ? (
+            <RefreshCw className="w-4 h-4 animate-spin" />
+          ) : (
+            <Download className="w-4 h-4" />
+          )}
           {exporting ? "导出中..." : "下载训练数据"}
         </button>
       </div>

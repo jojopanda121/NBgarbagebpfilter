@@ -45,3 +45,11 @@ server/assets/fonts/*.ttf
 nginx-certs/*.pem
 nginx-certs/*.key
 nginx-certs/*.crt
+
+# iOS app（Capacitor）构建产物 — 工程本身入库，产物不入库
+client/ios/App/Pods/
+client/ios/App/App/public/
+client/ios/App/output/
+client/ios/App/App/capacitor.config.json
+client/ios/DerivedData/
+client/ios/capacitor-cordova-ios-plugins/

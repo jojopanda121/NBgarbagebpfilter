@@ -1,4 +1,4 @@
-const { scorePolicyFit, isHardtechTrack } = require("../scoringPolicy");
+const { scorePolicyFit, isHardtechTrack } = require("../scoring/policy");
 
 describe("scorePolicyFit — 政策融入 S1/S3（不设独立维度）", () => {
   test("第一档关键核心技术：高 readout + 大需求侧加成", () => {

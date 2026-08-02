@@ -60,7 +60,7 @@ function handleUpload(req, res, next) {
 // 双重保险：仅当 NODE_ENV !== production 且显式设置 ALLOW_ANON_ANALYZE=1 时才允许匿名访问，
 // 防止误把 NODE_ENV 配错而暴露免登录入口。
 const ALLOW_ANON =
-  config.env !== "production" && process.env.ALLOW_ANON_ANALYZE === "1";
+  config.env !== "production" && config.allowAnonAnalyze;
 if (ALLOW_ANON) {
   console.warn("[Security] /api/analyze 允许未登录访问（ALLOW_ANON_ANALYZE=1），切勿在公网启用！");
 }

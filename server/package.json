@@ -2,12 +2,14 @@
   "name": "garbage-bp-filter-server",
   "version": "3.0.0",
   "private": true,
-  "description": "GarbageBPFilter 后端 — Express + MiniMax LLM（v3.0 商业化重构版）",
+  "description": "GarbageBPFilter 后端 — Express + DeepSeek LLM（v3.0 商业化重构版）",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
     "dev": "node index.js",
-    "test": "jest --config jest.config.js --verbose"
+    "test": "jest --config jest.config.js --verbose",
+    "test:integration": "jest --config jest.integration.config.js --runInBand",
+    "test:live": "jest --config jest.live.config.js --runInBand"
   },
   "dependencies": {
     "@resvg/resvg-js": "^2.6.2",
@@ -29,6 +31,7 @@
   },
   "devDependencies": {
     "eslint": "^8.57.0",
-    "jest": "^30.3.0"
+    "jest": "^30.3.0",
+    "supertest": "^7.2.2"
   }
 }

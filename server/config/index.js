@@ -44,12 +44,12 @@ const config = {
 
   // MiniMax LLM（OpenAI 兼容接口；M3 为默认模型）
   // 一个 MINIMAX_API_KEY（Token Plan 订阅 key）同时用于 M3 推理与 coding_plan/search 联网检索。
+  // P2-1: 曾有 minimax*/llm*/kimi* 三套别名并存（Kimi→MiniMax 迁移残留），
+  // 现统一收敛为 minimax* + llmProvider；新调用点一律使用 minimax*。
   minimaxApiKey: process.env.MINIMAX_API_KEY || "",
   minimaxModel: process.env.MINIMAX_MODEL || "MiniMax-M3",
   llmProvider: "minimax",
-  llmApiKey: process.env.MINIMAX_API_KEY || "",
-  llmModel: process.env.MINIMAX_MODEL || "MiniMax-M3",
-  // P2-4 per-skill 模型路由 (可选)：
+  // per-skill 模型路由 (可选)：
   //   heavy  → deck / memo / investmentDeckPptx / icQuestions 等重任务
   //   light  → snapshot / brief / one-pager / 语义抽样审计 等轻任务
   //   default→ 其他所有 skill（兜底）
@@ -58,15 +58,6 @@ const config = {
   minimaxModelLight: process.env.MINIMAX_MODEL_LIGHT || "",
   // 国内站 api.minimaxi.com（注意域名是 minimaxi）；国际站用 MINIMAX_API_HOST=https://api.minimax.io/v1 覆盖。
   minimaxApiHost: process.env.MINIMAX_API_HOST || process.env.MINIMAX_BASE_URL || "https://api.minimaxi.com/v1",
-  llmModelHeavy: process.env.MINIMAX_MODEL_HEAVY || "",
-  llmModelLight: process.env.MINIMAX_MODEL_LIGHT || "",
-  llmApiHost: process.env.MINIMAX_API_HOST || process.env.MINIMAX_BASE_URL || "https://api.minimaxi.com/v1",
-  // 兼容旧调用点命名；实际后端统一走 MiniMax。
-  kimiApiKey: process.env.MINIMAX_API_KEY || "",
-  kimiModel: process.env.MINIMAX_MODEL || "MiniMax-M3",
-  kimiModelHeavy: process.env.MINIMAX_MODEL_HEAVY || "",
-  kimiModelLight: process.env.MINIMAX_MODEL_LIGHT || "",
-  kimiApiHost: process.env.MINIMAX_API_HOST || process.env.MINIMAX_BASE_URL || "https://api.minimaxi.com/v1",
 
   // 企查查 Agent（企业追踪数据源）
   qccApiKey: process.env.QCC_API_KEY || "",
@@ -109,6 +100,30 @@ const config = {
   encryptionKey: process.env.ENCRYPTION_KEY || "",
   piiSalt: process.env.PII_SALT || "",
   enablePiiEncryption: process.env.ENABLE_PII_ENCRYPTION === "1",
+
+  // ── P2-2: 运行时调优参数统一收编（原先散落在各模块直读 process.env）──
+  // 动态灰度/行为开关（测试会运行时切换的）在 config/featureFlags.js，不在这里。
+  // 全局 API 兜底限流（次/分钟/IP），0 = 关闭
+  rateLimitGlobalMax: parseInt(process.env.RATE_LIMIT_GLOBAL_MAX, 10) >= 0
+    ? parseInt(process.env.RATE_LIMIT_GLOBAL_MAX, 10)
+    : 300,
+  // 工作区每日对话额度
+  workspaceDailyChatLimit: parseInt(process.env.WORKSPACE_DAILY_CHAT_LIMIT, 10) || 3,
+  // SSE 心跳间隔
+  sseHeartbeatIntervalMs: parseInt(process.env.SSE_HEARTBEAT_INTERVAL, 10) || 15000,
+  // 进程内轻量队列默认并发
+  lightweightQueueConcurrency: parseInt(process.env.LIGHTWEIGHT_QUEUE_CONCURRENCY, 10) || 1,
+  // 证据库原文截断上限（字符）
+  evidenceRawTextMaxChars: parseInt(process.env.EVIDENCE_RAW_TEXT_MAX_CHARS, 10) || 240000,
+
+  // 上传结构化抽取
+  uploadStructuredExtractionDisabled: process.env.UPLOAD_STRUCTURED_EXTRACTION_DISABLED === "1",
+  uploadExtractionConcurrency: parseInt(process.env.UPLOAD_EXTRACTION_CONCURRENCY, 10) || 1,
+  // 冲突裁决
+  conflictJudgeDisabled: process.env.CONFLICT_JUDGE_DISABLED === "1",
+  conflictJudgeConcurrency: parseInt(process.env.CONFLICT_JUDGE_CONCURRENCY, 10) || 1,
+  // 仅开发环境允许匿名分析（生产忽略此开关，analyze 路由二次校验）
+  allowAnonAnalyze: process.env.ALLOW_ANON_ANALYZE === "1",
 };
 
 // ── 生产环境安全检查 ──

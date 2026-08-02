@@ -1,4 +1,4 @@
-const { scoreS3Harness } = require("../scoringS3Harness");
+const { scoreS3Harness } = require("../scoring/s3Harness");
 const { scoreProject } = require("../scoring");
 
 // 三个标的（设计目标的 sanity check 基准），固化成回归用例：

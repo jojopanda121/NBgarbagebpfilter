@@ -1,4 +1,4 @@
-const { aggregate, _gradeFromScore } = require("../scoringAggregate");
+const { aggregate, _gradeFromScore } = require("../scoring/aggregate");
 
 describe("aggregate — 方案乙非线性聚合", () => {
   test("满覆盖等权 = 加权算术（无卓越加成时退回均值）", () => {

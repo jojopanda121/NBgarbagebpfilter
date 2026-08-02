@@ -65,4 +65,21 @@ const logger = {
   },
 };
 
+/**
+ * P2-3: console 桥接 — 把全代码库存量的 console.log/info/warn/error
+ * 统一导入结构化 JSON 日志管道（util.format 保持任意参数形状，含 %s/%d 占位符）。
+ * 仅在真实运行时（server/index.js）安装；测试环境不安装，保持 jest 输出可读。
+ * 新代码请直接使用本 logger，console.* 仅作为历史存量兼容。
+ */
+function installConsoleBridge() {
+  const util = require("util");
+  const bridge = (level) => (...args) => logger[level](util.format(...args));
+  console.log = bridge("info");
+  console.info = bridge("info");
+  console.warn = bridge("warn");
+  console.error = bridge("error");
+  console.debug = bridge("debug");
+}
+
 module.exports = logger;
+module.exports.installConsoleBridge = installConsoleBridge;

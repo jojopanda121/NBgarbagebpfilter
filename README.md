@@ -87,3 +87,7 @@ node scripts/set-admin.js your_username
 ```
 
 详细说明见 [DEPLOY.md](DEPLOY.md)
+
+## 工程约定
+
+架构不变量、测试策略、部署与回滚约定见 [docs/ENGINEERING.md](docs/ENGINEERING.md)。

@@ -628,7 +628,7 @@ async function appendSearchFacts(facts, factPack, opts = {}) {
 function _shouldRunInstitutionalMemory(opts) {
   if (opts && opts.enableInstitutionalMemory === true) return true;
   if (opts && opts.enableInstitutionalMemory === false) return false;
-  return process.env.ENABLE_INSTITUTIONAL_MEMORY === "1";
+  return require("../config/featureFlags").enableInstitutionalMemory();
 }
 
 function appendInstitutionalMemoryFacts(facts, project, opts = {}) {

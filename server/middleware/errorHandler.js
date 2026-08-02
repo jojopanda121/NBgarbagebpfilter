@@ -3,6 +3,7 @@
 // ============================================================
 
 const config = require("../config");
+const logger = require("../utils/logger");
 
 // H7: 敏感字段脱敏 - 防止意外回显请求体/响应头中的 API Key
 const SENSITIVE_KEY_RE = /authorization|api[-_]?key|secret|password|token|cookie/i;
@@ -18,17 +19,18 @@ function sanitizeForLog(obj, depth = 0) {
   return out;
 }
 
-function errorHandler(err, _req, res, _next) {
-  if (config.env === "production") {
-    console.error("[Error]", err.message);
-  } else {
-    // H7: 即便在开发环境也只输出 message + 脱敏后的元信息，避免 dump 到 stdout 时泄露
-    console.error("[Error]", err.message, sanitizeForLog({
-      code: err.code,
-      status: err.status,
-      stack: err.stack,
-    }));
-  }
+function errorHandler(err, req, res, _next) {
+  // P1-3: 生产环境也必须落 stack + requestId，否则线上 500 无法定位。
+  // stack 只包含代码位置不含请求体，H7 的脱敏顾虑不适用于它；
+  // 其余元信息仍走 sanitizeForLog 脱敏。
+  logger.error(`[Error] ${err.message}`, sanitizeForLog({
+    requestId: req?.requestId,
+    method: req?.method,
+    path: req?.originalUrl,
+    code: err.code,
+    status: err.status,
+    stack: err.stack,
+  }));
 
   const status = err.status || 500;
   const message = status === 500 ? "服务器内部错误" : err.message;

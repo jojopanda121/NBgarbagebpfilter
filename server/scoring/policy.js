@@ -15,7 +15,7 @@
 // 不做任何调整（搜不到≠中性分）。
 // ============================================================
 
-const T = require("./config/scoringTables");
+const T = require("../config/scoringTables");
 
 function _clamp(n, min, max) {
   return Math.max(min, Math.min(max, n));

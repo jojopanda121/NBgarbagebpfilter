@@ -1,5 +1,5 @@
 // S2 产品与壁垒 harness 子系统 + scoreProject 灰度行为测试。
-const { computeTrl, computeMoat, scoreS2Harness, trlGapVerdict, MOAT_WEIGHTS } = require("../../scoringHarness");
+const { computeTrl, computeMoat, scoreS2Harness, trlGapVerdict, MOAT_WEIGHTS } = require("../../scoring/harness");
 const { scoreProject } = require("../../scoring");
 
 describe("computeTrl — 证据阶梯折扣", () => {

@@ -12,7 +12,8 @@ const { getUserPlan: sharedGetUserPlan, isActiveVipRow } = require("../utils/use
 
 const FREE_UPLOAD_TTL_DAYS = 3;
 const GENERATED_ARTIFACT_TTL_DAYS = 7;
-const MAX_RAW_TEXT_CHARS = Number(process.env.EVIDENCE_RAW_TEXT_MAX_CHARS || 240000);
+const config = require("../config");
+const MAX_RAW_TEXT_CHARS = config.evidenceRawTextMaxChars;
 const CHUNK_SIZE = 2048;
 const CHUNK_OVERLAP = 20;
 

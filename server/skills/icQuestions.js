@@ -629,7 +629,7 @@ module.exports = {
         fallback: summarizeFallback(finalPayload, "ic_questions_xlsx"),
         semantic_audit: await (async () => {
           const enable = params.enable_semantic_audit === true
-            || (params.enable_semantic_audit !== false && process.env.ENABLE_SEMANTIC_AUDIT === "1");
+            || (params.enable_semantic_audit !== false && require("../config/featureFlags").enableSemanticAudit());
           if (!enable) return null;
           return semanticGroundingAudit(finalPayload, factPack, {
             sampleRate: 0.3,

@@ -263,12 +263,12 @@ async function runAndPersist({ db, artifactId, conversationId, projectId, filena
           flatFacts: flattenStructuredToFacts(result.structured, { artifactId, filename }),
         });
         const finalProjectId = persistedFacts.projectId || projectId;
-        if (finalProjectId && process.env.CONFLICT_JUDGE_DISABLED !== "1") {
+        if (finalProjectId && !require("../../config").conflictJudgeDisabled) {
           const taskQueue = require("../taskQueue");
           taskQueue.fireAndForget(
             "conflict_judge",
             () => require("../conflictJudge").runConflictJudgeForProject({ projectId: finalProjectId, db }),
-            { concurrency: Number(process.env.CONFLICT_JUDGE_CONCURRENCY || 1) },
+            { concurrency: require("../../config").conflictJudgeConcurrency },
           );
         }
       } catch (_) { /* optional evidence store may not be migrated yet */ }

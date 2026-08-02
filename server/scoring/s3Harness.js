@@ -23,7 +23,7 @@
 // 保证向后兼容与确定性（给定输入，任何人算出来结果相同）。
 // ============================================================
 
-const T = require("./config/scoringTables");
+const T = require("../config/scoringTables");
 
 function _clamp(n, min, max) {
   return Math.max(min, Math.min(max, n));

@@ -8,7 +8,9 @@ const logger = require("../utils/logger");
 // runId => Set<res>（每个 runId 可有多个连接，如刷新页面重连）
 const subscribers = new Map();
 
-const HEARTBEAT_INTERVAL_MS = parseInt(process.env.SSE_HEARTBEAT_INTERVAL || "15000", 10);
+const config = require("../config");
+
+const HEARTBEAT_INTERVAL_MS = config.sseHeartbeatIntervalMs;
 
 /**
  * 将 res 注册为 runId 的 SSE 订阅者

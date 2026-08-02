@@ -33,8 +33,28 @@ function scoringAggMode() {
   return ["off", "shadow", "on"].includes(v) ? v : "shadow";
 }
 
+// ── P2-2: 以下行为开关从各调用点收编至此（保持动态读取：测试/灰度会运行时切换）──
+
+// LLM prompt 前缀缓存
+function enablePromptCache() {
+  return process.env.ENABLE_PROMPT_CACHE === "1";
+}
+
+// skill 产出的语义抽样审计（skills/*.js 亦可用参数 enable_semantic_audit 覆盖）
+function enableSemanticAudit() {
+  return process.env.ENABLE_SEMANTIC_AUDIT === "1";
+}
+
+// 机构记忆注入
+function enableInstitutionalMemory() {
+  return process.env.ENABLE_INSTITUTIONAL_MEMORY === "1";
+}
+
 module.exports = {
   scoringHarnessMode,
   scoringS3HarnessMode,
   scoringAggMode,
+  enablePromptCache,
+  enableSemanticAudit,
+  enableInstitutionalMemory,
 };

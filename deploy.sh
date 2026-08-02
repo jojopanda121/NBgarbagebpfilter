@@ -72,14 +72,25 @@ setup_env() {
   echo "  GarbageBPFilter 部署配置向导"
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-  # MiniMax API Key
+  # DeepSeek API Key
   echo ""
-  read -p "请输入 MiniMax API Key (必填): " MINIMAX_KEY
-  if [ -z "$MINIMAX_KEY" ]; then
-    error "MiniMax API Key 不能为空！"
+  read -p "请输入 DeepSeek API Key (必填, https://platform.deepseek.com/api_keys): " DEEPSEEK_KEY
+  if [ -z "$DEEPSEEK_KEY" ]; then
+    error "DeepSeek API Key 不能为空！"
     exit 1
   fi
-  set_env_var "MINIMAX_API_KEY" "$MINIMAX_KEY"
+  set_env_var "DEEPSEEK_API_KEY" "$DEEPSEEK_KEY"
+
+  # 博查 Bocha 搜索 Key（联网检索，可跳过）
+  echo ""
+  echo "  提示: DeepSeek 没有联网检索能力，公开信息检索走博查。"
+  echo "        跳过则所有检索返回空，深度研究/行业速览会大幅缩水。"
+  read -p "请输入博查 Bocha API Key (可留空跳过, https://open.bochaai.com): " BOCHA_KEY
+  if [ -n "$BOCHA_KEY" ]; then
+    set_env_var "BOCHA_API_KEY" "$BOCHA_KEY"
+  else
+    warn "未配置 BOCHA_API_KEY，联网检索将全程返回空结果"
+  fi
 
   # JWT Secret
   JWT=$(random_string 48)

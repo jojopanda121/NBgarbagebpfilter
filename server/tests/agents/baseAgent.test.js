@@ -81,7 +81,7 @@ describe("BaseAgent.run() — retry logic", () => {
   });
 });
 
-describe("BaseAgent — MiniMax M3 think-only / 截断输出处理", () => {
+describe("BaseAgent — 推理模型 think-only / 截断输出处理", () => {
   it("retries with corrective feedback when the model returns think-only output, then succeeds", async () => {
     callLLM
       // 第一轮：M3 把预算烧在 <think> 上，没吐 JSON

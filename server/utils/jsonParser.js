@@ -75,10 +75,10 @@ function repairTruncatedJson(str) {
 }
 
 /**
- * 预处理历史 Provider 输出：
- * 移除旧 MiniMax <minimax:tool_call> 等 XML 工具调用标签。
+ * 预处理模型输出：剥掉推理模型的 <think> 正文，以及历史 Provider 遗留的
+ * XML 工具调用标签（<minimax:tool_call> 等，老会话回放时仍可能出现）。
  */
-function preprocessMinimaxOutput(raw) {
+function preprocessModelOutput(raw) {
   if (!raw || typeof raw !== "string") return raw;
   let processed = raw;
   processed = processed.replace(/<think>[\s\S]*?<\/think>/gi, "");
@@ -97,7 +97,7 @@ function extractJson(raw) {
     return null;
   }
 
-  raw = preprocessMinimaxOutput(raw);
+  raw = preprocessModelOutput(raw);
 
   const candidates = [];
 
@@ -145,7 +145,7 @@ function extractJson(raw) {
 function extractJsonArray(raw) {
   if (!raw || typeof raw !== "string") return null;
 
-  raw = preprocessMinimaxOutput(raw);
+  raw = preprocessModelOutput(raw);
 
   const candidates = [];
 
@@ -193,7 +193,7 @@ function extractJsonArray(raw) {
 /**
  * 诊断一段 LLM 原始输出能否解析出 JSON，不能时给出失败类别。
  *
- * 背景：MiniMax M3 是推理模型，会把推理写进正文 <think>，甚至把整个
+ * 背景：DeepSeek V4 是推理模型，可能把推理写进正文 <think>，甚至把整个
  * max_tokens 全烧在 <think> 上、根本不吐 JSON。这类"调用成功返回、但
  * 内容没有可用 JSON"不会抛异常，普通 try/catch 抓不到，需要显式探测。
  * 调用方据此区分"原样重试" vs "带『别再思考、直接输出 JSON』反馈重试"。
@@ -221,7 +221,7 @@ function diagnoseJsonOutput(raw, opts = {}) {
   if (typeOk) return { ok: true, parsed };
 
   // 解析失败 → 归因，供调用方决定重试策略
-  const stripped = preprocessMinimaxOutput(raw);
+  const stripped = preprocessModelOutput(raw);
   if (!stripped || !stripped.trim()) {
     // 剥掉 <think> 后空空如也：整个 token 预算烧在了思考上
     return { ok: false, reason: "think_only" };
@@ -266,7 +266,7 @@ function ensureStringArray(arr) {
 function extractNestedJson(raw, key) {
   if (!raw || typeof raw !== "string" || !key) return null;
 
-  raw = preprocessMinimaxOutput(raw);
+  raw = preprocessModelOutput(raw);
 
   // 在原始文本中定位 "key": { 或 "key":{ 的位置
   const pattern = new RegExp(`"${key}"\\s*:\\s*\\{`);
@@ -370,7 +370,7 @@ module.exports = {
   sanitizeJsonString,
   attemptJsonFix,
   repairTruncatedJson,
-  preprocessMinimaxOutput,
+  preprocessModelOutput,
   extractJson,
   extractJsonArray,
   extractNestedJson,

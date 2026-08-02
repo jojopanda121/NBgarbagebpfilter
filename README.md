@@ -32,9 +32,12 @@ cd client && npm start
 
 ## 切换 AI 模型
 
-编辑 `.env` 文件中的 `MINIMAX_API_KEY` 字段。
-后端默认使用 MiniMax 开放平台的 `MiniMax-M3`。
-MiniMax API 支持 Chat Completion、Tool Calling 和 `coding_plan/search`；同花顺/天眼查等 MiniMax 内部专业数据源不开放结构化 API。工作区 Host 主攻低成本 MiniMax Chat 路线：通过 `minimax_professional_research` 做间接研究，结果按自然语言证据处理；拿不到的数据标为待上传材料、公开检索或人工补充核验，不默认依赖昂贵第三方 API。
+编辑 `.env` 文件中的 `DEEPSEEK_API_KEY` 字段。
+后端默认使用 DeepSeek 开放平台的 `deepseek-v4-flash`；重任务（IC 问题清单、投决 Deck）自动路由到 `deepseek-v4-pro`。两者都是 1M 上下文 / 384K 最大输出，上下文缓存自动命中。
+
+联网检索是**独立**的供应商：DeepSeek API 不提供任何检索能力，所以公开信息检索走博查 Bocha（`BOCHA_API_KEY`）。没配 key 也能跑，但所有检索返回空，外部事实一律标待核实。
+
+数据源边界：本系统没有同花顺/天眼查/元典法律等专业数据库直连，专业口径只能靠公开网页检索替代，拿不到的数据标为待上传材料或人工补充核验，不编造。
 
 ## 项目结构
 

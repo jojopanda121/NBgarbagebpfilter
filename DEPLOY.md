@@ -21,16 +21,17 @@
 
 ## 2. 系统要求
 
-| 项 | 要求 |
-| --- | --- |
+| 项       | 要求                                                          |
+| -------- | ------------------------------------------------------------- |
 | 操作系统 | Linux（Ubuntu 20.04+ / CentOS 7+ / 腾讯云轻量应用服务器均可） |
-| CPU | ≥ 2 核（应用 2 核 + doc-service 1.5 核） |
-| 内存 | ≥ 4 GB（应用 2GB 上限、doc-service 1.5GB 上限） |
-| 磁盘 | ≥ 20 GB（镜像 + 数据库 + 备份 + 日志） |
-| Docker | ≥ 20.10，含 `docker-compose` 或 `docker compose` 插件 |
-| 端口 | 80 / 443（Nginx）；3001 默认只绑 `127.0.0.1`，不直接对外 |
+| CPU      | ≥ 2 核（应用 2 核 + doc-service 1.5 核）                      |
+| 内存     | ≥ 4 GB（应用 2GB 上限、doc-service 1.5GB 上限）               |
+| 磁盘     | ≥ 20 GB（镜像 + 数据库 + 备份 + 日志）                        |
+| Docker   | ≥ 20.10，含 `docker-compose` 或 `docker compose` 插件         |
+| 端口     | 80 / 443（Nginx）；3001 默认只绑 `127.0.0.1`，不直接对外      |
 
 安装 Docker（如未装）：
+
 ```bash
 curl -fsSL https://get.docker.com | sh
 sudo systemctl enable --now docker
@@ -78,64 +79,70 @@ PIP_INDEX=https://mirrors.tencentyun.com/pypi/simple   # pip 腾讯云内网镜�
 ## 3. 环境变量
 
 复制模板：
+
 ```bash
 cp .env.example .env
 ```
 
 ### 3.1 生产环境**必填**（缺失或不合法 → 启动直接 `exit(1)`）
 
-| 变量 | 校验规则 | 说明 |
-| --- | --- | --- |
-| `MINIMAX_API_KEY` | 不为空 | MiniMax LLM API key |
-| `JWT_SECRET` | 长度 ≥ 32，不含 "请修改 / change me / placeholder / example" 等占位文案 | JWT 签名密钥，用 `openssl rand -hex 32` 生成 |
-| `ALLOWED_ORIGINS` | 不为空、**不能是 `*`** | CORS 白名单，逗号分隔多个域名 |
+| 变量               | 校验规则                                                                | 说明                                                         |
+| ------------------ | ----------------------------------------------------------------------- | ------------------------------------------------------------ |
+| `DEEPSEEK_API_KEY` | 不为空                                                                  | DeepSeek LLM API key，https://platform.deepseek.com/api_keys |
+| `JWT_SECRET`       | 长度 ≥ 32，不含 "请修改 / change me / placeholder / example" 等占位文案 | JWT 签名密钥，用 `openssl rand -hex 32` 生成                 |
+| `ALLOWED_ORIGINS`  | 不为空、**不能是 `*`**                                                  | CORS 白名单，逗号分隔多个域名                                |
 
 > 用 `bash deploy.sh`（首次部署）会自动生成合规的 `JWT_SECRET` 并提示填入其余两项。
 
 ### 3.2 常用可选项
 
-| 变量 | 默认值 | 用途 |
-| --- | --- | --- |
-| `PORT` | `3001` | 应用监听端口 |
-| `APP_BIND_HOST` | `127.0.0.1` | 应用端口宿主机绑定地址；**对外裸暴露请改成 `0.0.0.0`，但建议保持默认 + 走 Nginx** |
-| `DB_PATH` | `./data/app.db` | SQLite 文件路径（容器内为 `/app/data/app.db`） |
-| `JWT_EXPIRES_IN` | `24h` | Token 有效期 |
-| `DEFAULT_FREE_QUOTA` | `3` | 新用户注册赠送的分析次数 |
-| `ADMIN_USERNAME` / `ADMIN_PASSWORD` | – | 启动时自动创建/升级该账号为管理员（密码 ≥ 6 位） |
-| `DOC_SERVICE_URL` | – | 文档提取微服务地址；Docker 部署时由 compose 自动设为 `http://doc-service:8001`，**不需要在 .env 里填** |
-| `GRACEFUL_SHUTDOWN_TIMEOUT_MS` | `300000` (5 min) | 优雅关闭最大等待时间，与 PM2 `kill_timeout` 对齐 |
+| 变量                                | 默认值           | 用途                                                                                                   |
+| ----------------------------------- | ---------------- | ------------------------------------------------------------------------------------------------------ |
+| `PORT`                              | `3001`           | 应用监听端口                                                                                           |
+| `APP_BIND_HOST`                     | `127.0.0.1`      | 应用端口宿主机绑定地址；**对外裸暴露请改成 `0.0.0.0`，但建议保持默认 + 走 Nginx**                      |
+| `DB_PATH`                           | `./data/app.db`  | SQLite 文件路径（容器内为 `/app/data/app.db`）                                                         |
+| `JWT_EXPIRES_IN`                    | `24h`            | Token 有效期                                                                                           |
+| `DEFAULT_FREE_QUOTA`                | `3`              | 新用户注册赠送的分析次数                                                                               |
+| `ADMIN_USERNAME` / `ADMIN_PASSWORD` | –                | 启动时自动创建/升级该账号为管理员（密码 ≥ 6 位）                                                       |
+| `DOC_SERVICE_URL`                   | –                | 文档提取微服务地址；Docker 部署时由 compose 自动设为 `http://doc-service:8001`，**不需要在 .env 里填** |
+| `GRACEFUL_SHUTDOWN_TIMEOUT_MS`      | `300000` (5 min) | 优雅关闭最大等待时间，与 PM2 `kill_timeout` 对齐                                                       |
 
 ### 3.3 LLM / 搜索（按需）
 
-| 变量 | 用途 |
-| --- | --- |
-| `MINIMAX_MODEL` | 默认模型名，默认 `MiniMax-M3` |
-| `MINIMAX_MODEL_HEAVY` | 重型任务（IC 问题、Deck）模型 |
-| `MINIMAX_MODEL_LIGHT` | 轻型任务（一页纸、快照）模型 |
-| `MINIMAX_API_HOST` | 默认 `https://api.minimaxi.com/v1` |
-| MiniMax `coding_plan/search` | 无需额外环境变量；通过 Chat Completion 内置工具调用。MiniMax API 不开放同花顺/天眼查等内部数据源直连。 |
+| 变量                        | 用途                                                                                                   |
+| --------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `DEEPSEEK_MODEL`            | 默认模型名，默认 `deepseek-v4-flash`                                                                   |
+| `DEEPSEEK_MODEL_HEAVY`      | 重型任务（IC 问题、Deck）模型，默认 `deepseek-v4-pro`                                                  |
+| `DEEPSEEK_MODEL_LIGHT`      | 轻型任务（一页纸、快照）模型，留空回落 `DEEPSEEK_MODEL`                                                |
+| `DEEPSEEK_API_HOST`         | 默认 `https://api.deepseek.com/v1`                                                                     |
+| `DEEPSEEK_REASONING_EFFORT` | `low`/`high`/`max`。flash 三档都支持，pro 只支持 high/max（配 low 会自动抬到 high）。留空 = 服务端默认 |
+| `BOCHA_API_KEY`             | **联网检索**用，https://open.bochaai.com 。不配置不会阻止启动，但所有检索返回空、外部事实一律标待核实  |
+| `BOCHA_API_HOST`            | 默认 `https://api.bochaai.com/v1`                                                                      |
+
+> DeepSeek API 本身没有任何联网检索能力（既无检索端点也无内置工具），所以检索是独立供应商。
+> 同花顺/天眼查/元典法律等专业数据库没有直连，只能靠公开网页检索替代。
 
 ### 3.4 第三方集成（按需）
 
-| 变量组 | 用途 |
-| --- | --- |
-| `QCC_API_KEY` | 企查查 Agent，企业追踪数据源 |
+| 变量组                                                                | 用途                                                       |
+| --------------------------------------------------------------------- | ---------------------------------------------------------- |
+| `QCC_API_KEY`                                                         | 企查查 Agent，企业追踪数据源                               |
 | `TENCENT_SES_*`（SECRET_ID/SECRET_KEY/FROM_EMAIL/REGION/TEMPLATE_ID） | 腾讯云 SES 邮件验证码（发信域名需在腾讯云 SES 控制台验证） |
-| `TENCENT_SMS_*` | 腾讯云短信验证码（备用通道） |
-| `OSS_*`（ENDPOINT/BUCKET/ACCESS_KEY/SECRET_KEY） | 对象存储（当前代码已留接口但未启用） |
+| `TENCENT_SMS_*`                                                       | 腾讯云短信验证码（备用通道）                               |
+| `OSS_*`（ENDPOINT/BUCKET/ACCESS_KEY/SECRET_KEY）                      | 对象存储（当前代码已留接口但未启用）                       |
 
 ### 3.5 PII 加密（可选高级特性）
 
-| 变量 | 说明 |
-| --- | --- |
-| `ENABLE_PII_ENCRYPTION` | `1` 启用；启用后下面两项必填且校验长度 |
-| `ENCRYPTION_KEY` | 64 位十六进制（即 32 字节 AES-256 key）；生成：`node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` |
-| `PII_SALT` | 至少 16 字符随机串，用于手机/邮箱 SHA-256 hash 加盐 |
+| 变量                    | 说明                                                                                                                      |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `ENABLE_PII_ENCRYPTION` | `1` 启用；启用后下面两项必填且校验长度                                                                                    |
+| `ENCRYPTION_KEY`        | 64 位十六进制（即 32 字节 AES-256 key）；生成：`node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` |
+| `PII_SALT`              | 至少 16 字符随机串，用于手机/邮箱 SHA-256 hash 加盐                                                                       |
 
 ### 3.6 仅本地开发用，**生产严禁开启**
 
-| 变量 | 行为 |
-| --- | --- |
+| 变量                 | 行为                                                                                           |
+| -------------------- | ---------------------------------------------------------------------------------------------- |
 | `ALLOW_ANON_ANALYZE` | `1` + `NODE_ENV !== production` 时，允许 `/api/analyze` 匿名访问。生产环境即使误设也会被忽略。 |
 
 ---
@@ -150,7 +157,8 @@ cd /opt/NBgarbagebpfilter
 
 bash deploy.sh
 # 脚本会交互式询问：
-#   - MiniMax API Key
+#   - DeepSeek API Key
+#   - 博查 Bocha 搜索 Key（可跳过）
 #   - 管理员用户名 / 密码（≥6位）
 #   - 前端域名（用于 ALLOWED_ORIGINS，可跳过）
 # 自动：生成 JWT_SECRET、写 .env、创建 ./data ./logs ./nginx-certs、docker-compose up -d --build、轮询 /api/health
@@ -164,7 +172,8 @@ bash deploy.sh
 cd /opt/NBgarbagebpfilter
 
 cp .env.example .env
-# 编辑 .env，至少填上 MINIMAX_API_KEY / JWT_SECRET / ALLOWED_ORIGINS / ADMIN_USERNAME / ADMIN_PASSWORD
+# 编辑 .env，至少填上 DEEPSEEK_API_KEY / JWT_SECRET / ALLOWED_ORIGINS / ADMIN_USERNAME / ADMIN_PASSWORD
+# 想要联网检索能力，再填 BOCHA_API_KEY
 
 mkdir -p ./data ./logs ./data/backups ./nginx-certs
 
@@ -201,6 +210,7 @@ bash deploy.sh update
 ```
 
 脚本会依次：
+
 1. 把 `./data/app.db` 复制到 `./data/backups/app_<时间戳>_pre_update.db`
 2. `git pull`
 3. `docker-compose up -d --build`（数据卷不动，迁移自动跑）
@@ -273,14 +283,15 @@ curl -sf http://127.0.0.1:3001/api/health && echo "ROLLBACK OK"
 
 ## 6. 服务架构（docker-compose.yml）
 
-| 服务 | 镜像 / 构建 | 端口 | Profile | 资源上限 | 健康检查 |
-| --- | --- | --- | --- | --- | --- |
-| `app` | 本地 `Dockerfile`（Node 20-slim） | `${APP_BIND_HOST:-127.0.0.1}:${PORT:-3001}:3001` | 默认 | CPU 2 / RAM 2GB | `wget /api/health` 每 30s |
-| `doc-service` | `./doc-service/Dockerfile`（Python 3.11-slim） | 仅容器网络 `8001`，**不对宿主机暴露** | 默认 | CPU 1.5 / RAM 1.5GB | Python urllib 探活 |
-| `nginx` | `nginx:alpine` | `80:80`, `443:443` | **production** | 无 | 无 |
-| `backup` | Alpine 3.19 + sqlite | – | **production** | 无 | cron 每天 03:00 备份，自动清理 30 天前 |
+| 服务          | 镜像 / 构建                                    | 端口                                             | Profile        | 资源上限            | 健康检查                               |
+| ------------- | ---------------------------------------------- | ------------------------------------------------ | -------------- | ------------------- | -------------------------------------- |
+| `app`         | 本地 `Dockerfile`（Node 20-slim）              | `${APP_BIND_HOST:-127.0.0.1}:${PORT:-3001}:3001` | 默认           | CPU 2 / RAM 2GB     | `wget /api/health` 每 30s              |
+| `doc-service` | `./doc-service/Dockerfile`（Python 3.11-slim） | 仅容器网络 `8001`，**不对宿主机暴露**            | 默认           | CPU 1.5 / RAM 1.5GB | Python urllib 探活                     |
+| `nginx`       | `nginx:alpine`                                 | `80:80`, `443:443`                               | **production** | 无                  | 无                                     |
+| `backup`      | Alpine 3.19 + sqlite                           | –                                                | **production** | 无                  | cron 每天 03:00 备份，自动清理 30 天前 |
 
 启动命令：
+
 ```bash
 docker-compose up -d                               # app + doc-service
 docker-compose --profile production up -d --build  # 全部（含 Nginx + 定时备份）
@@ -310,6 +321,7 @@ docker-compose --profile production up -d --build  # 全部（含 Nginx + 定时
 ### 自动备份（启用 `production` profile 后生效）
 
 定时任务在 `backup` 容器内：
+
 - 每天凌晨 3:00 执行 `sqlite3 .backup`（在线热备，不锁库）
 - 输出到宿主机 `./data/backups/app_YYYYMMDD_HHMMSS.db`
 - 备份文件 < 1KB 自动判定失败并删除
@@ -347,6 +359,7 @@ docker-compose up -d
 3. 用户在 `设置 > 兑换额度` 输入兑换码
 
 批量生成命令：
+
 ```bash
 # Docker 部署
 docker exec bp-filter-app node scripts/generate-tokens.js --count 10 --quota 5
@@ -375,6 +388,7 @@ npm start               # 等价于：pm2 start ecosystem.config.js --env produc
 ```
 
 `ecosystem.config.js` 关键参数：
+
 - 应用进程：`./server/index.js`，Node 堆上限 1400 MB，端口 `8080`（注意：与 Docker 默认 3001 不同）
 - doc-service：`python3 -m uvicorn main:app --host 0.0.0.0 --port 8001`
 - 优雅关闭：300 秒
@@ -386,30 +400,30 @@ npm start               # 等价于：pm2 start ecosystem.config.js --env produc
 
 ## 11. 禁止操作清单
 
-| 操作 | 后果 | 替代方案 |
-| --- | --- | --- |
-| `docker-compose down -v` | 删除所有 docker 卷 | `docker-compose down`（不加 -v） |
-| `rm -rf ./data` | 清空数据库 | 永远不要碰 `./data/app.db` |
-| `rm -rf /opt/NBgarbagebpfilter` | 删全部 | `git pull` + `docker-compose up -d --build` |
-| 手动 `INSERT/UPDATE` `migrations` 表 | 跳过迁移 → schema 损坏 | 让系统自己跑 |
-| `docker volume prune` | 可能清掉数据 | 仅在确认无关卷时使用 |
-| `ALLOWED_ORIGINS=*` | 启动会被拒绝 | 列出真实域名 |
-| `JWT_SECRET=请修改` 等占位 | 启动会被拒绝 | `openssl rand -hex 32` |
-| 把 `APP_BIND_HOST=0.0.0.0` 同时不用 Nginx | 应用直接裸暴露公网 | 加 Nginx，或腾讯云安全组只放 80/443 |
+| 操作                                      | 后果                   | 替代方案                                    |
+| ----------------------------------------- | ---------------------- | ------------------------------------------- |
+| `docker-compose down -v`                  | 删除所有 docker 卷     | `docker-compose down`（不加 -v）            |
+| `rm -rf ./data`                           | 清空数据库             | 永远不要碰 `./data/app.db`                  |
+| `rm -rf /opt/NBgarbagebpfilter`           | 删全部                 | `git pull` + `docker-compose up -d --build` |
+| 手动 `INSERT/UPDATE` `migrations` 表      | 跳过迁移 → schema 损坏 | 让系统自己跑                                |
+| `docker volume prune`                     | 可能清掉数据           | 仅在确认无关卷时使用                        |
+| `ALLOWED_ORIGINS=*`                       | 启动会被拒绝           | 列出真实域名                                |
+| `JWT_SECRET=请修改` 等占位                | 启动会被拒绝           | `openssl rand -hex 32`                      |
+| 把 `APP_BIND_HOST=0.0.0.0` 同时不用 Nginx | 应用直接裸暴露公网     | 加 Nginx，或腾讯云安全组只放 80/443         |
 
 ---
 
 ## 12. 常见排查
 
-| 现象 | 检查 |
-| --- | --- |
-| 启动立刻 exit(1) | 看日志最后一行 `[BOOT]` / `[Security]`：通常是 `JWT_SECRET`、`MINIMAX_API_KEY`、`ALLOWED_ORIGINS` 校验失败 |
-| `/api/health` 503 | 数据库无法访问，多半是 `./data` 权限问题。`chown -R 999:999 ./data ./logs` 或 `chmod -R u+rwX ./data ./logs` |
+| 现象                       | 检查                                                                                                                                     |
+| -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| 启动立刻 exit(1)           | 看日志最后一行 `[BOOT]` / `[Security]`：通常是 `JWT_SECRET`、`DEEPSEEK_API_KEY`、`ALLOWED_ORIGINS` 校验失败                              |
+| `/api/health` 503          | 数据库无法访问，多半是 `./data` 权限问题。`chown -R 999:999 ./data ./logs` 或 `chmod -R u+rwX ./data ./logs`                             |
 | 上传 BP 报「文档解析失败」 | doc-service 没起来或健康检查没通过：`docker-compose logs doc-service`。本地 PM2 模式下还可能是 Python 依赖缺失：`npm run install:python` |
-| 邮件验证码发不出去 | 检查 `TENCENT_SES_*` 五项是否齐全，发信域名是否已在腾讯云 SES 控制台验证 |
-| 浏览器跨域被拦截 | `.env` 中 `ALLOWED_ORIGINS` 是否包含**完整 scheme** `https://your-domain.com`（不是 `your-domain.com`） |
-| 重启后管理员密码没生效 | `.env` 里 `ADMIN_USERNAME/ADMIN_PASSWORD` 同时存在时，启动会创建/更新管理员；只改其中一个不会触发 |
-| Nginx 502 | 应用没起来或健康检查没过；`docker-compose ps` 看 app 状态是不是 `healthy` |
+| 邮件验证码发不出去         | 检查 `TENCENT_SES_*` 五项是否齐全，发信域名是否已在腾讯云 SES 控制台验证                                                                 |
+| 浏览器跨域被拦截           | `.env` 中 `ALLOWED_ORIGINS` 是否包含**完整 scheme** `https://your-domain.com`（不是 `your-domain.com`）                                  |
+| 重启后管理员密码没生效     | `.env` 里 `ADMIN_USERNAME/ADMIN_PASSWORD` 同时存在时，启动会创建/更新管理员；只改其中一个不会触发                                        |
+| Nginx 502                  | 应用没起来或健康检查没过；`docker-compose ps` 看 app 状态是不是 `healthy`                                                                |
 
 ---
 
@@ -455,6 +469,7 @@ npm start               # 等价于：pm2 start ecosystem.config.js --env produc
 ### 需要预渲染的公开路由
 
 在 `client/package.json` 的 `reactSnap.include` 中维护。新增公开营销页时，记得同步：
+
 1. `reactSnap.include`
 2. `client/public/sitemap.xml`
 3. `client/public/robots.txt`（如需精确放行）

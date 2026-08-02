@@ -3,7 +3,7 @@
 // GarbageBPFilter v2.0 (client/ + server/ 分离架构)
 //
 // 前置步骤:
-//   1. cp .env.example .env   # 填写 MINIMAX_API_KEY；联网搜索默认走 MiniMax 官方 coding_plan/search
+//   1. cp .env.example .env   # 填写 DEEPSEEK_API_KEY；联网搜索走博查 Bocha（BOCHA_API_KEY）
 //   2. cd client && npm install && npm run build   # 构建前端到 client/build/
 //   3. cd server && npm install                    # 安装后端依赖
 //

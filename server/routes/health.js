@@ -4,6 +4,9 @@ const config = require("../config");
 const { getDb } = require("../db");
 const { getModelName } = require("../services/llmService");
 
+// P3-5: 版本号以 server/package.json 为唯一事实源，不再硬编码
+const VERSION = require("../package.json").version;
+
 function createHealthRouter({ getShutdownState = () => false } = {}) {
   const router = express.Router();
 
@@ -22,7 +25,7 @@ function createHealthRouter({ getShutdownState = () => false } = {}) {
     if (config.env === "production") {
       return res.status(ok ? 200 : 503).json({
         status,
-        version: "3.0.0",
+        version: VERSION,
         timestamp: new Date().toISOString(),
       });
     }
@@ -34,12 +37,12 @@ function createHealthRouter({ getShutdownState = () => false } = {}) {
       model: getModelName(),
       llm_stats: getLlmStats(),
       search: {
-        provider: "minimax_coding_plan_search",
-        configured: !!config.minimaxApiKey,
-        keySource: process.env.MINIMAX_API_KEY ? "MINIMAX_API_KEY" : "",
-        tool: "coding_plan/search",
+        provider: "bocha_web_search",
+        configured: !!config.searchApiKey,
+        keySource: config.searchApiKey ? "BOCHA_API_KEY" : "",
+        tool: "web-search",
       },
-      version: "3.0.0",
+      version: VERSION,
       checks,
       timestamp: new Date().toISOString(),
     });

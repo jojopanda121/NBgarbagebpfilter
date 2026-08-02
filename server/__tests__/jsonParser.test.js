@@ -2,7 +2,7 @@ const {
   sanitizeJsonString,
   attemptJsonFix,
   repairTruncatedJson,
-  preprocessMinimaxOutput,
+  preprocessModelOutput,
   extractJson,
   extractJsonArray,
   ensureStringArray,
@@ -86,20 +86,20 @@ describe("repairTruncatedJson", () => {
   });
 });
 
-describe("preprocessMinimaxOutput", () => {
-  test("removes minimax tool_call tags", () => {
+describe("preprocessModelOutput", () => {
+  test("removes legacy minimax tool_call tags", () => {
     const input = 'some text <minimax:tool_call>call data</minimax:tool_call> more text';
-    expect(preprocessMinimaxOutput(input)).toBe("some text  more text");
+    expect(preprocessModelOutput(input)).toBe("some text  more text");
   });
 
   test("removes invoke tags", () => {
     const input = 'text <invoke name="test">body</invoke> end';
-    expect(preprocessMinimaxOutput(input)).toBe("text  end");
+    expect(preprocessModelOutput(input)).toBe("text  end");
   });
 
   test("handles null/undefined input", () => {
-    expect(preprocessMinimaxOutput(null)).toBe(null);
-    expect(preprocessMinimaxOutput(undefined)).toBe(undefined);
+    expect(preprocessModelOutput(null)).toBe(null);
+    expect(preprocessModelOutput(undefined)).toBe(undefined);
   });
 });
 

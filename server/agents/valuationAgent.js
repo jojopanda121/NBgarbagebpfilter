@@ -50,12 +50,12 @@ class ValuationAgent extends BaseAgent {
       `- BP 声称估值：${extractedData?.BP_Valuation || 0} 亿元`,
       `- BP 声称收入/ARR：${extractedData?.BP_Revenue || 0} 亿元`,
       `- TAM：${extractedData?.TAM_Million_RMB || 0} 百万元`,
-      `\n\n【MiniMax 估值温度计 Harness】`,
-      `请优先尝试使用 MiniMax 可用的同花顺/iFinD、上市公司财报、交易所公告、融资新闻和公开网页能力，寻找同赛道上市公司或可比交易的 PS、PE、EV/EBITDA、收入、市值/估值。`,
+      `\n\n【估值温度计 Harness】`,
+      `请优先使用公开可得的上市公司财报、交易所公告、融资新闻和公开网页，寻找同赛道上市公司或可比交易的 PS、PE、EV/EBITDA、收入、市值/估值。本系统没有同花顺/iFinD 等专业数据库直连。`,
       `如果 BP 披露估值和收入，必须计算本项目隐含 PS/ARR multiple，并与同行中位数对比。`,
       `如果 BP 披露估值但没有收入，必须用融资阶段 + 同赛道可比融资案例给区间，不要硬算 PS。`,
       `如果 BP 没披露估值，必须输出同行业估值区间和建议估值锚点，temperature 填 "信息不足" 或基于可比公司给参考判断。`,
-      `如果专业数据不可用，必须在 source_boundary 里说明，不得编造同花顺/财报数据。`,
+      `如果专业数据不可用，必须在 source_boundary 里说明，不得编造专业数据库或财报数据。`,
       `\n\n【行业 Benchmark 数据（平台历史数据，${benchmarks.length} 条）】`,
       benchmarks.length > 0
         ? JSON.stringify(benchmarks, null, 2)

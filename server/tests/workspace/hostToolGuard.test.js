@@ -85,21 +85,23 @@ describe("validateToolCalls · skill_id 合法性", () => {
     expect(r.accepted).toHaveLength(1);
   });
 
-  test("非 skill 白名单工具 (web_search / MiniMax 间接研究 / generate_docx / generate_xlsx) → accepted", () => {
+  test("非 skill 白名单工具 (web_search / generate_docx / generate_xlsx) → accepted", () => {
     expect(validateToolCalls([{ id: "web_search", args: { query: "Q" } }]).ok).toBe(true);
-    expect(validateToolCalls([{ id: "minimax_professional_research", args: { query: "查询茅台财报" } }]).ok).toBe(true);
     expect(validateToolCalls([{ id: "generate_docx", args: { title: "x", sections: [] } }]).ok).toBe(true);
     expect(validateToolCalls([{ id: "generate_xlsx", args: { sheets: [] } }]).ok).toBe(true);
   });
 
-  test("MiniMax 内部专业数据源直连工具不在 catalog → rejected", () => {
+  // 本系统没有专业数据库直连；模型幻想出这类工具名时必须被 catalog 拦掉。
+  // minimax_professional_research 是已下线的工具，一并回归。
+  test("专业数据源直连工具不在 catalog → rejected", () => {
     for (const id of [
-      "minimax_company_data",
-      "minimax_financial_data",
-      "minimax_global_market_data",
-      "minimax_macro_data",
-      "minimax_research_data",
-      "minimax_legal_data",
+      "minimax_professional_research",
+      "tianyancha_company_data",
+      "ifind_financial_data",
+      "yahoo_finance_data",
+      "world_bank_macro_data",
+      "scholar_research_data",
+      "law_legal_data",
     ]) {
       const r = validateToolCalls([{ id, args: {} }]);
       expect(r.ok).toBe(false);

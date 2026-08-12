@@ -1,20 +1,30 @@
 // ============================================================
 // server/services/webSearchService.js
 //
-// 服务端联网检索：走 MiniMax Token Plan 的 coding_plan/search HTTP 端点
-// （即 minimax-coding-plan-mcp 里 web_search 工具底层调用的接口）。
+// 服务端联网检索：走博查 Bocha Web Search API。
+// DeepSeek API 不提供任何检索能力（既无检索端点也无内置工具），所以公开信息
+// 检索独立成一个供应商，key 与 DEEPSEEK_API_KEY 无关。
+//
+// 端点：POST {host}/v1/web-search
+//   body:     { query, count, summary, freshness }
+//   响应：    { code, msg, data: { webPages: { value: [
+//               { name, url, snippet, summary, siteName, datePublished } ] } } }
+//   code !== 200 即错误。
+//
 // 把检索执行放在 model-visible 文本之外，避免 agent 把"我要调用搜索工具"
 // 这类过程描述泄漏进对话。
 //
-// 端点：POST {host}/v1/coding_plan/search   body: { q }
-//   响应：{ organic:[{title,link,snippet,date}], related_searches:[{query}],
-//          base_resp:{status_code,status_msg} }   status_code !== 0 即错误。
-// 与 M3 推理共用同一个 MINIMAX_API_KEY（Token Plan 订阅 key）。
+// 未配置 BOCHA_API_KEY 时全部返回空数组：调用方（callLLMWithSearch /
+// 各 skill）已有"无检索结果 → 标注待核实"的降级路径，不会阻塞分析流程。
 // ============================================================
 
 const config = require("../config");
-const { resolveLLMSearchEndpoint } = require("../utils/llmEndpoints");
+const { resolveSearchEndpoint } = require("../utils/llmEndpoints");
 const { filterAndRankResults } = require("./retrievalDiscipline");
+
+// 单次查询取回条数。博查按次计费，与 runWebSearch 最终 slice(0,10) 配合，
+// 单条查询给 10 条原始结果、再由 retrievalDiscipline 过滤排序。
+const RESULTS_PER_QUERY = 10;
 
 function cleanQuery(q = "") {
   return String(q)
@@ -44,58 +54,70 @@ function buildSearchQueries(agentName, userMsg = "", projectCtx = "") {
 }
 
 function getSearchKey() {
-  return (config.minimaxApiKey || "").trim();
+  return (config.searchApiKey || "").trim();
 }
 
-function resolveSearchEndpoint() {
-  return resolveLLMSearchEndpoint(config.minimaxApiHost);
+function isSearchConfigured() {
+  const key = getSearchKey();
+  return !!key && !/你的|your|example|placeholder/i.test(key);
 }
 
-function normalizeMinimaxResults(query, data) {
-  const organic = Array.isArray(data?.organic) ? data.organic : [];
-  return organic
+function resolveSearchEndpointForConfig() {
+  return resolveSearchEndpoint(config.searchApiHost);
+}
+
+function normalizeBochaResults(query, data) {
+  const pages = data?.data?.webPages?.value || data?.webPages?.value;
+  const rows = Array.isArray(pages) ? pages : [];
+  return rows
     .map((item) => ({
-      title: item?.title || "",
-      url: item?.link || item?.url || "",
-      snippet: item?.snippet || "",
-      source: "minimax_web_search",
-      date: item?.date || "",
+      title: item?.name || item?.title || "",
+      url: item?.url || item?.displayUrl || "",
+      // summary 是博查的长摘要（summary:true 时才有），比 snippet 信息量大，优先用。
+      snippet: item?.summary || item?.snippet || "",
+      source: "bocha_web_search",
+      siteName: item?.siteName || "",
+      date: item?.datePublished || item?.dateLastCrawled || "",
       query,
     }))
     .filter((r) => r.title || r.snippet || r.url);
 }
 
-async function searchWithMinimax(query) {
-  const key = getSearchKey();
-  if (!key || /你的|your|example|placeholder/i.test(key)) return [];
-  const endpoint = resolveSearchEndpoint();
+async function searchWithBocha(query) {
+  if (!isSearchConfigured()) return [];
+  const endpoint = resolveSearchEndpointForConfig();
   const resp = await fetch(endpoint, {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${key}`,
+      Authorization: `Bearer ${getSearchKey()}`,
       "Content-Type": "application/json",
-      "MM-API-Source": "Minimax-MCP",
     },
-    body: JSON.stringify({ q: query }),
+    body: JSON.stringify({
+      query,
+      count: RESULTS_PER_QUERY,
+      summary: true,
+      freshness: "noLimit",
+    }),
   });
   if (!resp.ok) {
     const text = await resp.text().catch(() => "");
-    throw new Error(`MiniMax search 失败 (${resp.status}): ${text.slice(0, 160)}`);
+    throw new Error(`Bocha search 失败 (${resp.status}): ${text.slice(0, 160)}`);
   }
   const data = await resp.json();
-  const status = data?.base_resp?.status_code;
-  if (status !== undefined && status !== 0) {
-    throw new Error(`MiniMax search 业务错误 (${status}): ${data?.base_resp?.status_msg || ""}`);
+  const code = data?.code;
+  if (code !== undefined && Number(code) !== 200) {
+    throw new Error(`Bocha search 业务错误 (${code}): ${data?.msg || data?.message || ""}`);
   }
-  return normalizeMinimaxResults(query, data);
+  return normalizeBochaResults(query, data);
 }
 
 async function runWebSearch(queries = []) {
+  if (!isSearchConfigured()) return [];
   const unique = [...new Set(queries.map(cleanQuery).filter(Boolean))].slice(0, 3);
   const results = [];
   for (const query of unique) {
     try {
-      const items = await searchWithMinimax(query);
+      const items = await searchWithBocha(query);
       for (const item of items) results.push(item);
     } catch (err) {
       console.warn("[WebSearch] 查询失败:", query, err.message);
@@ -107,13 +129,15 @@ async function runWebSearch(queries = []) {
 function formatSearchContext(results = []) {
   if (!results.length) return "";
   return [
-    "# 后端实时检索结果（MiniMax web_search）",
-    "以下结果由服务端 MiniMax coding_plan/search 取得。请综合成投研判断，不要向用户描述工具调用过程。",
+    "# 后端实时检索结果（博查 Web Search）",
+    "以下结果由服务端博查 Web Search API 取得。请综合成投研判断，不要向用户描述工具调用过程。",
     ...results.map((r, idx) => [
       `## 结果 ${idx + 1}`,
       `查询: ${r.query}`,
       `标题: ${r.title}`,
       `链接: ${r.url}`,
+      r.siteName ? `站点: ${r.siteName}` : "",
+      r.date ? `时间: ${r.date}` : "",
       r._source ? `来源可信度: ${r._source.label}(T${r._source.tier})` : "",
       `摘要: ${r.snippet}`,
     ].filter(Boolean).join("\n")),
@@ -124,6 +148,7 @@ module.exports = {
   buildSearchQueries,
   runWebSearch,
   formatSearchContext,
-  resolveSearchEndpoint,
-  searchWithMinimax,
+  isSearchConfigured,
+  resolveSearchEndpoint: resolveSearchEndpointForConfig,
+  searchWithBocha,
 };

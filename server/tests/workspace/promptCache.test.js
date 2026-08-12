@@ -95,9 +95,9 @@ describe("P2-3 prompt caching · llmService cache_control 注入", () => {
     }));
     // 用 fake config 跳过 ensureLLMConfigured 校验
     jest.doMock("../../config", () => ({
-      minimaxApiKey: "test-key",
-      minimaxApiHost: "https://api.minimax.test/v1",
-      minimaxModel: "test-model",
+      deepseekApiKey: "test-key",
+      deepseekApiHost: "https://api.deepseek.test/v1",
+      deepseekModel: "test-model",
     }));
     llmService = require("../../services/llmService");
   });

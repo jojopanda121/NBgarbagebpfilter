@@ -1,6 +1,6 @@
 // ============================================================
 // server/services/llmService.js — LLM 调用服务
-// 封装 MiniMax (M3) OpenAI-compatible API 的调用逻辑
+// 封装 DeepSeek V4 OpenAI-compatible API 的调用逻辑
 // 含超时控制和重试机制
 // ============================================================
 
@@ -11,8 +11,8 @@ const jsonSchema = require("../utils/jsonSchema");
 const { createLLMClient } = require("../utils/llmClient");
 
 const llm = createLLMClient({
-  apiKey: config.minimaxApiKey,
-  baseURL: config.minimaxApiHost,
+  apiKey: config.deepseekApiKey,
+  baseURL: config.deepseekApiHost,
 });
 
 // ── LLM 调用计量（成本可观测最小实现）────────────────────────
@@ -71,26 +71,32 @@ if (llm && llm.messages && typeof llm.messages.create === "function") {
   };
 }
 
-const MODEL = config.minimaxModel;
+const MODEL = config.deepseekModel;
 
 // ── P2-4 per-skill 模型路由 ─────────────────────────────────
 // 三档：heavy / default / light。每档可走不同 model name；未配置时回落 default。
 // 路由表按 skillId / taskHint 命中；都不命中 → "default" 档。
+// DeepSeek 默认：heavy = deepseek-v4-pro（3元/6元 每 M token），
+//                default/light = deepseek-v4-flash（1元/2元）。
 const MODEL_TIERS = {
-  heavy: () => config.minimaxModelHeavy || MODEL,
+  heavy: () => config.deepseekModelHeavy || MODEL,
   default: () => MODEL,
-  light: () => config.minimaxModelLight || MODEL,
+  light: () => config.deepseekModelLight || MODEL,
 };
 
 // skillId / taskHint → tier
-// heavy：长 deck、IC 多步对抗、估值/退出推演 (token 多 + 推理重)
-// light：1 页材料抽取、视觉信息提炼、语义抽样校验 (短任务 + 模板化)
+//
+// 分档依据是**判断难度**，不是 token 量：
+//   heavy → 结论会直接写进评级/诚信度/投决意见的判断题，以及多步对抗推理
+//   light → 版式和字段都被模板锁死、模型只负责填内容的格式化活
+//   default→ 其余
+//
 // 注：包含 skill id 和 pptxTemplate name 的两套命名，便于不同入口路由
 const SKILL_TIER_MAP = {
   // heavy
-  investment_deck_pptx: "heavy",
+  investment_deck_pptx: "heavy",  // 8-30 页叙事连贯性；若想省钱可降 light 后观察跨页逻辑
   investment_deck: "heavy",       // pptxTemplate name
-  ic_questions_xlsx: "heavy",
+  ic_questions_xlsx: "heavy",     // Bull/Bear 左右脑互搏，真对抗推理
   ic_memo: "heavy",
   unit_economics_review: "default",
   // light
@@ -103,8 +109,94 @@ const SKILL_TIER_MAP = {
 };
 const TASK_HINT_TIER_MAP = {
   semantic_audit: "light",
-  upload_structured_extraction: "default",  // 上传结构化抽取需要中等理解力，走 default
+  upload_structured_extraction: "default",
+  // 核心分析链路。曾短暂设为 heavy(pro)，但 2026-08 用真实 API 实测：
+  // 同一组声明核查任务，pro 比 flash 慢 1 倍、贵 3 倍，判定质量没有可见优势，
+  // 且出现过 JSON 解析失败。真正决定判定质量的是"思考开关"而非模型档位
+  // （见下方 THINKING_MAP）。所以核心链路回到 flash + 强制思考。
+  claim_verdict: "default",
+  scoring_judge: "default",
+  dimension_analysis: "default",
+  deep_research: "default",
+  bp_extraction: "default",
 };
+
+// ── 思考开关：比 flash/pro 更重要的成本与质量杠杆 ──────────────
+//
+// 实测（2026-08，真实 DeepSeek API）：
+//   机械活（BP 抽取）  思考关 1.2s/¥0.0003  vs  思考开 3.2s/¥0.0008 → 结果完全相同
+//   判断题（声明核查）  思考关会把无佐证的自报数据判成"诚实"；思考开判"存疑/夸大"
+//
+// 对一个 BP 过滤产品，判定偏松 = 放过垃圾 BP，是致命方向的错误，
+// 所以判断题一律强制开思考；机械活一律关，省下的是纯浪费的推理 token。
+//
+// 另一条硬约束：**思考内容计入 max_tokens**。实测 max_tokens=800 时
+// 思考写了 1400 字、正文 0 字（撞上限直接没答案）。所以开思考的任务
+// 必须有 token 下限保护，见 THINKING_MIN_TOKENS。
+const THINKING_ON = true;
+const THINKING_OFF = false;
+
+const TASK_HINT_THINKING_MAP = {
+  // 判断题 —— 结论会写进评级/诚信度，必须思考
+  claim_verdict: THINKING_ON,
+  scoring_judge: THINKING_ON,
+  dimension_analysis: THINKING_ON,
+  deep_research: THINKING_ON,
+  // 机械活 —— 照原文填字段，思考纯属浪费
+  bp_extraction: THINKING_OFF,
+  upload_structured_extraction: THINKING_OFF,
+  semantic_audit: THINKING_OFF,
+};
+
+const SKILL_THINKING_MAP = {
+  // 多步对抗推理
+  ic_questions_xlsx: THINKING_ON,
+  ic_memo: THINKING_ON,
+  investment_deck_pptx: THINKING_ON,
+  investment_deck: THINKING_ON,
+  unit_economics_review: THINKING_ON,
+  // 模板填充：版式字段都锁死了，模型只负责填内容
+  onepager_pptx: THINKING_OFF,
+  investment_snapshot: THINKING_OFF,
+  project_brief: THINKING_OFF,
+  highlight_visual: THINKING_OFF,
+  teaser_generate: THINKING_OFF,
+  deal_screening: THINKING_OFF,
+};
+
+// 开思考时的 max_tokens 下限。实测思考普遍写 1000-3400 字（约 1500-5000 token），
+// 低于这个预算正文会被挤没。调用方给的值小于下限时自动抬到下限。
+const THINKING_MIN_TOKENS = 12000;
+
+function _resolveThinking(opts = {}) {
+  if (opts && typeof opts.thinking === "boolean") return opts.thinking;
+  if (opts && opts.taskHint && opts.taskHint in TASK_HINT_THINKING_MAP) {
+    return TASK_HINT_THINKING_MAP[opts.taskHint];
+  }
+  if (opts && opts.skillId && opts.skillId in SKILL_THINKING_MAP) {
+    return SKILL_THINKING_MAP[opts.skillId];
+  }
+  return null; // 未声明 → 不显式发送，用服务端默认（DeepSeek 默认开）
+}
+
+// 开思考时保证 token 预算够写完正文。
+// 只在**显式**开思考（thinking === true）时生效：未声明思考的调用方
+// 传的 maxTokens 是它自己算过的预算，静默放大会打乱成本预期。
+function _guardTokensForThinking(maxTokens, thinking) {
+  if (thinking !== true) return maxTokens;
+  return Math.max(maxTokens || 0, THINKING_MIN_TOKENS);
+}
+
+/** 可观测入口：查某个任务最终会用什么模型 / 开不开思考 */
+function getTaskProfile(opts = {}) {
+  const thinking = _resolveThinking(opts);
+  return {
+    tier: _resolveModelTier(opts),
+    model: _resolveModel(opts),
+    thinking,                       // true=开 false=关 null=用服务端默认
+    minTokens: thinking === true ? THINKING_MIN_TOKENS : null,
+  };
+}
 
 function _resolveModelTier(opts = {}) {
   if (opts && opts.modelTier && MODEL_TIERS[opts.modelTier]) return opts.modelTier;
@@ -118,19 +210,35 @@ function _resolveModel(opts = {}) {
   return MODEL_TIERS[tier]();
 }
 
+// 推理档位。deepseek-v4-flash 支持 low/high/max；deepseek-v4-pro 目前只支持
+// high/max，配了 low 会 400，所以对 pro 自动抬到 high。未配置则返回 undefined
+// （不发送该字段，用服务端默认）。
+function _reasoningEffortFor(model) {
+  const effort = (config.deepseekReasoningEffort || "").trim().toLowerCase();
+  if (!effort) return undefined;
+  if (/pro/i.test(String(model || "")) && effort === "low") return "high";
+  return effort;
+}
+
 // 超时和重试配置
 const LLM_TIMEOUT_MS = 300 * 1000;    // 单次请求超时 300s（5分钟），大 prompt 需要更多时间
 const MAX_RETRIES = 3;                  // 最多重试 3 次（共 4 次尝试）
 const BASE_DELAY_MS = 2000;             // 重试基础延迟 2s
 
-// ── Prompt Caching (Anthropic ephemeral cache) ─────────────
-// 默认关闭，因为 MiniMax 兼容端点不一定支持 cache_control 数组形式。
-// 开关：env ENABLE_PROMPT_CACHE=1（生产对接真 Anthropic / Claude 时启用）。
-// 经验阈值：≥ 1500 字符（~ 1000 tokens）才值得标 cache_control，
-// 否则缓存收益不抵开销（Sonnet/Haiku 最低 1024 tokens 才入缓存）。
+// ── Prompt Caching ──────────────────────────────────────────
+// DeepSeek 的上下文缓存是**自动**的：只要请求的 prompt 前缀与近期请求一致就命中，
+// 命中部分按 0.02~0.025 元/M 计价（未命中 1~3 元/M）。不需要、也不接受
+// Anthropic 式 cache_control 标记。
+//
+// 所以下面这套 cache_control 组装默认关闭（ENABLE_PROMPT_CACHE=1 才开），仅在把
+// baseURL 指回真 Anthropic 时才有意义。对 DeepSeek 真正有效的做法是保持
+// system prompt 和 Fact Pack 等长前缀稳定且排在最前——这一点下面的
+// _buildCacheableUserMessage 拼接顺序已经满足。
+// 经验阈值：≥ 1500 字符（~ 1000 tokens）才值得标 cache_control。
 const PROMPT_CACHE_MIN_CHARS = 1500;
+const { enablePromptCache } = require("../config/featureFlags");
 function _promptCacheEnabled() {
-  return process.env.ENABLE_PROMPT_CACHE === "1";
+  return enablePromptCache();
 }
 
 // 系统提示如够长且 cache 开启，转成带 cache_control 的 content block 数组。
@@ -157,8 +265,8 @@ function _buildCacheableUserMessage(userContent, userPrefix) {
 }
 
 function ensureLLMConfigured() {
-  if (!config.minimaxApiKey) {
-    throw new Error("LLM 未配置：服务端缺少 MINIMAX_API_KEY，请在 .env 中设置后重启进程");
+  if (!config.deepseekApiKey) {
+    throw new Error("LLM 未配置：服务端缺少 DEEPSEEK_API_KEY，请在 .env 中设置后重启进程");
   }
 }
 
@@ -207,7 +315,7 @@ function isRetryable(err) {
 function normalizeLLMError(err) {
   const status = err?.status;
   if (status === 401 || status === 403) {
-    const e = new Error("LLM 服务认证失败：请检查 MINIMAX_API_KEY 配置");
+    const e = new Error("LLM 服务认证失败：请检查 DEEPSEEK_API_KEY 配置");
     e.permanent = true;
     return e;
   }
@@ -218,7 +326,7 @@ function normalizeLLMError(err) {
 }
 
 /**
- * 调用 MiniMax LLM（普通模式），含超时和重试。
+ * 调用 DeepSeek LLM（普通模式），含超时和重试。
  *
  * @param {string} systemPrompt
  * @param {string} userContent
@@ -228,14 +336,16 @@ function normalizeLLMError(err) {
 async function callLLM(systemPrompt, userContent, maxTokensOrOpts = 12000) {
   ensureLLMConfigured();
   const opts = typeof maxTokensOrOpts === "object" ? maxTokensOrOpts : { maxTokens: maxTokensOrOpts };
-  const { maxTokens = 12000, userPrefix = "" } = opts;
+  const { userPrefix = "" } = opts;
   let lastError;
 
   // Prompt caching: 系统提示 + 用户消息可选前缀
   const cachedSystem = _buildCacheableSystem(systemPrompt);
   const userMessage = _buildCacheableUserMessage(userContent, userPrefix);
-  // P2-4 模型路由
+  // P2-4 模型路由 + 思考开关（思考算进 max_tokens，故需下限保护）
   const model = _resolveModel(opts);
+  const thinking = _resolveThinking(opts);
+  const maxTokens = _guardTokensForThinking(opts.maxTokens ?? 12000, thinking);
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     try {
@@ -246,13 +356,19 @@ async function callLLM(systemPrompt, userContent, maxTokensOrOpts = 12000) {
       }
 
       const timeout = calcTimeout(maxTokens);
+      const reqBody = {
+        model,
+        max_tokens: maxTokens,
+        system: cachedSystem,
+        messages: [{ role: "user", content: userMessage }],
+      };
+      if (thinking !== null) reqBody.thinking = { type: thinking ? "enabled" : "disabled" };
+      if (thinking) {
+        const effort = _reasoningEffortFor(model);
+        if (effort) reqBody.reasoning_effort = effort;
+      }
       const resp = await withTimeout(
-        llm.messages.create({
-          model,
-          max_tokens: maxTokens,
-          system: cachedSystem,
-          messages: [{ role: "user", content: userMessage }],
-        }),
+        llm.messages.create(reqBody),
         timeout,
         `callLLM(model=${model}, maxTokens=${maxTokens})`
       );
@@ -274,9 +390,18 @@ async function callLLM(systemPrompt, userContent, maxTokensOrOpts = 12000) {
   throw normalizeLLMError(lastError);
 }
 
-/** 调用 MiniMax LLM（深度思考模式，不支持时自动降级），含超时和重试 */
-async function callLLMWithThinking(systemPrompt, userContent, maxTokens = 16000, thinkingBudget = 8000) {
+/**
+ * 调用 DeepSeek LLM（深度思考模式，不支持时自动降级），含超时和重试。
+ *
+ * @param {string} systemPrompt
+ * @param {string} userContent
+ * @param {number} [maxTokens=16000]
+ * @param {number} [thinkingBudget=8000]
+ * @param {object} [opts]  P2-4 模型路由信号 { modelTier, skillId, taskHint }
+ */
+async function callLLMWithThinking(systemPrompt, userContent, maxTokens = 16000, thinkingBudget = 8000, opts = {}) {
   ensureLLMConfigured();
+  const model = _resolveModel(opts);
   try {
     let lastError;
 
@@ -289,16 +414,18 @@ async function callLLMWithThinking(systemPrompt, userContent, maxTokens = 16000,
         }
 
         const timeout = calcTimeout(maxTokens) * 2; // thinking 模式给双倍超时
+        // budget_tokens 由 llmClient 裁掉（DeepSeek 不认），思考深度靠 reasoning_effort 表达。
         const resp = await withTimeout(
           llm.messages.create({
-            model: MODEL,
+            model,
             max_tokens: maxTokens,
             thinking: { type: "enabled", budget_tokens: thinkingBudget },
+            reasoning_effort: _reasoningEffortFor(model),
             system: systemPrompt,
             messages: [{ role: "user", content: userContent }],
           }),
           timeout,
-          `callLLMWithThinking(maxTokens=${maxTokens})`
+          `callLLMWithThinking(model=${model}, maxTokens=${maxTokens})`
         );
 
         let thinking = "";
@@ -324,7 +451,9 @@ async function callLLMWithThinking(systemPrompt, userContent, maxTokens = 16000,
     console.warn("[LLM] Thinking 模式不可用，降级为普通模式:", thinkErr.message);
   }
 
-  const text = await callLLM(systemPrompt, userContent, maxTokens);
+  // 降级为普通模式时保持同一档模型，否则 heavy 任务会在 thinking 失败后
+  // 悄悄掉到 default 档，出现"同一个任务两次跑在不同模型上"的隐性漂移。
+  const text = await callLLM(systemPrompt, userContent, { maxTokens, ...opts });
   return { thinking: "", text };
 }
 
@@ -339,8 +468,15 @@ async function callLLMWithThinking(systemPrompt, userContent, maxTokens = 16000,
  * @returns {Promise<string>} 完整文本
  */
 async function callLLMChat(systemPrompt, messages, opts = {}) {
-  const { maxTokens = 4096, onDelta, signal } = opts;
+  const { onDelta, signal } = opts;
   ensureLLMConfigured();
+  // 交互式对话默认**关思考**：实测流式下模型可能连写 1600+ 字 thinking 而
+  // text_delta 一个字都不发，而本函数只把 text_delta 转给前端 —— 用户会盯着
+  // 空白等十几秒。调用方确实需要思考时显式传 thinking:true 并给足 maxTokens。
+  const thinking = _resolveThinking(opts) ?? false;
+  const model = _resolveModel(opts);
+  const maxTokens = _guardTokensForThinking(opts.maxTokens ?? 4096, thinking);
+  const thinkingField = { type: thinking ? "enabled" : "disabled" };
   let lastError;
   let streamUnsupported = false;
 
@@ -370,8 +506,9 @@ async function callLLMChat(systemPrompt, messages, opts = {}) {
             );
             try {
               const s = llm.messages.stream({
-                model: MODEL,
+                model,
                 max_tokens: maxTokens,
+                thinking: thinkingField,
                 system: systemPrompt,
                 messages,
               });
@@ -407,13 +544,14 @@ async function callLLMChat(systemPrompt, messages, opts = {}) {
       // 非流式
       const resp = await withTimeout(
         llm.messages.create({
-          model: MODEL,
+          model,
           max_tokens: maxTokens,
+          thinking: thinkingField,
           system: systemPrompt,
           messages,
         }),
         timeout,
-        `callLLMChat(maxTokens=${maxTokens})`
+        `callLLMChat(model=${model}, maxTokens=${maxTokens})`
       );
       const fullText = resp.content
         .filter((b) => b.type === "text")
@@ -452,11 +590,12 @@ async function callLLMChat(systemPrompt, messages, opts = {}) {
 }
 
 /**
- * 调用 MiniMax LLM 并启用 web_search 工具。
- * 这里把 web_search 声明为函数工具，由本服务端执行 MiniMax coding_plan/search
- * 检索并把结果回填给模型（而非依赖上游内置工具）。
+ * 调用 DeepSeek LLM 并启用 web_search 工具。
+ * DeepSeek 没有任何内置检索工具，所以这里把 web_search 声明为普通函数工具，
+ * 由本服务端执行博查 Web Search 检索并把结果回填给模型。
  *
  * 回退：若服务端不识别工具，自动降级为普通 callLLM。
+ * 未配置 BOCHA_API_KEY 时检索恒返回空，模型会拿到"未取得可用搜索结果"提示。
  *
  * @param {string} systemPrompt
  * @param {string} userContent
@@ -464,11 +603,15 @@ async function callLLMChat(systemPrompt, messages, opts = {}) {
  * @param {number} [opts.maxTokens=8192]
  * @param {number} [opts.maxToolRounds=6]
  * @param {string[]} [opts.preSearchQueries] — 服务端先行检索并注入上下文, 避免模型在 JSON 模式下不主动 tool_use
+ * @param {string} [opts.modelTier] / [opts.skillId] / [opts.taskHint] — P2-4 模型路由信号
  * @returns {Promise<{ text: string, searchUsed: boolean }>}
  */
 async function callLLMWithSearch(systemPrompt, userContent, opts = {}) {
   ensureLLMConfigured();
-  const { maxTokens = 12000, maxToolRounds = 6, preSearchQueries = [] } = opts;
+  const { maxToolRounds = 6, preSearchQueries = [] } = opts;
+  const model = _resolveModel(opts);
+  const thinking = _resolveThinking(opts);
+  const maxTokens = _guardTokensForThinking(opts.maxTokens ?? 12000, thinking);
 
   const tools = [{
     name: "web_search",
@@ -528,14 +671,15 @@ async function callLLMWithSearch(systemPrompt, userContent, opts = {}) {
         const timeout = calcTimeout(maxTokens);
         const resp = await withTimeout(
           llm.messages.create({
-            model: MODEL,
+            model,
             max_tokens: maxTokens,
+            ...(thinking === null ? {} : { thinking: { type: thinking ? "enabled" : "disabled" } }),
             system: systemPrompt,
             tools,
             messages: convo,
           }),
           timeout,
-          `callLLMWithSearch(round=${round})`
+          `callLLMWithSearch(model=${model}, round=${round})`
         );
 
         const text = resp.content
@@ -582,7 +726,7 @@ async function callLLMWithSearch(systemPrompt, userContent, opts = {}) {
         const text = await callLLM(
           `${systemPrompt}\n\n重要：当前未能执行联网检索。不要输出 tool_call、web_search 或“我来搜索”。请基于已有上下文直接回答，并标注待核实信息。`,
           userContent,
-          maxTokens
+          { maxTokens, ...opts }
         );
         return { text, searchUsed: false };
       }
@@ -593,7 +737,8 @@ async function callLLMWithSearch(systemPrompt, userContent, opts = {}) {
 
   // 重试用尽 → 最后再兜底降级
   console.warn("[LLM/Search] 全部重试失败，降级为普通模式:", lastError?.message);
-  const text = await callLLM(systemPrompt, userContent, maxTokens);
+  // 降级同样保持档位，避免 heavy 任务静默掉档
+  const text = await callLLM(systemPrompt, userContent, { maxTokens, ...opts });
   return { text, searchUsed: false };
 }
 
@@ -610,7 +755,7 @@ function getModelTier(opts) {
 // ============================================================
 // callLLMAgentic — 工作区"类 Claude"调用核心
 //
-// 把 MiniMax 的三个能力（thinking / streaming / tool use）合一暴露：
+// 把 DeepSeek 的三个能力（thinking / streaming / tool use）合一暴露：
 //   - thinking_delta → onEvent({ type: "thinking_delta", text })
 //   - text_delta     → onEvent({ type: "text_delta",     text })
 //   - tool_use       → onEvent({ type: "tool_use", id, name, input })
@@ -665,6 +810,8 @@ async function callLLMAgentic(opts) {
   let enableTools = Array.isArray(tools) && tools.length > 0;
   let enableStream = true;
 
+  // 思考计入 max_tokens：默认 6000 在开思考时极易被思考吃光导致无正文
+  const effMaxTokens = _guardTokensForThinking(maxTokens, enableThinking);
   const convo = Array.isArray(messages) ? messages.map((m) => ({ ...m })) : [];
   let finalText = "";
   let totalRounds = 0;
@@ -677,14 +824,18 @@ async function callLLMAgentic(opts) {
 
     const reqBody = {
       model: MODEL,
-      max_tokens: maxTokens,
+      max_tokens: effMaxTokens,
       system,
       messages: convo,
     };
-    if (enableThinking) reqBody.thinking = { type: "enabled", budget_tokens: thinkingBudget };
+    if (enableThinking) {
+      reqBody.thinking = { type: "enabled", budget_tokens: thinkingBudget };
+      const effort = _reasoningEffortFor(MODEL);
+      if (effort) reqBody.reasoning_effort = effort;
+    }
     if (enableTools) reqBody.tools = tools;
 
-    const timeout = calcTimeout(maxTokens) * (enableThinking ? 2 : 1);
+    const timeout = calcTimeout(effMaxTokens) * (enableThinking ? 2 : 1);
     let assistantContent = []; // 收集到的 content blocks，下一轮喂回 convo
     let textInRound = "";
 
@@ -956,6 +1107,10 @@ async function callLLMJson(systemPrompt, userContent, schema, opts = {}) {
       const r = await callLLMWithSearch(sysWithContract, conversation, {
         maxTokens,
         preSearchQueries: attempt === 0 ? preSearchQueries : [],
+        // 修复：useSearch 分支此前吞掉了档位信号，heavy skill 一旦开检索就掉回 default
+        modelTier,
+        skillId,
+        taskHint,
       });
       raw = r.text;
       searchUsed = searchUsed || r.searchUsed;
@@ -1014,5 +1169,6 @@ module.exports = {
   LLMJsonValidationError,
   getModelName,
   getModelTier,
+  getTaskProfile,
   getLlmStats,
 };

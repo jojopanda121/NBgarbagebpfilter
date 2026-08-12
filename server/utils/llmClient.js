@@ -1,14 +1,18 @@
 // ============================================================
-// server/utils/llmClient.js — MiniMax OpenAI 兼容客户端（翻译层）
+// server/utils/llmClient.js — DeepSeek OpenAI 兼容客户端（翻译层）
 //
 // 全代码库以 "Anthropic 风格" 调用本客户端（system / content blocks /
-// thinking / tool_use），这里负责双向翻译成 MiniMax 的 OpenAI 兼容
+// thinking / tool_use），这里负责双向翻译成 DeepSeek 的 OpenAI 兼容
 // /v1/chat/completions 协议，再把响应翻回 Anthropic 形状。
 //
-// 与 Kimi 的差异（适配 MiniMax M3）：
-//   - 不再发送 Anthropic 式的 thinking:{type} 参数。MiniMax M3 是推理模型，
-//     默认产出思考内容并通过 reasoning_content 字段返回；发送未知的 thinking
-//     字段反而可能被拒。读取侧仍然兼容 reasoning_content / reasoning。
+// 适配 DeepSeek V4 的要点：
+//   - thinking 参数存在但形状不同：DeepSeek 只认 {"type":"enabled"|"disabled"}，
+//     不认 Anthropic 的 budget_tokens。这里做形状裁剪后转发；思考深度改用
+//     reasoning_effort（low/high/max）表达。
+//   - 思考内容通过 reasoning_content 返回（流式为 delta.reasoning_content），
+//     读取侧同时兼容 reasoning 与正文内联 <think>。
+//   - 上下文缓存是自动的（命中按 0.02~0.025 元/M 计价），不需要也不接受
+//     Anthropic 式 cache_control；调用方只要保持 prompt 前缀稳定即可命中。
 //   - 其余（messages / tools↔tool_calls / 流式 SSE delta）均为标准 OpenAI 形状。
 // ============================================================
 const { resolveLLMChatEndpoint } = require("./llmEndpoints");
@@ -152,6 +156,16 @@ function toAnthropicLikeResponse(data) {
   };
 }
 
+// Anthropic 的 thinking:{type:"enabled", budget_tokens:N} → DeepSeek 的
+// thinking:{type:"enabled"}。budget_tokens 不是 DeepSeek 参数，带上会 400。
+function normalizeThinking(thinking) {
+  if (thinking === undefined || thinking === null) return undefined;
+  if (typeof thinking === "boolean") return { type: thinking ? "enabled" : "disabled" };
+  if (typeof thinking !== "object") return undefined;
+  const type = thinking.type === "disabled" ? "disabled" : "enabled";
+  return { type };
+}
+
 function buildLLMBody(body) {
   const llmBody = {
     model: body.model,
@@ -165,19 +179,27 @@ function buildLLMBody(body) {
   if (tools.length) llmBody.tools = tools;
   if (body.tool_choice) llmBody.tool_choice = body.tool_choice;
   if (body.stream) llmBody.stream = true;
-  // 注意：不转发 Anthropic 式 thinking:{type}。MiniMax M3 默认推理并通过
-  // reasoning_content 返回思考内容；发送未知 thinking 字段可能触发 400。
+
+  const thinking = normalizeThinking(body.thinking);
+  if (thinking) llmBody.thinking = thinking;
+  // 推理档位：flash 支持 low/high/max，pro 目前只支持 high/max。
+  if (body.reasoning_effort) llmBody.reasoning_effort = body.reasoning_effort;
+  // 采样/输出格式（可选，调用方不传就用服务端默认）
+  if (body.temperature !== undefined) llmBody.temperature = body.temperature;
+  if (body.top_p !== undefined) llmBody.top_p = body.top_p;
+  if (body.stop) llmBody.stop = body.stop;
+  if (body.response_format) llmBody.response_format = body.response_format;
   return llmBody;
 }
 
 async function parseError(resp) {
   const text = await resp.text().catch(() => "");
-  let msg = text || resp.statusText || "MiniMax API request failed";
+  let msg = text || resp.statusText || "DeepSeek API request failed";
   try {
     const json = JSON.parse(text);
-    msg = json?.error?.message || json?.message || json?.base_resp?.status_msg || msg;
+    msg = json?.error?.message || json?.message || msg;
   } catch (_) { /* ignore */ }
-  throw new LLMAPIError(`MiniMax API 失败 (${resp.status}): ${msg}`, resp.status, text);
+  throw new LLMAPIError(`DeepSeek API 失败 (${resp.status}): ${msg}`, resp.status, text);
 }
 
 function createLLMClient({ apiKey, baseURL }) {
@@ -334,5 +356,6 @@ module.exports = {
   buildLLMBody,
   normalizeMessages,
   normalizeTools,
+  normalizeThinking,
   toAnthropicLikeResponse,
 };

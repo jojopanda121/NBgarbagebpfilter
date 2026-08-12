@@ -14,6 +14,7 @@ const dataLakeService = require("./dataLakeService");
 const crossMatchService = require("./crossMatchService");
 const calibrationService = require("./calibrationService");
 const { PIPELINE_VERSION } = require("../config/versions");
+const config = require("../config");
 const {
   AGENT_A_PROMPT,
   CLAIM_VERDICT_BATCH_PROMPT,
@@ -167,10 +168,10 @@ function buildDefaultVerificationHarness(claim = {}, extractedData = {}) {
 
   return {
     preferred_sources: preferredSources,
-    minimax_research_prompt:
+    research_prompt:
       `请核验 ${company}（${industry}）BP 声明：“${claimText}”。` +
-      "优先尝试同花顺/iFinD、天眼查、工商信息、财报、IMF、Scholar、arXiv、元典法律等可用能力；" +
-      "若专业数据不可用，请用公开网页/用户材料/自身知识辅助，并明确标注缺口和置信度。",
+      "用公开网页检索可得的权威信源（官网/年报/交易所公告/监管与司法公开信息/权威行业报告/学术与专利公开库）；" +
+      "本系统没有专业数据库直连，拿不到专业库口径时用用户材料/自身知识辅助，并明确标注缺口和置信度。",
     expected_fields: expectedFields,
     failure_mode: "标注为 BP 自报或待核实，进入尽调清单，不得编造。",
     _generated: true,
@@ -191,7 +192,7 @@ function normalizeKeyClaimsForResearch(extractedData = {}) {
       const harness = buildDefaultVerificationHarness(normalized, extractedData);
       normalized.verification_harness = {
         preferred_sources: harness.preferred_sources,
-        minimax_research_prompt: harness.minimax_research_prompt,
+        research_prompt: harness.research_prompt,
         expected_fields: harness.expected_fields,
         failure_mode: harness.failure_mode,
         _generated: true,
@@ -227,7 +228,7 @@ async function verifySingleClaim(claim, bpContext, batchLabel) {
     const raw = await callLLM(
       CLAIM_VERDICT_BATCH_PROMPT + "\n\n【重要】请严格只输出 JSON 数组，数组中只有一个元素。",
       `${bpContext}\n\n待核查声明：\n${JSON.stringify([claim], null, 2)}`,
-      8000
+      { maxTokens: 8000, taskHint: "claim_verdict" }
     );
     const parsed = extractJsonArray(raw);
     if (parsed && parsed.length > 0) return parsed[0];
@@ -290,15 +291,21 @@ async function runAgentBWithBatchingAndResearch(extractedData, bpText, onProgres
     const hasPriorityClaim = batch.some((c) =>
       ["critical", "high"].includes(String(c?.priority || "").toLowerCase())
     );
-    if (!hasPriorityClaim) return callLLM(sysPrompt, userInput, 16000);
+    if (!hasPriorityClaim) {
+      return callLLM(sysPrompt, userInput, { maxTokens: 16000, taskHint: "claim_verdict" });
+    }
 
     const preSearchQueries = batch
       .filter((c) => ["critical", "high"].includes(String(c?.priority || "").toLowerCase()))
-      .map((c) => c?.verification_harness?.minimax_research_prompt || c?.verification_harness?.kimi_research_prompt)
+      // 历史任务落库的字段名是 minimax_/kimi_research_prompt，回放老数据时要兼容
+      .map((c) => c?.verification_harness?.research_prompt
+        || c?.verification_harness?.minimax_research_prompt
+        || c?.verification_harness?.kimi_research_prompt)
       .filter(Boolean)
       .slice(0, 3);
-    return callLLMWithSearch(sysPrompt, userInput, { maxTokens: 16000, preSearchQueries })
-      .then((r) => r.text);
+    return callLLMWithSearch(sysPrompt, userInput, {
+      maxTokens: 16000, preSearchQueries, taskHint: "claim_verdict",
+    }).then((r) => r.text);
   };
 
   // M8: 外层 try/catch 兜底 Promise.all 内部不可达异常（如 p-limit 自身错误）
@@ -343,7 +350,7 @@ async function runAgentBWithBatchingAndResearch(extractedData, bpText, onProgres
         const retryRaw = await callLLM(
           CLAIM_VERDICT_BATCH_PROMPT + "\n\n【紧急提醒】请严格只输出 JSON 数组，不要输出任何其他内容。",
           `${bpContext}\n\n待核查声明（重试）：\n${JSON.stringify(rb, null, 2)}`,
-          16000
+          { maxTokens: 16000, taskHint: "claim_verdict" }
         );
         got = splitBatchVerdicts(retryRaw, rb).verdicts;
       } catch (err) {
@@ -371,13 +378,13 @@ async function runAgentBWithBatchingAndResearch(extractedData, bpText, onProgres
   const structuralInput = [
     `【BP提取数据（原始）】\n${JSON.stringify(extractedData, null, 2)}`,
     `\n\n【微观声明核查报告】\n${JSON.stringify(compressedVerdicts, null, 2)}`,
-    `\n\n【BP原文节选（前3000字）】\n${wrapBpDocument(bpText.slice(0, 3000))}`,
+    `\n\n【BP原文${bpText.length > config.bpScoringContextMaxChars ? `节选（前${config.bpScoringContextMaxChars}字）` : "全文"}】\n${wrapBpDocument(bpText.slice(0, config.bpScoringContextMaxChars))}`,
     scoringEvidence,
   ].join("");
 
   // 深度研究使用更多原文
   const earlyDeepResearchInput = [
-    `【商业计划书原文节选（前12000字）】\n${wrapBpDocument(bpText.slice(0, 12000))}`,
+    `【商业计划书原文${bpText.length > config.bpDeepResearchMaxChars ? `节选（前${config.bpDeepResearchMaxChars}字）` : "全文"}】\n${wrapBpDocument(bpText.slice(0, config.bpDeepResearchMaxChars))}`,
     `\n\n【项目基本信息】\n公司：${extractedData.company_name || "未知"}，赛道：${extractedData.industry || "未知"}`,
     `\n\n【声明核查结果】\n${JSON.stringify(compressedVerdicts, null, 2)}`,
     `\n\n【BP提取数据】\n${JSON.stringify(extractedData, null, 2)}`,
@@ -388,7 +395,9 @@ async function runAgentBWithBatchingAndResearch(extractedData, bpText, onProgres
   const settled = await Promise.allSettled([
     withTaskTimeout((async () => {
       // 层1: DeepThink（评分数据输出小，12000 足够）
-      const judgeResult = await callLLMWithThinking(scoringPrompt, structuralInput, 12000, 5000);
+      const judgeResult = await callLLMWithThinking(
+        scoringPrompt, structuralInput, 12000, 5000, { taskHint: "scoring_judge" }
+      );
       let result = extractJson(judgeResult.text);
 
       // 层1.5: 抢救
@@ -404,7 +413,11 @@ async function runAgentBWithBatchingAndResearch(extractedData, bpText, onProgres
       if (!result || !result.validated_data) {
         logger.warn("[B.scoring] 层1解析失败，切换普通模式...");
         onProgress({ type: "progress", stage: "scoring_retry", percentage: 72, message: "正在优化评分精度..." });
-        const retry1Raw = await callLLM(scoringPrompt + "\n\n【紧急提醒】只输出 JSON 对象，不要 markdown 代码块。", structuralInput, 8192);
+        const retry1Raw = await callLLM(
+          scoringPrompt + "\n\n【紧急提醒】只输出 JSON 对象，不要 markdown 代码块。",
+          structuralInput,
+          { maxTokens: 8192, taskHint: "scoring_judge" }
+        );
         result = extractJson(retry1Raw);
 
         if (!result || !result.validated_data) {
@@ -424,7 +437,10 @@ async function runAgentBWithBatchingAndResearch(extractedData, bpText, onProgres
           `【BP提取数据】\n${JSON.stringify(extractedData, null, 2)}`,
           `\n\n【声明核查报告（top-25）】\n${JSON.stringify(compressedVerdicts.slice(0, 25), null, 2)}`,
         ].join("");
-        const retry2Raw = await callLLM(EXPERT_JUDGE_MINIMAL_PROMPT, minimalInput, 4096);
+        const retry2Raw = await callLLM(
+          EXPERT_JUDGE_MINIMAL_PROMPT, minimalInput,
+          { maxTokens: 4096, taskHint: "scoring_judge" }
+        );
         result = extractJson(retry2Raw);
 
         if (!result || !result.validated_data) {
@@ -443,7 +459,10 @@ async function runAgentBWithBatchingAndResearch(extractedData, bpText, onProgres
     withTaskTimeout((async () => {
       try {
         // 普通模式（不用 thinking，把 token 全给输出）
-        const dimRaw = await callLLM(dimAnalysisPrompt, structuralInput, 16000);
+        const dimRaw = await callLLM(
+          dimAnalysisPrompt, structuralInput,
+          { maxTokens: 16000, taskHint: "dimension_analysis" }
+        );
         const dimResult = extractJson(dimRaw);
         if (dimResult && dimResult.dimension_analysis) {
           logger.info("[B.dim] 五维深度分析完成");
@@ -458,7 +477,11 @@ async function runAgentBWithBatchingAndResearch(extractedData, bpText, onProgres
         }
         // 重试
         logger.warn("[B.dim] 首次解析失败，重试...");
-        const dimRaw2 = await callLLM(dimAnalysisPrompt + "\n\n【紧急提醒】只输出 JSON 对象，不要 markdown 代码块，只要 dimension_analysis 字段。", structuralInput, 16000);
+        const dimRaw2 = await callLLM(
+          dimAnalysisPrompt + "\n\n【紧急提醒】只输出 JSON 对象，不要 markdown 代码块，只要 dimension_analysis 字段。",
+          structuralInput,
+          { maxTokens: 16000, taskHint: "dimension_analysis" }
+        );
         const dimResult2 = extractJson(dimRaw2);
         if (dimResult2 && dimResult2.dimension_analysis) return dimResult2.dimension_analysis;
         const rescued2 = extractNestedJson(dimRaw2, "dimension_analysis");
@@ -472,19 +495,22 @@ async function runAgentBWithBatchingAndResearch(extractedData, bpText, onProgres
       }
     })(), "五维分析"),
 
-    // Task C: 深度研究报告（启用 MiniMax web_search 工具，失败自动降级；并加 8min 任务级超时）
+    // Task C: 深度研究报告（启用 web_search 工具走博查检索，失败自动降级；并加 8min 任务级超时）
     withTaskTimeout((async () => {
       try {
         const { text, searchUsed } = await callLLMWithSearch(
           DEEP_RESEARCH_PROMPT,
           earlyDeepResearchInput,
-          { maxTokens: 16000 }
+          { maxTokens: 16000, taskHint: "deep_research" }
         );
         if (searchUsed) logger.info("[B.deep] 深度研究已使用 web_search 增强");
         return text;
       } catch (e) {
         logger.warn("[B.deep] web_search 调用失败，降级普通模式:", e.message);
-        return await callLLM(DEEP_RESEARCH_PROMPT, earlyDeepResearchInput, 16000);
+        return await callLLM(
+          DEEP_RESEARCH_PROMPT, earlyDeepResearchInput,
+          { maxTokens: 16000, taskHint: "deep_research" }
+        );
       }
     })(), "深度研究"),
   ]);
@@ -659,7 +685,9 @@ function buildVerdictResponse(scoringResult, structuralResult, validatedData, di
  * Step 1: 提取 BP 关键数据
  */
 async function extractBPData(bpText, onProgress) {
-  const maxChars = 30000;
+  // DeepSeek V4 是 1M token 上下文，30000 字是 MiniMax 时代的历史包袱。
+  // 这是全局天花板：超出部分对整条流水线永久不可见。
+  const maxChars = config.bpExtractionMaxChars;
   const truncatedText = bpText.length > maxChars
     ? bpText.slice(0, maxChars) + "\n...(文本已截断，共" + bpText.length + "字符)"
     : bpText;
@@ -669,7 +697,7 @@ async function extractBPData(bpText, onProgress) {
   let extractionRaw = await callLLM(
     AGENT_A_PROMPT,
     `以下是商业计划书全文（共 ${truncatedText.length} 字符）：\n\n${wrapBpDocument(truncatedText)}`,
-    8192
+    { maxTokens: 8192, taskHint: "bp_extraction" }
   );
   let extractedData = extractJson(extractionRaw);
 
@@ -677,7 +705,11 @@ async function extractBPData(bpText, onProgress) {
   if (!extractedData || !extractedData.key_claims) {
     onProgress({ type: "progress", stage: "data_extract_retry", percentage: 18, message: "数据提取重试中..." });
     const retryPrompt = AGENT_A_PROMPT + "\n\n【紧急提醒】只输出 JSON 对象。";
-    extractionRaw = await callLLM(retryPrompt, `以下是商业计划书全文：\n\n${wrapBpDocument(truncatedText)}`, 8192);
+    extractionRaw = await callLLM(
+      retryPrompt,
+      `以下是商业计划书全文：\n\n${wrapBpDocument(truncatedText)}`,
+      { maxTokens: 8192, taskHint: "bp_extraction" }
+    );
     extractedData = extractJson(extractionRaw);
   }
 
@@ -902,7 +934,10 @@ async function runPipeline(bpText, onProgress, taskId = null, userId = null) {
         `\n\n【评分数据】\n${JSON.stringify(validatedData.validated_data, null, 2)}`,
         `\n\n【声明核查报告（top-30）】\n${JSON.stringify((claimVerdicts || []).slice(0, 30).map(v => ({ claim: v.original_claim || v.bp_claim, verdict: v.verdict, diff: v.diff })), null, 2)}`,
       ].join("");
-      const dimRaw = await callLLM(DIMENSION_ANALYSIS_PROMPT, dimInput, 12000);
+      const dimRaw = await callLLM(
+        DIMENSION_ANALYSIS_PROMPT, dimInput,
+        { maxTokens: 12000, taskHint: "dimension_analysis" }
+      );
       const dimResult = extractJson(dimRaw);
       if (dimResult) {
         for (const key of dimKeys) {
@@ -1048,7 +1083,7 @@ async function runPipeline(bpText, onProgress, taskId = null, userId = null) {
     project_location: projectLocation,
     search_summary: {
       enabled: true, mock: false, total_results: 0,
-      queries_count: (extractedData.key_claims || []).length, provider: "minimax_web_search",
+      queries_count: (extractedData.key_claims || []).length, provider: "bocha_web_search",
     },
   };
 }

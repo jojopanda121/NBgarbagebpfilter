@@ -6,7 +6,10 @@ import { formatBytes } from "./AttachmentUploader";
 
 function ImageLightbox({ src, alt, onClose }) {
   return (
-    <div className="fixed inset-0 z-[80] bg-black/80 flex items-center justify-center p-4" onClick={onClose}>
+    <div
+      className="fixed inset-0 z-[80] bg-black/80 flex items-center justify-center p-4"
+      onClick={onClose}
+    >
       <img src={src} alt={alt} className="max-h-[90vh] max-w-full rounded-lg" />
     </div>
   );
@@ -26,8 +29,12 @@ export default function AttachmentList({ attachments = [], compact = false }) {
         <div className="flex flex-wrap gap-2">
           {images.map((a) => (
             <button key={a.url} type="button" onClick={() => setPreview(a)} className="block">
-              <img src={a.url} alt={a.name} loading="lazy"
-                className={`${imgSize} object-cover rounded-lg border border-[#D8DCE8] hover:opacity-90`} />
+              <img
+                src={a.url}
+                alt={a.name}
+                loading="lazy"
+                className={`${imgSize} object-cover rounded-lg border border-[#D8DCE8] hover:opacity-90`}
+              />
             </button>
           ))}
         </div>
@@ -36,8 +43,14 @@ export default function AttachmentList({ attachments = [], compact = false }) {
       {files.length > 0 && (
         <div className="space-y-1.5">
           {files.map((a) => (
-            <a key={a.url} href={a.url} download={a.name} target="_blank" rel="noreferrer"
-              className="flex items-center gap-2 text-xs bg-white border border-[#D8DCE8] rounded-lg px-3 py-2 hover:border-[#1B4FD8] group max-w-md">
+            <a
+              key={a.url}
+              href={a.url}
+              download={a.name}
+              target="_blank"
+              rel="noreferrer"
+              className="flex items-center gap-2 text-xs bg-white border border-[#D8DCE8] rounded-lg px-3 py-2 hover:border-[#1B4FD8] group max-w-md"
+            >
               <FileText className="w-4 h-4 text-[#1B4FD8] shrink-0" />
               <span className="text-[#0D2145] truncate flex-1">{a.name}</span>
               <span className="text-[#8E9BB0]">{formatBytes(a.size)}</span>
@@ -47,7 +60,9 @@ export default function AttachmentList({ attachments = [], compact = false }) {
         </div>
       )}
 
-      {preview && <ImageLightbox src={preview.url} alt={preview.name} onClose={() => setPreview(null)} />}
+      {preview && (
+        <ImageLightbox src={preview.url} alt={preview.name} onClose={() => setPreview(null)} />
+      )}
     </div>
   );
 }

@@ -27,8 +27,9 @@ const EXTRACT_MODES = new Set(["pdf", "pptx", "docx", "doc", "xlsx", "csv"]);
 const SYNC_EXTRACTION_MAX_CHARS = 6000;
 
 // 是否启用上传后结构化抽取。env UPLOAD_STRUCTURED_EXTRACTION_DISABLED=1 显式关闭。
+const config = require("../config");
 function _structuredExtractionEnabled() {
-  return process.env.UPLOAD_STRUCTURED_EXTRACTION_DISABLED !== "1";
+  return !config.uploadStructuredExtractionDisabled;
 }
 
 function decodeUploadName(name = "") {
@@ -136,14 +137,14 @@ async function persistWorkspaceUpload({ file, conversationId, scope, taskId, use
     if (text.length <= SYNC_EXTRACTION_MAX_CHARS) {
       try {
         await taskQueue.enqueue("upload_structured_extraction", () => uploadStructured.runAndPersist(runArgs), {
-          concurrency: Number(process.env.UPLOAD_EXTRACTION_CONCURRENCY || 1),
+          concurrency: config.uploadExtractionConcurrency,
         });
       } catch (err) {
         logger.warn?.(`[WorkspaceUpload] 同步结构化抽取失败: ${err.message}`);
       }
     } else {
       taskQueue.fireAndForget("upload_structured_extraction", () => uploadStructured.runAndPersist(runArgs), {
-        concurrency: Number(process.env.UPLOAD_EXTRACTION_CONCURRENCY || 1),
+        concurrency: config.uploadExtractionConcurrency,
         logger,
       });
     }

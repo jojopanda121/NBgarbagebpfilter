@@ -17,7 +17,11 @@ function configureMiddleware(app) {
 
   applySecurityMiddleware(app);
   app.use(requestId);
-  app.use(express.json({ limit: "50mb" }));
+  // P0-2: 全局 body 上限收紧到 1MB。50MB × 并发解析放大足以把 1.4G 堆打穿（OOM → 全部在途任务失败）。
+  // 唯一合法的大 JSON 入口是 /api/analyze 的文本直传模式（req.body.text），单独放宽到 10MB；
+  // body-parser 对已解析的请求会跳过，因此先挂路由级、再挂全局不会重复解析。
+  app.use("/api/analyze", express.json({ limit: "10mb" }));
+  app.use(express.json({ limit: "1mb" }));
 }
 
 function registerRoutes(app, { getShutdownState }) {

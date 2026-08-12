@@ -386,7 +386,7 @@ module.exports = {
 
     // 语义抽样校验 (opt-in)
     const enableSemantic = params.enable_semantic_audit === true
-      || (params.enable_semantic_audit !== false && process.env.ENABLE_SEMANTIC_AUDIT === "1");
+      || (params.enable_semantic_audit !== false && require("../config/featureFlags").enableSemanticAudit());
     let semanticAudit = null;
     if (enableSemantic) {
       semanticAudit = await semanticGroundingAudit(data, factPack, {

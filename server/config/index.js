@@ -42,31 +42,30 @@ const config = {
   // Uploads (公开上传：头像、站点图片)。容器中映射到 /app/data/uploads，与数据卷一同持久化。
   uploadsDir: process.env.UPLOADS_DIR || require("path").join(__dirname, "..", "..", "data", "uploads"),
 
-  // MiniMax LLM（OpenAI 兼容接口；M3 为默认模型）
-  // 一个 MINIMAX_API_KEY（Token Plan 订阅 key）同时用于 M3 推理与 coding_plan/search 联网检索。
-  minimaxApiKey: process.env.MINIMAX_API_KEY || "",
-  minimaxModel: process.env.MINIMAX_MODEL || "MiniMax-M3",
-  llmProvider: "minimax",
-  llmApiKey: process.env.MINIMAX_API_KEY || "",
-  llmModel: process.env.MINIMAX_MODEL || "MiniMax-M3",
-  // P2-4 per-skill 模型路由 (可选)：
+  // DeepSeek LLM（OpenAI 兼容接口）
+  // 历史：Kimi → MiniMax → DeepSeek。别名已收敛为 deepseek* + llmProvider，
+  // 新调用点一律使用 deepseek*。
+  deepseekApiKey: process.env.DEEPSEEK_API_KEY || "",
+  deepseekModel: process.env.DEEPSEEK_MODEL || "deepseek-v4-flash",
+  llmProvider: "deepseek",
+  // per-skill 模型路由 (可选)：
   //   heavy  → deck / memo / investmentDeckPptx / icQuestions 等重任务
   //   light  → snapshot / brief / one-pager / 语义抽样审计 等轻任务
   //   default→ 其他所有 skill（兜底）
-  // 任一字段未配置时回落到 minimaxModel，保持单模型行为不变。
-  minimaxModelHeavy: process.env.MINIMAX_MODEL_HEAVY || "",
-  minimaxModelLight: process.env.MINIMAX_MODEL_LIGHT || "",
-  // 国内站 api.minimaxi.com（注意域名是 minimaxi）；国际站用 MINIMAX_API_HOST=https://api.minimax.io/v1 覆盖。
-  minimaxApiHost: process.env.MINIMAX_API_HOST || process.env.MINIMAX_BASE_URL || "https://api.minimaxi.com/v1",
-  llmModelHeavy: process.env.MINIMAX_MODEL_HEAVY || "",
-  llmModelLight: process.env.MINIMAX_MODEL_LIGHT || "",
-  llmApiHost: process.env.MINIMAX_API_HOST || process.env.MINIMAX_BASE_URL || "https://api.minimaxi.com/v1",
-  // 兼容旧调用点命名；实际后端统一走 MiniMax。
-  kimiApiKey: process.env.MINIMAX_API_KEY || "",
-  kimiModel: process.env.MINIMAX_MODEL || "MiniMax-M3",
-  kimiModelHeavy: process.env.MINIMAX_MODEL_HEAVY || "",
-  kimiModelLight: process.env.MINIMAX_MODEL_LIGHT || "",
-  kimiApiHost: process.env.MINIMAX_API_HOST || process.env.MINIMAX_BASE_URL || "https://api.minimaxi.com/v1",
+  // heavy 默认上 deepseek-v4-pro（贵约 3 倍但推理更强）；light 未配置时回落 deepseekModel。
+  deepseekModelHeavy: process.env.DEEPSEEK_MODEL_HEAVY || "deepseek-v4-pro",
+  deepseekModelLight: process.env.DEEPSEEK_MODEL_LIGHT || "",
+  deepseekApiHost: process.env.DEEPSEEK_API_HOST || process.env.DEEPSEEK_BASE_URL || "https://api.deepseek.com/v1",
+  // 推理档位：deepseek-v4-flash 支持 low/high/max，deepseek-v4-pro 目前只支持 high/max。
+  // 留空 = 不发送该字段，用服务端默认。
+  deepseekReasoningEffort: process.env.DEEPSEEK_REASONING_EFFORT || "",
+
+  // 联网检索（博查 Bocha Web Search）
+  // DeepSeek API 本身不提供检索能力，公开信息检索独立走博查：
+  // https://open.bochaai.com → POST {host}/v1/web-search
+  // 未配置 key 时全站检索静默降级为“无检索结果”，不阻塞分析流程。
+  searchApiKey: process.env.BOCHA_API_KEY || "",
+  searchApiHost: process.env.BOCHA_API_HOST || "https://api.bochaai.com/v1",
 
   // 企查查 Agent（企业追踪数据源）
   qccApiKey: process.env.QCC_API_KEY || "",
@@ -110,6 +109,42 @@ const config = {
   piiSalt: process.env.PII_SALT || "",
   enablePiiEncryption: process.env.ENABLE_PII_ENCRYPTION === "1",
 
+  // ── P2-2: 运行时调优参数统一收编（原先散落在各模块直读 process.env）──
+  // 动态灰度/行为开关（测试会运行时切换的）在 config/featureFlags.js，不在这里。
+  // 全局 API 兜底限流（次/分钟/IP），0 = 关闭
+  rateLimitGlobalMax: parseInt(process.env.RATE_LIMIT_GLOBAL_MAX, 10) >= 0
+    ? parseInt(process.env.RATE_LIMIT_GLOBAL_MAX, 10)
+    : 300,
+  // 工作区每日对话额度
+  workspaceDailyChatLimit: parseInt(process.env.WORKSPACE_DAILY_CHAT_LIMIT, 10) || 3,
+  // SSE 心跳间隔
+  sseHeartbeatIntervalMs: parseInt(process.env.SSE_HEARTBEAT_INTERVAL, 10) || 15000,
+  // 进程内轻量队列默认并发
+  lightweightQueueConcurrency: parseInt(process.env.LIGHTWEIGHT_QUEUE_CONCURRENCY, 10) || 1,
+  // 证据库原文截断上限（字符）
+  evidenceRawTextMaxChars: parseInt(process.env.EVIDENCE_RAW_TEXT_MAX_CHARS, 10) || 240000,
+
+  // ── BP 原文投喂上限（字符）─────────────────────────────────
+  // 这三个数原本是 30000 / 3000 / 12000，是 MiniMax 时代上下文吃紧留下的。
+  // DeepSeek V4 是 1M token 上下文（约 70~100 万中文字），这些限制已无必要。
+  //   extraction   抽取环节能读到的 BP 长度 —— 这是全局天花板，
+  //                超出部分对整条流水线永久不可见
+  //   scoringCtx   评分裁判 + 五维分析能看到的 BP 原文（此前仅 3000 字，
+  //                裁判只能盲信抽取结果，无法回原文复核）
+  //   deepResearch 深度研究能看到的 BP 原文
+  // 调大 = 质量升、成本和延迟略升。想压成本就调小这三个值，不用改代码。
+  bpExtractionMaxChars: parseInt(process.env.BP_EXTRACTION_MAX_CHARS, 10) || 200000,
+  bpScoringContextMaxChars: parseInt(process.env.BP_SCORING_CONTEXT_MAX_CHARS, 10) || 50000,
+  bpDeepResearchMaxChars: parseInt(process.env.BP_DEEP_RESEARCH_MAX_CHARS, 10) || 50000,
+  // 上传结构化抽取
+  uploadStructuredExtractionDisabled: process.env.UPLOAD_STRUCTURED_EXTRACTION_DISABLED === "1",
+  uploadExtractionConcurrency: parseInt(process.env.UPLOAD_EXTRACTION_CONCURRENCY, 10) || 1,
+  // 冲突裁决
+  conflictJudgeDisabled: process.env.CONFLICT_JUDGE_DISABLED === "1",
+  conflictJudgeConcurrency: parseInt(process.env.CONFLICT_JUDGE_CONCURRENCY, 10) || 1,
+  // 仅开发环境允许匿名分析（生产忽略此开关，analyze 路由二次校验）
+  allowAnonAnalyze: process.env.ALLOW_ANON_ANALYZE === "1",
+
   // 站点规范域名（SEO：canonical / og:url / sitemap 用）。与前端 siteMeta 默认一致。
   siteUrl: (process.env.SITE_URL || process.env.REACT_APP_SITE_URL || "https://www.garbagebpfilter.cn").replace(/\/+$/, ""),
 
@@ -145,11 +180,21 @@ if (config.env === "production") {
     process.exit(1);
   }
 
-  if (!config.minimaxApiKey) {
+  if (!config.deepseekApiKey) {
     console.error(
-      "\n[FATAL] 生产环境必须设置 MINIMAX_API_KEY 环境变量！\n"
+      "\n[FATAL] 生产环境必须设置 DEEPSEEK_API_KEY 环境变量！\n" +
+      "  申请: https://platform.deepseek.com/api_keys\n"
     );
     process.exit(1);
+  }
+
+  // 检索 key 缺失不致命：检索层会静默降级，但要让运维知道分析质量会下降。
+  if (!config.searchApiKey) {
+    console.warn(
+      "\n[WARN] 未设置 BOCHA_API_KEY，联网检索将全程返回空结果。\n" +
+      "  深度研究报告 / 公司行业速览 / Agent 预检索会退化为“仅基于上传材料 + 模型知识”。\n" +
+      "  申请: https://open.bochaai.com\n"
+    );
   }
 
   // 拒绝通配符 ALLOWED_ORIGINS（CORS 安全）

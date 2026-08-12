@@ -12,7 +12,7 @@ const MAX_BP_CHARS = 20000;
 // 彩虹表可直接逆推手机号/邮箱。生产环境 config 已强制要求 PII_SALT。
 function hashPII(value) {
   if (!value) return null;
-  const salt = process.env.PII_SALT;
+  const salt = require("../config").piiSalt;
   if (!salt) return null;
   return crypto.createHash("sha256").update(String(value) + salt).digest("hex");
 }
@@ -20,7 +20,7 @@ function hashPII(value) {
 // PRIVACY: AES-256-GCM 加密姓名；未配置 key 则 hash
 function encryptName(name) {
   if (!name) return null;
-  const keyHex = process.env.ENCRYPTION_KEY;
+  const keyHex = require("../config").encryptionKey;
   if (!keyHex || keyHex.length < 64) return "hash:" + hashPII(name);
   try {
     const key = Buffer.from(keyHex.slice(0, 64), "hex");

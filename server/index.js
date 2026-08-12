@@ -1,4 +1,6 @@
 const config = require("./config");
+// P2-3: 尽早安装 console→logger 桥接，保证后续所有模块加载期日志也是结构化 JSON
+require("./utils/logger").installConsoleBridge();
 const { createApp } = require("./app");
 const { getModelName } = require("./services/llmService");
 const { checkPythonDeps, bootDocServiceIfLocal } = require("./runtime/docService");

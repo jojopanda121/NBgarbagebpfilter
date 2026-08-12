@@ -2,7 +2,7 @@
 // scoring.js — 5维度定量评分系统 (v4.0 重构版)
 //
 // 核心原则：
-//   利用大模型（MiniMax）的客观检索能力输出严谨的枚举值或绝对数值，
+//   利用大模型（DeepSeek）的客观判断能力输出严谨的枚举值或绝对数值，
 //   然后在 JS 中进行纯数学的定量计算，杜绝让大模型直接拍脑袋给总分。
 //
 // 修复的数学建模漏洞：
@@ -16,12 +16,12 @@
 //   (off/shadow/on) 控制是否生效，shadow 模式下新旧分并存供校准。
 // ============================================================
 
-const { scoreS2Harness, trlGapVerdict } = require("./scoringHarness");
-const { scoreS3Harness } = require("./scoringS3Harness");
-const { aggregate } = require("./scoringAggregate");
-const { scorePolicyFit, isHardtechTrack } = require("./scoringPolicy");
-const T = require("./config/scoringTables");
-const { scoringHarnessMode, scoringS3HarnessMode, scoringAggMode } = require("./config/featureFlags");
+const { scoreS2Harness, trlGapVerdict } = require("./harness");
+const { scoreS3Harness } = require("./s3Harness");
+const { aggregate } = require("./aggregate");
+const { scorePolicyFit, isHardtechTrack } = require("./policy");
+const T = require("../config/scoringTables");
+const { scoringHarnessMode, scoringS3HarnessMode, scoringAggMode } = require("../config/featureFlags");
 
 /** 将分数钳制到 0-100 整数 */
 function clampScore(score) {
@@ -203,7 +203,7 @@ function calculateDimension4_Team(teamData) {
   // 子因子提取（LLM 输出 1-10，缺失默认 6）。
   //
   // 为什么 dim4 缺失默认 6，而 dim3 默认 5？—— 故意不对称，不是 bug：
-  //   数据源约束：本系统依赖 MiniMax search，团队背景信息（早期创始人、
+  //   数据源约束：本系统只有公开网页检索，团队背景信息（早期创始人、
   //   非 LinkedIn 用户、国内民营企业）大概率检索不到——这是常态，不代表团队差。
   //   因此 dim4 fallback = 6（中性偏上的诚实补偿），刻意高于 dim3 的客观中性 5。
   //   修改前请先评估是否会让现有分布（多 C/D、少 A/B）进一步下移。

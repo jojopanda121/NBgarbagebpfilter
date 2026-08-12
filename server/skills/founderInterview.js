@@ -326,7 +326,7 @@ module.exports = {
         upload_structured_fact_count: uploadStructuredFactCount || 0,
         semantic_audit: await (async () => {
           const enable = params.enable_semantic_audit === true
-            || (params.enable_semantic_audit !== false && process.env.ENABLE_SEMANTIC_AUDIT === "1");
+            || (params.enable_semantic_audit !== false && require("../config/featureFlags").enableSemanticAudit());
           if (!enable) return null;
           return semanticGroundingAudit(data, factPack, {
             sampleRate: 0.3, maxSamples: 12, skillId: "founder_interview_docx",

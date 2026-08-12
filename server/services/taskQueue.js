@@ -2,6 +2,7 @@
 // Keeps LLM extraction / judge jobs from stampeding a 4 vCPU / 4GB server.
 
 const pLimit = require("p-limit");
+const config = require("../config");
 
 const limits = new Map();
 
@@ -14,7 +15,7 @@ function getLimit(name, concurrency) {
 }
 
 function enqueue(name, fn, opts = {}) {
-  const limit = getLimit(name, opts.concurrency || process.env.LIGHTWEIGHT_QUEUE_CONCURRENCY || 1);
+  const limit = getLimit(name, opts.concurrency || config.lightweightQueueConcurrency);
   return limit(fn);
 }
 

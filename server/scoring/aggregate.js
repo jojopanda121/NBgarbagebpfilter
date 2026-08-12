@@ -17,7 +17,7 @@
 // 不回头碰原文、不调 LLM。Integrity Veto 由 scoring.js 在本层之后封顶。
 // ============================================================
 
-const T = require("./config/scoringTables");
+const T = require("../config/scoringTables");
 
 const DIMS = ["S1", "S2", "S3", "S4", "S5"];
 

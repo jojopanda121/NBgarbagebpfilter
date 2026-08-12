@@ -12,11 +12,11 @@ describe("P2-4 per-skill 模型路由", () => {
   beforeEach(() => {
     jest.resetModules();
     jest.doMock("../../config", () => ({
-      minimaxApiKey: "test-key",
-      minimaxApiHost: "https://api.minimax.test/v1",
-      minimaxModel: "default-model",
-      minimaxModelHeavy: "heavy-model",
-      minimaxModelLight: "light-model",
+      deepseekApiKey: "test-key",
+      deepseekApiHost: "https://api.deepseek.test/v1",
+      deepseekModel: "default-model",
+      deepseekModelHeavy: "heavy-model",
+      deepseekModelLight: "light-model",
     }));
     llm = require("../../services/llmService");
   });
@@ -65,11 +65,11 @@ describe("P2-4 模型路由 · 未配置 heavy/light 时回落 default", () => {
   beforeEach(() => {
     jest.resetModules();
     jest.doMock("../../config", () => ({
-      minimaxApiKey: "test-key",
-      minimaxApiHost: "https://api.minimax.test/v1",
-      minimaxModel: "only-default",
-      minimaxModelHeavy: "", // 未配
-      minimaxModelLight: "", // 未配
+      deepseekApiKey: "test-key",
+      deepseekApiHost: "https://api.deepseek.test/v1",
+      deepseekModel: "only-default",
+      deepseekModelHeavy: "", // 未配
+      deepseekModelLight: "", // 未配
     }));
   });
   afterEach(() => {

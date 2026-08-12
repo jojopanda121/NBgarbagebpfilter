@@ -38,7 +38,7 @@ class BaseAgent {
    * @param {string} opts.systemPrompt — LLM system prompt
    * @param {number} [opts.maxRetries=2]
    * @param {number} [opts.maxTokens=8192]
-   * @param {boolean} [opts.useSearch=false] — 是否启用 MiniMax web_search 预检索
+   * @param {boolean} [opts.useSearch=false] — 是否启用 web_search 预检索（博查）
    * @param {boolean} [opts.jsonOnly=true] — 输出为纯 JSON 时附加 JSON-only 输出纪律
    */
   constructor({ name, systemPrompt, maxRetries = 2, maxTokens = 8192, useSearch = false, jsonOnly = true }) {
@@ -63,7 +63,7 @@ class BaseAgent {
 
   /**
    * 子类可覆盖：为 callLLMWithSearch 提供服务端预检索 query。
-   * 这些 query 会先用 MiniMax $web_search 执行，再注入 LLM 上下文。
+   * 这些 query 会先用服务端博查检索执行，再注入 LLM 上下文。
    */
   buildSearchQueries(_context) {
     return [];
@@ -84,7 +84,7 @@ class BaseAgent {
   /**
    * 调用 LLM（带重试）。
    *
-   * 除了网络/超时等抛出的异常外，还显式探测 MiniMax M3 特有的失败：
+   * 除了网络/超时等抛出的异常外，还显式探测推理模型特有的失败：
    * 推理模型思考没收尾 / 答案被截断、根本不吐完整 JSON（调用成功返回但
    * 内容无可用 JSON，try/catch 抓不到）。命中这类失败时，下一轮带"思考
    * 后务必把完整 JSON 写完"的纠偏反馈、并放大 token 预算重试，而不是原样

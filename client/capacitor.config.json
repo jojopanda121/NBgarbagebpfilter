@@ -1,0 +1,13 @@
+{
+  "appId": "cn.garbagebpfilter.app",
+  "appName": "垃圾BP过滤器",
+  "webDir": "build",
+  "ios": {
+    "contentInset": "always"
+  },
+  "plugins": {
+    "Keyboard": {
+      "resize": "body"
+    }
+  }
+}

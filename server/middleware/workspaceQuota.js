@@ -1,7 +1,9 @@
 const { getDb } = require("../db");
 const { getUserPlan } = require("../utils/userPlan");
 
-const DAILY_LIMIT = Number(process.env.WORKSPACE_DAILY_CHAT_LIMIT) || 3;
+const config = require("../config");
+
+const DAILY_LIMIT = config.workspaceDailyChatLimit;
 
 function getWorkspaceUsage(userId) {
   const db = getDb();

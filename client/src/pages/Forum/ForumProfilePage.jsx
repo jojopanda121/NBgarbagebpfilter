@@ -22,9 +22,15 @@ export default function ForumProfilePage() {
 
   // 个人主页 / 我的论坛属个性化页面，不收录（robots 已 Disallow，这里再加 noindex 兜底）
   const content =
-    isMe && !token
-      ? <div className="max-w-3xl mx-auto px-4 py-10"><RegistrationGate message="登录后管理你的论坛资料与撮合" /></div>
-      : isMe ? <MyProfile /> : <PublicProfile userId={Number(id)} />;
+    isMe && !token ? (
+      <div className="max-w-3xl mx-auto px-4 py-10">
+        <RegistrationGate message="登录后管理你的论坛资料与撮合" />
+      </div>
+    ) : isMe ? (
+      <MyProfile />
+    ) : (
+      <PublicProfile userId={Number(id)} />
+    );
 
   return (
     <>
@@ -50,10 +56,15 @@ function MyProfile() {
       <h1 className="text-lg font-bold text-[#0D2145] mb-3">我的论坛</h1>
       <div className="flex items-center gap-1.5 mb-4 border-b border-[#EEF1F7]">
         {TABS.map((t) => (
-          <button key={t.key} onClick={() => setTab(t.key)}
+          <button
+            key={t.key}
+            onClick={() => setTab(t.key)}
             className={`px-3 py-2 text-sm font-medium -mb-px border-b-2 ${
-              tab === t.key ? "border-[#1B4FD8] text-[#1B4FD8]" : "border-transparent text-[#8E9BB0] hover:text-[#0D2145]"
-            }`}>
+              tab === t.key
+                ? "border-[#1B4FD8] text-[#1B4FD8]"
+                : "border-transparent text-[#8E9BB0] hover:text-[#0D2145]"
+            }`}
+          >
             {t.label}
           </button>
         ))}
@@ -81,15 +92,32 @@ function PublicProfile({ userId }) {
     }
   }, [userId]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    load();
+  }, [load]);
 
-  if (loading) return <div className="max-w-3xl mx-auto px-4 py-20 flex justify-center"><Loader2 className="w-6 h-6 animate-spin text-[#8E9BB0]" /></div>;
-  if (!data) return <div className="max-w-3xl mx-auto px-4 py-20 text-center text-sm text-[#8E9BB0]">用户不存在</div>;
+  if (loading)
+    return (
+      <div className="max-w-3xl mx-auto px-4 py-20 flex justify-center">
+        <Loader2 className="w-6 h-6 animate-spin text-[#8E9BB0]" />
+      </div>
+    );
+  if (!data)
+    return (
+      <div className="max-w-3xl mx-auto px-4 py-20 text-center text-sm text-[#8E9BB0]">
+        用户不存在
+      </div>
+    );
 
   const { profile, posts } = data;
   return (
     <div className="max-w-3xl mx-auto px-4 py-5">
-      <button onClick={() => navigate("/forum")} className="flex items-center gap-1 text-xs text-[#8E9BB0] hover:text-[#0D2145] mb-3"><ArrowLeft className="w-4 h-4" /> 返回论坛</button>
+      <button
+        onClick={() => navigate("/forum")}
+        className="flex items-center gap-1 text-xs text-[#8E9BB0] hover:text-[#0D2145] mb-3"
+      >
+        <ArrowLeft className="w-4 h-4" /> 返回论坛
+      </button>
       <div className="bg-white border border-[#D8DCE8] rounded-lg p-5 flex items-start gap-4">
         <Avatar src={profile.avatar_url} name={profile.name} id={profile.id} size="lg" />
         <div className="min-w-0 flex-1">
@@ -97,10 +125,14 @@ function PublicProfile({ userId }) {
             <span className="text-base font-bold text-[#0D2145]">{profile.name}</span>
             <UserTypeBadge type={profile.user_type} verified={profile.type_verified} />
           </div>
-          {profile.org_name && <div className="text-xs text-[#8E9BB0] mt-0.5">{profile.org_name}</div>}
+          {profile.org_name && (
+            <div className="text-xs text-[#8E9BB0] mt-0.5">{profile.org_name}</div>
+          )}
           {profile.bio && <div className="text-sm text-[#4B5A72] mt-1">{profile.bio}</div>}
           {profile.badges?.length > 0 && (
-            <div className="mt-2"><BadgeList badges={profile.badges} size="sm" max={6} showName /></div>
+            <div className="mt-2">
+              <BadgeList badges={profile.badges} size="sm" max={6} showName />
+            </div>
           )}
         </div>
         {/* 私信已门控：不能从冷主页直接私信。先到 TA 的项目帖点「我有兴趣」，对方同意后解锁。 */}
@@ -110,7 +142,11 @@ function PublicProfile({ userId }) {
       {posts.length === 0 ? (
         <div className="text-xs text-[#8E9BB0] text-center py-6">暂无帖子</div>
       ) : (
-        <div className="space-y-2.5">{posts.map((p) => <ForumPostCard key={p.id} post={p} />)}</div>
+        <div className="space-y-2.5">
+          {posts.map((p) => (
+            <ForumPostCard key={p.id} post={p} />
+          ))}
+        </div>
       )}
     </div>
   );

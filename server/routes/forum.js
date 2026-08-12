@@ -68,17 +68,18 @@ function handleUpload(req, res) {
   });
 }
 
-// 统一把 service 抛出的 {status,message} 转成 HTTP 响应
+// 统一把 service 抛出的 {status,message} 转成 HTTP 响应。
+// P2-5: 旧版只支持同步 service —— 一旦有人接入 async service，返回的 Promise
+// 会被 res.json 序列化成 {}，异常则逃逸成 unhandledRejection（触发进程优雅重启）。
+// 现改为 Promise 感知：错误统一交给全局 errorHandler（含 requestId + stack 落盘）。
 function handle(fn) {
-  return (req, res) => {
-    try {
-      const out = fn(req, res);
-      if (out !== undefined) res.json(out);
-    } catch (e) {
-      const status = e.status || 500;
-      if (status === 500) console.error("[Forum] error:", e);
-      res.status(status).json({ error: e.message || "服务器错误" });
-    }
+  return (req, res, next) => {
+    Promise.resolve()
+      .then(() => fn(req, res))
+      .then((out) => {
+        if (out !== undefined && !res.headersSent) res.json(out);
+      })
+      .catch(next);
   };
 }
 

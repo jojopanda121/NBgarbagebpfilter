@@ -39,7 +39,6 @@ const LEGACY_TOOL_ALIASES = {
 
 const NON_SKILL_TOOLS = new Set([
   "web_search",
-  "minimax_professional_research",
   "generate_docx",
   "generate_xlsx",
   "extract_document",

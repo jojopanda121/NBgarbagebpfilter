@@ -24,7 +24,13 @@ const LANDING_JSON_LD = {
 };
 
 const LogoE = ({ size = 32 }) => (
-  <svg width={size} height={size} viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 40 40"
+    fill="none"
+    xmlns="http://www.w3.org/2000/svg"
+  >
     <rect width="40" height="40" rx="6" fill="#1B4FD8" />
     <circle cx="10" cy="10" r="4.5" fill="white" opacity="0.2" />
     <circle cx="30" cy="10" r="4.5" fill="white" opacity="0.2" />
@@ -71,10 +77,27 @@ function useCanvasBackground(canvasRef) {
       const edge = Math.floor(Math.random() * 4);
       let x, y, vx, vy;
       const speed = Math.random() * 0.6 + 0.4;
-      if (edge === 0)      { x = 0; y = Math.random() * H; vx = speed;  vy = (Math.random() - 0.5) * 0.2; }
-      else if (edge === 1) { x = W; y = Math.random() * H; vx = -speed; vy = (Math.random() - 0.5) * 0.2; }
-      else if (edge === 2) { x = Math.random() * W; y = 0; vx = (Math.random() - 0.5) * 0.2; vy = speed; }
-      else                 { x = Math.random() * W; y = H; vx = (Math.random() - 0.5) * 0.2; vy = -speed; }
+      if (edge === 0) {
+        x = 0;
+        y = Math.random() * H;
+        vx = speed;
+        vy = (Math.random() - 0.5) * 0.2;
+      } else if (edge === 1) {
+        x = W;
+        y = Math.random() * H;
+        vx = -speed;
+        vy = (Math.random() - 0.5) * 0.2;
+      } else if (edge === 2) {
+        x = Math.random() * W;
+        y = 0;
+        vx = (Math.random() - 0.5) * 0.2;
+        vy = speed;
+      } else {
+        x = Math.random() * W;
+        y = H;
+        vx = (Math.random() - 0.5) * 0.2;
+        vy = -speed;
+      }
       return { x, y, vx, vy, life: 0, ttl: 600 + Math.random() * 400, gold: Math.random() < 0.18 };
     }
 
@@ -133,7 +156,9 @@ function useCanvasBackground(canvasRef) {
 
       // Data packets (traveling pulses w/ trail)
       packets.forEach((p, idx) => {
-        p.x += p.vx; p.y += p.vy; p.life += 1;
+        p.x += p.vx;
+        p.y += p.vy;
+        p.life += 1;
         const trailLen = 38;
         const c = p.gold ? GOLD : BLUE;
         for (let k = 0; k < trailLen; k++) {
@@ -245,10 +270,15 @@ export default function LandingPage() {
           <a href="#workspace">多 Agent 工作区</a>
           <a href="#pipeline">投资流程</a>
           <a href="#pricing">定价</a>
+          <a href="/forum">投资人论坛</a>
         </div>
         <div className="lp-nav-right">
-          <button className="lp-btn-ghost" onClick={() => navigate("/login")}>登录</button>
-          <button className="lp-btn-primary" onClick={() => navigate("/login")}>免费注册</button>
+          <button className="lp-btn-ghost" onClick={() => navigate("/login")}>
+            登录
+          </button>
+          <button className="lp-btn-primary" onClick={() => navigate("/login")}>
+            免费注册
+          </button>
         </div>
       </nav>
 
@@ -260,14 +290,20 @@ export default function LandingPage() {
           <div>
             <div className="lp-hero-eyebrow">The AI Workspace for VC &amp; PE</div>
             <h1 className="lp-hero-h1">
-              让每一个投资判断<br /><em>有据可依</em>
+              让每一个投资判断
+              <br />
+              <em>有据可依</em>
             </h1>
             <p className="lp-hero-sub">
-              专为一级市场投资人打造的智能工作台。独创量化评分体系精准评估每份 BP，AI 逐条击破虚假陈述，多 Agent 协同覆盖分析、尽调、投资备忘录全链路。<br />
+              专为一级市场投资人打造的智能工作台。独创量化评分体系精准评估每份 BP，AI
+              逐条击破虚假陈述，多 Agent 协同覆盖分析、尽调、投资备忘录全链路。
+              <br />
               <strong>把繁琐留给 AI，把判断留给自己。</strong>
             </p>
             <div className="lp-hero-ctas">
-              <button className="lp-btn-primary" onClick={() => navigate("/login")}>免费开始使用 →</button>
+              <button className="lp-btn-primary" onClick={() => navigate("/login")}>
+                免费开始使用 →
+              </button>
               <button className="lp-btn-outline">查看演示报告</button>
             </div>
             <div className="lp-hero-trust">
@@ -302,12 +338,31 @@ export default function LandingPage() {
               <div className="lp-panel-content">
                 {/* project meta */}
                 <div style={{ marginBottom: 14 }}>
-                  <div style={{ fontFamily: "var(--serif)", fontSize: 17, fontWeight: 700, color: "var(--text)", marginBottom: 3 }}>
+                  <div
+                    style={{
+                      fontFamily: "var(--serif)",
+                      fontSize: 17,
+                      fontWeight: 700,
+                      color: "var(--text)",
+                      marginBottom: 3,
+                    }}
+                  >
                     某智能制造 SaaS
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                    <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--dim)", fontWeight: 600 }}>BP-2024-0087</span>
-                    <span style={{ fontSize: 11, color: "var(--text)", fontWeight: 500 }}>Pre-A · 3,000 万人民币</span>
+                    <span
+                      style={{
+                        fontFamily: "var(--mono)",
+                        fontSize: 10,
+                        color: "var(--dim)",
+                        fontWeight: 600,
+                      }}
+                    >
+                      BP-2024-0087
+                    </span>
+                    <span style={{ fontSize: 11, color: "var(--text)", fontWeight: 500 }}>
+                      Pre-A · 3,000 万人民币
+                    </span>
                     <div className="lp-stages-row">
                       <span className="lp-stage-pill lp-sp-done">已评估</span>
                       <span className="lp-stage-pill lp-sp-act">尽调中</span>
@@ -317,7 +372,9 @@ export default function LandingPage() {
                 </div>
                 {/* score */}
                 <div className="lp-score-row">
-                  <div className="lp-score-num">67<sub>/100</sub></div>
+                  <div className="lp-score-num">
+                    67<sub>/100</sub>
+                  </div>
                   <div className="lp-score-meta">
                     <div className="lp-score-lbl">综合评分 · Overall Score</div>
                     <div className="lp-verdict-pill lp-vp-warn">B — 谨慎推荐</div>
@@ -327,10 +384,10 @@ export default function LandingPage() {
                 <div className="lp-dims">
                   {[
                     { name: "时机与天花板", pct: 78, cls: "hi" },
-                    { name: "产品与壁垒",   pct: 62, cls: "mid" },
-                    { name: "资本效率",     pct: 70, cls: "mid" },
-                    { name: "团队基因",     pct: 74, cls: "hi" },
-                    { name: "BP诚信度",     pct: 32, cls: "lo" },
+                    { name: "产品与壁垒", pct: 62, cls: "mid" },
+                    { name: "资本效率", pct: 70, cls: "mid" },
+                    { name: "团队基因", pct: 74, cls: "hi" },
+                    { name: "BP诚信度", pct: 32, cls: "lo" },
                   ].map((d) => (
                     <div className="lp-dim-row" key={d.name}>
                       <span className="lp-dim-name">{d.name}</span>
@@ -346,11 +403,15 @@ export default function LandingPage() {
                   <div className="lp-flags-label">声明核查 · Claim Verification</div>
                   <div className="lp-flag-item">
                     <span className="lp-flag-ico lp-fi-bad">✗</span>
-                    <span className="lp-flag-text">「全球 TAM 超 5,000 亿」— 核查：严重夸大，细分市场仅 200 亿</span>
+                    <span className="lp-flag-text">
+                      「全球 TAM 超 5,000 亿」— 核查：严重夸大，细分市场仅 200 亿
+                    </span>
                   </div>
                   <div className="lp-flag-item">
                     <span className="lp-flag-ico lp-fi-bad">✗</span>
-                    <span className="lp-flag-text">「独家专利技术」— 核查：专利申请中，尚未授权</span>
+                    <span className="lp-flag-text">
+                      「独家专利技术」— 核查：专利申请中，尚未授权
+                    </span>
                   </div>
                   <div className="lp-flag-item">
                     <span className="lp-flag-ico lp-fi-ok">✓</span>
@@ -370,15 +431,21 @@ export default function LandingPage() {
           <div className="lp-metric-d">维度量化评分，每维度独立建模，数学公式驱动</div>
         </div>
         <div className="lp-metric-cell">
-          <div className="lp-metric-n">&lt; 3<em> min</em></div>
+          <div className="lp-metric-n">
+            &lt; 3<em> min</em>
+          </div>
           <div className="lp-metric-d">单份 BP 分析完成，传统人工需要 2–4 小时</div>
         </div>
         <div className="lp-metric-cell">
-          <div className="lp-metric-n">90<em>%</em></div>
+          <div className="lp-metric-n">
+            90<em>%</em>
+          </div>
           <div className="lp-metric-d">噪声过滤率，帮助投资人聚焦有价值的项目</div>
         </div>
         <div className="lp-metric-cell">
-          <div className="lp-metric-n">50,000<em>+</em></div>
+          <div className="lp-metric-n">
+            50,000<em>+</em>
+          </div>
           <div className="lp-metric-d">已分析 BP 数量，持续迭代行业专属模型</div>
         </div>
       </div>
@@ -391,28 +458,64 @@ export default function LandingPage() {
           <div className="lp-feat-grid lp-reveal">
             {[
               {
-                n: "01", title: "5维量化评分模型",
-                desc: <>告别「拍脑袋打分」。AI 输出<em>严谨枚举值与绝对数值</em>，JS 端执行纯数学计算，每维度有独立公式与业务逻辑，结果完全可追溯。</>,
+                n: "01",
+                title: "5维量化评分模型",
+                desc: (
+                  <>
+                    告别「拍脑袋打分」。AI 输出<em>严谨枚举值与绝对数值</em>，JS
+                    端执行纯数学计算，每维度有独立公式与业务逻辑，结果完全可追溯。
+                  </>
+                ),
               },
               {
-                n: "02", title: "声明逐条核查",
-                desc: <>针对 BP 中每条关键声明，AI 扮演<em>行业专家 + 投资专家</em>进行辩证研究，输出「诚实 / 存疑 / 夸大 / 证伪」结论，直接反映 BP 诚信度评分。</>,
+                n: "02",
+                title: "声明逐条核查",
+                desc: (
+                  <>
+                    针对 BP 中每条关键声明，AI 扮演<em>行业专家 + 投资专家</em>
+                    进行辩证研究，输出「诚实 / 存疑 / 夸大 / 证伪」结论，直接反映 BP 诚信度评分。
+                  </>
+                ),
               },
               {
-                n: "03", title: "尽调追问清单",
-                desc: <>在工作区中与 AI 对话，一句话生成<em>定制化尽调追问清单（Excel）</em>，按五大类组织，直接导出用于投后管理与尽调跟进。</>,
+                n: "03",
+                title: "尽调追问清单",
+                desc: (
+                  <>
+                    在工作区中与 AI 对话，一句话生成<em>定制化尽调追问清单（Excel）</em>
+                    ，按五大类组织，直接导出用于投后管理与尽调跟进。
+                  </>
+                ),
               },
               {
-                n: "04", title: "多 Agent 工作区",
-                desc: <>每个项目有独立工作区，支持与<em>多个专业 Agent 对话</em>——市场分析、财务模型、竞品研究、风险评估，随时调出深度分析。</>,
+                n: "04",
+                title: "多 Agent 工作区",
+                desc: (
+                  <>
+                    每个项目有独立工作区，支持与<em>多个专业 Agent 对话</em>
+                    ——市场分析、财务模型、竞品研究、风险评估，随时调出深度分析。
+                  </>
+                ),
               },
               {
-                n: "05", title: "投资备忘录生成",
-                desc: <>一键输出符合<em>机构投委会标准</em>的结构化投资备忘录（IMemo），包含项目摘要、风险矩阵、尽调结论，可直接归档或分享。</>,
+                n: "05",
+                title: "投资备忘录生成",
+                desc: (
+                  <>
+                    一键输出符合<em>机构投委会标准</em>
+                    的结构化投资备忘录（IMemo），包含项目摘要、风险矩阵、尽调结论，可直接归档或分享。
+                  </>
+                ),
               },
               {
-                n: "06", title: "Pipeline 投资流程管理",
-                desc: <>从 <em>新建 → 评估 → 尽调 → 决策 → 投资/否决</em>，完整的项目生命周期管理。支持标签、跟进日期提醒、省份地图分布可视化。</>,
+                n: "06",
+                title: "Pipeline 投资流程管理",
+                desc: (
+                  <>
+                    从 <em>新建 → 评估 → 尽调 → 决策 → 投资/否决</em>
+                    ，完整的项目生命周期管理。支持标签、跟进日期提醒、省份地图分布可视化。
+                  </>
+                ),
               },
             ].map((f) => (
               <div className="lp-feat" key={f.n}>
@@ -433,27 +536,32 @@ export default function LandingPage() {
           <div className="lp-dim5-grid lp-reveal">
             {[
               {
-                wt: "维度一", name: "时机与天花板",
+                wt: "维度一",
+                name: "时机与天花板",
                 sub: "AI 主动检索细分赛道的真实市场规模与增速，不采信 BP 自称数据，给出独立判断。",
                 formula: "市场规模 · 行业增速\n赛道成熟度",
               },
               {
-                wt: "维度二", name: "产品与壁垒",
+                wt: "维度二",
+                name: "产品与壁垒",
                 sub: "交叉比对行业真实竞品，客观评估技术成熟度与差异化壁垒深度。",
                 formula: "技术就绪度 · 竞品排名\n护城河强度",
               },
               {
-                wt: "维度三", name: "资本效率与规模效应",
+                wt: "维度三",
+                name: "资本效率与规模效应",
                 sub: "基于顶级 VC 研究框架评估赛道商业属性，早期项目同样适用。",
                 formula: "轻重资产结构 · 边际成本\n网络效应潜力",
               },
               {
-                wt: "维度四", name: "团队基因",
+                wt: "维度四",
+                name: "团队基因",
                 sub: "多因子综合评估创始团队，经验深度、行业匹配度、团队完整性缺一不可。",
                 formula: "行业经验 · 赛道匹配\n过往战绩 · 团队结构",
               },
               {
-                wt: "维度五", name: "BP 诚信度",
+                wt: "维度五",
+                name: "BP 诚信度",
                 sub: "AI 逐条核查 BP 中的关键声明，识别夸大、包装与事实性错误，量化可信程度。",
                 formula: "声明核查 · 数据溯源\n一致性验证",
               },
@@ -470,7 +578,9 @@ export default function LandingPage() {
           {/* Grade table */}
           <div className="lp-scorecard-grid lp-reveal" style={{ marginTop: 56 }}>
             <div>
-              <div className="lp-sec-tag" style={{ marginBottom: 14 }}>评级体系 · Grading</div>
+              <div className="lp-sec-tag" style={{ marginBottom: 14 }}>
+                评级体系 · Grading
+              </div>
               <table className="lp-grade-table">
                 <thead>
                   <tr>
@@ -482,26 +592,80 @@ export default function LandingPage() {
                 </thead>
                 <tbody>
                   <tr>
-                    <td><span className="lp-grade-badge lp-gb-a">A</span></td>
-                    <td><span style={{ fontFamily: "var(--mono)", fontSize: 12, color: "var(--text)", fontWeight: 600 }}>≥ 85</span></td>
+                    <td>
+                      <span className="lp-grade-badge lp-gb-a">A</span>
+                    </td>
+                    <td>
+                      <span
+                        style={{
+                          fontFamily: "var(--mono)",
+                          fontSize: 12,
+                          color: "var(--text)",
+                          fontWeight: 600,
+                        }}
+                      >
+                        ≥ 85
+                      </span>
+                    </td>
                     <td style={{ fontWeight: 700, color: "var(--green)" }}>强烈推荐 Fast Track</td>
                     <td className="lp-grade-action">24小时内约见创始人，立即启动尽调</td>
                   </tr>
                   <tr>
-                    <td><span className="lp-grade-badge lp-gb-b">B</span></td>
-                    <td><span style={{ fontFamily: "var(--mono)", fontSize: 12, color: "var(--text)", fontWeight: 600 }}>70–84</span></td>
+                    <td>
+                      <span className="lp-grade-badge lp-gb-b">B</span>
+                    </td>
+                    <td>
+                      <span
+                        style={{
+                          fontFamily: "var(--mono)",
+                          fontSize: 12,
+                          color: "var(--text)",
+                          fontWeight: 600,
+                        }}
+                      >
+                        70–84
+                      </span>
+                    </td>
                     <td style={{ fontWeight: 700, color: "var(--accent)" }}>谨慎推荐 Proceed DD</td>
                     <td className="lp-grade-action">安排面谈，验证单位经济模型</td>
                   </tr>
                   <tr>
-                    <td><span className="lp-grade-badge lp-gb-c">C</span></td>
-                    <td><span style={{ fontFamily: "var(--mono)", fontSize: 12, color: "var(--text)", fontWeight: 600 }}>60–69</span></td>
-                    <td style={{ fontWeight: 700, color: "var(--amber)" }}>观望跟踪 Keep In View</td>
+                    <td>
+                      <span className="lp-grade-badge lp-gb-c">C</span>
+                    </td>
+                    <td>
+                      <span
+                        style={{
+                          fontFamily: "var(--mono)",
+                          fontSize: 12,
+                          color: "var(--text)",
+                          fontWeight: 600,
+                        }}
+                      >
+                        60–69
+                      </span>
+                    </td>
+                    <td style={{ fontWeight: 700, color: "var(--amber)" }}>
+                      观望跟踪 Keep In View
+                    </td>
                     <td className="lp-grade-action">季度跟踪，关注关键里程碑达成</td>
                   </tr>
                   <tr>
-                    <td><span className="lp-grade-badge lp-gb-d">D</span></td>
-                    <td><span style={{ fontFamily: "var(--mono)", fontSize: 12, color: "var(--text)", fontWeight: 600 }}>&lt; 60</span></td>
+                    <td>
+                      <span className="lp-grade-badge lp-gb-d">D</span>
+                    </td>
+                    <td>
+                      <span
+                        style={{
+                          fontFamily: "var(--mono)",
+                          fontSize: 12,
+                          color: "var(--text)",
+                          fontWeight: 600,
+                        }}
+                      >
+                        &lt; 60
+                      </span>
+                    </td>
                     <td style={{ fontWeight: 700, color: "var(--red)" }}>建议放弃 Reject</td>
                     <td className="lp-grade-action">归档并标注否决原因，供投委会复盘</td>
                   </tr>
@@ -509,7 +673,9 @@ export default function LandingPage() {
               </table>
             </div>
             <div>
-              <div className="lp-sec-tag" style={{ marginBottom: 14 }}>为什么不一样 · Why It's Different</div>
+              <div className="lp-sec-tag" style={{ marginBottom: 14 }}>
+                为什么不一样 · Why It's Different
+              </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
                 {[
                   {
@@ -542,13 +708,20 @@ export default function LandingPage() {
           <div>
             <div className="lp-sec-tag">多 Agent 工作区 · Multi-Agent Workspace</div>
             <h2 className="lp-ws-h2">
-              一个投资人，<br />
+              一个投资人，
+              <br />
               一支<em>六人专家团</em>，<span className="gold">7×24</span> 待命
             </h2>
           </div>
           <p className="lp-ws-lead">
-            过去，组建一支覆盖市场、财务、竞品、风险、人才、政策的投研团队，至少需要一支基金 6 个月的 HR 周期。<br />
-            现在，注册即拥有。<strong style={{ color: "var(--text)" }}>每一位 Agent 都被训练成该领域的资深分析师</strong>——不是泛用 ChatBot，而是带着方法论与提问框架的同事。
+            过去，组建一支覆盖市场、财务、竞品、风险、人才、政策的投研团队，至少需要一支基金 6
+            个月的 HR 周期。
+            <br />
+            现在，注册即拥有。
+            <strong style={{ color: "var(--text)" }}>
+              每一位 Agent 都被训练成该领域的资深分析师
+            </strong>
+            ——不是泛用 ChatBot，而是带着方法论与提问框架的同事。
           </p>
         </div>
 
@@ -557,32 +730,50 @@ export default function LandingPage() {
           <div className="lp-agent-roster">
             {[
               {
-                avaCls: "lp-ava-mkt", avaText: "市", name: "市场分析师", role: "Market · TAM/SAM/SOM",
+                avaCls: "lp-ava-mkt",
+                avaText: "市",
+                name: "市场分析师",
+                role: "Market · TAM/SAM/SOM",
                 desc: "替你拆解赛道真实规模、增速与拐点信号，不采信 BP 自报数据，主动检索行业一手报告交叉验证。",
                 skills: ["TAM 拆解", "CAGR", "渗透率曲线"],
               },
               {
-                avaCls: "lp-ava-fin", avaText: "财", name: "财务建模师", role: "Finance · Unit Economics",
+                avaCls: "lp-ava-fin",
+                avaText: "财",
+                name: "财务建模师",
+                role: "Finance · Unit Economics",
                 desc: "CAC / LTV / Payback / Burn Rate 一把抓，DCF、可比公司、近期一二级交易，估值合理性当场验算。",
                 skills: ["单位经济", "估值模型", "现金流"],
               },
               {
-                avaCls: "lp-ava-cmp", avaText: "竞", name: "竞品研究员", role: "Competition · Landscape",
+                avaCls: "lp-ava-cmp",
+                avaText: "竞",
+                name: "竞品研究员",
+                role: "Competition · Landscape",
                 desc: "行业 Top 10 横向对比、定位地图、护城河拆解。一秒告诉你「这家凭什么活下来，又凭什么跑出来」。",
                 skills: ["定位地图", "护城河", "差异化"],
               },
               {
-                avaCls: "lp-ava-risk", avaText: "险", name: "风险评估师", role: "Risk · Red Team",
+                avaCls: "lp-ava-risk",
+                avaText: "险",
+                name: "风险评估师",
+                role: "Risk · Red Team",
                 desc: "站在「不投」的角度反向论证：政策风险、技术替代、执行偏差、客户集中度，把投委会的犀利提问提前预演。",
                 skills: ["红队推演", "压力测试", "退出风险"],
               },
               {
-                avaCls: "lp-ava-team", avaText: "人", name: "团队背调员", role: "People · Founder DD",
+                avaCls: "lp-ava-team",
+                avaText: "人",
+                name: "团队背调员",
+                role: "People · Founder DD",
                 desc: "创始人履历核实、过往项目战绩、团队结构合理性。Reference Check 问题清单一键生成，照着问即可。",
                 skills: ["履历核实", "Ref Check", "团队匹配"],
               },
               {
-                avaCls: "lp-ava-pol", avaText: "策", name: "政策研究员", role: "Policy · Regulation",
+                avaCls: "lp-ava-pol",
+                avaText: "策",
+                name: "政策研究员",
+                role: "Policy · Regulation",
                 desc: "紧跟产业政策、地方补贴、监管动向。「这个赛道的政策红利还能吃几年？」一句话给你答案与依据。",
                 skills: ["国家政策", "补贴拆解", "监管追踪"],
               },
@@ -598,7 +789,9 @@ export default function LandingPage() {
                 <div className="lp-agent-desc">{a.desc}</div>
                 <div className="lp-agent-skills">
                   {a.skills.map((s) => (
-                    <span className="lp-skill-chip" key={s}>{s}</span>
+                    <span className="lp-skill-chip" key={s}>
+                      {s}
+                    </span>
                   ))}
                 </div>
               </div>
@@ -614,20 +807,37 @@ export default function LandingPage() {
               <span className="lp-chrome-label">工作区 · 某智能制造 SaaS · 实时对话</span>
             </div>
             <div className="lp-ws-tabs">
-              <div className="lp-ws-tab"><span className="dot" />分析报告</div>
-              <div className="lp-ws-tab active"><span className="dot" />工作区</div>
-              <div className="lp-ws-tab"><span className="dot" />尽调问卷</div>
-              <div className="lp-ws-tab"><span className="dot" />IMemo</div>
+              <div className="lp-ws-tab">
+                <span className="dot" />
+                分析报告
+              </div>
+              <div className="lp-ws-tab active">
+                <span className="dot" />
+                工作区
+              </div>
+              <div className="lp-ws-tab">
+                <span className="dot" />
+                尽调问卷
+              </div>
+              <div className="lp-ws-tab">
+                <span className="dot" />
+                IMemo
+              </div>
             </div>
             <div className="lp-ws-body">
               <div className="lp-msg user">
-                <div className="lp-msg-ava" style={{ background: "var(--text)" }}>我</div>
+                <div className="lp-msg-ava" style={{ background: "var(--text)" }}>
+                  我
+                </div>
                 <div className="lp-msg-body">
                   <div className="lp-msg-meta">
                     <span className="lp-msg-name">投资人</span>
                     <span className="lp-msg-role">12:04</span>
                   </div>
-                  <div className="lp-msg-text">这家 BP 自称 TAM 5,000 亿，请帮我交叉验证下，再算一下他们 ARR 跑到 1 亿对应的渗透率。</div>
+                  <div className="lp-msg-text">
+                    这家 BP 自称 TAM 5,000 亿，请帮我交叉验证下，再算一下他们 ARR 跑到 1
+                    亿对应的渗透率。
+                  </div>
                 </div>
               </div>
 
@@ -639,9 +849,13 @@ export default function LandingPage() {
                     <span className="lp-msg-role">已检索 14 份报告</span>
                   </div>
                   <div className="lp-msg-text">
-                    已交叉信通院、IDC、灼识 3 份报告：<span className="lp-hl">真实细分 TAM 约 200 亿</span>，CAGR 18%。BP 把上游设备市场一起算进来了，存在显著夸大。
+                    已交叉信通院、IDC、灼识 3 份报告：
+                    <span className="lp-hl">真实细分 TAM 约 200 亿</span>，CAGR 18%。BP
+                    把上游设备市场一起算进来了，存在显著夸大。
                   </div>
-                  <div className="lp-msg-callout">建议在 IMemo 中以「细分 SaaS 软件市场 ≈ 200 亿」为基准重述</div>
+                  <div className="lp-msg-callout">
+                    建议在 IMemo 中以「细分 SaaS 软件市场 ≈ 200 亿」为基准重述
+                  </div>
                 </div>
               </div>
 
@@ -653,7 +867,9 @@ export default function LandingPage() {
                     <span className="lp-msg-role">已建模</span>
                   </div>
                   <div className="lp-msg-text">
-                    ARR 1 亿对应 <span className="lp-hl">0.5% 渗透率</span>。同赛道头部 Yuanfudao Cloud 当前渗透 1.2%，目标在合理射程内。CAC ¥48k / LTV ¥210k，Payback 14 个月——健康。
+                    ARR 1 亿对应 <span className="lp-hl">0.5% 渗透率</span>。同赛道头部 Yuanfudao
+                    Cloud 当前渗透 1.2%，目标在合理射程内。CAC ¥48k / LTV ¥210k，Payback 14
+                    个月——健康。
                   </div>
                 </div>
               </div>
@@ -665,13 +881,20 @@ export default function LandingPage() {
                     <span className="lp-msg-name">风险评估师</span>
                     <span className="lp-msg-role">红队视角</span>
                   </div>
-                  <div className="lp-msg-text">两点反向意见：①前 3 大客户占收入 62%，集中度过高；②专利尚未授权，被竞品规避路径明确。建议尽调重点核查。</div>
+                  <div className="lp-msg-text">
+                    两点反向意见：①前 3 大客户占收入
+                    62%，集中度过高；②专利尚未授权，被竞品规避路径明确。建议尽调重点核查。
+                  </div>
                 </div>
               </div>
             </div>
             <div className="lp-ws-typing">
               <span>竞品研究员正在分析定位地图</span>
-              <span className="lp-typing-dots"><span /><span /><span /></span>
+              <span className="lp-typing-dots">
+                <span />
+                <span />
+                <span />
+              </span>
             </div>
             <div className="lp-ws-input">
               <div className="lp-ws-input-box">@团队背调员 帮我查一下创始人之前在阿里的 P 序…</div>
@@ -684,15 +907,18 @@ export default function LandingPage() {
         <div className="lp-ws-benefits lp-reveal">
           {[
             {
-              num: "/ 01 · 协同", h: "多视角同时落桌，决策不再单线程",
+              num: "/ 01 · 协同",
+              h: "多视角同时落桌，决策不再单线程",
               d: "同一份 BP，6 位专家在你眼前各抒己见。每个 Agent 都能 @ 召唤、互相引用、共享上下文——投委会的真实辩论提前 7 天发生。",
             },
             {
-              num: "/ 02 · 私域", h: "为每个项目建独立工作区，记忆永不丢失",
+              num: "/ 02 · 私域",
+              h: "为每个项目建独立工作区，记忆永不丢失",
               d: "所有对话、附件、链接、纪要按项目隔离存档，无缝衔接 Pipeline 状态。三个月后回看，Agent 依然记得你当初的判断与质疑。",
             },
             {
-              num: "/ 03 · 复利", h: "从「单打独斗」到「持续积累的认知资产」",
+              num: "/ 03 · 复利",
+              h: "从「单打独斗」到「持续积累的认知资产」",
               d: "Agent 在每个项目中学习你的偏好与判断风格，越用越懂你。半年后，它推送的 Insight 已经按你的标准筛过一轮。",
             },
           ].map((b) => (
@@ -714,12 +940,12 @@ export default function LandingPage() {
             <div className="lp-pipeline-line" />
             <div className="lp-pipeline-steps">
               {[
-                { n: "01", label: "新建",       desc: "BP 上传完成，自动创建项目",   done: true },
-                { n: "02", label: "已评估",     desc: "查阅报告后自动标记",         done: true },
-                { n: "03", label: "待尽调",     desc: "标记值得深入的项目",         done: true },
-                { n: "04", label: "尽调中",     desc: "AI 生成问卷，逐条填写",      done: false },
-                { n: "05", label: "尽调完成",   desc: "评分自动校正，IMemo 生成",   done: false },
-                { n: "06", label: "已决策",     desc: "投委会审议结论记录",         done: false },
+                { n: "01", label: "新建", desc: "BP 上传完成，自动创建项目", done: true },
+                { n: "02", label: "已评估", desc: "查阅报告后自动标记", done: true },
+                { n: "03", label: "待尽调", desc: "标记值得深入的项目", done: true },
+                { n: "04", label: "尽调中", desc: "AI 生成问卷，逐条填写", done: false },
+                { n: "05", label: "尽调完成", desc: "评分自动校正，IMemo 生成", done: false },
+                { n: "06", label: "已决策", desc: "投委会审议结论记录", done: false },
                 { n: "07", label: "已投资 / 已否决", desc: "归档，供日后复盘参考", done: false },
               ].map((s) => (
                 <div className="lp-pipe-step" key={s.n}>
@@ -736,13 +962,34 @@ export default function LandingPage() {
           {/* Extra features row */}
           <div
             className="lp-reveal"
-            style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 20, marginTop: 52 }}
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(4,1fr)",
+              gap: 20,
+              marginTop: 52,
+            }}
           >
             {[
-              { tag: "SHARE", title: "报告分享",     desc: "生成 3 天有效分享链接，报告可对外分享，附邀请码追踪。" },
-              { tag: "GEO",   title: "地理分布看板", desc: "中国省份地图可视化，一眼看清项目地理集中度与覆盖范围。" },
-              { tag: "STATS", title: "个人数据看板", desc: "6个月趋势折线图、评级分布饼图、赛道分布，量化你的投资视野。" },
-              { tag: "RANK",  title: "排行榜",       desc: "与其他投资人比较分析数量与平均评分，发现行业热度趋势。" },
+              {
+                tag: "SHARE",
+                title: "报告分享",
+                desc: "生成 3 天有效分享链接，报告可对外分享，附邀请码追踪。",
+              },
+              {
+                tag: "GEO",
+                title: "地理分布看板",
+                desc: "中国省份地图可视化，一眼看清项目地理集中度与覆盖范围。",
+              },
+              {
+                tag: "STATS",
+                title: "个人数据看板",
+                desc: "6个月趋势折线图、评级分布饼图、赛道分布，量化你的投资视野。",
+              },
+              {
+                tag: "RANK",
+                title: "排行榜",
+                desc: "与其他投资人比较分析数量与平均评分，发现行业热度趋势。",
+              },
             ].map((c) => (
               <div className="lp-extra-card" key={c.tag}>
                 <div className="lp-extra-tag">{c.tag}</div>
@@ -762,24 +1009,30 @@ export default function LandingPage() {
           <div className="lp-workflow-grid lp-reveal">
             {[
               {
-                n: "01", title: "注册 · 上传 BP",
+                n: "01",
+                title: "注册 · 上传 BP",
                 desc: "支持 PDF/DOCX，绑定邮箱后即可上传。支持文字版与扫描版 PDF，最大提取 30,000 字符。",
               },
               {
-                n: "02", title: "AI 深度解析",
+                n: "02",
+                title: "AI 深度解析",
                 desc: "顶级大模型扮演行业专家 + 投资专家，逐条核查声明真实性，输出 5 维度量化数据，3 分钟完成。支持多模型选择。",
               },
               {
-                n: "03", title: "获取评分报告",
+                n: "03",
+                title: "获取评分报告",
                 desc: "查看量化评分、声明核查结果、评级（A/B/C/D）与行动建议。可一键启动尽调问卷深入评估。",
               },
               {
-                n: "04", title: "Pipeline 跟进",
+                n: "04",
+                title: "Pipeline 跟进",
                 desc: "项目自动进入 Pipeline，生成 IMemo，标注阶段与标签，设置跟进日期，与团队分享报告。",
               },
             ].map((s) => (
               <div className="lp-wf-step" key={s.n}>
-                <div className="lp-wf-num-wrap"><span className="lp-wf-num">{s.n}</span></div>
+                <div className="lp-wf-num-wrap">
+                  <span className="lp-wf-num">{s.n}</span>
+                </div>
                 <div className="lp-wf-title">{s.title}</div>
                 <div className="lp-wf-desc">{s.desc}</div>
               </div>
@@ -808,7 +1061,11 @@ export default function LandingPage() {
                 <li>基础模型（标准速度）</li>
                 <li>7 天历史记录</li>
               </ul>
-              <button className="lp-btn-outline" style={{ width: "100%", padding: 11 }} onClick={() => navigate("/login")}>
+              <button
+                className="lp-btn-outline"
+                style={{ width: "100%", padding: 11 }}
+                onClick={() => navigate("/login")}
+              >
                 免费注册
               </button>
             </div>
@@ -822,7 +1079,9 @@ export default function LandingPage() {
               <div className="lp-plan-hr" />
               <ul className="lp-plan-features">
                 <li>不限量 BP 分析</li>
-                <li><strong>高级模型可选</strong>（更强推理能力）</li>
+                <li>
+                  <strong>高级模型可选</strong>（更强推理能力）
+                </li>
                 <li>AI 尽调问卷（DD）+ 校正评分</li>
                 <li>多 Agent 工作区</li>
                 <li>投资备忘录（IMemo）自动生成</li>
@@ -830,7 +1089,11 @@ export default function LandingPage() {
                 <li>报告分享链接</li>
                 <li>历史记录永久保存</li>
               </ul>
-              <button className="lp-btn-primary" style={{ width: "100%", padding: 11 }} onClick={() => navigate("/login")}>
+              <button
+                className="lp-btn-primary"
+                style={{ width: "100%", padding: 11 }}
+                onClick={() => navigate("/login")}
+              >
                 开始使用
               </button>
             </div>
@@ -843,7 +1106,9 @@ export default function LandingPage() {
               <div className="lp-plan-hr" />
               <ul className="lp-plan-features">
                 <li>Professional 全部功能</li>
-                <li><strong>顶级旗舰模型</strong>（最高精度）</li>
+                <li>
+                  <strong>顶级旗舰模型</strong>（最高精度）
+                </li>
                 <li>私有化部署选项</li>
                 <li>自定义评估维度与权重</li>
                 <li>API 接口集成</li>
@@ -866,7 +1131,9 @@ export default function LandingPage() {
           <div className="lp-cta-h2">让 AI 帮你筛掉 90% 的无效 BP</div>
           <div className="lp-cta-sub">专注精力在真正值得深入研究的项目上</div>
           <div className="lp-cta-actions">
-            <button className="lp-btn-white" onClick={() => navigate("/login")}>免费注册账号</button>
+            <button className="lp-btn-white" onClick={() => navigate("/login")}>
+              免费注册账号
+            </button>
             <button className="lp-btn-ghost-white">预约产品演示</button>
           </div>
         </div>
@@ -881,39 +1148,69 @@ export default function LandingPage() {
               BP过滤机
             </div>
             <div className="lp-footer-tag">
-              一级市场投资人的 AI Workspace。把 BP 分析、尽调流程与投资 Paperwork 交给 AI，让你专注于思考与发掘好项目。
+              一级市场投资人的 AI Workspace。把 BP 分析、尽调流程与投资 Paperwork 交给
+              AI，让你专注于思考与发掘好项目。
             </div>
           </div>
           <div className="lp-footer-col">
             <h4>产品</h4>
             <ul>
-              <li><a href="#features">核心功能</a></li>
-              <li><a href="#dimensions">5维评分体系</a></li>
-              <li><a href="#pipeline">投资流程管理</a></li>
-              <li><a href="#pricing">定价方案</a></li>
+              <li>
+                <a href="#features">核心功能</a>
+              </li>
+              <li>
+                <a href="#dimensions">5维评分体系</a>
+              </li>
+              <li>
+                <a href="#pipeline">投资流程管理</a>
+              </li>
+              <li>
+                <a href="#pricing">定价方案</a>
+              </li>
             </ul>
           </div>
           <div className="lp-footer-col">
             <h4>公司</h4>
             <ul>
-              <li><a href="/about">关于我们</a></li>
-              <li><a href="/privacy">隐私政策</a></li>
-              <li><a href="/terms">服务条款</a></li>
-              <li><a href="mailto:hello@garbagebpfilter.cn">联系我们</a></li>
+              <li>
+                <a href="/about">关于我们</a>
+              </li>
+              <li>
+                <a href="/privacy">隐私政策</a>
+              </li>
+              <li>
+                <a href="/terms">服务条款</a>
+              </li>
+              <li>
+                <a href="mailto:hello@garbagebpfilter.cn">联系我们</a>
+              </li>
             </ul>
           </div>
           <div className="lp-footer-col">
             <h4>资源</h4>
             <ul>
-              <li><a href="/demo">演示报告</a></li>
-              <li><a href="#pipeline">使用文档</a></li>
-              <li><a href="#features">更新日志</a></li>
-              <li><a href="/app/leaderboard">排行榜</a></li>
+              <li>
+                <a href="/forum">投资人论坛</a>
+              </li>
+              <li>
+                <a href="/demo">演示报告</a>
+              </li>
+              <li>
+                <a href="#pipeline">使用文档</a>
+              </li>
+              <li>
+                <a href="#features">更新日志</a>
+              </li>
+              <li>
+                <a href="/app/leaderboard">排行榜</a>
+              </li>
             </ul>
           </div>
         </div>
         <div className="lp-footer-bottom">
-          <div className="lp-footer-copy">© 2026 BP过滤机 · garbagebpfilter.cn · All rights reserved</div>
+          <div className="lp-footer-copy">
+            © 2026 BP过滤机 · garbagebpfilter.cn · All rights reserved
+          </div>
           <div className="lp-footer-badges">
             <span className="lp-fbadge">多模型支持</span>
             <span className="lp-fbadge">数据安全</span>

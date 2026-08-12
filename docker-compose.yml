@@ -43,6 +43,7 @@ services:
         CN_MIRROR: ${CN_MIRROR:-0}
         NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmjs.org}
         PIP_INDEX: ${PIP_INDEX:-https://pypi.org/simple}
+        SKIP_CHROMIUM: ${SKIP_CHROMIUM:-0}
     container_name: bp-filter-app
     logging: *default-logging
     restart: always

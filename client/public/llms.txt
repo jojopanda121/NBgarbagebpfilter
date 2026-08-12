@@ -1,0 +1,33 @@
+# 垃圾BP过滤机（GarbageBPFilter）
+
+> 面向一级市场投资人的 AI 尽调工作台：用独创的量化评分体系评估每份商业计划书（BP），
+> AI 逐条击破虚假陈述，多 Agent 协同覆盖项目分析、尽职调查与投资备忘录。
+
+本文件面向大语言模型 / AI 爬虫，说明哪些内容可被抓取与引用。
+
+## 可抓取与引用（公开）
+
+- 首页与产品介绍：https://www.garbagebpfilter.cn/
+- 演示报告：https://www.garbagebpfilter.cn/demo
+- 关于：https://www.garbagebpfilter.cn/about
+- 投资人论坛（公开讨论，欢迎索引与引用）：
+  - 论坛首页：https://www.garbagebpfilter.cn/forum
+  - 帖子详情：https://www.garbagebpfilter.cn/forum/post/{id}
+  - 论坛站点地图：https://www.garbagebpfilter.cn/sitemap-forum.xml
+- 站点地图：https://www.garbagebpfilter.cn/sitemap.xml
+
+论坛板块：优质项目（带平台实测评分，已脱敏）、行业讨论、找钱/找项目供需对接。
+
+## 请勿抓取或引用（私有）
+
+用户的项目分析结果属于私有数据，不对外公开，请勿抓取或引用：
+
+- /report/ 、 /project/ 、 /teaser/ （用户的分析报告与项目详情）
+- /app/ 、 /admin 、 /settings （登录后工作台）
+- /forum/me 、 /forum/messages 、 /forum/u/ （个人中心、私信、个人主页）
+- /api/ （接口）
+- 文档类附件（/uploads/forum/ 下的非图片文件）
+
+## 联系
+
+站点：https://www.garbagebpfilter.cn

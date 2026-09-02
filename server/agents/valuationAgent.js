@@ -19,6 +19,13 @@ function getIndustryBenchmarks(industry, stage) {
   }
 }
 
+/** 金额字段渲染：0 表示"BP 明确说没有"，null/缺失表示"BP 压根没提" */
+function _amountOrUndisclosed(v) {
+  const n = Number(v);
+  if (v === null || v === undefined || v === "" || !Number.isFinite(n)) return "未披露";
+  return `${n} 亿元`;
+}
+
 class ValuationAgent extends BaseAgent {
   constructor() {
     super({ name: "valuation", systemPrompt: PROMPT, maxTokens: 14000, useSearch: true });
@@ -47,8 +54,10 @@ class ValuationAgent extends BaseAgent {
       `【分析对象】公司：${extractedData?.company_name || "未知"}`,
       `赛道：${industry}，融资阶段：${stage}`,
       `\n\n【估值相关数据】`,
-      `- BP 声称估值：${extractedData?.BP_Valuation || 0} 亿元`,
-      `- BP 声称收入/ARR：${extractedData?.BP_Revenue || 0} 亿元`,
+      // 未披露必须显式写成"未披露"：渲染成 0 会被模型读成"估值/收入为零"，
+      // 进而自己补一个数出来当 BP 自述口径（下方 Harness 分支也依赖这个区分）
+      `- BP 声称估值：${_amountOrUndisclosed(extractedData?.BP_Valuation)}`,
+      `- BP 声称收入/ARR：${_amountOrUndisclosed(extractedData?.BP_Revenue)}`,
       `- TAM：${extractedData?.TAM_Million_RMB || 0} 百万元`,
       `\n\n【估值温度计 Harness】`,
       `请优先使用公开可得的上市公司财报、交易所公告、融资新闻和公开网页，寻找同赛道上市公司或可比交易的 PS、PE、EV/EBITDA、收入、市值/估值。本系统没有同花顺/iFinD 等专业数据库直连。`,

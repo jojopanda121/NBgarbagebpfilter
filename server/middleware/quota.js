@@ -46,6 +46,13 @@ function checkQuota(req, res, next) {
   // 查询用户额度
   const quota = db.prepare("SELECT free_quota, paid_quota FROM quotas WHERE user_id = ?").get(userId);
 
+  // BYOK：用户自带 API Key 时算力自付，**只豁免余额检查**。
+  // 上面的邮箱绑定是账号级的反滥用闸门，与计费无关，任何路径都不能绕过。
+  if (req.skipQuotaBalance) {
+    req.quota = quota || { free_quota: 0, paid_quota: 0 };
+    return next();
+  }
+
   // 检查是否有剩余额度
   if (!quota || (quota.free_quota <= 0 && quota.paid_quota <= 0)) {
     return res.status(403).json({

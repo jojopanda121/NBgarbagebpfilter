@@ -55,19 +55,34 @@ SKIP_CHROMIUM=1
 
 ### ③ `.env` 生产必填项（缺任一 → app 启动即 `exit(1)`、网站 502）
 
-| 变量              | 规则                                                                 |
-| ----------------- | -------------------------------------------------------------------- |
-| `MINIMAX_API_KEY` | 非空                                                                 |
-| `JWT_SECRET`      | ≥32 字符，无占位文案；`openssl rand -hex 32`                         |
-| `ALLOWED_ORIGINS` | 非空、**不能是 `*`**；如 `https://www.你的域名`                      |
-| `PII_SALT`        | **≥16 字符**（安全加固后新增，老 .env 常缺）；`openssl rand -hex 24` |
+| 变量                                   | 规则                                                                                                                            |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `DEEPSEEK_API_KEY`（或 `LLM_API_KEY`） | 非空。**⚠️ 本项已由 `MINIMAX_API_KEY` 更名**：LLM 后端已全量切到 DeepSeek，老 `.env` 只有 MiniMax 的 key 会直接 `exit(1)` → 502 |
+| `JWT_SECRET`                           | ≥32 字符，无占位文案；`openssl rand -hex 32`                                                                                    |
+| `ALLOWED_ORIGINS`                      | 非空、**不能是 `*`**；如 `https://www.你的域名`                                                                                 |
+| `PII_SALT`                             | **≥16 字符**（安全加固后新增，老 .env 常缺）；`openssl rand -hex 24`                                                            |
+
+强烈建议同时配置（不配不会崩，但功能会缺）：
+
+| 变量             | 不配的后果                                                                                    |
+| ---------------- | --------------------------------------------------------------------------------------------- |
+| `BOCHA_API_KEY`  | 联网检索全程返回空 → 任何声明都拿不到 verified 证据，**诚信度对低覆盖的真公司会被系统性压低** |
+| `ENCRYPTION_KEY` | 「我的模型」(用户自带 API Key) 整体不可用；创始人姓名加密退化为 hash。`openssl rand -hex 32`  |
 
 一把生成：
 
 ```bash
 echo "JWT_SECRET=$(openssl rand -hex 32)"
 echo "PII_SALT=$(openssl rand -hex 24)"
+echo "ENCRYPTION_KEY=$(openssl rand -hex 32)"
 ```
+
+> **从 MiniMax 版本升级过来的机器**，`.env` 里请把 `MINIMAX_API_KEY=` 那行换成
+> `DEEPSEEK_API_KEY=`（申请：https://platform.deepseek.com/api_keys ）。
+> 旧行留着无害，但不会被读取。
+>
+> 换主力厂商不需要改代码：`LLM_PROVIDER` + `LLM_API_KEY` + `LLM_MODEL` 三个变量即可
+> 在 deepseek / anthropic / openai / gemini / minimax / moonshot / qwen / zhipu 之间切换。
 
 ---
 
@@ -122,18 +137,20 @@ curl -s http://127.0.0.1:3001/api/health; echo   # 期望 {"status":"ok","versio
 
 ## 3. 踩坑速查表（出现 ↓ 现象 → 照 ↓ 处理）
 
-| 现象 / 报错                                                  | 原因                                         | 处理                                                                                                                                                       |
-| ------------------------------------------------------------ | -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 网站 **502 Bad Gateway**                                     | app 崩溃没监听 3001（宿主机 nginx 转不过去） | `docker logs bp-filter-app` 看最后的 `[FATAL]`；按下面对症修，app 起来即恢复                                                                               |
-| `[FATAL] ... PII_SALT（≥ 16 字符）`                          | 老 `.env` 缺 `PII_SALT`                      | `echo "PII_SALT=$(openssl rand -hex 24)" >> .env` 后 `$DC up -d --force-recreate app`                                                                      |
-| `[FATAL] ... JWT_SECRET / ALLOWED_ORIGINS / MINIMAX_API_KEY` | 必填项缺失/不合规                            | 补 `.env`（见 §1③）后 `$DC up -d --force-recreate app`                                                                                                     |
-| `container name "/bp-filter-app" is already in use`          | 旧同名容器占用                               | `docker rm -f bp-filter-app && $DC up -d`（app 无状态，删容器不丢数据）                                                                                    |
-| 构建卡在 `npm ci` 一动不动（前端阶段）                       | puppeteer 在下 Chromium，国内被墙            | 确认 `.env` 有 `SKIP_CHROMIUM=1`，重新 `$DC build`                                                                                                         |
-| `COPY ... destination must be a directory and end with /`    | 经典构建器对 `COPY *.py .` 严格              | 新版仓库已修为 `COPY *.py ./`；若仍遇到，`git pull` 取最新                                                                                                 |
-| `npm ci ... package-lock.json ... Missing: xxx`              | lock 与 package.json 不同步                  | 新版仓库已同步；临时修：`docker run --rm -v "$PWD/client":/w -w /w node:20-slim npm install --package-lock-only --registry=https://registry.npmmirror.com` |
-| 构建很慢、且无进度条                                         | 经典构建器（没 buildx）                      | 见 §6 选装 buildx；另：只改源码不改依赖时，下次构建会命中缓存快很多                                                                                        |
-| `permission denied ... docker.sock`                          | 当前不是 root                                | `sudo -i` 切 root 再操作                                                                                                                                   |
-| `not a git repository` / `No such file`                      | 不在项目目录或掉回 ubuntu 用户               | `sudo -i; cd /root/NBgarbagebpfilter`（看提示符是不是 `root@...#`）                                                                                        |
+| 现象 / 报错                                                   | 原因                                         | 处理                                                                                                                                                       |
+| ------------------------------------------------------------- | -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 网站 **502 Bad Gateway**                                      | app 崩溃没监听 3001（宿主机 nginx 转不过去） | `docker logs bp-filter-app` 看最后的 `[FATAL]`；按下面对症修，app 起来即恢复                                                                               |
+| `[FATAL] ... PII_SALT（≥ 16 字符）`                           | 老 `.env` 缺 `PII_SALT`                      | `echo "PII_SALT=$(openssl rand -hex 24)" >> .env` 后 `$DC up -d --force-recreate app`                                                                      |
+| `[FATAL] ... JWT_SECRET / ALLOWED_ORIGINS / LLM_API_KEY`      | 必填项缺失/不合规                            | 补 `.env`（见 §1③）后 `$DC up -d --force-recreate app`                                                                                                     |
+| `[FATAL] 生产环境必须设置 LLM_API_KEY（或 DEEPSEEK_API_KEY）` | 老 `.env` 里还是 `MINIMAX_API_KEY`           | 改成 `DEEPSEEK_API_KEY=...` 后 `$DC up -d --force-recreate app`                                                                                            |
+| 用户反馈「自带模型」入口不出现 / 提示未配置加密密钥           | `.env` 缺 `ENCRYPTION_KEY`                   | `echo "ENCRYPTION_KEY=$(openssl rand -hex 32)" >> .env` 后重建 app；**注意该密钥一旦更换，已保存的用户 API Key 全部失效需重填**                            |
+| `container name "/bp-filter-app" is already in use`           | 旧同名容器占用                               | `docker rm -f bp-filter-app && $DC up -d`（app 无状态，删容器不丢数据）                                                                                    |
+| 构建卡在 `npm ci` 一动不动（前端阶段）                        | puppeteer 在下 Chromium，国内被墙            | 确认 `.env` 有 `SKIP_CHROMIUM=1`，重新 `$DC build`                                                                                                         |
+| `COPY ... destination must be a directory and end with /`     | 经典构建器对 `COPY *.py .` 严格              | 新版仓库已修为 `COPY *.py ./`；若仍遇到，`git pull` 取最新                                                                                                 |
+| `npm ci ... package-lock.json ... Missing: xxx`               | lock 与 package.json 不同步                  | 新版仓库已同步；临时修：`docker run --rm -v "$PWD/client":/w -w /w node:20-slim npm install --package-lock-only --registry=https://registry.npmmirror.com` |
+| 构建很慢、且无进度条                                          | 经典构建器（没 buildx）                      | 见 §6 选装 buildx；另：只改源码不改依赖时，下次构建会命中缓存快很多                                                                                        |
+| `permission denied ... docker.sock`                           | 当前不是 root                                | `sudo -i` 切 root 再操作                                                                                                                                   |
+| `not a git repository` / `No such file`                       | 不在项目目录或掉回 ubuntu 用户               | `sudo -i; cd /root/NBgarbagebpfilter`（看提示符是不是 `root@...#`）                                                                                        |
 
 ---
 

@@ -4,7 +4,7 @@
 // ============================================================
 
 const pLimit = require("p-limit");
-const { callLLM, callLLMWithThinking, callLLMWithSearch, getModelName } = require("./llmService");
+const { callLLM, callLLMWithThinking, callLLMWithSearch, getModelName, inputBudgetChars } = require("./llmService");
 const { extractJson, extractJsonArray, extractPartialResult, ensureStringArray } = require("../utils/jsonParser");
 const { scoreProject, analyzeIntegrity } = require("../scoring");
 const { runWebSearch, formatSearchContext } = require("./webSearchService");
@@ -687,7 +687,15 @@ function buildVerdictResponse(scoringResult, structuralResult, validatedData, di
 async function extractBPData(bpText, onProgress) {
   // DeepSeek V4 是 1M token 上下文，30000 字是 MiniMax 时代的历史包袱。
   // 这是全局天花板：超出部分对整条流水线永久不可见。
-  const maxChars = config.bpExtractionMaxChars;
+  //
+  // 但天花板不能只看配置：用户自带的模型可能只有 32K 上下文，照 20 万字符
+  // 发过去是必然 400（整份分析直接失败）。所以取"配置上限"和"当前模型
+  // 真正吃得下的输入预算"两者的较小值，宁可截断也要跑完。
+  const modelBudget = inputBudgetChars(8192, { taskHint: "bp_extraction" });
+  const maxChars = Math.min(config.bpExtractionMaxChars, modelBudget);
+  if (modelBudget < config.bpExtractionMaxChars && bpText.length > modelBudget) {
+    console.warn(`[Pipeline] 当前模型上下文有限，BP 原文按 ${modelBudget} 字符截断（原长 ${bpText.length}）`);
+  }
   const truncatedText = bpText.length > maxChars
     ? bpText.slice(0, maxChars) + "\n...(文本已截断，共" + bpText.length + "字符)"
     : bpText;
@@ -785,25 +793,50 @@ function calculateScoring(validatedData, claimVerdicts, onProgress, industryCate
 /**
  * Step 3: 构建估值对比数据
  */
+/** BP 明确披露的正数金额；null/0/非数字一律视为"没这个数" */
+function _disclosedAmount(v) {
+  const n = Number(v);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
 function buildValuationComparison(validatedData, extractedData, scoringResult) {
+  // 估值温度计成立的前提是 BP **自己写了**估值和收入。Agent A 对未披露字段必须
+  // 回 null（见 AGENT_A_PROMPT），但模型仍可能推断出一个数——一旦放行，前端会把
+  // 凭空算出的"溢价 +150%"当成 BP 自述倍数展示，深度尽调据此开出"估值与收入严重
+  // 倒挂"的红旗，工作区的砍价结论也会整条建在这个假数字上。所以这里以
+  // extractedData 为准做硬闸门：没有自述数字，就如实说"算不了"。
+  const bpValuation = _disclosedAmount(extractedData.BP_Valuation);
+  const bpRevenue = _disclosedAmount(extractedData.BP_Revenue);
+
+  if (bpValuation === null || bpRevenue === null) {
+    const missing = [
+      bpValuation === null ? "估值" : null,
+      bpRevenue === null ? "收入/ARR" : null,
+    ].filter(Boolean).join("与");
+    return {
+      bp_multiple: 0,
+      industry_avg_multiple: 0,
+      overvalued_pct: 0,
+      industry_name: extractedData.industry || "",
+      comparable_companies: [],
+      data_source: `BP 未披露${missing}，估值倍数无法计算（不对未披露数据做推断）`,
+      analysis: "",
+    };
+  }
+
   let valuationComparison = validatedData.valuation_comparison;
 
   // v4.8.0 起 ValuationAgent（估值温度计/可比公司）不再随主流水线生成，
   // 估值对比退回 BP 自述倍数兜底；专家估值改由按需深度尽调单独呈现。
   if (!valuationComparison || !valuationComparison.bp_multiple) {
-    const bpValuation = extractedData.BP_Valuation || 0;
-    const bpRevenue = extractedData.BP_Revenue || 0;
-    const bpMultiple = (bpValuation && bpRevenue) ? Math.round(bpValuation / bpRevenue) : 0;
     // 兜底路径没有行业对标数据，溢价无法计算——如实标注数据不足，
     // 不再伪装成"AI 知识库分析"输出恒为 0 的溢价百分比。
     valuationComparison = {
-      bp_multiple: bpMultiple,
+      bp_multiple: Math.round(bpValuation / bpRevenue),
       industry_avg_multiple: 0,
       overvalued_pct: 0,
       industry_name: extractedData.industry || "",
-      data_source: bpMultiple
-        ? "按 BP 自述估值/收入推算倍数；行业对标数据不足，溢价未计算"
-        : "估值/收入数据不足，无法计算",
+      data_source: "按 BP 自述估值/收入推算倍数；行业对标数据不足，溢价未计算",
       analysis: scoringResult.grade_action,
     };
   }
@@ -1096,6 +1129,7 @@ module.exports = {
   wrapBpDocument,
   detectInjectionHints,
   buildIntegrityDimAnalysis,
+  buildValuationComparison,
   buildScoringSearchQueries,
   calculateScoring,
 };

@@ -60,14 +60,43 @@ class ApiService {
     return this.request(url, { method: "POST", body: formData });
   }
 
-  /** 上传文件（带进度） */
-  async uploadFile(file) {
+  /**
+   * 上传文件发起分析
+   * @param {File} file
+   * @param {object} [opts]
+   * @param {boolean} [opts.useOwnModel] 使用用户自己保存的模型 API Key（不消耗平台额度）
+   */
+  async uploadFile(file, opts = {}) {
     const formData = new FormData();
     formData.append("file", file);
+    if (opts.useOwnModel) formData.append("use_own_model", "1");
     return this.request("/api/analyze", {
       method: "POST",
       body: formData,
     });
+  }
+
+  // ── 自带模型（BYOK）────────────────────────────────────
+  getLlmProviders() {
+    return this.request("/api/llm/providers");
+  }
+
+  getLlmCredential() {
+    return this.request("/api/llm/credentials");
+  }
+
+  /** 只测试连通性，不保存 */
+  validateLlmCredential(payload) {
+    return this.post("/api/llm/validate", payload);
+  }
+
+  /** 校验通过后保存 */
+  saveLlmCredential(payload) {
+    return this.post("/api/llm/credentials", payload);
+  }
+
+  deleteLlmCredential() {
+    return this.delete("/api/llm/credentials");
   }
 
   /** 轮询任务状态 */

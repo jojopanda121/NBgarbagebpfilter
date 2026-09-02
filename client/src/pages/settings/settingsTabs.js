@@ -6,6 +6,7 @@ import {
   Megaphone,
   MessageSquare,
   Package,
+  Cpu,
   Settings as SettingsIcon,
   Shield,
   TrendingUp,
@@ -19,6 +20,7 @@ export const USER_SETTINGS_TABS = [
   { key: "account", label: "账户安全", icon: User },
   { key: "forum", label: "论坛资料", icon: Users },
   { key: "billing", label: "财务与额度", icon: Wallet },
+  { key: "mymodel", label: "我的模型", icon: Cpu },
   { key: "token", label: "兑换额度", icon: Gift },
   { key: "feedback", label: "意见反馈", icon: MessageSquare },
 ];

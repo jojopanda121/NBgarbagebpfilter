@@ -52,8 +52,9 @@ const AGENT_A_PROMPT = `你是一位顶级 VC 分析师（Agent A — 数据提�
 - Founder_Exp_Years: 核心创始人在该赛道的直接相关从业经验年数（纯数字）
 
 **估值参考字段（仅供展示，不参与评分）：**
-- BP_Valuation: BP声称的估值（亿元或亿美元）
-- BP_Revenue: BP声称的收入或ARR（亿元，无收入填0）
+这两个字段的字面含义就是"BP 自己写出来的数字"，会被当作公司自报口径展示，并直接驱动估值倍数与溢价结论。**没写就是没写，一律填 null，禁止任何形式的倒推。**
+- BP_Valuation: BP **明确写出**的估值（亿元或亿美元）。BP 未提估值 → null。不得按融资轮次惯例、赛道均值、"中信系进场"之类线索倒推
+- BP_Revenue: BP **明确写出**的收入或 ARR（亿元）。BP 明确写"尚无收入" → 0；BP 根本没提收入 → null。不得用"场景数×客单价""员工数×人均产出"等方式估算
 
 **二、关键声明提取（供 AI 深度核查，务必提取 25-40 条）：**
 （按重要性排序：优先 critical/high 的可核验事实性声明；同义/重复的声明合并去重，宁缺毋滥地补足到 25-40 条，不要为凑数塞入无法核验的空泛表述。）
@@ -122,9 +123,10 @@ const AGENT_A_PROMPT = `你是一位顶级 VC 分析师（Agent A — 数据提�
 
 注意：
 - TAM_Million_RMB 必须是百万人民币单位的纯数字（1亿=100, 10亿=1000, 100亿=10000），美元按1:7.2换算
-- CAGR/TRL/Founder_Exp_Years/Policy_Risk/BP_Valuation/BP_Revenue 必须是数字类型
+- CAGR/TRL/Founder_Exp_Years/Policy_Risk 必须是数字类型
+- BP_Valuation/BP_Revenue 是数字或 null。未披露必须填 null，**不许用 0 冒充"没披露"**（0 的含义是"BP 明确说了没有收入"）
 - Business_Model/Growth_Engine/Network_Effect 是文字描述字段，如BP未明确提及则根据商业模式特征合理推断
-- 如某数值字段BP未明确披露，根据行业常识合理推断并标注 estimated: true
+- 如某数值字段BP未明确披露，根据行业常识合理推断并标注 estimated: true。**BP_Valuation / BP_Revenue 不适用本条**——它们记录的是"BP 声称了什么"，推断出来的数字会被当成公司自报口径展示并算出估值溢价，未披露只能填 null
 - key_claims 必须提取 25-40 条，覆盖所有类别；按重要性排序，同义重复项合并去重
 - 每条 key_claims 必须包含 verification_harness；不要只写 "web_search"，要根据声明性质优先选择工商/财报/法律/学术/宏观等最适合的核验路径
 - 本系统只有公开网页检索、没有专业数据库直连，所以 harness 里必须保留 failure_mode，要求查不到时标待核实，不得伪造

@@ -42,12 +42,32 @@ const config = {
   // Uploads (公开上传：头像、站点图片)。容器中映射到 /app/data/uploads，与数据卷一同持久化。
   uploadsDir: process.env.UPLOADS_DIR || require("path").join(__dirname, "..", "..", "data", "uploads"),
 
-  // DeepSeek LLM（OpenAI 兼容接口）
-  // 历史：Kimi → MiniMax → DeepSeek。别名已收敛为 deepseek* + llmProvider，
-  // 新调用点一律使用 deepseek*。
+  // ── LLM 后端（中立命名）──────────────────────────────────
+  // 历史：Kimi → MiniMax → DeepSeek。现在厂商可插拔：换主力后端只改这几个
+  // 环境变量，不改任何调用点代码（厂商适配见 services/llm/providers）。
+  //   LLM_PROVIDER   deepseek | anthropic | openai | gemini | minimax | moonshot | qwen | zhipu
+  //   LLM_API_KEY / LLM_API_HOST / LLM_MODEL / LLM_MODEL_HEAVY / LLM_MODEL_LIGHT
+  // 下面的 DEEPSEEK_* 是向后兼容别名：生产 .env 不动也能继续跑。
+  llmProvider: (process.env.LLM_PROVIDER || "deepseek").trim().toLowerCase(),
+  llmApiKey: process.env.LLM_API_KEY || process.env.DEEPSEEK_API_KEY || "",
+  llmApiHost: process.env.LLM_API_HOST || process.env.DEEPSEEK_API_HOST || process.env.DEEPSEEK_BASE_URL || "",
+  llmModel: process.env.LLM_MODEL || process.env.DEEPSEEK_MODEL || "deepseek-v4-flash",
+  llmModelHeavy: process.env.LLM_MODEL_HEAVY || process.env.DEEPSEEK_MODEL_HEAVY || "deepseek-v4-pro",
+  llmModelLight: process.env.LLM_MODEL_LIGHT || process.env.DEEPSEEK_MODEL_LIGHT || "",
+  llmReasoningEffort: process.env.LLM_REASONING_EFFORT || process.env.DEEPSEEK_REASONING_EFFORT || "",
+
+  // ── 用户自带模型 BYOK ────────────────────────────────────
+  // 允许用户在分析时使用自己的 API Key。关掉后前端不再展示该入口，
+  // 后端也拒绝携带 llm 参数的请求。
+  byokEnabled: process.env.BYOK_ENABLED !== "0",
+  // 允许用户填写官方域名白名单以外的接口地址。
+  // 默认关闭：开了等于把本服务器变成任人驱使的请求跳板（SSRF）。
+  // 只有在需要接自建网关/代理时，由部署方显式打开。
+  allowCustomLlmEndpoint: process.env.ALLOW_CUSTOM_LLM_ENDPOINT === "1",
+
+  // DeepSeek 别名（向后兼容，勿在新代码中使用，一律走上面的 llm*）
   deepseekApiKey: process.env.DEEPSEEK_API_KEY || "",
   deepseekModel: process.env.DEEPSEEK_MODEL || "deepseek-v4-flash",
-  llmProvider: "deepseek",
   // per-skill 模型路由 (可选)：
   //   heavy  → deck / memo / investmentDeckPptx / icQuestions 等重任务
   //   light  → snapshot / brief / one-pager / 语义抽样审计 等轻任务
@@ -180,10 +200,13 @@ if (config.env === "production") {
     process.exit(1);
   }
 
-  if (!config.deepseekApiKey) {
+  // 平台自己的 LLM key。DEEPSEEK_API_KEY 与 LLM_API_KEY 二者有其一即可，
+  // 这样把主力后端换成别家时不必再保留一个名不副实的 DEEPSEEK_ 变量。
+  if (!config.llmApiKey) {
     console.error(
-      "\n[FATAL] 生产环境必须设置 DEEPSEEK_API_KEY 环境变量！\n" +
-      "  申请: https://platform.deepseek.com/api_keys\n"
+      "\n[FATAL] 生产环境必须设置 LLM_API_KEY（或向后兼容的 DEEPSEEK_API_KEY）！\n" +
+      `  当前 LLM_PROVIDER=${config.llmProvider}\n` +
+      "  DeepSeek 申请: https://platform.deepseek.com/api_keys\n"
     );
     process.exit(1);
   }

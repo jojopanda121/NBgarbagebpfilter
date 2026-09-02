@@ -1,7 +1,19 @@
 // ============================================================
 // server/services/llmService.js — LLM 调用服务
-// 封装 DeepSeek V4 OpenAI-compatible API 的调用逻辑
-// 含超时控制和重试机制
+//
+// 对上：向全代码库提供 Anthropic 风格的调用接口（callLLM / callLLMJson /
+//       callLLMWithSearch / callLLMAgentic ...），含超时、重试、降级。
+// 对下：通过 services/llm/providers 注册表连接任意厂商（DeepSeek / Claude /
+//       OpenAI / Gemini / Kimi / 通义 / 智谱 / MiniMax）。
+//
+// 用哪个厂商、哪个 key，由**请求级上下文**决定（runtime/llmContext）：
+//   - 没有上下文 → 平台自己的 key（config.llm*），即默认行为
+//   - 有 BYOK 上下文 → 用户自带的厂商 + key + 模型
+//
+// 能力适配是本文件的核心职责之一：流水线的 token 预算是照 DeepSeek V4
+// （64K 输出）写的，直接打到输出上限 8K 的模型上会**每次调用都 400**。
+// 所以所有 token 预算和思考开关都要先过 _planTokens 按能力裁剪，
+// 而不是发出去等报错。
 // ============================================================
 
 const config = require("../config");
@@ -9,16 +21,13 @@ const { runWebSearch, formatSearchContext } = require("./webSearchService");
 const { extractJson } = require("../utils/jsonParser");
 const jsonSchema = require("../utils/jsonSchema");
 const { createLLMClient } = require("../utils/llmClient");
-
-const llm = createLLMClient({
-  apiKey: config.deepseekApiKey,
-  baseURL: config.deepseekApiHost,
-});
+const { resolveCapabilities, inputCharBudget } = require("./llm/capabilities");
+const { getLlmContext, addDegradeNote, getDegradeNotes, fingerprint } = require("../runtime/llmContext");
 
 // ── LLM 调用计量（成本可观测最小实现）────────────────────────
-// 在 SDK 入口处统一拦截 messages.create：每次调用记录结构化日志
+// 在客户端入口处统一拦截 messages.create：每次调用记录结构化日志
 // （model / token 用量 / 耗时），并维护进程级累计计数（getLlmStats 可查）。
-// 商业化定价、用户级成本归集等再演进为落库方案。
+// BYOK 调用同样计量，但用量归到 source=byok，不与平台成本混在一起。
 const _llmStats = {
   calls: 0,
   errors: 0,
@@ -31,9 +40,10 @@ function getLlmStats() {
   return { ..._llmStats, since: _llmStats.since || (_llmStats.since = new Date().toISOString()) };
 }
 
-if (llm && llm.messages && typeof llm.messages.create === "function") {
-  const _origCreate = llm.messages.create.bind(llm.messages);
-  llm.messages.create = async function instrumentedCreate(body, ...rest) {
+function _instrument(client, meta) {
+  if (!client || !client.messages || typeof client.messages.create !== "function") return client;
+  const _origCreate = client.messages.create.bind(client.messages);
+  client.messages.create = async function instrumentedCreate(body, ...rest) {
     const start = Date.now();
     try {
       const resp = await _origCreate(body, ...rest);
@@ -48,6 +58,8 @@ if (llm && llm.messages && typeof llm.messages.create === "function") {
       }
       console.log(JSON.stringify({
         evt: "llm_call",
+        provider: meta.providerId,
+        source: meta.source,
         model: body?.model,
         max_tokens: body?.max_tokens,
         input_tokens: usage?.input_tokens ?? null,
@@ -61,6 +73,8 @@ if (llm && llm.messages && typeof llm.messages.create === "function") {
       _llmStats.errors += 1;
       console.warn(JSON.stringify({
         evt: "llm_call_error",
+        provider: meta.providerId,
+        source: meta.source,
         model: body?.model,
         latency_ms: Date.now() - start,
         status: err?.status ?? null,
@@ -69,20 +83,93 @@ if (llm && llm.messages && typeof llm.messages.create === "function") {
       throw err;
     }
   };
+  return client;
+}
+
+// 客户端缓存：同一个 (provider, host, key, model) 复用一个客户端实例，
+// 避免每次调用都重建。key 只以指纹参与缓存键，明文不进任何可打印结构。
+const CLIENT_CACHE_MAX = 32;
+const _clientCache = new Map();
+
+function _getClient({ providerId, apiKey, baseURL, model, capabilityOverrides, source }) {
+  const cacheKey = [providerId, baseURL || "", fingerprint(apiKey), model || "", JSON.stringify(capabilityOverrides || {})].join("|");
+  const hit = _clientCache.get(cacheKey);
+  if (hit) {
+    // LRU：命中后挪到队尾
+    _clientCache.delete(cacheKey);
+    _clientCache.set(cacheKey, hit);
+    return hit;
+  }
+  const client = _instrument(
+    createLLMClient({ apiKey, baseURL, providerId, model, capabilityOverrides }),
+    { providerId, source }
+  );
+  _clientCache.set(cacheKey, client);
+  while (_clientCache.size > CLIENT_CACHE_MAX) {
+    _clientCache.delete(_clientCache.keys().next().value);
+  }
+  return client;
+}
+
+// ── 平台默认配置（无 BYOK 上下文时使用）──────────────────────
+// config 里 deepseek* 是历史别名，llm* 是中立名；两者指向同一批环境变量，
+// 换厂商只需改 env，不改代码。
+function _platformProfile() {
+  return {
+    source: "platform",
+    providerId: config.llmProvider || "deepseek",
+    apiKey: config.llmApiKey || config.deepseekApiKey || "",
+    baseURL: config.llmApiHost || config.deepseekApiHost || "",
+    models: {
+      default: config.llmModel || config.deepseekModel,
+      heavy: config.llmModelHeavy || config.deepseekModelHeavy,
+      light: config.llmModelLight || config.deepseekModelLight,
+    },
+    reasoningEffort: config.llmReasoningEffort || config.deepseekReasoningEffort || "",
+  };
+}
+
+/** 当前生效的 LLM 配置：BYOK 上下文优先，否则平台默认 */
+function _activeProfile() {
+  const ctx = getLlmContext();
+  // 注意条件里**不能**加 "&& ctx.apiKey"：那样 key 为空时会悄悄落回平台 profile，
+  // 变成"用户选了自带模型，实际却在花平台的钱跑"。key 缺失应该由
+  // ensureLLMConfigured 明确报错，而不是被一个短路运算符掩盖过去。
+  if (ctx && ctx.source === "byok") {
+    return {
+      source: "byok",
+      providerId: ctx.providerId,
+      apiKey: ctx.apiKey,
+      baseURL: ctx.baseURL || "",
+      models: ctx.models || {},
+      capabilityOverrides: ctx.capabilityOverrides || {},
+      reasoningEffort: ctx.reasoningEffort || "",
+      userId: ctx.userId,
+    };
+  }
+  return _platformProfile();
 }
 
 const MODEL = config.deepseekModel;
+
+// 合法档位集合（显式 opts.modelTier 的白名单）
+const MODEL_TIERS = { heavy: true, default: true, light: true };
 
 // ── P2-4 per-skill 模型路由 ─────────────────────────────────
 // 三档：heavy / default / light。每档可走不同 model name；未配置时回落 default。
 // 路由表按 skillId / taskHint 命中；都不命中 → "default" 档。
 // DeepSeek 默认：heavy = deepseek-v4-pro（3元/6元 每 M token），
 //                default/light = deepseek-v4-flash（1元/2元）。
-const MODEL_TIERS = {
-  heavy: () => config.deepseekModelHeavy || MODEL,
-  default: () => MODEL,
-  light: () => config.deepseekModelLight || MODEL,
-};
+//
+// BYOK 时同样分档：用户给了 heavy/light 模型名就用，只给一个就三档同模型。
+// 用户只配一个模型是完全正常的用法，不能因此报错。
+function _modelForTier(tier, profile) {
+  const models = profile.models || {};
+  const fallback = models.default || MODEL;
+  if (tier === "heavy") return models.heavy || fallback;
+  if (tier === "light") return models.light || fallback;
+  return fallback;
+}
 
 // skillId / taskHint → tier
 //
@@ -181,10 +268,66 @@ function _resolveThinking(opts = {}) {
 
 // 开思考时保证 token 预算够写完正文。
 // 只在**显式**开思考（thinking === true）时生效：未声明思考的调用方
-// 传的 maxTokens 是它自己算过的预算，静默放大会打乱成本预期。
-function _guardTokensForThinking(maxTokens, thinking) {
-  if (thinking !== true) return maxTokens;
-  return Math.max(maxTokens || 0, THINKING_MIN_TOKENS);
+
+// ── 能力适配：把"想要的预算"裁成"这个模型真能接受的预算" ──────
+//
+// 这是多模型支持里最容易出事的地方。举个真实会发生的例子：
+// claim_verdict 任务强制开思考 → _guardTokensForThinking 把 max_tokens 抬到
+// 12000 → 用户选的是输出上限 8192 的 Kimi/通义 → 每一次声明核查都 400，
+// 重试三次全废，整份分析直接失败。所以必须在发出前裁。
+//
+// 裁剪优先级：能跑完 > 判定严格。宁可降级思考并**如实告诉用户**，
+// 也不要让用户拿到一份"分析失败"。
+const THINKING_SAFE_FLOOR = 6000; // 低于这个输出预算就别开思考了，正文会被思考挤没
+
+function _planTokens(requestedMaxTokens, thinking, caps, label) {
+  const cap = caps.maxOutputTokens;
+  const requested = requestedMaxTokens || 0;
+
+  // 模型根本不支持思考开关 → 别把预算抬到思考下限（纯浪费，还可能撞上限）
+  if (caps.thinkingStyle === "none" && thinking === true) {
+    addDegradeNote(`所选模型不支持深度思考开关，${label || "判定类任务"}已按普通模式执行（判定严格度低于平台默认模型）`);
+    return { maxTokens: Math.min(requested || 4096, cap), thinking: false };
+  }
+
+  // 不是显式开思考 → 只做上限裁剪，保持原有语义
+  if (thinking !== true) {
+    return { maxTokens: Math.min(requested || 4096, cap), thinking };
+  }
+
+  // 显式开思考：思考 token 计入输出预算，需要下限保护
+  const want = Math.max(requested, THINKING_MIN_TOKENS);
+  if (cap >= want) return { maxTokens: want, thinking: true };
+
+  if (cap >= THINKING_SAFE_FLOOR) {
+    // 预算不够但还够用：贴着上限跑，思考深度压到最低档
+    addDegradeNote(`所选模型单次输出上限约 ${cap} tokens，低于平台默认预算，已压低思考深度以保证正文完整`);
+    return { maxTokens: cap, thinking: true, forceLowEffort: true };
+  }
+
+  // 预算太小：开思考必然把正文挤没，只能关掉
+  addDegradeNote(`所选模型单次输出上限仅 ${cap} tokens，已关闭深度思考（否则思考过程会占满输出、拿不到结论）。判定严格度低于平台默认模型`);
+  return { maxTokens: cap, thinking: false };
+}
+
+/**
+ * 解析一次调用的完整执行环境：用谁的 key、哪个模型、什么能力、什么预算。
+ * 所有 callLLM* 都从这里拿 client，不再有模块级单例。
+ */
+function _session(opts = {}) {
+  const profile = _activeProfile();
+  const tier = _resolveModelTier(opts);
+  const model = _modelForTier(tier, profile);
+  const caps = resolveCapabilities(profile.providerId, model, profile.capabilityOverrides);
+  const client = _getClient({
+    providerId: profile.providerId,
+    apiKey: profile.apiKey,
+    baseURL: profile.baseURL,
+    model,
+    capabilityOverrides: profile.capabilityOverrides,
+    source: profile.source,
+  });
+  return { client, caps, model, tier, profile, isByok: profile.source === "byok" };
 }
 
 /** 可观测入口：查某个任务最终会用什么模型 / 开不开思考 */
@@ -206,15 +349,18 @@ function _resolveModelTier(opts = {}) {
 }
 
 function _resolveModel(opts = {}) {
-  const tier = _resolveModelTier(opts);
-  return MODEL_TIERS[tier]();
+  return _modelForTier(_resolveModelTier(opts), _activeProfile());
 }
 
-// 推理档位。deepseek-v4-flash 支持 low/high/max；deepseek-v4-pro 目前只支持
-// high/max，配了 low 会 400，所以对 pro 自动抬到 high。未配置则返回 undefined
-// （不发送该字段，用服务端默认）。
-function _reasoningEffortFor(model) {
-  const effort = (config.deepseekReasoningEffort || "").trim().toLowerCase();
+// 推理档位。deepseek-v4-flash 支持 low/high/max，deepseek-v4-pro 目前只支持
+// high/max，配了 low 会 400，所以对 pro 自动抬到 high。模型能力矩阵说不支持
+// reasoning_effort 的（如 gpt-4o、多数国产模型）一律返回 undefined —— 发过去
+// 就是 400，而这条链路上一次 400 等于一份分析报废。
+function _reasoningEffortFor(model, caps, forceLow) {
+  const c = caps || resolveCapabilities(_activeProfile().providerId, model);
+  if (!c.supportsReasoningEffort) return undefined;
+  if (forceLow) return /pro/i.test(String(model || "")) ? "high" : "low";
+  const effort = String(_activeProfile().reasoningEffort || "").trim().toLowerCase();
   if (!effort) return undefined;
   if (/pro/i.test(String(model || "")) && effort === "low") return "high";
   return effort;
@@ -265,9 +411,17 @@ function _buildCacheableUserMessage(userContent, userPrefix) {
 }
 
 function ensureLLMConfigured() {
-  if (!config.deepseekApiKey) {
-    throw new Error("LLM 未配置：服务端缺少 DEEPSEEK_API_KEY，请在 .env 中设置后重启进程");
+  const profile = _activeProfile();
+  if (profile.apiKey) return;
+  if (profile.source === "byok") {
+    // BYOK 走到这里说明凭证解密后是空的，属于数据问题，不能静默回退到平台 key
+    // （用户明确选了"用我自己的模型"，偷偷用平台额度跑是错的）。
+    const e = new Error("你选择了使用自己的模型，但未能读取到有效的 API Key，请在「设置 → 我的模型」中重新保存");
+    e.permanent = true;
+    e.byok = true;
+    throw e;
   }
+  throw new Error("LLM 未配置：服务端缺少 DEEPSEEK_API_KEY，请在 .env 中设置后重启进程");
 }
 
 /** 根据 maxTokens 动态计算超时时间 */
@@ -314,14 +468,31 @@ function isRetryable(err) {
 /** 将上游错误规范化为对调用方友好的中文异常 */
 function normalizeLLMError(err) {
   const status = err?.status;
+  const isByok = _activeProfile().source === "byok";
   if (status === 401 || status === 403) {
-    const e = new Error("LLM 服务认证失败：请检查 DEEPSEEK_API_KEY 配置");
+    const e = new Error(
+      isByok
+        ? "你的模型 API Key 认证失败（401/403）：请检查 Key 是否正确、是否已过期或被禁用"
+        : "LLM 服务认证失败：请检查服务端 LLM API Key 配置"
+    );
     e.permanent = true;
+    e.byok = isByok;
+    return e;
+  }
+  if (status === 402 || /insufficient|balance|quota|欠费|余额/i.test(err?.message || "")) {
+    const e = new Error(
+      isByok
+        ? "你的模型账户余额不足或已超出配额，请到厂商控制台充值后重试"
+        : "LLM 服务余额不足"
+    );
+    e.permanent = true;
+    e.byok = isByok;
     return e;
   }
   if (status === 429) {
-    return new Error("LLM 服务限流，请稍后重试");
+    return new Error(isByok ? "你的模型账户被限流，请稍后重试" : "LLM 服务限流，请稍后重试");
   }
+  if (isByok && err) err.byok = true;
   return err;
 }
 
@@ -343,9 +514,12 @@ async function callLLM(systemPrompt, userContent, maxTokensOrOpts = 12000) {
   const cachedSystem = _buildCacheableSystem(systemPrompt);
   const userMessage = _buildCacheableUserMessage(userContent, userPrefix);
   // P2-4 模型路由 + 思考开关（思考算进 max_tokens，故需下限保护）
-  const model = _resolveModel(opts);
-  const thinking = _resolveThinking(opts);
-  const maxTokens = _guardTokensForThinking(opts.maxTokens ?? 12000, thinking);
+  // 预算和思考开关都要过 _planTokens 按所选模型的能力裁剪，见其注释。
+  const { client, caps, model } = _session(opts);
+  const wantThinking = _resolveThinking(opts);
+  const plan = _planTokens(opts.maxTokens ?? 12000, wantThinking, caps);
+  const thinking = plan.thinking;
+  const maxTokens = plan.maxTokens;
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     try {
@@ -364,11 +538,11 @@ async function callLLM(systemPrompt, userContent, maxTokensOrOpts = 12000) {
       };
       if (thinking !== null) reqBody.thinking = { type: thinking ? "enabled" : "disabled" };
       if (thinking) {
-        const effort = _reasoningEffortFor(model);
+        const effort = _reasoningEffortFor(model, caps, plan.forceLowEffort);
         if (effort) reqBody.reasoning_effort = effort;
       }
       const resp = await withTimeout(
-        llm.messages.create(reqBody),
+        client.messages.create(reqBody),
         timeout,
         `callLLM(model=${model}, maxTokens=${maxTokens})`
       );
@@ -401,7 +575,15 @@ async function callLLM(systemPrompt, userContent, maxTokensOrOpts = 12000) {
  */
 async function callLLMWithThinking(systemPrompt, userContent, maxTokens = 16000, thinkingBudget = 8000, opts = {}) {
   ensureLLMConfigured();
-  const model = _resolveModel(opts);
+  const { client, caps, model } = _session(opts);
+  // 显式开思考 → 走能力裁剪；模型不支持思考时 plan.thinking=false，
+  // 直接跳到下面的普通模式降级，不浪费一次必然失败的请求。
+  const plan = _planTokens(maxTokens, true, caps, "深度思考任务");
+  maxTokens = plan.maxTokens;
+  if (!plan.thinking) {
+    const fallbackText = await callLLM(systemPrompt, userContent, { maxTokens, ...opts });
+    return { thinking: "", text: fallbackText };
+  }
   try {
     let lastError;
 
@@ -414,13 +596,14 @@ async function callLLMWithThinking(systemPrompt, userContent, maxTokens = 16000,
         }
 
         const timeout = calcTimeout(maxTokens) * 2; // thinking 模式给双倍超时
-        // budget_tokens 由 llmClient 裁掉（DeepSeek 不认），思考深度靠 reasoning_effort 表达。
+        // budget_tokens 对 OpenAI 兼容厂商会被裁掉，只有 Anthropic 原生用得上；
+        // 思考深度在兼容协议上靠 reasoning_effort 表达。两条路都由 provider 层处理。
         const resp = await withTimeout(
-          llm.messages.create({
+          client.messages.create({
             model,
             max_tokens: maxTokens,
-            thinking: { type: "enabled", budget_tokens: thinkingBudget },
-            reasoning_effort: _reasoningEffortFor(model),
+            thinking: { type: "enabled", budget_tokens: Math.min(thinkingBudget, Math.floor(maxTokens / 2)) },
+            reasoning_effort: _reasoningEffortFor(model, caps, plan.forceLowEffort),
             system: systemPrompt,
             messages: [{ role: "user", content: userContent }],
           }),
@@ -473,9 +656,10 @@ async function callLLMChat(systemPrompt, messages, opts = {}) {
   // 交互式对话默认**关思考**：实测流式下模型可能连写 1600+ 字 thinking 而
   // text_delta 一个字都不发，而本函数只把 text_delta 转给前端 —— 用户会盯着
   // 空白等十几秒。调用方确实需要思考时显式传 thinking:true 并给足 maxTokens。
-  const thinking = _resolveThinking(opts) ?? false;
-  const model = _resolveModel(opts);
-  const maxTokens = _guardTokensForThinking(opts.maxTokens ?? 4096, thinking);
+  const { client, caps, model } = _session(opts);
+  const plan = _planTokens(opts.maxTokens ?? 4096, _resolveThinking(opts) ?? false, caps, "对话");
+  const thinking = plan.thinking;
+  const maxTokens = plan.maxTokens;
   const thinkingField = { type: thinking ? "enabled" : "disabled" };
   let lastError;
   let streamUnsupported = false;
@@ -505,7 +689,7 @@ async function callLLMChat(systemPrompt, messages, opts = {}) {
               timeout
             );
             try {
-              const s = llm.messages.stream({
+              const s = client.messages.stream({
                 model,
                 max_tokens: maxTokens,
                 thinking: thinkingField,
@@ -543,7 +727,7 @@ async function callLLMChat(systemPrompt, messages, opts = {}) {
 
       // 非流式
       const resp = await withTimeout(
-        llm.messages.create({
+        client.messages.create({
           model,
           max_tokens: maxTokens,
           thinking: thinkingField,
@@ -609,9 +793,13 @@ async function callLLMChat(systemPrompt, messages, opts = {}) {
 async function callLLMWithSearch(systemPrompt, userContent, opts = {}) {
   ensureLLMConfigured();
   const { maxToolRounds = 6, preSearchQueries = [] } = opts;
-  const model = _resolveModel(opts);
-  const thinking = _resolveThinking(opts);
-  const maxTokens = _guardTokensForThinking(opts.maxTokens ?? 12000, thinking);
+  const { client, caps, model } = _session(opts);
+  const plan = _planTokens(opts.maxTokens ?? 12000, _resolveThinking(opts), caps, "联网核查");
+  const thinking = plan.thinking;
+  const maxTokens = plan.maxTokens;
+  // 模型不支持工具调用时直接不声明工具，靠服务端预检索把证据喂进去，
+  // 而不是发一个必然被拒的 tools 字段。
+  const toolsSupported = caps.supportsTools !== false;
 
   const tools = [{
     name: "web_search",
@@ -670,12 +858,12 @@ async function callLLMWithSearch(systemPrompt, userContent, opts = {}) {
       for (let round = 0; round < maxToolRounds; round++) {
         const timeout = calcTimeout(maxTokens);
         const resp = await withTimeout(
-          llm.messages.create({
+          client.messages.create({
             model,
             max_tokens: maxTokens,
             ...(thinking === null ? {} : { thinking: { type: thinking ? "enabled" : "disabled" } }),
             system: systemPrompt,
-            tools,
+            ...(toolsSupported ? { tools } : {}),
             messages: convo,
           }),
           timeout,
@@ -744,8 +932,38 @@ async function callLLMWithSearch(systemPrompt, userContent, opts = {}) {
 
 function getModelName(opts) {
   // P2-4: 可选传 { skillId, taskHint, modelTier } 查询路由后的实际 model
-  if (opts) return _resolveModel(opts);
-  return MODEL;
+  return _resolveModel(opts || {});
+}
+
+/**
+ * 当前生效的 LLM 环境描述。写进分析结果，让用户和排查者都能看到
+ * "这份报告是哪个模型出的、有没有因为能力不足降过级"。
+ */
+function describeActiveLlm(opts = {}) {
+  const profile = _activeProfile();
+  const model = _resolveModel(opts);
+  const caps = resolveCapabilities(profile.providerId, model, profile.capabilityOverrides);
+  return {
+    source: profile.source,
+    provider: profile.providerId,
+    model,
+    max_output_tokens: caps.maxOutputTokens,
+    context_window: caps.contextWindow,
+    thinking_style: caps.thinkingStyle,
+    supports_tools: caps.supportsTools !== false,
+    degrade_notes: getDegradeNotes(),
+  };
+}
+
+/**
+ * 当前模型一次请求能吃下多少字符的输入。
+ * pipelineService 用它来决定 BP 原文截断长度 —— 照 DeepSeek 的 1M 上下文
+ * 写死 20 万字符，打到 32K 上下文的模型上是必然失败。
+ */
+function inputBudgetChars(plannedMaxTokens = 8192, opts = {}) {
+  const profile = _activeProfile();
+  const caps = resolveCapabilities(profile.providerId, _resolveModel(opts), profile.capabilityOverrides);
+  return inputCharBudget(caps, plannedMaxTokens);
 }
 
 function getModelTier(opts) {
@@ -805,13 +1023,23 @@ async function callLLMAgentic(opts) {
     }
   };
 
-  // 三档能力开关（按上游报错动态降级）
-  let enableThinking = thinkingBudget > 0;
-  let enableTools = Array.isArray(tools) && tools.length > 0;
-  let enableStream = true;
+  // 之前这里硬用模块级 MODEL 常量，等于绕过了 per-skill 路由，也没法支持 BYOK。
+  // 改走 _session：档位、模型、能力、客户端一次解析到位。
+  const { client, caps, model: agenticModel } = _session(opts);
+
+  // 三档能力开关。先按**能力矩阵**关掉这个模型本来就不支持的，
+  // 再由下面的 catch 按上游报错动态降级（第二道防线）。
+  let enableThinking = thinkingBudget > 0 && caps.thinkingStyle !== "none";
+  let enableTools = Array.isArray(tools) && tools.length > 0 && caps.supportsTools !== false;
+  let enableStream = caps.supportsStreaming !== false;
+  if (thinkingBudget > 0 && caps.thinkingStyle === "none") {
+    addDegradeNote("所选模型不支持深度思考，工作区对话已按普通模式执行");
+  }
 
   // 思考计入 max_tokens：默认 6000 在开思考时极易被思考吃光导致无正文
-  const effMaxTokens = _guardTokensForThinking(maxTokens, enableThinking);
+  const agenticPlan = _planTokens(maxTokens, enableThinking, caps, "工作区对话");
+  const effMaxTokens = agenticPlan.maxTokens;
+  enableThinking = agenticPlan.thinking === true;
   const convo = Array.isArray(messages) ? messages.map((m) => ({ ...m })) : [];
   let finalText = "";
   let totalRounds = 0;
@@ -823,14 +1051,14 @@ async function callLLMAgentic(opts) {
     safeEmit({ type: "round_start", round });
 
     const reqBody = {
-      model: MODEL,
+      model: agenticModel,
       max_tokens: effMaxTokens,
       system,
       messages: convo,
     };
     if (enableThinking) {
-      reqBody.thinking = { type: "enabled", budget_tokens: thinkingBudget };
-      const effort = _reasoningEffortFor(MODEL);
+      reqBody.thinking = { type: "enabled", budget_tokens: Math.min(thinkingBudget, Math.floor(effMaxTokens / 2)) };
+      const effort = _reasoningEffortFor(agenticModel, caps, agenticPlan.forceLowEffort);
       if (effort) reqBody.reasoning_effort = effort;
     }
     if (enableTools) reqBody.tools = tools;
@@ -846,7 +1074,7 @@ async function callLLMAgentic(opts) {
         const stream = await new Promise((resolve, reject) => {
           const t = setTimeout(() => reject(new Error(`LLM 请求超时 (${timeout}ms): agentic-stream`)), timeout);
           try {
-            const s = llm.messages.stream(reqBody);
+            const s = client.messages.stream(reqBody);
             clearTimeout(t);
             resolve(s);
           } catch (e) { clearTimeout(t); reject(e); }
@@ -911,7 +1139,7 @@ async function callLLMAgentic(opts) {
       } else {
         // ── 非流式路径 ───────────────────────────────
         const resp = await withTimeout(
-          llm.messages.create(reqBody),
+          client.messages.create(reqBody),
           timeout,
           "agentic-nonstream"
         );
@@ -1171,4 +1399,6 @@ module.exports = {
   getModelTier,
   getTaskProfile,
   getLlmStats,
+  describeActiveLlm,
+  inputBudgetChars,
 };

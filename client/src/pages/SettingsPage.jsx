@@ -20,6 +20,7 @@ import { useSearchParams } from "react-router-dom";
 import api from "../services/api";
 import useAuthStore from "../store/useAuthStore";
 import ProfileEditor from "./Forum/ProfileEditor";
+import MyModelTab from "../components/settings/MyModelTab";
 import { ADMIN_SETTINGS_TABS, USER_SETTINGS_TABS } from "./settings/settingsTabs";
 import { getScoreColor } from "../utils/scoreHelpers";
 
@@ -237,18 +238,36 @@ export default function SettingsPage({ adminMode = false }) {
       loadTasks();
       // 行业下拉选项只在首次进入 tab 时加载，后续切换筛选不重复请求
       if (taskIndustries.length === 0) {
-        api.get("/api/admin/task-industries")
+        api
+          .get("/api/admin/task-industries")
           .then((d) => setTaskIndustries(d.industries || []))
           .catch(() => {});
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab, isAdmin, userPage, userSearch, userStatus, feedbackPage, feedbackStatus,
-      taskPage, taskStatus, taskSearch, taskStartDate, taskEndDate, taskIndustry, taskSortBy, taskSortDir]);
+  }, [
+    activeTab,
+    isAdmin,
+    userPage,
+    userSearch,
+    userStatus,
+    feedbackPage,
+    feedbackStatus,
+    taskPage,
+    taskStatus,
+    taskSearch,
+    taskStartDate,
+    taskEndDate,
+    taskIndustry,
+    taskSortBy,
+    taskSortDir,
+  ]);
 
   const loadUsers = async () => {
     try {
-      const data = await api.get(`/api/admin/users?page=${userPage}&pageSize=20&search=${userSearch}&status=${userStatus}`);
+      const data = await api.get(
+        `/api/admin/users?page=${userPage}&pageSize=20&search=${userSearch}&status=${userStatus}`
+      );
       setUsers(data.users || []);
       setUsersTotal(data.total || 0);
     } catch (err) {
@@ -258,7 +277,9 @@ export default function SettingsPage({ adminMode = false }) {
 
   const loadFeedbackList = async () => {
     try {
-      const data = await api.get(`/api/admin/feedback?page=${feedbackPage}&pageSize=20&status=${feedbackStatus}`);
+      const data = await api.get(
+        `/api/admin/feedback?page=${feedbackPage}&pageSize=20&status=${feedbackStatus}`
+      );
       setFeedbackList(data.feedback || []);
       setFeedbackTotal(data.total || 0);
     } catch (err) {
@@ -348,7 +369,7 @@ export default function SettingsPage({ adminMode = false }) {
     try {
       const result = await api.post("/api/token/generate", {
         quotaAmount: tokenQuota,
-        expireDays: 30
+        expireDays: 30,
       });
       setGeneratedToken(result);
       setMessage({ type: "success", text: "兑换码生成成功" });
@@ -431,10 +452,18 @@ export default function SettingsPage({ adminMode = false }) {
   const renderMessage = () => {
     if (!message) return null;
     return (
-      <div className={`flex items-center gap-2 p-3 rounded-lg mb-4 ${
-        message.type === "success" ? "bg-green-500/10 text-green-400 border border-green-500/20" : "bg-red-500/10 text-red-400 border border-red-500/20"
-      }`}>
-        {message.type === "success" ? <CheckCircle className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
+      <div
+        className={`flex items-center gap-2 p-3 rounded-lg mb-4 ${
+          message.type === "success"
+            ? "bg-green-500/10 text-green-400 border border-green-500/20"
+            : "bg-red-500/10 text-red-400 border border-red-500/20"
+        }`}
+      >
+        {message.type === "success" ? (
+          <CheckCircle className="w-4 h-4" />
+        ) : (
+          <AlertCircle className="w-4 h-4" />
+        )}
         {message.text}
       </div>
     );
@@ -444,7 +473,11 @@ export default function SettingsPage({ adminMode = false }) {
     <div className="max-w-6xl mx-auto px-4 py-8">
       <h1 className="text-2xl font-bold mb-6">
         {adminMode ? "管理员中心" : "用户中心"}
-        {!adminMode && isAdmin && <span className="text-xs bg-yellow-500/20 text-yellow-400 px-2 py-0.5 rounded ml-2">管理员</span>}
+        {!adminMode && isAdmin && (
+          <span className="text-xs bg-yellow-500/20 text-yellow-400 px-2 py-0.5 rounded ml-2">
+            管理员
+          </span>
+        )}
       </h1>
 
       {/* Tab 切换 */}
@@ -454,7 +487,9 @@ export default function SettingsPage({ adminMode = false }) {
             key={tab.key}
             onClick={() => setActiveTab(tab.key)}
             className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors whitespace-nowrap ${
-              activeTab === tab.key ? "bg-[#1B4FD8] text-[#0D2145]" : "text-[#4B5A72] hover:text-[#0D2145] hover:bg-[#EEF1F7]"
+              activeTab === tab.key
+                ? "bg-[#1B4FD8] text-[#0D2145]"
+                : "text-[#4B5A72] hover:text-[#0D2145] hover:bg-[#EEF1F7]"
             }`}
           >
             <tab.icon className="w-4 h-4" />
@@ -471,13 +506,25 @@ export default function SettingsPage({ adminMode = false }) {
       {/* 账户安全 Tab */}
       {activeTab === "account" && (
         <AccountTab
-          profile={profile} email={email} setEmail={setEmail} emailCode={emailCode} setEmailCode={setEmailCode}
-          sendingEmailCode={sendingEmailCode} emailCountdown={emailCountdown}
-          handleSendEmailCode={handleSendEmailCode} handleBindEmail={handleBindEmail}
-          oldPassword={oldPassword} setOldPassword={setOldPassword}
-          newPassword={newPassword} setNewPassword={setNewPassword}
-          confirmPassword={confirmPassword} setConfirmPassword={setConfirmPassword}
-          loading={loading} setLoading={setLoading} setMessage={setMessage} setProfile={setProfile}
+          profile={profile}
+          email={email}
+          setEmail={setEmail}
+          emailCode={emailCode}
+          setEmailCode={setEmailCode}
+          sendingEmailCode={sendingEmailCode}
+          emailCountdown={emailCountdown}
+          handleSendEmailCode={handleSendEmailCode}
+          handleBindEmail={handleBindEmail}
+          oldPassword={oldPassword}
+          setOldPassword={setOldPassword}
+          newPassword={newPassword}
+          setNewPassword={setNewPassword}
+          confirmPassword={confirmPassword}
+          setConfirmPassword={setConfirmPassword}
+          loading={loading}
+          setLoading={setLoading}
+          setMessage={setMessage}
+          setProfile={setProfile}
         />
       )}
 
@@ -486,7 +533,9 @@ export default function SettingsPage({ adminMode = false }) {
         <div className="bg-white border border-[#D8DCE8] rounded-xl p-5">
           <div className="mb-4">
             <h3 className="text-sm font-semibold text-[#0D2145]">论坛身份与资料</h3>
-            <p className="text-xs text-[#8E9BB0] mt-0.5">选择你在投资人论坛的身份（投资人 / 项目方 / FA），填写展示名与撮合名片。</p>
+            <p className="text-xs text-[#8E9BB0] mt-0.5">
+              选择你在投资人论坛的身份（投资人 / 项目方 / FA），填写展示名与撮合名片。
+            </p>
           </div>
           <ProfileEditor />
         </div>
@@ -495,22 +544,33 @@ export default function SettingsPage({ adminMode = false }) {
       {/* 财务与额度 Tab */}
       {activeTab === "billing" && <BillingTab profile={profile} orders={orders} usage={usage} />}
 
+      {/* 我的模型 Tab（BYOK） */}
+      {activeTab === "mymodel" && <MyModelTab />}
+
       {/* 意见反馈 Tab */}
       {activeTab === "feedback" && (
         <FeedbackTab
-          feedback={myFeedback} feedbackForm={feedbackForm} setFeedbackForm={setFeedbackForm}
-          submitting={submittingFeedback} handleSubmit={handleSubmitFeedback}
+          feedback={myFeedback}
+          feedbackForm={feedbackForm}
+          setFeedbackForm={setFeedbackForm}
+          submitting={submittingFeedback}
+          handleSubmit={handleSubmitFeedback}
         />
       )}
 
       {/* 兑换码 Tab */}
       {activeTab === "token" && (
         <TokenTab
-          redeemToken={redeemToken} setRedeemToken={setRedeemToken}
-          redeeming={redeeming} handleRedeem={handleRedeemToken}
-          generatedToken={generatedToken} generating={generating}
-          tokenQuota={tokenQuota} setTokenQuota={setTokenQuota}
-          handleGenerate={handleGenerateToken} copyToken={copyToken}
+          redeemToken={redeemToken}
+          setRedeemToken={setRedeemToken}
+          redeeming={redeeming}
+          handleRedeem={handleRedeemToken}
+          generatedToken={generatedToken}
+          generating={generating}
+          tokenQuota={tokenQuota}
+          setTokenQuota={setTokenQuota}
+          handleGenerate={handleGenerateToken}
+          copyToken={copyToken}
           isAdmin={isAdmin}
         />
       )}
@@ -518,28 +578,49 @@ export default function SettingsPage({ adminMode = false }) {
       {/* 用户管理 Tab (管理员) */}
       {activeTab === "users" && isAdmin && (
         <UsersTab
-          users={users} total={usersTotal} page={userPage} setPage={setUserPage}
-          search={userSearch} setSearch={setUserSearch} status={userStatus} setStatus={setUserStatus}
-          loadUsers={loadUsers} setSelectedUser={setSelectedUser} selectedUser={selectedUser}
-          loading={loading} setLoading={setLoading} setMessage={setMessage}
+          users={users}
+          total={usersTotal}
+          page={userPage}
+          setPage={setUserPage}
+          search={userSearch}
+          setSearch={setUserSearch}
+          status={userStatus}
+          setStatus={setUserStatus}
+          loadUsers={loadUsers}
+          setSelectedUser={setSelectedUser}
+          selectedUser={selectedUser}
+          loading={loading}
+          setLoading={setLoading}
+          setMessage={setMessage}
         />
       )}
 
       {/* 分析记录 Tab (管理员) */}
       {activeTab === "tasks" && isAdmin && (
         <TasksTab
-          tasks={tasks} total={tasksTotal} page={taskPage} setPage={setTaskPage}
-          status={taskStatus} setStatus={setTaskStatus}
-          search={taskSearch} setSearch={setTaskSearch}
-          startDate={taskStartDate} setStartDate={setTaskStartDate}
-          endDate={taskEndDate} setEndDate={setTaskEndDate}
-          industry={taskIndustry} setIndustry={setTaskIndustry}
+          tasks={tasks}
+          total={tasksTotal}
+          page={taskPage}
+          setPage={setTaskPage}
+          status={taskStatus}
+          setStatus={setTaskStatus}
+          search={taskSearch}
+          setSearch={setTaskSearch}
+          startDate={taskStartDate}
+          setStartDate={setTaskStartDate}
+          endDate={taskEndDate}
+          setEndDate={setTaskEndDate}
+          industry={taskIndustry}
+          setIndustry={setTaskIndustry}
           industries={taskIndustries}
-          sortBy={taskSortBy} setSortBy={setTaskSortBy}
-          sortDir={taskSortDir} setSortDir={setTaskSortDir}
+          sortBy={taskSortBy}
+          setSortBy={setTaskSortBy}
+          sortDir={taskSortDir}
+          setSortDir={setTaskSortDir}
           loading={tasksLoading}
           loadTasks={loadTasks}
-          selectedTask={selectedTask} setSelectedTask={setSelectedTask}
+          selectedTask={selectedTask}
+          setSelectedTask={setSelectedTask}
         />
       )}
 
@@ -553,10 +634,17 @@ export default function SettingsPage({ adminMode = false }) {
       {/* 反馈管理 Tab (管理员) */}
       {activeTab === "admin_feedback" && isAdmin && (
         <AdminFeedbackTab
-          feedback={feedbackList} total={feedbackTotal} page={feedbackPage} setPage={setFeedbackPage}
-          status={feedbackStatus} setStatus={setFeedbackStatus} loadFeedback={loadFeedbackList}
-          reply={feedbackReply} setReply={setFeedbackReply}
-          showModal={showReplyModal} setShowModal={setShowReplyModal}
+          feedback={feedbackList}
+          total={feedbackTotal}
+          page={feedbackPage}
+          setPage={setFeedbackPage}
+          status={feedbackStatus}
+          setStatus={setFeedbackStatus}
+          loadFeedback={loadFeedbackList}
+          reply={feedbackReply}
+          setReply={setFeedbackReply}
+          showModal={showReplyModal}
+          setShowModal={setShowReplyModal}
         />
       )}
 
@@ -566,30 +654,37 @@ export default function SettingsPage({ adminMode = false }) {
       )}
 
       {/* 内容管理 Tab (管理员) */}
-      {activeTab === "site_content" && isAdmin && (
-        <SiteContentTab setMessage={setMessage} />
-      )}
+      {activeTab === "site_content" && isAdmin && <SiteContentTab setMessage={setMessage} />}
 
       {/* 系统设置 Tab (管理员) */}
       {activeTab === "settings" && isAdmin && (
-        <SystemSettingsTab settings={systemSettings} setSettings={setSystemSettings} setMessage={setMessage} />
+        <SystemSettingsTab
+          settings={systemSettings}
+          setSettings={setSystemSettings}
+          setMessage={setMessage}
+        />
       )}
 
       {/* 公告管理 Tab (管理员) */}
-      {activeTab === "announcements" && isAdmin && (
-        <AnnouncementsTab setMessage={setMessage} />
-      )}
+      {activeTab === "announcements" && isAdmin && <AnnouncementsTab setMessage={setMessage} />}
 
       {/* 管理员面板 Tab */}
       {activeTab === "admin" && isAdmin && (
         <AdminPanel
-          tokenQuota={tokenQuota} setTokenQuota={setTokenQuota}
-          tokenCount={tokenCount} setTokenCount={setTokenCount}
-          generating={generating} setGenerating={setGenerating}
-          setGeneratedToken={setGeneratedToken} setMessage={setMessage}
-          adminTokens={adminTokens} setAdminTokens={setAdminTokens}
-          adminAvailable={adminAvailable} setAdminAvailable={setAdminAvailable}
-          loading={loading} setLoading={setLoading}
+          tokenQuota={tokenQuota}
+          setTokenQuota={setTokenQuota}
+          tokenCount={tokenCount}
+          setTokenCount={setTokenCount}
+          generating={generating}
+          setGenerating={setGenerating}
+          setGeneratedToken={setGeneratedToken}
+          setMessage={setMessage}
+          adminTokens={adminTokens}
+          setAdminTokens={setAdminTokens}
+          adminAvailable={adminAvailable}
+          setAdminAvailable={setAdminAvailable}
+          loading={loading}
+          setLoading={setLoading}
         />
       )}
     </div>
@@ -607,12 +702,20 @@ function MyStatsTab({ stats }) {
   const [ChinaMapComp, setChinaMapComp] = useState(null);
 
   useEffect(() => {
-    api.get("/api/user/monthly-stats").then(setMonthlyData).catch(() => {});
-    api.get("/api/user/map-data").then(setMapData).catch(() => {});
+    api
+      .get("/api/user/monthly-stats")
+      .then(setMonthlyData)
+      .catch(() => {});
+    api
+      .get("/api/user/map-data")
+      .then(setMapData)
+      .catch(() => {});
     // 动态加载 Recharts
     import("recharts").then((mod) => setRecharts(mod)).catch(() => {});
     // 动态加载 ChinaMap
-    import("../components/dashboard/ChinaMap").then((mod) => setChinaMapComp(() => mod.default)).catch(() => {});
+    import("../components/dashboard/ChinaMap")
+      .then((mod) => setChinaMapComp(() => mod.default))
+      .catch(() => {});
   }, []);
 
   if (!stats) {
@@ -626,21 +729,27 @@ function MyStatsTab({ stats }) {
   const GRADE_CHART_COLORS = { A: "#22c55e", B: "#3b82f6", C: "#eab308", D: "#ef4444" };
 
   const INDUSTRY_COLORS = [
-    "bg-blue-500", "bg-purple-500", "bg-green-500", "bg-orange-500",
-    "bg-pink-500", "bg-cyan-500", "bg-yellow-500", "bg-slate-500",
+    "bg-blue-500",
+    "bg-purple-500",
+    "bg-green-500",
+    "bg-orange-500",
+    "bg-pink-500",
+    "bg-cyan-500",
+    "bg-yellow-500",
+    "bg-slate-500",
   ];
 
-  const maxIndustryCount = stats.industry_dist.length > 0
-    ? Math.max(...stats.industry_dist.map(d => d.count))
-    : 1;
+  const maxIndustryCount =
+    stats.industry_dist.length > 0 ? Math.max(...stats.industry_dist.map((d) => d.count)) : 1;
 
   // 本月评级饼图数据（优先用 monthly API 的 grade_dist，降级用 stats 的）
-  const gradePieData = (monthlyData?.grade_dist?.length > 0 ? monthlyData.grade_dist : stats.grade_dist)
-    .map((d) => ({
-      name: d.grade,
-      value: d.count,
-      fill: GRADE_CHART_COLORS[d.grade] || "#64748b",
-    }));
+  const gradePieData = (
+    monthlyData?.grade_dist?.length > 0 ? monthlyData.grade_dist : stats.grade_dist
+  ).map((d) => ({
+    name: d.grade,
+    value: d.count,
+    fill: GRADE_CHART_COLORS[d.grade] || "#64748b",
+  }));
 
   return (
     <div className="space-y-6">
@@ -670,8 +779,11 @@ function MyStatsTab({ stats }) {
           <div className="text-sm text-[#4B5A72] mt-1">
             本月分析
             {monthlyData?.month_change != null && (
-              <span className={`ml-1 ${monthlyData.month_change >= 0 ? "text-green-400" : "text-red-400"}`}>
-                {monthlyData.month_change >= 0 ? "+" : ""}{monthlyData.month_change}%
+              <span
+                className={`ml-1 ${monthlyData.month_change >= 0 ? "text-green-400" : "text-red-400"}`}
+              >
+                {monthlyData.month_change >= 0 ? "+" : ""}
+                {monthlyData.month_change}%
               </span>
             )}
           </div>
@@ -684,38 +796,86 @@ function MyStatsTab({ stats }) {
         {monthlyData?.months && (
           <div className="lg:col-span-2 bg-white border border-[#D8DCE8] rounded-xl p-6">
             <h3 className="text-base font-semibold mb-4 flex items-center gap-2">
-              <TrendingUp className="w-4 h-4 text-blue-400" />最近 6 个月分析趋势
+              <TrendingUp className="w-4 h-4 text-blue-400" />
+              最近 6 个月分析趋势
             </h3>
             {Recharts ? (
               <Recharts.ResponsiveContainer width="100%" height={220}>
-                <Recharts.ComposedChart data={monthlyData.months} margin={{ top: 5, right: 10, left: -10, bottom: 0 }}>
+                <Recharts.ComposedChart
+                  data={monthlyData.months}
+                  margin={{ top: 5, right: 10, left: -10, bottom: 0 }}
+                >
                   <Recharts.CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
-                  <Recharts.XAxis dataKey="month" tickFormatter={(v) => v.slice(5)} tick={{ fill: "#94a3b8", fontSize: 12 }} axisLine={{ stroke: "rgba(255,255,255,0.1)" }} />
-                  <Recharts.YAxis yAxisId="left" tick={{ fill: "#94a3b8", fontSize: 12 }} axisLine={false} tickLine={false} allowDecimals={false} />
-                  <Recharts.YAxis yAxisId="right" orientation="right" tick={{ fill: "#94a3b8", fontSize: 12 }} axisLine={false} tickLine={false} domain={[0, 100]} />
+                  <Recharts.XAxis
+                    dataKey="month"
+                    tickFormatter={(v) => v.slice(5)}
+                    tick={{ fill: "#94a3b8", fontSize: 12 }}
+                    axisLine={{ stroke: "rgba(255,255,255,0.1)" }}
+                  />
+                  <Recharts.YAxis
+                    yAxisId="left"
+                    tick={{ fill: "#94a3b8", fontSize: 12 }}
+                    axisLine={false}
+                    tickLine={false}
+                    allowDecimals={false}
+                  />
+                  <Recharts.YAxis
+                    yAxisId="right"
+                    orientation="right"
+                    tick={{ fill: "#94a3b8", fontSize: 12 }}
+                    axisLine={false}
+                    tickLine={false}
+                    domain={[0, 100]}
+                  />
                   <Recharts.Tooltip
-                    contentStyle={{ backgroundColor: "rgba(15,23,42,0.95)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, color: "#e2e8f0" }}
+                    contentStyle={{
+                      backgroundColor: "rgba(15,23,42,0.95)",
+                      border: "1px solid rgba(255,255,255,0.1)",
+                      borderRadius: 8,
+                      color: "#e2e8f0",
+                    }}
                     formatter={(value, name) => [value, name === "count" ? "分析数量" : "平均分数"]}
                     labelFormatter={(label) => `${label} 月`}
                   />
-                  <Recharts.Bar yAxisId="left" dataKey="count" fill="#3b82f6" radius={[4, 4, 0, 0]} barSize={28} name="count" />
-                  <Recharts.Line yAxisId="right" type="monotone" dataKey="avg_score" stroke="#22c55e" strokeWidth={2} dot={{ fill: "#22c55e", r: 4 }} connectNulls name="avg_score" />
+                  <Recharts.Bar
+                    yAxisId="left"
+                    dataKey="count"
+                    fill="#3b82f6"
+                    radius={[4, 4, 0, 0]}
+                    barSize={28}
+                    name="count"
+                  />
+                  <Recharts.Line
+                    yAxisId="right"
+                    type="monotone"
+                    dataKey="avg_score"
+                    stroke="#22c55e"
+                    strokeWidth={2}
+                    dot={{ fill: "#22c55e", r: 4 }}
+                    connectNulls
+                    name="avg_score"
+                  />
                 </Recharts.ComposedChart>
               </Recharts.ResponsiveContainer>
             ) : (
               /* 降级：简单柱状图 */
               <div className="flex items-end gap-2 h-40">
                 {monthlyData.months.map((m) => {
-                  const maxCount = Math.max(...monthlyData.months.map(x => x.count), 1);
+                  const maxCount = Math.max(...monthlyData.months.map((x) => x.count), 1);
                   const pct = m.count > 0 ? (m.count / maxCount) * 100 : 0;
                   return (
                     <div key={m.month} className="flex-1 flex flex-col items-center gap-1">
                       <span className="text-xs text-[#4B5A72] tabular-nums">{m.count || ""}</span>
                       <div className="w-full flex items-end" style={{ height: "100px" }}>
-                        <div className={`w-full rounded-t transition-all ${m.count > 0 ? "bg-blue-500" : "bg-[#EEF1F7]"}`} style={{ height: `${Math.max(pct, m.count > 0 ? 8 : 0)}%` }} />
+                        <div
+                          className={`w-full rounded-t transition-all ${m.count > 0 ? "bg-blue-500" : "bg-[#EEF1F7]"}`}
+                          style={{ height: `${Math.max(pct, m.count > 0 ? 8 : 0)}%` }}
+                        />
                       </div>
                       <span className="text-xs text-[#8E9BB0]">{m.month.slice(5)}</span>
-                      {m.avg_score && <span className="text-xs text-emerald-400">{m.avg_score}分</span>}
+                      {m.avg_score && (
+                        <span className="text-xs text-emerald-400">{m.avg_score}分</span>
+                      )}
                     </div>
                   );
                 })}
@@ -727,7 +887,8 @@ function MyStatsTab({ stats }) {
         {/* 评级分布饼图（占 1 列） */}
         <div className="bg-white border border-[#D8DCE8] rounded-xl p-6">
           <h3 className="text-base font-semibold mb-4 flex items-center gap-2">
-            <BarChart3 className="w-4 h-4 text-green-400" />评级分布（A/B/C/D）
+            <BarChart3 className="w-4 h-4 text-green-400" />
+            评级分布（A/B/C/D）
           </h3>
           {Recharts && gradePieData.length > 0 ? (
             <div className="flex flex-col items-center">
@@ -735,8 +896,10 @@ function MyStatsTab({ stats }) {
                 <Recharts.PieChart>
                   <Recharts.Pie
                     data={gradePieData}
-                    cx="50%" cy="50%"
-                    innerRadius={40} outerRadius={70}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={40}
+                    outerRadius={70}
                     paddingAngle={3}
                     dataKey="value"
                     label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
@@ -747,7 +910,12 @@ function MyStatsTab({ stats }) {
                     ))}
                   </Recharts.Pie>
                   <Recharts.Tooltip
-                    contentStyle={{ backgroundColor: "rgba(15,23,42,0.95)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, color: "#e2e8f0" }}
+                    contentStyle={{
+                      backgroundColor: "rgba(15,23,42,0.95)",
+                      border: "1px solid rgba(255,255,255,0.1)",
+                      borderRadius: 8,
+                      color: "#e2e8f0",
+                    }}
                     formatter={(value, name) => [`${value} 个`, `${name} 级`]}
                   />
                 </Recharts.PieChart>
@@ -755,7 +923,10 @@ function MyStatsTab({ stats }) {
               <div className="flex gap-4 mt-2">
                 {["A", "B", "C", "D"].map((g) => (
                   <div key={g} className="flex items-center gap-1.5 text-xs text-[#4B5A72]">
-                    <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: GRADE_CHART_COLORS[g] }} />
+                    <span
+                      className="w-2.5 h-2.5 rounded-full"
+                      style={{ backgroundColor: GRADE_CHART_COLORS[g] }}
+                    />
                     {g}级
                   </div>
                 ))}
@@ -765,10 +936,13 @@ function MyStatsTab({ stats }) {
             /* 降级：文字列表 */
             <div className="space-y-2">
               {["A", "B", "C", "D"].map((grade) => {
-                const item = gradePieData.find(d => d.name === grade);
+                const item = gradePieData.find((d) => d.name === grade);
                 return (
                   <div key={grade} className="flex items-center gap-2 text-sm">
-                    <span className="w-3 h-3 rounded-full" style={{ backgroundColor: GRADE_CHART_COLORS[grade] }} />
+                    <span
+                      className="w-3 h-3 rounded-full"
+                      style={{ backgroundColor: GRADE_CHART_COLORS[grade] }}
+                    />
                     <span className="text-[#0F1C36]">{grade}级</span>
                     <span className="text-[#8E9BB0] ml-auto">{item?.value || 0} 个</span>
                   </div>
@@ -784,14 +958,17 @@ function MyStatsTab({ stats }) {
       {/* 中国地图 — 项目地理分布 */}
       <div className="bg-white border border-[#D8DCE8] rounded-xl p-6">
         <h3 className="text-base font-semibold mb-4 flex items-center gap-2">
-          <MapPin className="w-4 h-4 text-red-400" />项目地理分布（中国地图）
+          <MapPin className="w-4 h-4 text-red-400" />
+          项目地理分布（中国地图）
         </h3>
         {ChinaMapComp && mapData ? (
           <>
             <ChinaMapComp
               provinces={mapData.provinces || []}
               details={mapData.details || {}}
-              onProvinceClick={(province) => setSelectedProvince(selectedProvince === province ? null : province)}
+              onProvinceClick={(province) =>
+                setSelectedProvince(selectedProvince === province ? null : province)
+              }
             />
             {/* 省份标签列表 */}
             {mapData.provinces?.length > 0 && (
@@ -799,7 +976,9 @@ function MyStatsTab({ stats }) {
                 {mapData.provinces.map((p) => (
                   <button
                     key={p.province}
-                    onClick={() => setSelectedProvince(selectedProvince === p.province ? null : p.province)}
+                    onClick={() =>
+                      setSelectedProvince(selectedProvince === p.province ? null : p.province)
+                    }
                     className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
                       selectedProvince === p.province
                         ? "bg-blue-500/20 border border-blue-500/40 text-blue-300"
@@ -818,7 +997,9 @@ function MyStatsTab({ stats }) {
             {mapData.provinces.map((p) => (
               <button
                 key={p.province}
-                onClick={() => setSelectedProvince(selectedProvince === p.province ? null : p.province)}
+                onClick={() =>
+                  setSelectedProvince(selectedProvince === p.province ? null : p.province)
+                }
                 className={`px-3 py-2 rounded-lg text-sm text-left transition-colors ${
                   selectedProvince === p.province
                     ? "bg-blue-500/20 border border-blue-500/40 text-blue-300"
@@ -831,7 +1012,9 @@ function MyStatsTab({ stats }) {
             ))}
           </div>
         ) : (
-          <p className="text-sm text-[#8E9BB0] text-center py-8">暂无项目地理数据，分析更多 BP 后将自动识别项目所在省份</p>
+          <p className="text-sm text-[#8E9BB0] text-center py-8">
+            暂无项目地理数据，分析更多 BP 后将自动识别项目所在省份
+          </p>
         )}
 
         {/* 选中省份的项目列表（drill-down） */}
@@ -839,19 +1022,31 @@ function MyStatsTab({ stats }) {
           <div className="bg-[#EEF1F7] rounded-lg p-4 mt-4">
             <div className="flex items-center justify-between mb-3">
               <h4 className="text-sm font-semibold text-blue-300">{selectedProvince} — 项目列表</h4>
-              <button onClick={() => setSelectedProvince(null)} className="text-xs text-[#8E9BB0] hover:text-[#0F1C36]">关闭</button>
+              <button
+                onClick={() => setSelectedProvince(null)}
+                className="text-xs text-[#8E9BB0] hover:text-[#0F1C36]"
+              >
+                关闭
+              </button>
             </div>
             <div className="space-y-2 max-h-60 overflow-y-auto">
               {mapData.details[selectedProvince].map((proj) => (
-                <div key={proj.id} className="flex items-center justify-between py-1.5 border-b border-[#EEF1F7] last:border-0">
+                <div
+                  key={proj.id}
+                  className="flex items-center justify-between py-1.5 border-b border-[#EEF1F7] last:border-0"
+                >
                   <div className="min-w-0">
                     <p className="text-sm truncate">{proj.title || "BP分析"}</p>
                   </div>
                   <div className="flex items-center gap-3 shrink-0 ml-3">
                     {proj.total_score != null && (
-                      <span className={`text-sm font-bold ${getScoreColor(proj.total_score)}`}>{Math.round(proj.total_score)}分</span>
+                      <span className={`text-sm font-bold ${getScoreColor(proj.total_score)}`}>
+                        {Math.round(proj.total_score)}分
+                      </span>
                     )}
-                    <span className="text-xs text-[#8E9BB0]">{new Date(proj.created_at).toLocaleDateString("zh-CN")}</span>
+                    <span className="text-xs text-[#8E9BB0]">
+                      {new Date(proj.created_at).toLocaleDateString("zh-CN")}
+                    </span>
                   </div>
                 </div>
               ))}
@@ -889,7 +1084,10 @@ function MyStatsTab({ stats }) {
           <h3 className="text-base font-semibold mb-4">最近分析</h3>
           <div className="space-y-2">
             {stats.recent.map((task) => (
-              <div key={task.id} className="flex items-center justify-between py-2 border-b border-[#D8DCE8] last:border-0">
+              <div
+                key={task.id}
+                className="flex items-center justify-between py-2 border-b border-[#D8DCE8] last:border-0"
+              >
                 <div>
                   <div className="text-sm font-medium">{task.title}</div>
                   <div className="text-xs text-[#8E9BB0] mt-0.5">{task.industry_category}</div>
@@ -915,7 +1113,27 @@ function MyStatsTab({ stats }) {
 }
 
 // 账户安全组件
-function AccountTab({ profile, email, setEmail, emailCode, setEmailCode, sendingEmailCode, emailCountdown, handleSendEmailCode, handleBindEmail, oldPassword, setOldPassword, newPassword, setNewPassword, confirmPassword, setConfirmPassword, loading, setLoading, setMessage, setProfile }) {
+function AccountTab({
+  profile,
+  email,
+  setEmail,
+  emailCode,
+  setEmailCode,
+  sendingEmailCode,
+  emailCountdown,
+  handleSendEmailCode,
+  handleBindEmail,
+  oldPassword,
+  setOldPassword,
+  newPassword,
+  setNewPassword,
+  confirmPassword,
+  setConfirmPassword,
+  loading,
+  setLoading,
+  setMessage,
+  setProfile,
+}) {
   const [uploading, setUploading] = useState(false);
   const fileInputRef = React.useRef(null);
 
@@ -961,32 +1179,76 @@ function AccountTab({ profile, email, setEmail, emailCode, setEmailCode, sending
               <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                 <span className="text-xs text-[#0D2145]">更换</span>
               </div>
-              {uploading && <div className="absolute inset-0 bg-black/60 flex items-center justify-center"><Loader2 className="w-5 h-5 animate-spin text-[#0D2145]" /></div>}
+              {uploading && (
+                <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
+                  <Loader2 className="w-5 h-5 animate-spin text-[#0D2145]" />
+                </div>
+              )}
             </div>
             <div>
               <p className="text-sm text-[#0F1C36]">点击头像更换</p>
               <p className="text-xs text-[#8E9BB0]">支持 JPG/PNG，最大 2MB</p>
             </div>
-            <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarUpload} />
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={handleAvatarUpload}
+            />
           </div>
           <div>
             <label className="block text-sm text-[#4B5A72] mb-1">用户名</label>
-            <input type="text" value={profile?.username || ""} disabled className="w-full px-4 py-2 bg-[#EEF1F7] border border-[#D8DCE8] rounded-lg text-[#8E9BB0]" />
+            <input
+              type="text"
+              value={profile?.username || ""}
+              disabled
+              className="w-full px-4 py-2 bg-[#EEF1F7] border border-[#D8DCE8] rounded-lg text-[#8E9BB0]"
+            />
           </div>
           <div>
             <label className="block text-sm text-[#4B5A72] mb-1">邮箱</label>
             <div className="space-y-2">
-              <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="请输入邮箱" disabled={!!profile?.email} className="w-full px-4 py-2 bg-[#EEF1F7] border border-[#D8DCE8] rounded-lg focus:border-blue-500 focus:outline-none disabled:opacity-50" />
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="请输入邮箱"
+                disabled={!!profile?.email}
+                className="w-full px-4 py-2 bg-[#EEF1F7] border border-[#D8DCE8] rounded-lg focus:border-blue-500 focus:outline-none disabled:opacity-50"
+              />
               {profile?.email ? (
-                <p className="text-sm text-green-400 flex items-center gap-1"><CheckCircle className="w-4 h-4" /> 已绑定邮箱</p>
+                <p className="text-sm text-green-400 flex items-center gap-1">
+                  <CheckCircle className="w-4 h-4" /> 已绑定邮箱
+                </p>
               ) : (
                 <div className="flex gap-2">
-                  <input type="text" value={emailCode} onChange={(e) => setEmailCode(e.target.value)} placeholder="输入验证码" className="flex-1 px-4 py-2 bg-[#EEF1F7] border border-[#D8DCE8] rounded-lg focus:border-blue-500 focus:outline-none" />
-                  <button onClick={handleSendEmailCode} disabled={sendingEmailCode || emailCountdown > 0} className="px-4 py-2 bg-[#E5E9F4] hover:bg-slate-600 disabled:bg-[#EEF1F7] disabled:text-[#8E9BB0] rounded-lg font-medium flex items-center gap-2">
-                    {sendingEmailCode ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                  <input
+                    type="text"
+                    value={emailCode}
+                    onChange={(e) => setEmailCode(e.target.value)}
+                    placeholder="输入验证码"
+                    className="flex-1 px-4 py-2 bg-[#EEF1F7] border border-[#D8DCE8] rounded-lg focus:border-blue-500 focus:outline-none"
+                  />
+                  <button
+                    onClick={handleSendEmailCode}
+                    disabled={sendingEmailCode || emailCountdown > 0}
+                    className="px-4 py-2 bg-[#E5E9F4] hover:bg-slate-600 disabled:bg-[#EEF1F7] disabled:text-[#8E9BB0] rounded-lg font-medium flex items-center gap-2"
+                  >
+                    {sendingEmailCode ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Send className="w-4 h-4" />
+                    )}
                     {emailCountdown > 0 ? `${emailCountdown}s` : "发送验证码"}
                   </button>
-                  <button onClick={handleBindEmail} disabled={loading || !emailCode} className="px-4 py-2 bg-[#1B4FD8] hover:bg-[#163069] disabled:bg-[#E5E9F4] rounded-lg">绑定</button>
+                  <button
+                    onClick={handleBindEmail}
+                    disabled={loading || !emailCode}
+                    className="px-4 py-2 bg-[#1B4FD8] hover:bg-[#163069] disabled:bg-[#E5E9F4] rounded-lg"
+                  >
+                    绑定
+                  </button>
                 </div>
               )}
             </div>
@@ -994,27 +1256,64 @@ function AccountTab({ profile, email, setEmail, emailCode, setEmailCode, sending
         </div>
       </div>
       <div className="bg-white border border-[#D8DCE8] rounded-xl p-6">
-        <h3 className="text-lg font-bold mb-4 flex items-center gap-2"><Lock className="w-5 h-5" />修改密码</h3>
+        <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
+          <Lock className="w-5 h-5" />
+          修改密码
+        </h3>
         <div className="space-y-4">
-          <div><label className="block text-sm text-[#4B5A72] mb-1">旧密码</label><input type="password" value={oldPassword} onChange={(e) => setOldPassword(e.target.value)} className="w-full px-4 py-2 bg-[#EEF1F7] border border-[#D8DCE8] rounded-lg" /></div>
-          <div><label className="block text-sm text-[#4B5A72] mb-1">新密码</label><input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} className="w-full px-4 py-2 bg-[#EEF1F7] border border-[#D8DCE8] rounded-lg" /></div>
-          <div><label className="block text-sm text-[#4B5A72] mb-1">确认新密码</label><input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} className="w-full px-4 py-2 bg-[#EEF1F7] border border-[#D8DCE8] rounded-lg" /></div>
-          <button onClick={async () => {
-            if (newPassword !== confirmPassword) { setMessage({ type: "error", text: "两次密码不一致" }); return; }
-            if (newPassword.length < 6) { setMessage({ type: "error", text: "密码至少6位" }); return; }
-            setLoading(true);
-            try {
-              await api.put("/api/user/password", { oldPassword, newPassword });
-              setMessage({ type: "success", text: "密码修改成功" });
-              setOldPassword("");
-              setNewPassword("");
-              setConfirmPassword("");
-            } catch (err) {
-              setMessage({ type: "error", text: err.message || "修改失败" });
-            } finally {
-              setLoading(false);
-            }
-          }} disabled={loading || !oldPassword || !newPassword} className="flex items-center gap-2 px-4 py-2 bg-[#1B4FD8] hover:bg-[#163069] disabled:bg-[#E5E9F4] rounded-lg">
+          <div>
+            <label className="block text-sm text-[#4B5A72] mb-1">旧密码</label>
+            <input
+              type="password"
+              value={oldPassword}
+              onChange={(e) => setOldPassword(e.target.value)}
+              className="w-full px-4 py-2 bg-[#EEF1F7] border border-[#D8DCE8] rounded-lg"
+            />
+          </div>
+          <div>
+            <label className="block text-sm text-[#4B5A72] mb-1">新密码</label>
+            <input
+              type="password"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              className="w-full px-4 py-2 bg-[#EEF1F7] border border-[#D8DCE8] rounded-lg"
+            />
+          </div>
+          <div>
+            <label className="block text-sm text-[#4B5A72] mb-1">确认新密码</label>
+            <input
+              type="password"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              className="w-full px-4 py-2 bg-[#EEF1F7] border border-[#D8DCE8] rounded-lg"
+            />
+          </div>
+          <button
+            onClick={async () => {
+              if (newPassword !== confirmPassword) {
+                setMessage({ type: "error", text: "两次密码不一致" });
+                return;
+              }
+              if (newPassword.length < 6) {
+                setMessage({ type: "error", text: "密码至少6位" });
+                return;
+              }
+              setLoading(true);
+              try {
+                await api.put("/api/user/password", { oldPassword, newPassword });
+                setMessage({ type: "success", text: "密码修改成功" });
+                setOldPassword("");
+                setNewPassword("");
+                setConfirmPassword("");
+              } catch (err) {
+                setMessage({ type: "error", text: err.message || "修改失败" });
+              } finally {
+                setLoading(false);
+              }
+            }}
+            disabled={loading || !oldPassword || !newPassword}
+            className="flex items-center gap-2 px-4 py-2 bg-[#1B4FD8] hover:bg-[#163069] disabled:bg-[#E5E9F4] rounded-lg"
+          >
             {loading && <Loader2 className="w-4 h-4 animate-spin" />}修改密码
           </button>
         </div>
@@ -1022,8 +1321,20 @@ function AccountTab({ profile, email, setEmail, emailCode, setEmailCode, sending
       <div className="bg-white border border-[#D8DCE8] rounded-xl p-6">
         <h3 className="text-lg font-bold mb-4">账户状态</h3>
         <div className="grid grid-cols-2 gap-4">
-          <div className="p-4 bg-[#EEF1F7] rounded-lg"><div className="text-sm text-[#4B5A72] mb-1">邮箱绑定</div><div className="font-medium">{profile?.email ? <span className="text-green-400">已绑定</span> : <span className="text-yellow-400">未绑定</span>}</div></div>
-          <div className="p-4 bg-[#EEF1F7] rounded-lg"><div className="text-sm text-[#4B5A72] mb-1">累计使用</div><div className="font-medium">{profile?.usage_count || 0} 次</div></div>
+          <div className="p-4 bg-[#EEF1F7] rounded-lg">
+            <div className="text-sm text-[#4B5A72] mb-1">邮箱绑定</div>
+            <div className="font-medium">
+              {profile?.email ? (
+                <span className="text-green-400">已绑定</span>
+              ) : (
+                <span className="text-yellow-400">未绑定</span>
+              )}
+            </div>
+          </div>
+          <div className="p-4 bg-[#EEF1F7] rounded-lg">
+            <div className="text-sm text-[#4B5A72] mb-1">累计使用</div>
+            <div className="font-medium">{profile?.usage_count || 0} 次</div>
+          </div>
         </div>
       </div>
     </div>
@@ -1037,29 +1348,102 @@ function BillingTab({ profile, orders, usage }) {
       <div className="bg-white border border-[#D8DCE8] rounded-xl p-6">
         <h3 className="text-lg font-bold mb-4">额度概览</h3>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <div className="p-4 bg-[#EEF1F7] rounded-lg text-center"><div className="text-2xl font-bold text-green-400">{profile?.quota?.free || 0}</div><div className="text-sm text-[#4B5A72]">免费额度</div></div>
-          <div className="p-4 bg-[#EEF1F7] rounded-lg text-center"><div className="text-2xl font-bold text-blue-400">{profile?.quota?.paid || 0}</div><div className="text-sm text-[#4B5A72]">付费额度</div></div>
-          <div className="p-4 bg-[#EEF1F7] rounded-lg text-center"><div className="text-2xl font-bold text-[#0D2145]">{profile?.quota?.total || 0}</div><div className="text-sm text-[#4B5A72]">剩余总额</div></div>
+          <div className="p-4 bg-[#EEF1F7] rounded-lg text-center">
+            <div className="text-2xl font-bold text-green-400">{profile?.quota?.free || 0}</div>
+            <div className="text-sm text-[#4B5A72]">免费额度</div>
+          </div>
+          <div className="p-4 bg-[#EEF1F7] rounded-lg text-center">
+            <div className="text-2xl font-bold text-blue-400">{profile?.quota?.paid || 0}</div>
+            <div className="text-sm text-[#4B5A72]">付费额度</div>
+          </div>
+          <div className="p-4 bg-[#EEF1F7] rounded-lg text-center">
+            <div className="text-2xl font-bold text-[#0D2145]">{profile?.quota?.total || 0}</div>
+            <div className="text-sm text-[#4B5A72]">剩余总额</div>
+          </div>
         </div>
       </div>
       <div className="bg-white border border-[#D8DCE8] rounded-xl p-6">
         <h3 className="text-lg font-bold mb-4">充值记录</h3>
-        {orders.length === 0 ? <p className="text-[#8E9BB0] text-center py-8">暂无充值记录</p> : (
+        {orders.length === 0 ? (
+          <p className="text-[#8E9BB0] text-center py-8">暂无充值记录</p>
+        ) : (
           <div className="overflow-x-auto">
             <table className="w-full">
-              <thead><tr className="text-left text-sm text-[#4B5A72] border-b border-[#D8DCE8]"><th className="pb-3">订单号</th><th className="pb-3">金额</th><th className="pb-3">额度</th><th className="pb-3">状态</th><th className="pb-3">时间</th></tr></thead>
-              <tbody>{orders.map((o) => (<tr key={o.id} className="border-b border-[#D8DCE8]/50 text-sm"><td className="py-3 font-mono text-[#4B5A72]">{o.order_no?.slice(0, 12)}...</td><td className="py-3">¥{o.amount}</td><td className="py-3">{o.quota_amount} 次</td><td className="py-3"><span className={`px-2 py-0.5 rounded text-xs ${o.status === "PAID" ? "bg-green-500/20 text-green-400" : o.status === "PENDING" ? "bg-yellow-500/20 text-yellow-400" : "bg-red-500/20 text-red-400"}`}>{o.status === "PAID" ? "已支付" : o.status === "PENDING" ? "待支付" : "失败"}</span></td><td className="py-3 text-[#4B5A72]">{new Date(o.created_at).toLocaleDateString("zh-CN")}</td></tr>))}</tbody>
+              <thead>
+                <tr className="text-left text-sm text-[#4B5A72] border-b border-[#D8DCE8]">
+                  <th className="pb-3">订单号</th>
+                  <th className="pb-3">金额</th>
+                  <th className="pb-3">额度</th>
+                  <th className="pb-3">状态</th>
+                  <th className="pb-3">时间</th>
+                </tr>
+              </thead>
+              <tbody>
+                {orders.map((o) => (
+                  <tr key={o.id} className="border-b border-[#D8DCE8]/50 text-sm">
+                    <td className="py-3 font-mono text-[#4B5A72]">{o.order_no?.slice(0, 12)}...</td>
+                    <td className="py-3">¥{o.amount}</td>
+                    <td className="py-3">{o.quota_amount} 次</td>
+                    <td className="py-3">
+                      <span
+                        className={`px-2 py-0.5 rounded text-xs ${o.status === "PAID" ? "bg-green-500/20 text-green-400" : o.status === "PENDING" ? "bg-yellow-500/20 text-yellow-400" : "bg-red-500/20 text-red-400"}`}
+                      >
+                        {o.status === "PAID"
+                          ? "已支付"
+                          : o.status === "PENDING"
+                            ? "待支付"
+                            : "失败"}
+                      </span>
+                    </td>
+                    <td className="py-3 text-[#4B5A72]">
+                      {new Date(o.created_at).toLocaleDateString("zh-CN")}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
             </table>
           </div>
         )}
       </div>
       <div className="bg-white border border-[#D8DCE8] rounded-xl p-6">
         <h3 className="text-lg font-bold mb-4">消费明细</h3>
-        {usage.length === 0 ? <p className="text-[#8E9BB0] text-center py-8">暂无消费记录</p> : (
+        {usage.length === 0 ? (
+          <p className="text-[#8E9BB0] text-center py-8">暂无消费记录</p>
+        ) : (
           <div className="overflow-x-auto">
             <table className="w-full">
-              <thead><tr className="text-left text-sm text-[#4B5A72] border-b border-[#D8DCE8]"><th className="pb-3">档案号</th><th className="pb-3">任务名称</th><th className="pb-3">时间</th><th className="pb-3">消耗</th><th className="pb-3">状态</th></tr></thead>
-              <tbody>{usage.map((u) => (<tr key={u.id} className="border-b border-[#D8DCE8]/50 text-sm"><td className="py-3 font-mono text-xs text-[#4B5A72]">{u.archive_number || "-"}</td><td className="py-3 max-w-[200px] truncate" title={u.title}>{u.title || "BP 尽调分析"}</td><td className="py-3 text-[#4B5A72]">{new Date(u.created_at).toLocaleString("zh-CN")}</td><td className="py-3">- {u.amount} 次</td><td className="py-3"><span className={`px-2 py-0.5 rounded text-xs ${u.status === "complete" ? "bg-green-500/20 text-green-400" : "bg-red-500/20 text-red-400"}`}>{u.status === "complete" ? "成功" : "失败"}</span></td></tr>))}</tbody>
+              <thead>
+                <tr className="text-left text-sm text-[#4B5A72] border-b border-[#D8DCE8]">
+                  <th className="pb-3">档案号</th>
+                  <th className="pb-3">任务名称</th>
+                  <th className="pb-3">时间</th>
+                  <th className="pb-3">消耗</th>
+                  <th className="pb-3">状态</th>
+                </tr>
+              </thead>
+              <tbody>
+                {usage.map((u) => (
+                  <tr key={u.id} className="border-b border-[#D8DCE8]/50 text-sm">
+                    <td className="py-3 font-mono text-xs text-[#4B5A72]">
+                      {u.archive_number || "-"}
+                    </td>
+                    <td className="py-3 max-w-[200px] truncate" title={u.title}>
+                      {u.title || "BP 尽调分析"}
+                    </td>
+                    <td className="py-3 text-[#4B5A72]">
+                      {new Date(u.created_at).toLocaleString("zh-CN")}
+                    </td>
+                    <td className="py-3">- {u.amount} 次</td>
+                    <td className="py-3">
+                      <span
+                        className={`px-2 py-0.5 rounded text-xs ${u.status === "complete" ? "bg-green-500/20 text-green-400" : "bg-red-500/20 text-red-400"}`}
+                      >
+                        {u.status === "complete" ? "成功" : "失败"}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
             </table>
           </div>
         )}
@@ -1074,27 +1458,77 @@ function FeedbackTab({ feedback, feedbackForm, setFeedbackForm, submitting, hand
       <div className="bg-white border border-[#D8DCE8] rounded-xl p-6">
         <h3 className="text-lg font-bold mb-4">提交反馈</h3>
         <div className="space-y-4">
-          <div><label className="block text-sm text-[#4B5A72] mb-1">反馈类型</label><select value={feedbackForm.type} onChange={(e) => setFeedbackForm({ ...feedbackForm, type: e.target.value })} className="w-full px-4 py-2 bg-[#EEF1F7] border border-[#D8DCE8] rounded-lg"><option value="suggestion">功能建议</option><option value="bug">Bug 反馈</option><option value="complaint">投诉建议</option></select></div>
-          <div><label className="block text-sm text-[#4B5A72] mb-1">标题</label><input type="text" value={feedbackForm.title} onChange={(e) => setFeedbackForm({ ...feedbackForm, title: e.target.value })} placeholder="请输入标题" className="w-full px-4 py-2 bg-[#EEF1F7] border border-[#D8DCE8] rounded-lg" /></div>
-          <div><label className="block text-sm text-[#4B5A72] mb-1">内容</label><textarea value={feedbackForm.content} onChange={(e) => setFeedbackForm({ ...feedbackForm, content: e.target.value })} placeholder="请详细描述您的问题或建议" rows={4} className="w-full px-4 py-2 bg-[#EEF1F7] border border-[#D8DCE8] rounded-lg" /></div>
-          <button onClick={handleSubmit} disabled={submitting} className="px-6 py-2 bg-[#1B4FD8] hover:bg-[#163069] disabled:bg-[#E5E9F4] rounded-lg font-medium flex items-center gap-2">{submitting && <Loader2 className="w-4 h-4 animate-spin" />}提交反馈</button>
+          <div>
+            <label className="block text-sm text-[#4B5A72] mb-1">反馈类型</label>
+            <select
+              value={feedbackForm.type}
+              onChange={(e) => setFeedbackForm({ ...feedbackForm, type: e.target.value })}
+              className="w-full px-4 py-2 bg-[#EEF1F7] border border-[#D8DCE8] rounded-lg"
+            >
+              <option value="suggestion">功能建议</option>
+              <option value="bug">Bug 反馈</option>
+              <option value="complaint">投诉建议</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm text-[#4B5A72] mb-1">标题</label>
+            <input
+              type="text"
+              value={feedbackForm.title}
+              onChange={(e) => setFeedbackForm({ ...feedbackForm, title: e.target.value })}
+              placeholder="请输入标题"
+              className="w-full px-4 py-2 bg-[#EEF1F7] border border-[#D8DCE8] rounded-lg"
+            />
+          </div>
+          <div>
+            <label className="block text-sm text-[#4B5A72] mb-1">内容</label>
+            <textarea
+              value={feedbackForm.content}
+              onChange={(e) => setFeedbackForm({ ...feedbackForm, content: e.target.value })}
+              placeholder="请详细描述您的问题或建议"
+              rows={4}
+              className="w-full px-4 py-2 bg-[#EEF1F7] border border-[#D8DCE8] rounded-lg"
+            />
+          </div>
+          <button
+            onClick={handleSubmit}
+            disabled={submitting}
+            className="px-6 py-2 bg-[#1B4FD8] hover:bg-[#163069] disabled:bg-[#E5E9F4] rounded-lg font-medium flex items-center gap-2"
+          >
+            {submitting && <Loader2 className="w-4 h-4 animate-spin" />}提交反馈
+          </button>
         </div>
       </div>
       <div className="bg-white border border-[#D8DCE8] rounded-xl p-6">
         <h3 className="text-lg font-bold mb-4">我的反馈</h3>
-        {feedback.length === 0 ? <p className="text-[#8E9BB0] text-center py-8">暂无反馈记录</p> : (
+        {feedback.length === 0 ? (
+          <p className="text-[#8E9BB0] text-center py-8">暂无反馈记录</p>
+        ) : (
           <div className="space-y-3">
             {feedback.map((f) => (
               <div key={f.id} className="p-4 bg-[#EEF1F7] rounded-lg">
                 <div className="flex items-center justify-between mb-2">
                   <span className="font-medium">{f.title}</span>
-                  <span className={`px-2 py-0.5 rounded text-xs ${f.status === "pending" ? "bg-yellow-500/20 text-yellow-400" : f.status === "processed" ? "bg-blue-500/20 text-blue-400" : "bg-green-500/20 text-green-400"}`}>
-                    {f.status === "pending" ? "待处理" : f.status === "processed" ? "已处理" : "已解决"}
+                  <span
+                    className={`px-2 py-0.5 rounded text-xs ${f.status === "pending" ? "bg-yellow-500/20 text-yellow-400" : f.status === "processed" ? "bg-blue-500/20 text-blue-400" : "bg-green-500/20 text-green-400"}`}
+                  >
+                    {f.status === "pending"
+                      ? "待处理"
+                      : f.status === "processed"
+                        ? "已处理"
+                        : "已解决"}
                   </span>
                 </div>
                 <p className="text-sm text-[#4B5A72] mb-2">{f.content}</p>
-                {f.admin_reply && <div className="text-sm text-green-400 border-t border-[#D8DCE8] pt-2 mt-2"><span className="font-medium">回复：</span>{f.admin_reply}</div>}
-                <div className="text-xs text-[#8E9BB0] mt-2">{new Date(f.created_at).toLocaleString("zh-CN")}</div>
+                {f.admin_reply && (
+                  <div className="text-sm text-green-400 border-t border-[#D8DCE8] pt-2 mt-2">
+                    <span className="font-medium">回复：</span>
+                    {f.admin_reply}
+                  </div>
+                )}
+                <div className="text-xs text-[#8E9BB0] mt-2">
+                  {new Date(f.created_at).toLocaleString("zh-CN")}
+                </div>
               </div>
             ))}
           </div>
@@ -1105,16 +1539,37 @@ function FeedbackTab({ feedback, feedbackForm, setFeedbackForm, submitting, hand
 }
 
 // 兑换码 + 价格套餐 + 邀请好友 组件
-function TokenTab({ redeemToken, setRedeemToken, redeeming, handleRedeem, generatedToken, generating, tokenQuota, setTokenQuota, handleGenerate, copyToken, isAdmin }) {
+function TokenTab({
+  redeemToken,
+  setRedeemToken,
+  redeeming,
+  handleRedeem,
+  generatedToken,
+  generating,
+  tokenQuota,
+  setTokenQuota,
+  handleGenerate,
+  copyToken,
+  isAdmin,
+}) {
   const [inviteCode, setInviteCode] = useState("");
   const [referralStats, setReferralStats] = useState(null);
   const [inviteCopied, setInviteCopied] = useState(false);
   const [purchaseInfo, setPurchaseInfo] = useState(null);
 
   useEffect(() => {
-    api.get("/api/user/invite-code").then((d) => setInviteCode(d.invite_code || "")).catch(() => {});
-    api.get("/api/user/referral-stats").then((d) => setReferralStats(d)).catch(() => {});
-    api.get("/api/admin/site-content/purchase_info").then((d) => setPurchaseInfo(d)).catch(() => {});
+    api
+      .get("/api/user/invite-code")
+      .then((d) => setInviteCode(d.invite_code || ""))
+      .catch(() => {});
+    api
+      .get("/api/user/referral-stats")
+      .then((d) => setReferralStats(d))
+      .catch(() => {});
+    api
+      .get("/api/admin/site-content/purchase_info")
+      .then((d) => setPurchaseInfo(d))
+      .catch(() => {});
   }, []);
 
   const PRICING_PLANS = [
@@ -1131,8 +1586,18 @@ function TokenTab({ redeemToken, setRedeemToken, redeeming, handleRedeem, genera
         <h3 className="text-lg font-bold mb-4 text-[#0D2145]">兑换额度</h3>
         <p className="text-sm text-[#4B5A72] mb-4">输入兑换码即可获得分析额度</p>
         <div className="flex gap-2">
-          <input type="text" value={redeemToken} onChange={(e) => setRedeemToken(e.target.value)} placeholder="输入兑换码" className="flex-1 px-4 py-2 bg-[#EEF1F7] border border-[#D8DCE8] rounded-lg text-[#0D2145] placeholder:text-[#8E9BB0] focus:border-blue-500 focus:outline-none" />
-          <button onClick={handleRedeem} disabled={redeeming || !redeemToken} className="px-6 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:bg-[#E5E9F4] rounded-lg font-medium flex items-center gap-2 transition-colors">
+          <input
+            type="text"
+            value={redeemToken}
+            onChange={(e) => setRedeemToken(e.target.value)}
+            placeholder="输入兑换码"
+            className="flex-1 px-4 py-2 bg-[#EEF1F7] border border-[#D8DCE8] rounded-lg text-[#0D2145] placeholder:text-[#8E9BB0] focus:border-blue-500 focus:outline-none"
+          />
+          <button
+            onClick={handleRedeem}
+            disabled={redeeming || !redeemToken}
+            className="px-6 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:bg-[#E5E9F4] rounded-lg font-medium flex items-center gap-2 transition-colors"
+          >
             {redeeming && <Loader2 className="w-4 h-4 animate-spin" />}兑换
           </button>
         </div>
@@ -1141,7 +1606,9 @@ function TokenTab({ redeemToken, setRedeemToken, redeeming, handleRedeem, genera
       {/* 价格套餐 */}
       <div className="bg-white border border-[#D8DCE8] rounded-xl p-6">
         <h3 className="text-lg font-bold mb-2 text-[#0D2145]">额度套餐</h3>
-        <p className="text-sm text-[#4B5A72] mb-5">购买兑换码请微信联系管理员 <span className="text-blue-400 font-medium">pe_ren</span></p>
+        <p className="text-sm text-[#4B5A72] mb-5">
+          购买兑换码请微信联系管理员 <span className="text-blue-400 font-medium">pe_ren</span>
+        </p>
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
           {PRICING_PLANS.map((plan) => (
             <div
@@ -1157,7 +1624,10 @@ function TokenTab({ redeemToken, setRedeemToken, redeeming, handleRedeem, genera
                   推荐
                 </span>
               )}
-              <div className="text-3xl font-bold text-[#0D2145] mb-1">{plan.quota}<span className="text-base font-normal text-[#4B5A72]">次</span></div>
+              <div className="text-3xl font-bold text-[#0D2145] mb-1">
+                {plan.quota}
+                <span className="text-base font-normal text-[#4B5A72]">次</span>
+              </div>
               <div className="text-xl font-bold text-blue-400 mb-1">¥{plan.price}</div>
               <div className="text-xs text-[#8E9BB0]">¥{plan.unitPrice}/次</div>
             </div>
@@ -1171,15 +1641,25 @@ function TokenTab({ redeemToken, setRedeemToken, redeeming, handleRedeem, genera
               {purchaseInfo.images?.length > 0 && (
                 <div className="flex gap-3 shrink-0">
                   {purchaseInfo.images.map((img, i) => (
-                    <img key={i} src={img} alt={`购买说明图片${i + 1}`} className="w-32 h-32 rounded-lg bg-white p-1 object-contain" />
+                    <img
+                      key={i}
+                      src={img}
+                      alt={`购买说明图片${i + 1}`}
+                      className="w-32 h-32 rounded-lg bg-white p-1 object-contain"
+                    />
                   ))}
                 </div>
               )}
               <div className="text-center sm:text-left">
-                {purchaseInfo.title && <p className="text-[#0D2145] font-medium mb-1">{purchaseInfo.title}</p>}
-                {purchaseInfo.body && purchaseInfo.body.split("\n").map((line, i) => (
-                  <p key={i} className="text-sm text-[#4B5A72]">{line}</p>
-                ))}
+                {purchaseInfo.title && (
+                  <p className="text-[#0D2145] font-medium mb-1">{purchaseInfo.title}</p>
+                )}
+                {purchaseInfo.body &&
+                  purchaseInfo.body.split("\n").map((line, i) => (
+                    <p key={i} className="text-sm text-[#4B5A72]">
+                      {line}
+                    </p>
+                  ))}
               </div>
             </div>
           </div>
@@ -1189,15 +1669,23 @@ function TokenTab({ redeemToken, setRedeemToken, redeeming, handleRedeem, genera
       {/* VIP 会员 */}
       <div className="bg-gradient-to-r from-amber-500/10 to-purple-500/10 border border-amber-500/30 rounded-xl p-6 text-center">
         <div className="text-lg font-bold text-[#0D2145] mb-1">VIP 会员</div>
-        <div className="text-3xl font-bold text-amber-500 mb-2">¥99<span className="text-sm font-normal text-[#4B5A72]">/月</span></div>
-        <p className="text-sm text-[#4B5A72] mb-3">无限使用 Workspace 多 Agent 对话，上传材料永久保存</p>
-        <p className="text-xs text-[#8E9BB0]">开通请微信联系管理员 <span className="text-blue-400 font-medium">pe_ren</span></p>
+        <div className="text-3xl font-bold text-amber-500 mb-2">
+          ¥99<span className="text-sm font-normal text-[#4B5A72]">/月</span>
+        </div>
+        <p className="text-sm text-[#4B5A72] mb-3">
+          无限使用 Workspace 多 Agent 对话，上传材料永久保存
+        </p>
+        <p className="text-xs text-[#8E9BB0]">
+          开通请微信联系管理员 <span className="text-blue-400 font-medium">pe_ren</span>
+        </p>
       </div>
 
       {/* 邀请好友得额度 */}
       <div className="bg-white border border-[#D8DCE8] rounded-xl p-6">
         <h3 className="text-lg font-bold mb-2 text-[#0D2145]">邀请好友得额度</h3>
-        <p className="text-sm text-[#4B5A72] mb-4">每成功邀请一位好友注册，您将获得 2 次免费分析额度</p>
+        <p className="text-sm text-[#4B5A72] mb-4">
+          每成功邀请一位好友注册，您将获得 2 次免费分析额度
+        </p>
         {inviteCode ? (
           <div className="space-y-3">
             <div>
@@ -1223,31 +1711,53 @@ function TokenTab({ redeemToken, setRedeemToken, redeeming, handleRedeem, genera
                       textArea.style.left = "-999999px";
                       document.body.appendChild(textArea);
                       textArea.select();
-                      try { document.execCommand("copy"); setInviteCopied(true); setTimeout(() => setInviteCopied(false), 2000); } catch (e) { alert("复制失败，请手动复制链接"); }
+                      try {
+                        document.execCommand("copy");
+                        setInviteCopied(true);
+                        setTimeout(() => setInviteCopied(false), 2000);
+                      } catch (e) {
+                        alert("复制失败，请手动复制链接");
+                      }
                       document.body.removeChild(textArea);
                     }
                   }}
                   className="px-4 py-2 bg-[#1B4FD8] hover:bg-[#163069] rounded-lg text-sm flex items-center gap-1.5 shrink-0 transition-colors"
                 >
-                  {inviteCopied ? <><CheckCircle className="w-4 h-4" />已复制</> : <><Copy className="w-4 h-4" />复制</>}
+                  {inviteCopied ? (
+                    <>
+                      <CheckCircle className="w-4 h-4" />
+                      已复制
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-4 h-4" />
+                      复制
+                    </>
+                  )}
                 </button>
               </div>
             </div>
             {referralStats && (
               <div className="flex gap-4 pt-2">
                 <div className="text-center">
-                  <div className="text-xl font-bold text-blue-400">{referralStats.invited_count}</div>
+                  <div className="text-xl font-bold text-blue-400">
+                    {referralStats.invited_count}
+                  </div>
                   <div className="text-xs text-[#8E9BB0]">已邀请人数</div>
                 </div>
                 <div className="text-center">
-                  <div className="text-xl font-bold text-emerald-400">{referralStats.earned_quota}</div>
+                  <div className="text-xl font-bold text-emerald-400">
+                    {referralStats.earned_quota}
+                  </div>
                   <div className="text-xs text-[#8E9BB0]">获得额度</div>
                 </div>
               </div>
             )}
           </div>
         ) : (
-          <div className="text-center py-4"><Loader2 className="w-5 h-5 animate-spin mx-auto text-[#8E9BB0]" /></div>
+          <div className="text-center py-4">
+            <Loader2 className="w-5 h-5 animate-spin mx-auto text-[#8E9BB0]" />
+          </div>
         )}
       </div>
 
@@ -1256,10 +1766,23 @@ function TokenTab({ redeemToken, setRedeemToken, redeeming, handleRedeem, genera
         <div className="bg-white border border-[#D8DCE8] rounded-xl p-6">
           <h3 className="text-lg font-bold mb-4 text-[#0D2145]">生成兑换码（管理员）</h3>
           <div className="flex gap-2 mb-4">
-            <select value={tokenQuota} onChange={(e) => setTokenQuota(parseInt(e.target.value))} className="px-4 py-2 bg-[#EEF1F7] border border-[#D8DCE8] rounded-lg text-[#0D2145]">
-              <option value={1}>1 次</option><option value={5}>5 次</option><option value={10}>10 次</option><option value={15}>15 次</option><option value={30}>30 次</option><option value={50}>50 次</option>
+            <select
+              value={tokenQuota}
+              onChange={(e) => setTokenQuota(parseInt(e.target.value))}
+              className="px-4 py-2 bg-[#EEF1F7] border border-[#D8DCE8] rounded-lg text-[#0D2145]"
+            >
+              <option value={1}>1 次</option>
+              <option value={5}>5 次</option>
+              <option value={10}>10 次</option>
+              <option value={15}>15 次</option>
+              <option value={30}>30 次</option>
+              <option value={50}>50 次</option>
             </select>
-            <button onClick={handleGenerate} disabled={generating} className="px-6 py-2 bg-[#1B4FD8] hover:bg-[#163069] disabled:bg-[#E5E9F4] rounded-lg font-medium flex items-center gap-2 transition-colors">
+            <button
+              onClick={handleGenerate}
+              disabled={generating}
+              className="px-6 py-2 bg-[#1B4FD8] hover:bg-[#163069] disabled:bg-[#E5E9F4] rounded-lg font-medium flex items-center gap-2 transition-colors"
+            >
               {generating && <Loader2 className="w-4 h-4 animate-spin" />}生成
             </button>
           </div>
@@ -1267,8 +1790,12 @@ function TokenTab({ redeemToken, setRedeemToken, redeeming, handleRedeem, genera
             <div className="p-4 bg-[#EEF1F7] rounded-lg">
               <div className="text-sm text-[#4B5A72] mb-2">兑换码（有效期30天）</div>
               <div className="flex items-center gap-2">
-                <code className="flex-1 text-xl font-mono font-bold text-emerald-400">{generatedToken.token}</code>
-                <button onClick={copyToken} className="p-2 hover:bg-[#E5E9F4] rounded-lg"><Copy className="w-5 h-5" /></button>
+                <code className="flex-1 text-xl font-mono font-bold text-emerald-400">
+                  {generatedToken.token}
+                </code>
+                <button onClick={copyToken} className="p-2 hover:bg-[#E5E9F4] rounded-lg">
+                  <Copy className="w-5 h-5" />
+                </button>
               </div>
             </div>
           )}
@@ -1279,7 +1806,22 @@ function TokenTab({ redeemToken, setRedeemToken, redeeming, handleRedeem, genera
 }
 
 // 用户管理组件
-function UsersTab({ users, total, page, setPage, search, setSearch, status, setStatus, loadUsers, setSelectedUser, selectedUser, loading, setLoading, setMessage }) {
+function UsersTab({
+  users,
+  total,
+  page,
+  setPage,
+  search,
+  setSearch,
+  status,
+  setStatus,
+  loadUsers,
+  setSelectedUser,
+  selectedUser,
+  loading,
+  setLoading,
+  setMessage,
+}) {
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(null);
   const [batchDeleting, setBatchDeleting] = useState(false);
@@ -1312,7 +1854,9 @@ function UsersTab({ users, total, page, setPage, search, setSearch, status, setS
       await api.post(`/api/admin/users/${userId}/vip`, { is_vip: true, vip_expires_at: expiresAt });
       setMessage({
         type: "success",
-        text: expiresAt ? `已设为 VIP，至 ${new Date(expiresAt).toLocaleDateString("zh-CN")}` : "已设为永久 VIP",
+        text: expiresAt
+          ? `已设为 VIP，至 ${new Date(expiresAt).toLocaleDateString("zh-CN")}`
+          : "已设为永久 VIP",
       });
       setVipModalUser(null);
       loadUsers();
@@ -1342,7 +1886,10 @@ function UsersTab({ users, total, page, setPage, search, setSearch, status, setS
     setBatchDeleting(true);
     try {
       const data = await api.post("/api/admin/users/batch-delete", { userIds: [...selectedIds] });
-      setMessage({ type: "success", text: `已删除 ${data.deleted} 个用户${data.skipped > 0 ? `，${data.skipped} 个跳过（管理员不可删除）` : ""}` });
+      setMessage({
+        type: "success",
+        text: `已删除 ${data.deleted} 个用户${data.skipped > 0 ? `，${data.skipped} 个跳过（管理员不可删除）` : ""}`,
+      });
       setSelectedIds(new Set());
       loadUsers();
     } catch (err) {
@@ -1371,7 +1918,11 @@ function UsersTab({ users, total, page, setPage, search, setSearch, status, setS
 
   // 筛选出可清理的用户：未绑定邮箱 + 从未登录或超过30天未登录
   const inactiveUnboundUsers = users.filter(
-    (u) => !u.email && !u.contact_bound && (!u.last_login_at || (Date.now() - new Date(u.last_login_at).getTime() > 30 * 24 * 60 * 60 * 1000))
+    (u) =>
+      !u.email &&
+      !u.contact_bound &&
+      (!u.last_login_at ||
+        Date.now() - new Date(u.last_login_at).getTime() > 30 * 24 * 60 * 60 * 1000)
   );
 
   const selectInactiveUnbound = () => {
@@ -1397,75 +1948,197 @@ function UsersTab({ users, total, page, setPage, search, setSearch, status, setS
         <div className="flex flex-wrap gap-4 mb-4">
           <div className="flex-1 relative min-w-[200px]">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#4B5A72]" />
-            <input type="text" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="搜索用户名/邮箱" className="w-full pl-10 pr-4 py-2 bg-[#EEF1F7] border border-[#D8DCE8] rounded-lg" />
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="搜索用户名/邮箱"
+              className="w-full pl-10 pr-4 py-2 bg-[#EEF1F7] border border-[#D8DCE8] rounded-lg"
+            />
           </div>
-          <select value={status} onChange={(e) => setStatus(e.target.value)} className="px-4 py-2 bg-[#EEF1F7] border border-[#D8DCE8] rounded-lg">
-            <option value="">全部</option><option value="active">正常</option><option value="banned">已禁用</option>
+          <select
+            value={status}
+            onChange={(e) => setStatus(e.target.value)}
+            className="px-4 py-2 bg-[#EEF1F7] border border-[#D8DCE8] rounded-lg"
+          >
+            <option value="">全部</option>
+            <option value="active">正常</option>
+            <option value="banned">已禁用</option>
           </select>
         </div>
 
         {/* 批量操作栏 */}
         <div className="flex flex-wrap items-center gap-3 mb-4">
-          <button onClick={selectInactiveUnbound} className="px-3 py-1.5 bg-amber-600/20 text-amber-400 hover:bg-amber-600/30 rounded-lg text-xs" title="选择未绑定邮箱且超过30天未登录的用户">
+          <button
+            onClick={selectInactiveUnbound}
+            className="px-3 py-1.5 bg-amber-600/20 text-amber-400 hover:bg-amber-600/30 rounded-lg text-xs"
+            title="选择未绑定邮箱且超过30天未登录的用户"
+          >
             选择不活跃未绑邮箱用户 ({inactiveUnboundUsers.length})
           </button>
           {selectedIds.size > 0 && (
-            <button onClick={handleBatchDelete} disabled={batchDeleting} className="px-3 py-1.5 bg-red-600/20 text-red-400 hover:bg-red-600/30 rounded-lg text-xs flex items-center gap-1">
-              {batchDeleting ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
+            <button
+              onClick={handleBatchDelete}
+              disabled={batchDeleting}
+              className="px-3 py-1.5 bg-red-600/20 text-red-400 hover:bg-red-600/30 rounded-lg text-xs flex items-center gap-1"
+            >
+              {batchDeleting ? (
+                <Loader2 className="w-3 h-3 animate-spin" />
+              ) : (
+                <Trash2 className="w-3 h-3" />
+              )}
               批量删除 ({selectedIds.size})
             </button>
           )}
           {selectedIds.size > 0 && (
-            <button onClick={() => setSelectedIds(new Set())} className="px-3 py-1.5 bg-[#E5E9F4] hover:bg-slate-600 rounded-lg text-xs">取消选择</button>
+            <button
+              onClick={() => setSelectedIds(new Set())}
+              className="px-3 py-1.5 bg-[#E5E9F4] hover:bg-slate-600 rounded-lg text-xs"
+            >
+              取消选择
+            </button>
           )}
         </div>
 
         <div className="overflow-x-auto">
           <table className="w-full">
-            <thead><tr className="text-left text-sm text-[#4B5A72] border-b border-[#D8DCE8]">
-              <th className="pb-3 w-8"><input type="checkbox" checked={users.length > 0 && selectedIds.size === users.length} onChange={toggleSelectAll} className="rounded" /></th>
-              <th className="pb-3">ID</th><th className="pb-3">用户名</th><th className="pb-3">邮箱</th><th className="pb-3">额度</th><th className="pb-3">使用次数</th><th className="pb-3">状态</th><th className="pb-3">最后登录</th><th className="pb-3">注册时间</th><th className="pb-3">操作</th>
-            </tr></thead>
-            <tbody>{users.map((u) => (
-              <tr key={u.id} className={`border-b border-[#D8DCE8]/50 text-sm ${selectedIds.has(u.id) ? "bg-blue-500/5" : ""}`}>
-                <td className="py-3"><input type="checkbox" checked={selectedIds.has(u.id)} onChange={() => toggleSelect(u.id)} className="rounded" /></td>
-                <td className="py-3">{u.id}</td>
-                <td className="py-3 font-medium">{u.username}</td>
-                <td className="py-3 text-[#4B5A72]">{u.email || <span className="text-[#8E9BB0]">未绑定</span>}</td>
-                <td className="py-3">{u.total_quota || 0}</td>
-                <td className="py-3">{u.usage_count || 0}</td>
-                <td className="py-3">
-                  <span className={`px-2 py-0.5 rounded text-xs ${u.is_banned ? "bg-red-500/20 text-red-400" : "bg-green-500/20 text-green-400"}`}>{u.is_banned ? "已禁用" : "正常"}</span>
-                  {!!u.is_vip && (
-                    <span
-                      className="ml-1 px-2 py-0.5 rounded text-xs bg-amber-500/20 text-amber-600"
-                      title={u.vip_expires_at ? `到期：${new Date(u.vip_expires_at).toLocaleString("zh-CN")}` : "永久 VIP"}
-                    >
-                      VIP{u.vip_expires_at ? `·至 ${new Date(u.vip_expires_at).toLocaleDateString("zh-CN")}` : "·永久"}
-                    </span>
-                  )}
-                </td>
-                <td className="py-3 text-[#4B5A72] text-xs" title={u.last_login_at ? new Date(u.last_login_at).toLocaleString("zh-CN") : "从未登录"}>
-                  <span className={!u.last_login_at ? "text-[#8E9BB0]" : ""}>{formatLastLogin(u.last_login_at)}</span>
-                </td>
-                <td className="py-3 text-[#4B5A72]">{new Date(u.created_at).toLocaleDateString("zh-CN")}</td>
-                <td className="py-3">
-                  <div className="flex gap-1">
-                    <button onClick={() => setSelectedUser(u)} className="p-1 hover:bg-[#E5E9F4] rounded" title="查看详情"><Eye className="w-4 h-4" /></button>
-                    <button onClick={() => handleBan(u.id, !u.is_banned)} className={`p-1 rounded text-xs ${u.is_banned ? "hover:bg-green-500/20 text-green-400" : "hover:bg-red-500/20 text-red-400"}`} title={u.is_banned ? "启用" : "禁用"}>{u.is_banned ? "启用" : "禁用"}</button>
-                    <button onClick={() => handleVipButton(u)} className={`p-1 rounded text-xs ${u.is_vip ? "hover:bg-amber-500/20 text-amber-500" : "hover:bg-purple-500/20 text-purple-400"}`} title={u.is_vip ? "取消VIP" : "设VIP"}>{u.is_vip ? "取消VIP" : "设VIP"}</button>
-                    <button onClick={() => setShowDeleteConfirm(u)} className="p-1 hover:bg-red-500/20 text-red-400 rounded" title="删除"><Trash2 className="w-4 h-4" /></button>
-                  </div>
-                </td>
+            <thead>
+              <tr className="text-left text-sm text-[#4B5A72] border-b border-[#D8DCE8]">
+                <th className="pb-3 w-8">
+                  <input
+                    type="checkbox"
+                    checked={users.length > 0 && selectedIds.size === users.length}
+                    onChange={toggleSelectAll}
+                    className="rounded"
+                  />
+                </th>
+                <th className="pb-3">ID</th>
+                <th className="pb-3">用户名</th>
+                <th className="pb-3">邮箱</th>
+                <th className="pb-3">额度</th>
+                <th className="pb-3">使用次数</th>
+                <th className="pb-3">状态</th>
+                <th className="pb-3">最后登录</th>
+                <th className="pb-3">注册时间</th>
+                <th className="pb-3">操作</th>
               </tr>
-            ))}</tbody>
+            </thead>
+            <tbody>
+              {users.map((u) => (
+                <tr
+                  key={u.id}
+                  className={`border-b border-[#D8DCE8]/50 text-sm ${selectedIds.has(u.id) ? "bg-blue-500/5" : ""}`}
+                >
+                  <td className="py-3">
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.has(u.id)}
+                      onChange={() => toggleSelect(u.id)}
+                      className="rounded"
+                    />
+                  </td>
+                  <td className="py-3">{u.id}</td>
+                  <td className="py-3 font-medium">{u.username}</td>
+                  <td className="py-3 text-[#4B5A72]">
+                    {u.email || <span className="text-[#8E9BB0]">未绑定</span>}
+                  </td>
+                  <td className="py-3">{u.total_quota || 0}</td>
+                  <td className="py-3">{u.usage_count || 0}</td>
+                  <td className="py-3">
+                    <span
+                      className={`px-2 py-0.5 rounded text-xs ${u.is_banned ? "bg-red-500/20 text-red-400" : "bg-green-500/20 text-green-400"}`}
+                    >
+                      {u.is_banned ? "已禁用" : "正常"}
+                    </span>
+                    {!!u.is_vip && (
+                      <span
+                        className="ml-1 px-2 py-0.5 rounded text-xs bg-amber-500/20 text-amber-600"
+                        title={
+                          u.vip_expires_at
+                            ? `到期：${new Date(u.vip_expires_at).toLocaleString("zh-CN")}`
+                            : "永久 VIP"
+                        }
+                      >
+                        VIP
+                        {u.vip_expires_at
+                          ? `·至 ${new Date(u.vip_expires_at).toLocaleDateString("zh-CN")}`
+                          : "·永久"}
+                      </span>
+                    )}
+                  </td>
+                  <td
+                    className="py-3 text-[#4B5A72] text-xs"
+                    title={
+                      u.last_login_at
+                        ? new Date(u.last_login_at).toLocaleString("zh-CN")
+                        : "从未登录"
+                    }
+                  >
+                    <span className={!u.last_login_at ? "text-[#8E9BB0]" : ""}>
+                      {formatLastLogin(u.last_login_at)}
+                    </span>
+                  </td>
+                  <td className="py-3 text-[#4B5A72]">
+                    {new Date(u.created_at).toLocaleDateString("zh-CN")}
+                  </td>
+                  <td className="py-3">
+                    <div className="flex gap-1">
+                      <button
+                        onClick={() => setSelectedUser(u)}
+                        className="p-1 hover:bg-[#E5E9F4] rounded"
+                        title="查看详情"
+                      >
+                        <Eye className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => handleBan(u.id, !u.is_banned)}
+                        className={`p-1 rounded text-xs ${u.is_banned ? "hover:bg-green-500/20 text-green-400" : "hover:bg-red-500/20 text-red-400"}`}
+                        title={u.is_banned ? "启用" : "禁用"}
+                      >
+                        {u.is_banned ? "启用" : "禁用"}
+                      </button>
+                      <button
+                        onClick={() => handleVipButton(u)}
+                        className={`p-1 rounded text-xs ${u.is_vip ? "hover:bg-amber-500/20 text-amber-500" : "hover:bg-purple-500/20 text-purple-400"}`}
+                        title={u.is_vip ? "取消VIP" : "设VIP"}
+                      >
+                        {u.is_vip ? "取消VIP" : "设VIP"}
+                      </button>
+                      <button
+                        onClick={() => setShowDeleteConfirm(u)}
+                        className="p-1 hover:bg-red-500/20 text-red-400 rounded"
+                        title="删除"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
           </table>
         </div>
-        {total > 20 && <div className="flex justify-center gap-2 mt-4">
-          <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1} className="px-3 py-1 bg-[#EEF1F7] rounded disabled:opacity-50">上一页</button>
-          <span className="px-3 py-1">第 {page} / {Math.ceil(total / 20)} 页</span>
-          <button onClick={() => setPage(p => p + 1)} disabled={page * 20 >= total} className="px-3 py-1 bg-[#EEF1F7] rounded disabled:opacity-50">下一页</button>
-        </div>}
+        {total > 20 && (
+          <div className="flex justify-center gap-2 mt-4">
+            <button
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={page === 1}
+              className="px-3 py-1 bg-[#EEF1F7] rounded disabled:opacity-50"
+            >
+              上一页
+            </button>
+            <span className="px-3 py-1">
+              第 {page} / {Math.ceil(total / 20)} 页
+            </span>
+            <button
+              onClick={() => setPage((p) => p + 1)}
+              disabled={page * 20 >= total}
+              className="px-3 py-1 bg-[#EEF1F7] rounded disabled:opacity-50"
+            >
+              下一页
+            </button>
+          </div>
+        )}
       </div>
 
       {/* 删除确认弹窗 */}
@@ -1474,11 +2147,23 @@ function UsersTab({ users, total, page, setPage, search, setSearch, status, setS
           <div className="bg-white border border-[#D8DCE8] rounded-xl p-6 w-full max-w-sm">
             <h3 className="text-lg font-bold mb-3">确认删除</h3>
             <p className="text-[#4B5A72] text-sm mb-4">
-              确定要删除用户 <span className="text-[#0D2145] font-medium">{showDeleteConfirm.username}</span> 吗？此操作不可撤销。
+              确定要删除用户{" "}
+              <span className="text-[#0D2145] font-medium">{showDeleteConfirm.username}</span>{" "}
+              吗？此操作不可撤销。
             </p>
             <div className="flex gap-3 justify-end">
-              <button onClick={() => setShowDeleteConfirm(null)} className="px-4 py-2 bg-[#E5E9F4] hover:bg-slate-600 rounded-lg text-sm">取消</button>
-              <button onClick={() => handleDelete(showDeleteConfirm.id)} className="px-4 py-2 bg-red-600 hover:bg-red-500 rounded-lg text-sm">确认删除</button>
+              <button
+                onClick={() => setShowDeleteConfirm(null)}
+                className="px-4 py-2 bg-[#E5E9F4] hover:bg-slate-600 rounded-lg text-sm"
+              >
+                取消
+              </button>
+              <button
+                onClick={() => handleDelete(showDeleteConfirm.id)}
+                className="px-4 py-2 bg-red-600 hover:bg-red-500 rounded-lg text-sm"
+              >
+                确认删除
+              </button>
             </div>
           </div>
         </div>
@@ -1492,7 +2177,9 @@ function UsersTab({ users, total, page, setPage, search, setSearch, status, setS
         />
       )}
 
-      {selectedUser && <UserDetailModal user={selectedUser} onClose={() => setSelectedUser(null)} />}
+      {selectedUser && (
+        <UserDetailModal user={selectedUser} onClose={() => setSelectedUser(null)} />
+      )}
     </div>
   );
 }
@@ -1522,7 +2209,9 @@ function VipGrantModal({ user, onClose, onConfirm }) {
   const previewLabel = () => {
     if (customDate) return `自定义到 ${customDate}`;
     const preset = PRESETS[pickedIndex];
-    return preset.months == null ? "永久 VIP" : `${preset.label}（到 ${new Date(computeExpiresAt()).toLocaleDateString("zh-CN")}）`;
+    return preset.months == null
+      ? "永久 VIP"
+      : `${preset.label}（到 ${new Date(computeExpiresAt()).toLocaleDateString("zh-CN")}）`;
   };
 
   return (
@@ -1541,7 +2230,10 @@ function VipGrantModal({ user, onClose, onConfirm }) {
               <button
                 key={p.label}
                 type="button"
-                onClick={() => { setPickedIndex(i); setCustomDate(""); }}
+                onClick={() => {
+                  setPickedIndex(i);
+                  setCustomDate("");
+                }}
                 className={`px-2 py-2 rounded-lg text-xs border transition-colors ${
                   !customDate && pickedIndex === i
                     ? "bg-amber-500/15 border-amber-500 text-amber-700 font-medium"
@@ -1570,7 +2262,12 @@ function VipGrantModal({ user, onClose, onConfirm }) {
         </div>
 
         <div className="flex gap-3 justify-end">
-          <button onClick={onClose} className="px-4 py-2 bg-[#E5E9F4] hover:bg-slate-300 rounded-lg text-sm">取消</button>
+          <button
+            onClick={onClose}
+            className="px-4 py-2 bg-[#E5E9F4] hover:bg-slate-300 rounded-lg text-sm"
+          >
+            取消
+          </button>
           <button
             onClick={() => onConfirm(computeExpiresAt())}
             className="px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-lg text-sm"
@@ -1585,32 +2282,94 @@ function VipGrantModal({ user, onClose, onConfirm }) {
 
 function UserDetailModal({ user, onClose }) {
   const [details, setDetails] = useState(null);
-  useEffect(() => { api.get(`/api/admin/users/${user.id}`).then((d) => setDetails(d)).catch(console.error); }, [user.id]);
+  useEffect(() => {
+    api
+      .get(`/api/admin/users/${user.id}`)
+      .then((d) => setDetails(d))
+      .catch(console.error);
+  }, [user.id]);
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
       <div className="bg-white border border-[#D8DCE8] rounded-xl p-6 w-full max-w-2xl max-h-[80vh] overflow-y-auto">
         <div className="flex justify-between items-center mb-4">
           <h3 className="text-lg font-bold">用户详情</h3>
-          <button onClick={onClose}><X className="w-5 h-5" /></button>
+          <button onClick={onClose}>
+            <X className="w-5 h-5" />
+          </button>
         </div>
         {details ? (
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
-              <div><div className="text-sm text-[#4B5A72]">用户名</div><div className="font-medium">{user.username}</div></div>
-              <div><div className="text-sm text-[#4B5A72]">邮箱</div><div className="font-medium">{user.email || "-"}</div></div>
-              <div><div className="text-sm text-[#4B5A72]">免费额度</div><div className="font-medium">{details.user.free_quota}</div></div>
-              <div><div className="text-sm text-[#4B5A72]">付费额度</div><div className="font-medium">{details.user.paid_quota}</div></div>
-              <div><div className="text-sm text-[#4B5A72]">最后登录</div><div className="font-medium">{details.user.last_login_at ? new Date(details.user.last_login_at).toLocaleString("zh-CN") : "从未登录"}</div></div>
-              <div><div className="text-sm text-[#4B5A72]">注册时间</div><div className="font-medium">{new Date(details.user.created_at).toLocaleString("zh-CN")}</div></div>
+              <div>
+                <div className="text-sm text-[#4B5A72]">用户名</div>
+                <div className="font-medium">{user.username}</div>
+              </div>
+              <div>
+                <div className="text-sm text-[#4B5A72]">邮箱</div>
+                <div className="font-medium">{user.email || "-"}</div>
+              </div>
+              <div>
+                <div className="text-sm text-[#4B5A72]">免费额度</div>
+                <div className="font-medium">{details.user.free_quota}</div>
+              </div>
+              <div>
+                <div className="text-sm text-[#4B5A72]">付费额度</div>
+                <div className="font-medium">{details.user.paid_quota}</div>
+              </div>
+              <div>
+                <div className="text-sm text-[#4B5A72]">最后登录</div>
+                <div className="font-medium">
+                  {details.user.last_login_at
+                    ? new Date(details.user.last_login_at).toLocaleString("zh-CN")
+                    : "从未登录"}
+                </div>
+              </div>
+              <div>
+                <div className="text-sm text-[#4B5A72]">注册时间</div>
+                <div className="font-medium">
+                  {new Date(details.user.created_at).toLocaleString("zh-CN")}
+                </div>
+              </div>
             </div>
-            <div><h4 className="font-medium mb-2">最近订单</h4>
-              {details.orders.length === 0 ? <p className="text-[#8E9BB0]">暂无</p> : <div className="space-y-2">{details.orders.map((o) => (<div key={o.id} className="p-2 bg-[#EEF1F7] rounded text-sm"><span className="font-mono">{o.order_no?.slice(0, 16)}</span> - ¥{o.amount_cents/100} - <span className={o.status === "PAID" ? "text-green-400" : "text-[#4B5A72]"}>{o.status}</span></div>))}</div>}
+            <div>
+              <h4 className="font-medium mb-2">最近订单</h4>
+              {details.orders.length === 0 ? (
+                <p className="text-[#8E9BB0]">暂无</p>
+              ) : (
+                <div className="space-y-2">
+                  {details.orders.map((o) => (
+                    <div key={o.id} className="p-2 bg-[#EEF1F7] rounded text-sm">
+                      <span className="font-mono">{o.order_no?.slice(0, 16)}</span> - ¥
+                      {o.amount_cents / 100} -{" "}
+                      <span className={o.status === "PAID" ? "text-green-400" : "text-[#4B5A72]"}>
+                        {o.status}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
-            <div><h4 className="font-medium mb-2">最近分析</h4>
-              {details.tasks.length === 0 ? <p className="text-[#8E9BB0]">暂无</p> : <div className="space-y-2">{details.tasks.map((t) => (<div key={t.id} className="p-2 bg-[#EEF1F7] rounded text-sm"><span className="font-mono">{t.id?.slice(0, 8)}</span> - {t.stage} - {t.percentage}%</div>))}</div>}
+            <div>
+              <h4 className="font-medium mb-2">最近分析</h4>
+              {details.tasks.length === 0 ? (
+                <p className="text-[#8E9BB0]">暂无</p>
+              ) : (
+                <div className="space-y-2">
+                  {details.tasks.map((t) => (
+                    <div key={t.id} className="p-2 bg-[#EEF1F7] rounded text-sm">
+                      <span className="font-mono">{t.id?.slice(0, 8)}</span> - {t.stage} -{" "}
+                      {t.percentage}%
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
-        ) : <div className="text-center py-8"><Loader2 className="w-6 h-6 animate-spin mx-auto" /></div>}
+        ) : (
+          <div className="text-center py-8">
+            <Loader2 className="w-6 h-6 animate-spin mx-auto" />
+          </div>
+        )}
       </div>
     </div>
   );
@@ -1618,26 +2377,48 @@ function UserDetailModal({ user, onClose }) {
 
 // 分析记录组件
 function TasksTab({
-  tasks, total, page, setPage,
-  status, setStatus,
-  search, setSearch,
-  startDate, setStartDate,
-  endDate, setEndDate,
-  industry, setIndustry,
+  tasks,
+  total,
+  page,
+  setPage,
+  status,
+  setStatus,
+  search,
+  setSearch,
+  startDate,
+  setStartDate,
+  endDate,
+  setEndDate,
+  industry,
+  setIndustry,
   industries,
-  sortBy, setSortBy,
-  sortDir, setSortDir,
+  sortBy,
+  setSortBy,
+  sortDir,
+  setSortDir,
   loading,
   loadTasks,
-  selectedTask, setSelectedTask,
+  selectedTask,
+  setSelectedTask,
 }) {
   // 快捷日期范围：今天 / 近 7 天 / 近 30 天 / 全部
   const todayStr = () => new Date().toISOString().slice(0, 10);
-  const daysAgoStr = (n) => { const d = new Date(); d.setDate(d.getDate() - n); return d.toISOString().slice(0, 10); };
+  const daysAgoStr = (n) => {
+    const d = new Date();
+    d.setDate(d.getDate() - n);
+    return d.toISOString().slice(0, 10);
+  };
   const applyQuickRange = (days) => {
-    if (days === null) { setStartDate(""); setEndDate(""); }
-    else if (days === 0) { setStartDate(todayStr()); setEndDate(todayStr()); }
-    else { setStartDate(daysAgoStr(days)); setEndDate(todayStr()); }
+    if (days === null) {
+      setStartDate("");
+      setEndDate("");
+    } else if (days === 0) {
+      setStartDate(todayStr());
+      setEndDate(todayStr());
+    } else {
+      setStartDate(daysAgoStr(days));
+      setEndDate(todayStr());
+    }
     setPage(1);
   };
 
@@ -1681,7 +2462,10 @@ function TasksTab({
         className={`pb-3 cursor-pointer select-none ${active ? "text-[#1B4FD8]" : ""}`}
         onClick={() => {
           if (active) setSortDir(sortDir === "asc" ? "desc" : "asc");
-          else { setSortBy(field); setSortDir("desc"); }
+          else {
+            setSortBy(field);
+            setSortDir("desc");
+          }
           setPage(1);
         }}
       >
@@ -1692,15 +2476,27 @@ function TasksTab({
 
   const renderRow = (t) => (
     <tr key={t.id} className="border-b border-[#D8DCE8]/50 text-sm hover:bg-[#F5F7FB]">
-      <td className="py-3 font-mono text-xs text-[#4B5A72]">{t.archive_number || (t.id?.slice(0, 12) + "...")}</td>
-      <td className="py-3 max-w-[200px] truncate" title={t.title || ""}>{t.title || <span className="text-[#8E9BB0]">未命名</span>}</td>
+      <td className="py-3 font-mono text-xs text-[#4B5A72]">
+        {t.archive_number || t.id?.slice(0, 12) + "..."}
+      </td>
+      <td className="py-3 max-w-[200px] truncate" title={t.title || ""}>
+        {t.title || <span className="text-[#8E9BB0]">未命名</span>}
+      </td>
       <td className="py-3">{t.username || <span className="text-[#8E9BB0]">匿名</span>}</td>
       <td className="py-3">{statusBadge(t.status)}</td>
       <td className="py-3">{scoreCell(t)}</td>
-      <td className="py-3 text-[#4B5A72]">{t.industry_category || <span className="text-[#8E9BB0]">-</span>}</td>
-      <td className="py-3 text-[#4B5A72]">{t.created_at ? new Date(t.created_at).toLocaleString("zh-CN") : "-"}</td>
+      <td className="py-3 text-[#4B5A72]">
+        {t.industry_category || <span className="text-[#8E9BB0]">-</span>}
+      </td>
+      <td className="py-3 text-[#4B5A72]">
+        {t.created_at ? new Date(t.created_at).toLocaleString("zh-CN") : "-"}
+      </td>
       <td className="py-3">
-        <button onClick={() => setSelectedTask(t)} className="p-1 hover:bg-[#E5E9F4] rounded" title="查看详情">
+        <button
+          onClick={() => setSelectedTask(t)}
+          className="p-1 hover:bg-[#E5E9F4] rounded"
+          title="查看详情"
+        >
           <Eye className="w-4 h-4" />
         </button>
       </td>
@@ -1719,22 +2515,41 @@ function TasksTab({
               <input
                 type="text"
                 value={search}
-                onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+                onChange={(e) => {
+                  setSearch(e.target.value);
+                  setPage(1);
+                }}
                 placeholder="搜索用户名 / 档案号 / 任务 ID / 标题"
                 className="w-full pl-10 pr-4 py-2 bg-[#EEF1F7] border border-[#D8DCE8] rounded-lg"
               />
             </div>
-            <select value={status} onChange={(e) => { setStatus(e.target.value); setPage(1); }} className="px-4 py-2 bg-[#EEF1F7] border border-[#D8DCE8] rounded-lg">
+            <select
+              value={status}
+              onChange={(e) => {
+                setStatus(e.target.value);
+                setPage(1);
+              }}
+              className="px-4 py-2 bg-[#EEF1F7] border border-[#D8DCE8] rounded-lg"
+            >
               <option value="">全部状态</option>
               <option value="running">分析中</option>
               <option value="complete">已完成</option>
               <option value="error">失败</option>
               <option value="queued">排队中</option>
             </select>
-            <select value={industry} onChange={(e) => { setIndustry(e.target.value); setPage(1); }} className="px-4 py-2 bg-[#EEF1F7] border border-[#D8DCE8] rounded-lg max-w-[220px]">
+            <select
+              value={industry}
+              onChange={(e) => {
+                setIndustry(e.target.value);
+                setPage(1);
+              }}
+              className="px-4 py-2 bg-[#EEF1F7] border border-[#D8DCE8] rounded-lg max-w-[220px]"
+            >
               <option value="">全部行业</option>
               {industries.map((i) => (
-                <option key={i.category} value={i.category}>{i.category} ({i.count})</option>
+                <option key={i.category} value={i.category}>
+                  {i.category} ({i.count})
+                </option>
               ))}
             </select>
           </div>
@@ -1744,27 +2559,57 @@ function TasksTab({
             <input
               type="date"
               value={startDate}
-              onChange={(e) => { setStartDate(e.target.value); setPage(1); }}
+              onChange={(e) => {
+                setStartDate(e.target.value);
+                setPage(1);
+              }}
               className="px-3 py-1.5 bg-[#EEF1F7] border border-[#D8DCE8] rounded-lg text-sm"
             />
             <span className="text-[#8E9BB0]">至</span>
             <input
               type="date"
               value={endDate}
-              onChange={(e) => { setEndDate(e.target.value); setPage(1); }}
+              onChange={(e) => {
+                setEndDate(e.target.value);
+                setPage(1);
+              }}
               className="px-3 py-1.5 bg-[#EEF1F7] border border-[#D8DCE8] rounded-lg text-sm"
             />
             <div className="flex gap-1">
-              <button onClick={() => applyQuickRange(0)} className="px-2 py-1 text-xs bg-[#EEF1F7] hover:bg-[#E5E9F4] rounded">今天</button>
-              <button onClick={() => applyQuickRange(7)} className="px-2 py-1 text-xs bg-[#EEF1F7] hover:bg-[#E5E9F4] rounded">近 7 天</button>
-              <button onClick={() => applyQuickRange(30)} className="px-2 py-1 text-xs bg-[#EEF1F7] hover:bg-[#E5E9F4] rounded">近 30 天</button>
-              <button onClick={() => applyQuickRange(null)} className="px-2 py-1 text-xs bg-[#EEF1F7] hover:bg-[#E5E9F4] rounded">全部</button>
+              <button
+                onClick={() => applyQuickRange(0)}
+                className="px-2 py-1 text-xs bg-[#EEF1F7] hover:bg-[#E5E9F4] rounded"
+              >
+                今天
+              </button>
+              <button
+                onClick={() => applyQuickRange(7)}
+                className="px-2 py-1 text-xs bg-[#EEF1F7] hover:bg-[#E5E9F4] rounded"
+              >
+                近 7 天
+              </button>
+              <button
+                onClick={() => applyQuickRange(30)}
+                className="px-2 py-1 text-xs bg-[#EEF1F7] hover:bg-[#E5E9F4] rounded"
+              >
+                近 30 天
+              </button>
+              <button
+                onClick={() => applyQuickRange(null)}
+                className="px-2 py-1 text-xs bg-[#EEF1F7] hover:bg-[#E5E9F4] rounded"
+              >
+                全部
+              </button>
             </div>
             {(startDate || endDate || status || industry || search) && (
               <button
                 onClick={() => {
-                  setSearch(""); setStatus(""); setIndustry("");
-                  setStartDate(""); setEndDate(""); setPage(1);
+                  setSearch("");
+                  setStatus("");
+                  setIndustry("");
+                  setStartDate("");
+                  setEndDate("");
+                  setPage(1);
                 }}
                 className="ml-auto text-xs text-[#1B4FD8] hover:underline"
               >
@@ -1796,7 +2641,11 @@ function TasksTab({
             </thead>
             <tbody>
               {tasks.length === 0 && !loading && (
-                <tr><td colSpan={8} className="py-8 text-center text-[#8E9BB0]">没有匹配的记录</td></tr>
+                <tr>
+                  <td colSpan={8} className="py-8 text-center text-[#8E9BB0]">
+                    没有匹配的记录
+                  </td>
+                </tr>
               )}
               {showGrouped
                 ? groupedByDate.map(([date, items]) => (
@@ -1819,40 +2668,101 @@ function TasksTab({
           <span className="text-[#4B5A72]">共 {total} 条</span>
           {total > 20 && (
             <div className="flex gap-2">
-              <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1} className="px-3 py-1 bg-[#EEF1F7] rounded disabled:opacity-50">上一页</button>
-              <span className="px-3 py-1">第 {page} / {Math.ceil(total / 20)} 页</span>
-              <button onClick={() => setPage(p => p + 1)} disabled={page * 20 >= total} className="px-3 py-1 bg-[#EEF1F7] rounded disabled:opacity-50">下一页</button>
+              <button
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={page === 1}
+                className="px-3 py-1 bg-[#EEF1F7] rounded disabled:opacity-50"
+              >
+                上一页
+              </button>
+              <span className="px-3 py-1">
+                第 {page} / {Math.ceil(total / 20)} 页
+              </span>
+              <button
+                onClick={() => setPage((p) => p + 1)}
+                disabled={page * 20 >= total}
+                className="px-3 py-1 bg-[#EEF1F7] rounded disabled:opacity-50"
+              >
+                下一页
+              </button>
             </div>
           )}
         </div>
       </div>
-      {selectedTask && <TaskDetailModal task={selectedTask} onClose={() => setSelectedTask(null)} />}
+      {selectedTask && (
+        <TaskDetailModal task={selectedTask} onClose={() => setSelectedTask(null)} />
+      )}
     </div>
   );
 }
 
 function TaskDetailModal({ task, onClose }) {
   const [detail, setDetail] = useState(null);
-  useEffect(() => { api.get(`/api/admin/tasks/${task.id}`).then((d) => setDetail(d.task)).catch(console.error); }, [task.id]);
+  useEffect(() => {
+    api
+      .get(`/api/admin/tasks/${task.id}`)
+      .then((d) => setDetail(d.task))
+      .catch(console.error);
+  }, [task.id]);
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
       <div className="bg-white border border-[#D8DCE8] rounded-xl p-6 w-full max-w-2xl max-h-[80vh] overflow-y-auto">
         <div className="flex justify-between items-center mb-4">
           <h3 className="text-lg font-bold">分析详情</h3>
-          <button onClick={onClose}><X className="w-5 h-5" /></button>
+          <button onClick={onClose}>
+            <X className="w-5 h-5" />
+          </button>
         </div>
         {detail ? (
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
-              <div><div className="text-sm text-[#4B5A72]">档案号</div><div className="font-mono text-sm">{detail.archive_number || "-"}</div></div>
-              <div><div className="text-sm text-[#4B5A72]">用户</div><div className="font-medium">{detail.username || "匿名"}</div></div>
-              <div><div className="text-sm text-[#4B5A72]">状态</div><div className={`px-2 py-0.5 rounded text-xs inline-block ${detail.status === "complete" ? "bg-green-500/20 text-green-400" : detail.status === "running" ? "bg-blue-500/20 text-blue-400" : "bg-red-500/20 text-red-400"}`}>{detail.status === "complete" ? "已完成" : detail.status === "running" ? "分析中" : "失败"}</div></div>
-              <div><div className="text-sm text-[#4B5A72]">进度</div><div className="font-medium">{detail.percentage}%</div></div>
-              <div><div className="text-sm text-[#4B5A72]">阶段</div><div className="font-medium">{detail.stage}</div></div>
-              <div><div className="text-sm text-[#4B5A72]">创建时间</div><div className="font-medium">{new Date(detail.created_at).toLocaleString("zh-CN")}</div></div>
+              <div>
+                <div className="text-sm text-[#4B5A72]">档案号</div>
+                <div className="font-mono text-sm">{detail.archive_number || "-"}</div>
+              </div>
+              <div>
+                <div className="text-sm text-[#4B5A72]">用户</div>
+                <div className="font-medium">{detail.username || "匿名"}</div>
+              </div>
+              <div>
+                <div className="text-sm text-[#4B5A72]">状态</div>
+                <div
+                  className={`px-2 py-0.5 rounded text-xs inline-block ${detail.status === "complete" ? "bg-green-500/20 text-green-400" : detail.status === "running" ? "bg-blue-500/20 text-blue-400" : "bg-red-500/20 text-red-400"}`}
+                >
+                  {detail.status === "complete"
+                    ? "已完成"
+                    : detail.status === "running"
+                      ? "分析中"
+                      : "失败"}
+                </div>
+              </div>
+              <div>
+                <div className="text-sm text-[#4B5A72]">进度</div>
+                <div className="font-medium">{detail.percentage}%</div>
+              </div>
+              <div>
+                <div className="text-sm text-[#4B5A72]">阶段</div>
+                <div className="font-medium">{detail.stage}</div>
+              </div>
+              <div>
+                <div className="text-sm text-[#4B5A72]">创建时间</div>
+                <div className="font-medium">
+                  {new Date(detail.created_at).toLocaleString("zh-CN")}
+                </div>
+              </div>
             </div>
-            {detail.message && <div><h4 className="font-medium mb-2">消息</h4><div className="p-3 bg-[#EEF1F7] rounded text-sm">{detail.message}</div></div>}
-            {detail.error && <div><h4 className="font-medium mb-2 text-red-400">错误信息</h4><div className="p-3 bg-red-500/10 rounded text-sm text-red-400">{detail.error}</div></div>}
+            {detail.message && (
+              <div>
+                <h4 className="font-medium mb-2">消息</h4>
+                <div className="p-3 bg-[#EEF1F7] rounded text-sm">{detail.message}</div>
+              </div>
+            )}
+            {detail.error && (
+              <div>
+                <h4 className="font-medium mb-2 text-red-400">错误信息</h4>
+                <div className="p-3 bg-red-500/10 rounded text-sm text-red-400">{detail.error}</div>
+              </div>
+            )}
             {detail.result && (
               <div>
                 <div className="flex items-center justify-between mb-2">
@@ -1868,12 +2778,20 @@ function TaskDetailModal({ task, onClose }) {
                   )}
                 </div>
                 <div className="p-3 bg-[#EEF1F7] rounded text-sm max-h-60 overflow-auto">
-                  <pre className="whitespace-pre-wrap">{typeof detail.result === "string" ? detail.result : JSON.stringify(detail.result, null, 2)}</pre>
+                  <pre className="whitespace-pre-wrap">
+                    {typeof detail.result === "string"
+                      ? detail.result
+                      : JSON.stringify(detail.result, null, 2)}
+                  </pre>
                 </div>
               </div>
             )}
           </div>
-        ) : <div className="text-center py-8"><Loader2 className="w-6 h-6 animate-spin mx-auto" /></div>}
+        ) : (
+          <div className="text-center py-8">
+            <Loader2 className="w-6 h-6 animate-spin mx-auto" />
+          </div>
+        )}
       </div>
     </div>
   );
@@ -1897,7 +2815,16 @@ const FEATURE_LABELS = {
 };
 const featureLabel = (id) => FEATURE_LABELS[id] || id;
 const DAYS_OPTIONS = [7, 30, 90];
-const FU_BAR_COLORS = ["#3b82f6", "#8b5cf6", "#22c55e", "#f59e0b", "#ef4444", "#06b6d4", "#ec4899", "#6b7280"];
+const FU_BAR_COLORS = [
+  "#3b82f6",
+  "#8b5cf6",
+  "#22c55e",
+  "#f59e0b",
+  "#ef4444",
+  "#06b6d4",
+  "#ec4899",
+  "#6b7280",
+];
 
 function FeatureUsageTab() {
   const [days, setDays] = useState(30);
@@ -1917,33 +2844,50 @@ function FeatureUsageTab() {
     setLoading(true);
     setSelectedFeature(null);
     setDrill(null);
-    api.get(`/api/admin/feature-usage?days=${days}`)
-      .then((data) => { if (!cancelled) setSummary(data); })
-      .catch((err) => { console.error("加载功能使用统计失败:", err); })
-      .finally(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
+    api
+      .get(`/api/admin/feature-usage?days=${days}`)
+      .then((data) => {
+        if (!cancelled) setSummary(data);
+      })
+      .catch((err) => {
+        console.error("加载功能使用统计失败:", err);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [days]);
 
   const loadDrill = (feature) => {
     setSelectedFeature(feature);
     setDrill(null);
     setDrillLoading(true);
-    api.get(`/api/admin/feature-usage/by-user?days=${days}&feature=${encodeURIComponent(feature)}&limit=50`)
+    api
+      .get(
+        `/api/admin/feature-usage/by-user?days=${days}&feature=${encodeURIComponent(feature)}&limit=50`
+      )
       .then(setDrill)
-      .catch((err) => { console.error("加载用户下钻失败:", err); })
+      .catch((err) => {
+        console.error("加载用户下钻失败:", err);
+      })
       .finally(() => setDrillLoading(false));
   };
 
   const features = summary?.features || [];
   const maxTotal = Math.max(...features.map((f) => f.total), 1);
-  const chartData = features.slice(0, 10).map((f) => ({ name: featureLabel(f.feature), total: f.total }));
+  const chartData = features
+    .slice(0, 10)
+    .map((f) => ({ name: featureLabel(f.feature), total: f.total }));
 
   return (
     <div className="space-y-6">
       {/* 顶部：时间窗口选择 + 汇总卡 */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <h3 className="text-base font-semibold flex items-center gap-2">
-          <TrendingUp className="w-4 h-4 text-blue-500" />Workspace 功能使用热度
+          <TrendingUp className="w-4 h-4 text-blue-500" />
+          Workspace 功能使用热度
         </h3>
         <div className="flex gap-2">
           {DAYS_OPTIONS.map((d) => (
@@ -1951,7 +2895,9 @@ function FeatureUsageTab() {
               key={d}
               onClick={() => setDays(d)}
               className={`px-3 py-1.5 text-sm rounded-lg border transition-colors ${
-                days === d ? "bg-[#1B4FD8] text-white border-[#1B4FD8]" : "text-[#4B5A72] border-[#D8DCE8] hover:bg-[#EEF1F7]"
+                days === d
+                  ? "bg-[#1B4FD8] text-white border-[#1B4FD8]"
+                  : "text-[#4B5A72] border-[#D8DCE8] hover:bg-[#EEF1F7]"
               }`}
             >
               近 {d} 天
@@ -1978,7 +2924,9 @@ function FeatureUsageTab() {
       </div>
 
       {loading ? (
-        <div className="text-center py-12"><Loader2 className="w-6 h-6 animate-spin mx-auto text-blue-500" /></div>
+        <div className="text-center py-12">
+          <Loader2 className="w-6 h-6 animate-spin mx-auto text-blue-500" />
+        </div>
       ) : features.length === 0 ? (
         <div className="text-center py-12 text-[#8E9BB0]">该时间窗口内暂无功能使用记录</div>
       ) : (
@@ -1987,18 +2935,46 @@ function FeatureUsageTab() {
           <div className="bg-white border border-[#D8DCE8] rounded-xl p-6">
             <h4 className="text-sm font-semibold mb-4 text-[#0F1C36]">调用次数 Top 10</h4>
             {Recharts ? (
-              <Recharts.ResponsiveContainer width="100%" height={Math.max(220, chartData.length * 34)}>
-                <Recharts.BarChart data={chartData} layout="vertical" margin={{ top: 5, right: 20, left: 10, bottom: 0 }}>
-                  <Recharts.CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.06)" horizontal={false} />
-                  <Recharts.XAxis type="number" tick={{ fill: "#94a3b8", fontSize: 12 }} allowDecimals={false} />
-                  <Recharts.YAxis type="category" dataKey="name" width={96} tick={{ fill: "#4B5A72", fontSize: 12 }} />
+              <Recharts.ResponsiveContainer
+                width="100%"
+                height={Math.max(220, chartData.length * 34)}
+              >
+                <Recharts.BarChart
+                  data={chartData}
+                  layout="vertical"
+                  margin={{ top: 5, right: 20, left: 10, bottom: 0 }}
+                >
+                  <Recharts.CartesianGrid
+                    strokeDasharray="3 3"
+                    stroke="rgba(0,0,0,0.06)"
+                    horizontal={false}
+                  />
+                  <Recharts.XAxis
+                    type="number"
+                    tick={{ fill: "#94a3b8", fontSize: 12 }}
+                    allowDecimals={false}
+                  />
+                  <Recharts.YAxis
+                    type="category"
+                    dataKey="name"
+                    width={96}
+                    tick={{ fill: "#4B5A72", fontSize: 12 }}
+                  />
                   <Recharts.Tooltip
-                    contentStyle={{ backgroundColor: "rgba(15,23,42,0.95)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, color: "#e2e8f0" }}
+                    contentStyle={{
+                      backgroundColor: "rgba(15,23,42,0.95)",
+                      border: "1px solid rgba(255,255,255,0.1)",
+                      borderRadius: 8,
+                      color: "#e2e8f0",
+                    }}
                     formatter={(value) => [`${value} 次`, "调用次数"]}
                   />
                   <Recharts.Bar dataKey="total" radius={[0, 4, 4, 0]} barSize={20}>
                     {chartData.map((entry, idx) => (
-                      <Recharts.Cell key={entry.name} fill={FU_BAR_COLORS[idx % FU_BAR_COLORS.length]} />
+                      <Recharts.Cell
+                        key={entry.name}
+                        fill={FU_BAR_COLORS[idx % FU_BAR_COLORS.length]}
+                      />
                     ))}
                   </Recharts.Bar>
                 </Recharts.BarChart>
@@ -2008,9 +2984,17 @@ function FeatureUsageTab() {
               <div className="space-y-2">
                 {chartData.map((d, idx) => (
                   <div key={d.name} className="flex items-center gap-3">
-                    <span className="text-xs text-[#4B5A72] w-24 truncate text-right">{d.name}</span>
+                    <span className="text-xs text-[#4B5A72] w-24 truncate text-right">
+                      {d.name}
+                    </span>
                     <div className="flex-1 bg-[#EEF1F7] rounded h-5 overflow-hidden">
-                      <div className="h-full rounded" style={{ width: `${(d.total / maxTotal) * 100}%`, backgroundColor: FU_BAR_COLORS[idx % FU_BAR_COLORS.length] }} />
+                      <div
+                        className="h-full rounded"
+                        style={{
+                          width: `${(d.total / maxTotal) * 100}%`,
+                          backgroundColor: FU_BAR_COLORS[idx % FU_BAR_COLORS.length],
+                        }}
+                      />
                     </div>
                     <span className="text-xs text-[#0F1C36] tabular-nums w-10">{d.total}</span>
                   </div>
@@ -2021,7 +3005,9 @@ function FeatureUsageTab() {
 
           {/* 功能明细表（点击行下钻到用户） */}
           <div className="bg-white border border-[#D8DCE8] rounded-xl p-6 overflow-x-auto">
-            <h4 className="text-sm font-semibold mb-4 text-[#0F1C36]">功能明细（点击查看用户分布）</h4>
+            <h4 className="text-sm font-semibold mb-4 text-[#0F1C36]">
+              功能明细（点击查看用户分布）
+            </h4>
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left text-[#8E9BB0] border-b border-[#EEF1F7]">
@@ -2044,9 +3030,17 @@ function FeatureUsageTab() {
                       <span className="text-[#B6BFCE] text-xs ml-1">{f.feature}</span>
                     </td>
                     <td className="py-2 pr-4 text-right tabular-nums text-[#0F1C36]">{f.total}</td>
-                    <td className="py-2 pr-4 text-right tabular-nums text-[#4B5A72]">{f.success_rate_pct != null ? `${f.success_rate_pct}%` : "—"}</td>
-                    <td className="py-2 pr-4 text-right tabular-nums text-[#4B5A72]">{f.unique_users}</td>
-                    <td className="py-2 pr-4 text-right tabular-nums text-[#4B5A72]">{f.avg_duration_ms != null ? `${(f.avg_duration_ms / 1000).toFixed(1)}s` : "—"}</td>
+                    <td className="py-2 pr-4 text-right tabular-nums text-[#4B5A72]">
+                      {f.success_rate_pct != null ? `${f.success_rate_pct}%` : "—"}
+                    </td>
+                    <td className="py-2 pr-4 text-right tabular-nums text-[#4B5A72]">
+                      {f.unique_users}
+                    </td>
+                    <td className="py-2 pr-4 text-right tabular-nums text-[#4B5A72]">
+                      {f.avg_duration_ms != null
+                        ? `${(f.avg_duration_ms / 1000).toFixed(1)}s`
+                        : "—"}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -2060,12 +3054,20 @@ function FeatureUsageTab() {
                 <h4 className="text-sm font-semibold text-[#0F1C36]">
                   「{featureLabel(selectedFeature)}」用户分布（Top 50）
                 </h4>
-                <button onClick={() => { setSelectedFeature(null); setDrill(null); }} className="text-[#8E9BB0] hover:text-[#4B5A72]">
+                <button
+                  onClick={() => {
+                    setSelectedFeature(null);
+                    setDrill(null);
+                  }}
+                  className="text-[#8E9BB0] hover:text-[#4B5A72]"
+                >
                   <X className="w-4 h-4" />
                 </button>
               </div>
               {drillLoading ? (
-                <div className="text-center py-8"><Loader2 className="w-5 h-5 animate-spin mx-auto text-blue-500" /></div>
+                <div className="text-center py-8">
+                  <Loader2 className="w-5 h-5 animate-spin mx-auto text-blue-500" />
+                </div>
               ) : (drill?.users?.length || 0) === 0 ? (
                 <div className="text-center py-8 text-[#8E9BB0]">暂无数据</div>
               ) : (
@@ -2082,9 +3084,15 @@ function FeatureUsageTab() {
                     {drill.users.map((u) => (
                       <tr key={`${u.user_id}`} className="border-b border-[#F4F6FA]">
                         <td className="py-2 pr-4 text-[#0F1C36]">{u.username}</td>
-                        <td className="py-2 pr-4 text-right tabular-nums text-[#0F1C36]">{u.total}</td>
-                        <td className="py-2 pr-4 text-right tabular-nums text-emerald-600">{u.success}</td>
-                        <td className="py-2 pr-4 text-right tabular-nums text-red-500">{u.failed}</td>
+                        <td className="py-2 pr-4 text-right tabular-nums text-[#0F1C36]">
+                          {u.total}
+                        </td>
+                        <td className="py-2 pr-4 text-right tabular-nums text-emerald-600">
+                          {u.success}
+                        </td>
+                        <td className="py-2 pr-4 text-right tabular-nums text-red-500">
+                          {u.failed}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -2099,58 +3107,143 @@ function FeatureUsageTab() {
 }
 
 function StatsTab({ stats }) {
-  if (!stats) return <div className="text-center py-8"><Loader2 className="w-6 h-6 animate-spin mx-auto" /></div>;
+  if (!stats)
+    return (
+      <div className="text-center py-8">
+        <Loader2 className="w-6 h-6 animate-spin mx-auto" />
+      </div>
+    );
 
   // 计算分析状态分布的饼图数据
   const totalTasks = stats.taskStatusDist?.reduce((sum, item) => sum + item.count, 0) || 0;
-  const statusColors = { complete: "#22c55e", running: "#3b82f6", error: "#ef4444", queued: "#6b7280", failed: "#f59e0b" };
-  const statusLabels = { complete: "已完成", running: "分析中", error: "失败", queued: "排队中", failed: "中断" };
+  const statusColors = {
+    complete: "#22c55e",
+    running: "#3b82f6",
+    error: "#ef4444",
+    queued: "#6b7280",
+    failed: "#f59e0b",
+  };
+  const statusLabels = {
+    complete: "已完成",
+    running: "分析中",
+    error: "失败",
+    queued: "排队中",
+    failed: "中断",
+  };
 
   // 计算饼图渐变
   let cumulativePercent = 0;
-  const pieData = stats.taskStatusDist?.map(item => {
-    const percent = totalTasks > 0 ? (item.count / totalTasks) * 100 : 0;
-    const start = cumulativePercent;
-    cumulativePercent += percent;
-    return { ...item, percent, start, end: cumulativePercent, color: statusColors[item.status] || "#6b7280" };
-  }) || [];
+  const pieData =
+    stats.taskStatusDist?.map((item) => {
+      const percent = totalTasks > 0 ? (item.count / totalTasks) * 100 : 0;
+      const start = cumulativePercent;
+      cumulativePercent += percent;
+      return {
+        ...item,
+        percent,
+        start,
+        end: cumulativePercent,
+        color: statusColors[item.status] || "#6b7280",
+      };
+    }) || [];
 
   // 计算趋势图最大值的归一化
-  const maxUserCount = Math.max(...(stats.userTrend?.map(t => t.count) || [1]), 1);
-  const maxRevenue = Math.max(...(stats.revenueTrend?.map(t => t.total) || [1]), 1);
-  const maxDailyAnalysis = Math.max(...(stats.dailyAnalysisTrend?.map(t => t.count) || [1]), 1);
+  const maxUserCount = Math.max(...(stats.userTrend?.map((t) => t.count) || [1]), 1);
+  const maxRevenue = Math.max(...(stats.revenueTrend?.map((t) => t.total) || [1]), 1);
+  const maxDailyAnalysis = Math.max(...(stats.dailyAnalysisTrend?.map((t) => t.count) || [1]), 1);
 
   // 评分等级分布
   const gradeColors = { A: "#22c55e", B: "#3b82f6", C: "#f59e0b", D: "#ef4444" };
   const totalGraded = stats.gradeDist?.reduce((sum, g) => sum + g.count, 0) || 0;
 
   // 行业分布
-  const industryColors = ["#8b5cf6", "#3b82f6", "#22c55e", "#f59e0b", "#ef4444", "#ec4899", "#06b6d4", "#6b7280"];
+  const industryColors = [
+    "#8b5cf6",
+    "#3b82f6",
+    "#22c55e",
+    "#f59e0b",
+    "#ef4444",
+    "#ec4899",
+    "#06b6d4",
+    "#6b7280",
+  ];
   let industryCumulativePercent = 0;
   const totalIndustry = stats.industryDist?.reduce((sum, i) => sum + i.count, 0) || 0;
-  const industryPieData = stats.industryDist?.map((item, idx) => {
-    const percent = totalIndustry > 0 ? (item.count / totalIndustry) * 100 : 0;
-    const start = industryCumulativePercent;
-    industryCumulativePercent += percent;
-    return { ...item, percent, start, end: industryCumulativePercent, color: industryColors[idx % industryColors.length] };
-  }) || [];
+  const industryPieData =
+    stats.industryDist?.map((item, idx) => {
+      const percent = totalIndustry > 0 ? (item.count / totalIndustry) * 100 : 0;
+      const start = industryCumulativePercent;
+      industryCumulativePercent += percent;
+      return {
+        ...item,
+        percent,
+        start,
+        end: industryCumulativePercent,
+        color: industryColors[idx % industryColors.length],
+      };
+    }) || [];
 
   return (
     <div className="space-y-6">
       {/* 核心指标卡片 */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white border border-[#D8DCE8] rounded-xl p-6"><div className="text-sm text-[#4B5A72] mb-1">总用户</div><div className="text-2xl font-bold">{stats.totalUsers}</div></div>
-        <div className="bg-white border border-[#D8DCE8] rounded-xl p-6"><div className="text-sm text-[#4B5A72] mb-1">活跃用户(7天)</div><div className="text-2xl font-bold text-green-400">{stats.activeUsers}</div></div>
-        <div className="bg-white border border-[#D8DCE8] rounded-xl p-6"><div className="text-sm text-[#4B5A72] mb-1">累计收入</div><div className="text-2xl font-bold text-yellow-400">¥{(stats.totalRevenue / 100).toFixed(2)}</div></div>
-        <div className="bg-white border border-[#D8DCE8] rounded-xl p-6"><div className="text-sm text-[#4B5A72] mb-1">总分析次数</div><div className="text-2xl font-bold text-blue-400">{stats.totalAnalyzes}</div></div>
+        <div className="bg-white border border-[#D8DCE8] rounded-xl p-6">
+          <div className="text-sm text-[#4B5A72] mb-1">总用户</div>
+          <div className="text-2xl font-bold">{stats.totalUsers}</div>
+        </div>
+        <div className="bg-white border border-[#D8DCE8] rounded-xl p-6">
+          <div className="text-sm text-[#4B5A72] mb-1">活跃用户(7天)</div>
+          <div className="text-2xl font-bold text-green-400">{stats.activeUsers}</div>
+        </div>
+        <div className="bg-white border border-[#D8DCE8] rounded-xl p-6">
+          <div className="text-sm text-[#4B5A72] mb-1">累计收入</div>
+          <div className="text-2xl font-bold text-yellow-400">
+            ¥{(stats.totalRevenue / 100).toFixed(2)}
+          </div>
+        </div>
+        <div className="bg-white border border-[#D8DCE8] rounded-xl p-6">
+          <div className="text-sm text-[#4B5A72] mb-1">总分析次数</div>
+          <div className="text-2xl font-bold text-blue-400">{stats.totalAnalyzes}</div>
+        </div>
       </div>
 
       {/* 第二行指标卡片 */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white border border-[#D8DCE8] rounded-xl p-6"><div className="text-sm text-[#4B5A72] mb-1">用户留存率</div><div className="text-2xl font-bold text-purple-400">{stats.retentionRate || 0}%</div><div className="text-xs text-[#8E9BB0]">注册后7天内回访</div></div>
-        <div className="bg-white border border-[#D8DCE8] rounded-xl p-6"><div className="text-sm text-[#4B5A72] mb-1">兑换码总数</div><div className="text-2xl font-bold">{stats.tokenStats?.total || 0}</div><div className="text-xs text-[#8E9BB0]">已用 {stats.tokenStats?.used || 0} · 可用 {stats.tokenStats?.available || 0}</div></div>
-        <div className="bg-white border border-[#D8DCE8] rounded-xl p-6"><div className="text-sm text-[#4B5A72] mb-1">兑换码使用率</div><div className="text-2xl font-bold text-cyan-400">{stats.tokenStats?.total > 0 ? Math.round((stats.tokenStats.used / stats.tokenStats.total) * 100) : 0}%</div></div>
-        <div className="bg-white border border-[#D8DCE8] rounded-xl p-6"><div className="text-sm text-[#4B5A72] mb-1">平均评分</div><div className="text-2xl font-bold text-orange-400">{totalGraded > 0 ? (() => { const scoreMap = { A: 90, B: 75, C: 65, D: 45 }; const avg = stats.gradeDist.reduce((s, g) => s + (scoreMap[g.grade] || 0) * g.count, 0) / totalGraded; return avg.toFixed(0); })() : "-"}</div></div>
+        <div className="bg-white border border-[#D8DCE8] rounded-xl p-6">
+          <div className="text-sm text-[#4B5A72] mb-1">用户留存率</div>
+          <div className="text-2xl font-bold text-purple-400">{stats.retentionRate || 0}%</div>
+          <div className="text-xs text-[#8E9BB0]">注册后7天内回访</div>
+        </div>
+        <div className="bg-white border border-[#D8DCE8] rounded-xl p-6">
+          <div className="text-sm text-[#4B5A72] mb-1">兑换码总数</div>
+          <div className="text-2xl font-bold">{stats.tokenStats?.total || 0}</div>
+          <div className="text-xs text-[#8E9BB0]">
+            已用 {stats.tokenStats?.used || 0} · 可用 {stats.tokenStats?.available || 0}
+          </div>
+        </div>
+        <div className="bg-white border border-[#D8DCE8] rounded-xl p-6">
+          <div className="text-sm text-[#4B5A72] mb-1">兑换码使用率</div>
+          <div className="text-2xl font-bold text-cyan-400">
+            {stats.tokenStats?.total > 0
+              ? Math.round((stats.tokenStats.used / stats.tokenStats.total) * 100)
+              : 0}
+            %
+          </div>
+        </div>
+        <div className="bg-white border border-[#D8DCE8] rounded-xl p-6">
+          <div className="text-sm text-[#4B5A72] mb-1">平均评分</div>
+          <div className="text-2xl font-bold text-orange-400">
+            {totalGraded > 0
+              ? (() => {
+                  const scoreMap = { A: 90, B: 75, C: 65, D: 45 };
+                  const avg =
+                    stats.gradeDist.reduce((s, g) => s + (scoreMap[g.grade] || 0) * g.count, 0) /
+                    totalGraded;
+                  return avg.toFixed(0);
+                })()
+              : "-"}
+          </div>
+        </div>
       </div>
 
       {/* 可视化仪表盘 Row 1 */}
@@ -2164,7 +3257,9 @@ function StatsTab({ stats }) {
                 {pieData.map((item, i) => (
                   <circle
                     key={i}
-                    cx="50" cy="50" r="40"
+                    cx="50"
+                    cy="50"
+                    r="40"
                     fill="none"
                     stroke={item.color}
                     strokeWidth="20"
@@ -2182,8 +3277,12 @@ function StatsTab({ stats }) {
               {pieData.map((item) => (
                 <div key={item.status} className="flex items-center gap-2">
                   <div className="w-3 h-3 rounded-full" style={{ backgroundColor: item.color }} />
-                  <span className="text-sm text-[#4B5A72]">{statusLabels[item.status] || item.status}:</span>
-                  <span className="text-sm font-medium">{item.count} ({item.percent.toFixed(1)}%)</span>
+                  <span className="text-sm text-[#4B5A72]">
+                    {statusLabels[item.status] || item.status}:
+                  </span>
+                  <span className="text-sm font-medium">
+                    {item.count} ({item.percent.toFixed(1)}%)
+                  </span>
                 </div>
               ))}
             </div>
@@ -2193,16 +3292,26 @@ function StatsTab({ stats }) {
         {/* 评分等级分布柱状图 */}
         <div className="bg-white border border-[#D8DCE8] rounded-xl p-6">
           <h3 className="text-lg font-bold mb-4">评分等级分布</h3>
-          {totalGraded === 0 ? <p className="text-[#8E9BB0] text-center py-8">暂无数据</p> : (
+          {totalGraded === 0 ? (
+            <p className="text-[#8E9BB0] text-center py-8">暂无数据</p>
+          ) : (
             <div className="flex items-end justify-center gap-6 h-40">
               {["A", "B", "C", "D"].map((grade) => {
-                const item = stats.gradeDist?.find(g => g.grade === grade) || { count: 0 };
+                const item = stats.gradeDist?.find((g) => g.grade === grade) || { count: 0 };
                 const heightPct = totalGraded > 0 ? (item.count / totalGraded) * 100 : 0;
                 return (
                   <div key={grade} className="flex flex-col items-center gap-1">
                     <span className="text-xs text-[#4B5A72]">{item.count}</span>
-                    <div className="w-12 rounded-t-md" style={{ height: `${Math.max(heightPct, 4)}%`, backgroundColor: gradeColors[grade] }} />
-                    <span className="text-sm font-bold" style={{ color: gradeColors[grade] }}>{grade}</span>
+                    <div
+                      className="w-12 rounded-t-md"
+                      style={{
+                        height: `${Math.max(heightPct, 4)}%`,
+                        backgroundColor: gradeColors[grade],
+                      }}
+                    />
+                    <span className="text-sm font-bold" style={{ color: gradeColors[grade] }}>
+                      {grade}
+                    </span>
                   </div>
                 );
               })}
@@ -2216,14 +3325,18 @@ function StatsTab({ stats }) {
         {/* BP 行业分布饼图 */}
         <div className="bg-white border border-[#D8DCE8] rounded-xl p-6">
           <h3 className="text-lg font-bold mb-4">BP 行业分布</h3>
-          {totalIndustry === 0 ? <p className="text-[#8E9BB0] text-center py-8">暂无数据</p> : (
+          {totalIndustry === 0 ? (
+            <p className="text-[#8E9BB0] text-center py-8">暂无数据</p>
+          ) : (
             <div className="flex items-center gap-8">
               <div className="relative w-32 h-32">
                 <svg viewBox="0 0 100 100" className="w-full h-full -rotate-90">
                   {industryPieData.map((item, i) => (
                     <circle
                       key={i}
-                      cx="50" cy="50" r="40"
+                      cx="50"
+                      cy="50"
+                      r="40"
                       fill="none"
                       stroke={item.color}
                       strokeWidth="20"
@@ -2240,7 +3353,10 @@ function StatsTab({ stats }) {
               <div className="space-y-1 max-h-40 overflow-y-auto">
                 {industryPieData.map((item) => (
                   <div key={item.category} className="flex items-center gap-2">
-                    <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: item.color }} />
+                    <div
+                      className="w-3 h-3 rounded-full shrink-0"
+                      style={{ backgroundColor: item.color }}
+                    />
                     <span className="text-sm text-[#4B5A72] truncate">{item.category}:</span>
                     <span className="text-sm font-medium">{item.count}</span>
                   </div>
@@ -2253,10 +3369,15 @@ function StatsTab({ stats }) {
         {/* 套餐销售占比 */}
         <div className="bg-white border border-[#D8DCE8] rounded-xl p-6">
           <h3 className="text-lg font-bold mb-4">套餐销售统计</h3>
-          {(!stats.packageSalesDist || stats.packageSalesDist.length === 0) ? <p className="text-[#8E9BB0] text-center py-8">暂无数据</p> : (
+          {!stats.packageSalesDist || stats.packageSalesDist.length === 0 ? (
+            <p className="text-[#8E9BB0] text-center py-8">暂无数据</p>
+          ) : (
             <div className="space-y-3">
               {stats.packageSalesDist.map((p) => (
-                <div key={p.quota_amount} className="flex items-center justify-between p-3 bg-[#EEF1F7] rounded-lg">
+                <div
+                  key={p.quota_amount}
+                  className="flex items-center justify-between p-3 bg-[#EEF1F7] rounded-lg"
+                >
                   <div>
                     <span className="font-medium">{p.quota_amount}次套餐</span>
                     <span className="text-xs text-[#8E9BB0] ml-2">共{p.count}单</span>
@@ -2273,13 +3394,18 @@ function StatsTab({ stats }) {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="bg-white border border-[#D8DCE8] rounded-xl p-6">
           <h3 className="text-lg font-bold mb-4">用户增长趋势（最近30天）</h3>
-          {stats.userTrend.length === 0 ? <p className="text-[#8E9BB0] text-center py-8">暂无数据</p> : (
+          {stats.userTrend.length === 0 ? (
+            <p className="text-[#8E9BB0] text-center py-8">暂无数据</p>
+          ) : (
             <div className="space-y-1">
               {stats.userTrend.slice(-10).map((t) => (
                 <div key={t.date} className="flex items-center gap-2">
                   <span className="text-xs text-[#8E9BB0] w-20">{t.date.slice(5)}</span>
                   <div className="flex-1 h-4 bg-[#EEF1F7] rounded overflow-hidden">
-                    <div className="h-full bg-gradient-to-r from-blue-500 to-blue-400 rounded" style={{ width: `${(t.count / maxUserCount) * 100}%` }} />
+                    <div
+                      className="h-full bg-gradient-to-r from-blue-500 to-blue-400 rounded"
+                      style={{ width: `${(t.count / maxUserCount) * 100}%` }}
+                    />
                   </div>
                   <span className="text-xs text-[#4B5A72] w-8 text-right">{t.count}</span>
                 </div>
@@ -2291,13 +3417,18 @@ function StatsTab({ stats }) {
         {/* 日均分析量趋势 */}
         <div className="bg-white border border-[#D8DCE8] rounded-xl p-6">
           <h3 className="text-lg font-bold mb-4">日均分析量（最近30天）</h3>
-          {(!stats.dailyAnalysisTrend || stats.dailyAnalysisTrend.length === 0) ? <p className="text-[#8E9BB0] text-center py-8">暂无数据</p> : (
+          {!stats.dailyAnalysisTrend || stats.dailyAnalysisTrend.length === 0 ? (
+            <p className="text-[#8E9BB0] text-center py-8">暂无数据</p>
+          ) : (
             <div className="space-y-1">
               {stats.dailyAnalysisTrend.slice(-10).map((t) => (
                 <div key={t.date} className="flex items-center gap-2">
                   <span className="text-xs text-[#8E9BB0] w-20">{t.date.slice(5)}</span>
                   <div className="flex-1 h-4 bg-[#EEF1F7] rounded overflow-hidden">
-                    <div className="h-full bg-gradient-to-r from-purple-500 to-purple-400 rounded" style={{ width: `${(t.count / maxDailyAnalysis) * 100}%` }} />
+                    <div
+                      className="h-full bg-gradient-to-r from-purple-500 to-purple-400 rounded"
+                      style={{ width: `${(t.count / maxDailyAnalysis) * 100}%` }}
+                    />
                   </div>
                   <span className="text-xs text-[#4B5A72] w-8 text-right">{t.count}</span>
                 </div>
@@ -2310,15 +3441,22 @@ function StatsTab({ stats }) {
       {/* 收入趋势 */}
       <div className="bg-white border border-[#D8DCE8] rounded-xl p-6">
         <h3 className="text-lg font-bold mb-4">收入趋势（最近30天）</h3>
-        {stats.revenueTrend.length === 0 ? <p className="text-[#8E9BB0] text-center py-8">暂无数据</p> : (
+        {stats.revenueTrend.length === 0 ? (
+          <p className="text-[#8E9BB0] text-center py-8">暂无数据</p>
+        ) : (
           <div className="space-y-1">
             {stats.revenueTrend.slice(-10).map((t) => (
               <div key={t.date} className="flex items-center gap-2">
                 <span className="text-xs text-[#8E9BB0] w-20">{t.date.slice(5)}</span>
                 <div className="flex-1 h-4 bg-[#EEF1F7] rounded overflow-hidden">
-                  <div className="h-full bg-gradient-to-r from-green-500 to-green-400 rounded" style={{ width: `${(t.total / maxRevenue) * 100}%` }} />
+                  <div
+                    className="h-full bg-gradient-to-r from-green-500 to-green-400 rounded"
+                    style={{ width: `${(t.total / maxRevenue) * 100}%` }}
+                  />
                 </div>
-                <span className="text-xs text-[#4B5A72] w-16 text-right">¥{(t.total / 100).toFixed(0)}</span>
+                <span className="text-xs text-[#4B5A72] w-16 text-right">
+                  ¥{(t.total / 100).toFixed(0)}
+                </span>
               </div>
             ))}
           </div>
@@ -2412,10 +3550,7 @@ function ForumAdminTab({ setMessage }) {
   };
 
   const moderateComment = (id, op) => {
-    runAction(
-      () => api.post(`/api/admin/forum/comments/${id}/moderate`, { op }),
-      "评论操作已完成"
-    );
+    runAction(() => api.post(`/api/admin/forum/comments/${id}/moderate`, { op }), "评论操作已完成");
   };
 
   const verifyIdentity = (id, verified) => {
@@ -2425,11 +3560,25 @@ function ForumAdminTab({ setMessage }) {
     );
   };
 
-  const statusOptions = section === "reports"
-    ? [["pending", "待处理"], ["reviewed", "已处理"], ["dismissed", "已驳回"], ["all", "全部"]]
-    : section === "identity"
-      ? [["", "全部"], ["0", "未认证"], ["1", "已认证"]]
-      : [["all", "全部"], ["published", "已发布"], ["removed", "已下架"]];
+  const statusOptions =
+    section === "reports"
+      ? [
+          ["pending", "待处理"],
+          ["reviewed", "已处理"],
+          ["dismissed", "已驳回"],
+          ["all", "全部"],
+        ]
+      : section === "identity"
+        ? [
+            ["", "全部"],
+            ["0", "未认证"],
+            ["1", "已认证"],
+          ]
+        : [
+            ["all", "全部"],
+            ["published", "已发布"],
+            ["removed", "已下架"],
+          ];
 
   return (
     <div className="space-y-6">
@@ -2455,103 +3604,193 @@ function ForumAdminTab({ setMessage }) {
                 key={item.key}
                 onClick={() => setSection(item.key)}
                 className={`px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap ${
-                  section === item.key ? "bg-[#1B4FD8] text-white" : "bg-[#EEF1F7] text-[#4B5A72] hover:text-[#0D2145]"
+                  section === item.key
+                    ? "bg-[#1B4FD8] text-white"
+                    : "bg-[#EEF1F7] text-[#4B5A72] hover:text-[#0D2145]"
                 }`}
               >
                 {item.label}
               </button>
             ))}
           </div>
-          <select value={status} onChange={(e) => setStatus(e.target.value)} className="px-4 py-2 bg-[#EEF1F7] border border-[#D8DCE8] rounded-lg text-sm">
-            {statusOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+          <select
+            value={status}
+            onChange={(e) => setStatus(e.target.value)}
+            className="px-4 py-2 bg-[#EEF1F7] border border-[#D8DCE8] rounded-lg text-sm"
+          >
+            {statusOptions.map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
           </select>
         </div>
 
         {loading ? (
-          <div className="flex justify-center py-16"><Loader2 className="w-7 h-7 animate-spin text-[#1B4FD8]" /></div>
+          <div className="flex justify-center py-16">
+            <Loader2 className="w-7 h-7 animate-spin text-[#1B4FD8]" />
+          </div>
         ) : data.items.length === 0 ? (
           <p className="text-[#8E9BB0] text-center py-12">暂无数据</p>
         ) : (
           <div className="space-y-3">
-            {section === "reports" && data.items.map((item) => (
-              <div key={item.id} className="p-4 bg-[#EEF1F7] rounded-lg">
-                <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
-                  <div>
-                    <div className="text-sm font-semibold text-[#0D2145]">{item.target_label}</div>
-                    <div className="text-xs text-[#8E9BB0] mt-1">
-                      {item.target_type === "post" ? "帖子" : "评论"} #{item.target_id} · 举报人：{item.reporter?.name || "用户"} · {new Date(item.created_at).toLocaleString("zh-CN")}
+            {section === "reports" &&
+              data.items.map((item) => (
+                <div key={item.id} className="p-4 bg-[#EEF1F7] rounded-lg">
+                  <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
+                    <div>
+                      <div className="text-sm font-semibold text-[#0D2145]">
+                        {item.target_label}
+                      </div>
+                      <div className="text-xs text-[#8E9BB0] mt-1">
+                        {item.target_type === "post" ? "帖子" : "评论"} #{item.target_id} · 举报人：
+                        {item.reporter?.name || "用户"} ·{" "}
+                        {new Date(item.created_at).toLocaleString("zh-CN")}
+                      </div>
+                      {item.reason && (
+                        <div className="text-sm text-[#4B5A72] mt-2">原因：{item.reason}</div>
+                      )}
                     </div>
-                    {item.reason && <div className="text-sm text-[#4B5A72] mt-2">原因：{item.reason}</div>}
+                    {item.status === "pending" && (
+                      <div className="flex gap-2 shrink-0">
+                        <button
+                          onClick={() => resolveReport(item.id, "remove")}
+                          className="px-3 py-1.5 bg-red-500/10 text-red-500 rounded-lg text-sm"
+                        >
+                          下架
+                        </button>
+                        <button
+                          onClick={() => resolveReport(item.id, "dismiss")}
+                          className="px-3 py-1.5 bg-[#E5E9F4] text-[#4B5A72] rounded-lg text-sm"
+                        >
+                          驳回
+                        </button>
+                      </div>
+                    )}
                   </div>
-                  {item.status === "pending" && (
+                </div>
+              ))}
+
+            {section === "posts" &&
+              data.items.map((item) => (
+                <div key={item.id} className="p-4 bg-[#EEF1F7] rounded-lg">
+                  <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-semibold text-[#0D2145]">{item.title}</span>
+                        {item.pinned && (
+                          <span className="px-2 py-0.5 bg-blue-500/10 text-blue-500 rounded text-xs">
+                            置顶
+                          </span>
+                        )}
+                        {item.featured && (
+                          <span className="px-2 py-0.5 bg-amber-500/10 text-amber-600 rounded text-xs">
+                            精华
+                          </span>
+                        )}
+                        <span
+                          className={`px-2 py-0.5 rounded text-xs ${item.status === "removed" ? "bg-red-500/10 text-red-500" : "bg-green-500/10 text-green-500"}`}
+                        >
+                          {item.status}
+                        </span>
+                      </div>
+                      <div className="text-xs text-[#8E9BB0] mt-1">
+                        #{item.id} · {item.category} · 作者：{item.author?.name || "用户"} · 评论{" "}
+                        {item.comment_count} · 撮合 {item.interest_count}
+                      </div>
+                      {item.removed_reason && (
+                        <div className="text-sm text-red-500 mt-2">
+                          下架原因：{item.removed_reason}
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex flex-wrap gap-2 shrink-0">
+                      {item.status === "removed" ? (
+                        <button
+                          onClick={() => moderatePost(item.id, "restore")}
+                          className="px-3 py-1.5 bg-green-500/10 text-green-600 rounded-lg text-sm"
+                        >
+                          恢复
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => moderatePost(item.id, "remove")}
+                          className="px-3 py-1.5 bg-red-500/10 text-red-500 rounded-lg text-sm"
+                        >
+                          下架
+                        </button>
+                      )}
+                      <button
+                        onClick={() => moderatePost(item.id, item.pinned ? "unpin" : "pin")}
+                        className="px-3 py-1.5 bg-[#E5E9F4] rounded-lg text-sm"
+                      >
+                        {item.pinned ? "取消置顶" : "置顶"}
+                      </button>
+                      <button
+                        onClick={() =>
+                          moderatePost(item.id, item.featured ? "unfeature" : "feature")
+                        }
+                        className="px-3 py-1.5 bg-[#E5E9F4] rounded-lg text-sm"
+                      >
+                        {item.featured ? "取消精华" : "精华"}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+
+            {section === "comments" &&
+              data.items.map((item) => (
+                <div key={item.id} className="p-4 bg-[#EEF1F7] rounded-lg">
+                  <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
+                    <div>
+                      <div className="text-sm text-[#0D2145]">{item.body}</div>
+                      <div className="text-xs text-[#8E9BB0] mt-1">
+                        #{item.id} · 帖子：{item.post_title} · 作者：{item.author?.name || "用户"} ·{" "}
+                        {item.status}
+                      </div>
+                    </div>
                     <div className="flex gap-2 shrink-0">
-                      <button onClick={() => resolveReport(item.id, "remove")} className="px-3 py-1.5 bg-red-500/10 text-red-500 rounded-lg text-sm">下架</button>
-                      <button onClick={() => resolveReport(item.id, "dismiss")} className="px-3 py-1.5 bg-[#E5E9F4] text-[#4B5A72] rounded-lg text-sm">驳回</button>
+                      {item.status === "removed" ? (
+                        <button
+                          onClick={() => moderateComment(item.id, "restore")}
+                          className="px-3 py-1.5 bg-green-500/10 text-green-600 rounded-lg text-sm"
+                        >
+                          恢复
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => moderateComment(item.id, "remove")}
+                          className="px-3 py-1.5 bg-red-500/10 text-red-500 rounded-lg text-sm"
+                        >
+                          下架
+                        </button>
+                      )}
                     </div>
-                  )}
+                  </div>
                 </div>
-              </div>
-            ))}
+              ))}
 
-            {section === "posts" && data.items.map((item) => (
-              <div key={item.id} className="p-4 bg-[#EEF1F7] rounded-lg">
-                <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-semibold text-[#0D2145]">{item.title}</span>
-                      {item.pinned && <span className="px-2 py-0.5 bg-blue-500/10 text-blue-500 rounded text-xs">置顶</span>}
-                      {item.featured && <span className="px-2 py-0.5 bg-amber-500/10 text-amber-600 rounded text-xs">精华</span>}
-                      <span className={`px-2 py-0.5 rounded text-xs ${item.status === "removed" ? "bg-red-500/10 text-red-500" : "bg-green-500/10 text-green-500"}`}>{item.status}</span>
+            {section === "identity" &&
+              data.items.map((item) => (
+                <div key={item.id} className="p-4 bg-[#EEF1F7] rounded-lg">
+                  <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
+                    <div>
+                      <div className="text-sm font-semibold text-[#0D2145]">{item.name}</div>
+                      <div className="text-xs text-[#8E9BB0] mt-1">
+                        #{item.id} · {item.user_type} · {item.org_name || "未填写机构"}
+                      </div>
+                      {item.bio && <div className="text-sm text-[#4B5A72] mt-2">{item.bio}</div>}
                     </div>
-                    <div className="text-xs text-[#8E9BB0] mt-1">
-                      #{item.id} · {item.category} · 作者：{item.author?.name || "用户"} · 评论 {item.comment_count} · 撮合 {item.interest_count}
-                    </div>
-                    {item.removed_reason && <div className="text-sm text-red-500 mt-2">下架原因：{item.removed_reason}</div>}
-                  </div>
-                  <div className="flex flex-wrap gap-2 shrink-0">
-                    {item.status === "removed"
-                      ? <button onClick={() => moderatePost(item.id, "restore")} className="px-3 py-1.5 bg-green-500/10 text-green-600 rounded-lg text-sm">恢复</button>
-                      : <button onClick={() => moderatePost(item.id, "remove")} className="px-3 py-1.5 bg-red-500/10 text-red-500 rounded-lg text-sm">下架</button>}
-                    <button onClick={() => moderatePost(item.id, item.pinned ? "unpin" : "pin")} className="px-3 py-1.5 bg-[#E5E9F4] rounded-lg text-sm">{item.pinned ? "取消置顶" : "置顶"}</button>
-                    <button onClick={() => moderatePost(item.id, item.featured ? "unfeature" : "feature")} className="px-3 py-1.5 bg-[#E5E9F4] rounded-lg text-sm">{item.featured ? "取消精华" : "精华"}</button>
+                    <button
+                      onClick={() => verifyIdentity(item.id, !item.type_verified)}
+                      className={`px-3 py-1.5 rounded-lg text-sm shrink-0 ${item.type_verified ? "bg-[#E5E9F4] text-[#4B5A72]" : "bg-[#1B4FD8] text-white"}`}
+                    >
+                      {item.type_verified ? "取消认证" : "通过认证"}
+                    </button>
                   </div>
                 </div>
-              </div>
-            ))}
-
-            {section === "comments" && data.items.map((item) => (
-              <div key={item.id} className="p-4 bg-[#EEF1F7] rounded-lg">
-                <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
-                  <div>
-                    <div className="text-sm text-[#0D2145]">{item.body}</div>
-                    <div className="text-xs text-[#8E9BB0] mt-1">#{item.id} · 帖子：{item.post_title} · 作者：{item.author?.name || "用户"} · {item.status}</div>
-                  </div>
-                  <div className="flex gap-2 shrink-0">
-                    {item.status === "removed"
-                      ? <button onClick={() => moderateComment(item.id, "restore")} className="px-3 py-1.5 bg-green-500/10 text-green-600 rounded-lg text-sm">恢复</button>
-                      : <button onClick={() => moderateComment(item.id, "remove")} className="px-3 py-1.5 bg-red-500/10 text-red-500 rounded-lg text-sm">下架</button>}
-                  </div>
-                </div>
-              </div>
-            ))}
-
-            {section === "identity" && data.items.map((item) => (
-              <div key={item.id} className="p-4 bg-[#EEF1F7] rounded-lg">
-                <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
-                  <div>
-                    <div className="text-sm font-semibold text-[#0D2145]">{item.name}</div>
-                    <div className="text-xs text-[#8E9BB0] mt-1">#{item.id} · {item.user_type} · {item.org_name || "未填写机构"}</div>
-                    {item.bio && <div className="text-sm text-[#4B5A72] mt-2">{item.bio}</div>}
-                  </div>
-                  <button
-                    onClick={() => verifyIdentity(item.id, !item.type_verified)}
-                    className={`px-3 py-1.5 rounded-lg text-sm shrink-0 ${item.type_verified ? "bg-[#E5E9F4] text-[#4B5A72]" : "bg-[#1B4FD8] text-white"}`}
-                  >
-                    {item.type_verified ? "取消认证" : "通过认证"}
-                  </button>
-                </div>
-              </div>
-            ))}
+              ))}
           </div>
         )}
       </div>
@@ -2560,51 +3799,131 @@ function ForumAdminTab({ setMessage }) {
 }
 
 // 管理员反馈管理组件
-function AdminFeedbackTab({ feedback, total, page, setPage, status, setStatus, loadFeedback, reply, setReply, showModal, setShowModal }) {
+function AdminFeedbackTab({
+  feedback,
+  total,
+  page,
+  setPage,
+  status,
+  setStatus,
+  loadFeedback,
+  reply,
+  setReply,
+  showModal,
+  setShowModal,
+}) {
   const handleReply = async (id) => {
     if (!reply) return;
-    try { await api.post(`/api/admin/feedback/${id}/reply`, { reply }); setShowModal(null); setReply(""); loadFeedback(); } catch (err) { console.error(err); }
+    try {
+      await api.post(`/api/admin/feedback/${id}/reply`, { reply });
+      setShowModal(null);
+      setReply("");
+      loadFeedback();
+    } catch (err) {
+      console.error(err);
+    }
   };
   return (
     <div className="space-y-6">
       <div className="bg-white border border-[#D8DCE8] rounded-xl p-6">
         <div className="flex gap-4 mb-4">
-          <select value={status} onChange={(e) => setStatus(e.target.value)} className="px-4 py-2 bg-[#EEF1F7] border border-[#D8DCE8] rounded-lg">
-            <option value="">全部</option><option value="pending">待处理</option><option value="processed">已处理</option><option value="resolved">已解决</option>
+          <select
+            value={status}
+            onChange={(e) => setStatus(e.target.value)}
+            className="px-4 py-2 bg-[#EEF1F7] border border-[#D8DCE8] rounded-lg"
+          >
+            <option value="">全部</option>
+            <option value="pending">待处理</option>
+            <option value="processed">已处理</option>
+            <option value="resolved">已解决</option>
           </select>
         </div>
-        {feedback.length === 0 ? <p className="text-[#8E9BB0] text-center py-8">暂无反馈</p> : (
+        {feedback.length === 0 ? (
+          <p className="text-[#8E9BB0] text-center py-8">暂无反馈</p>
+        ) : (
           <div className="space-y-3">
             {feedback.map((f) => (
               <div key={f.id} className="p-4 bg-[#EEF1F7] rounded-lg">
                 <div className="flex items-center justify-between mb-2">
                   <span className="font-medium">{f.title}</span>
-                  <span className={`px-2 py-0.5 rounded text-xs ${f.status === "pending" ? "bg-yellow-500/20 text-yellow-400" : f.status === "processed" ? "bg-blue-500/20 text-blue-400" : "bg-green-500/20 text-green-400"}`}>
-                    {f.status === "pending" ? "待处理" : f.status === "processed" ? "已处理" : "已解决"}
+                  <span
+                    className={`px-2 py-0.5 rounded text-xs ${f.status === "pending" ? "bg-yellow-500/20 text-yellow-400" : f.status === "processed" ? "bg-blue-500/20 text-blue-400" : "bg-green-500/20 text-green-400"}`}
+                  >
+                    {f.status === "pending"
+                      ? "待处理"
+                      : f.status === "processed"
+                        ? "已处理"
+                        : "已解决"}
                   </span>
                 </div>
                 <p className="text-sm text-[#4B5A72] mb-1">{f.content}</p>
-                <div className="text-xs text-[#8E9BB0] mb-2">用户：{f.username || "匿名"} · {new Date(f.created_at).toLocaleString("zh-CN")}</div>
-                {f.admin_reply && <div className="text-sm text-green-400 border-t border-[#D8DCE8] pt-2 mt-2"><span className="font-medium">回复：</span>{f.admin_reply}</div>}
-                {f.status !== "resolved" && <button onClick={() => setShowModal(f.id)} className="mt-2 px-3 py-1 bg-[#1B4FD8] hover:bg-[#163069] rounded text-sm">回复</button>}
+                <div className="text-xs text-[#8E9BB0] mb-2">
+                  用户：{f.username || "匿名"} · {new Date(f.created_at).toLocaleString("zh-CN")}
+                </div>
+                {f.admin_reply && (
+                  <div className="text-sm text-green-400 border-t border-[#D8DCE8] pt-2 mt-2">
+                    <span className="font-medium">回复：</span>
+                    {f.admin_reply}
+                  </div>
+                )}
+                {f.status !== "resolved" && (
+                  <button
+                    onClick={() => setShowModal(f.id)}
+                    className="mt-2 px-3 py-1 bg-[#1B4FD8] hover:bg-[#163069] rounded text-sm"
+                  >
+                    回复
+                  </button>
+                )}
               </div>
             ))}
           </div>
         )}
-        {total > 20 && <div className="flex justify-center gap-2 mt-4">
-          <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1} className="px-3 py-1 bg-[#EEF1F7] rounded disabled:opacity-50">上一页</button>
-          <span className="px-3 py-1">第 {page} / {Math.ceil(total / 20)} 页</span>
-          <button onClick={() => setPage(p => p + 1)} disabled={page * 20 >= total} className="px-3 py-1 bg-[#EEF1F7] rounded disabled:opacity-50">下一页</button>
-        </div>}
+        {total > 20 && (
+          <div className="flex justify-center gap-2 mt-4">
+            <button
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={page === 1}
+              className="px-3 py-1 bg-[#EEF1F7] rounded disabled:opacity-50"
+            >
+              上一页
+            </button>
+            <span className="px-3 py-1">
+              第 {page} / {Math.ceil(total / 20)} 页
+            </span>
+            <button
+              onClick={() => setPage((p) => p + 1)}
+              disabled={page * 20 >= total}
+              className="px-3 py-1 bg-[#EEF1F7] rounded disabled:opacity-50"
+            >
+              下一页
+            </button>
+          </div>
+        )}
       </div>
       {showModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-white border border-[#D8DCE8] rounded-xl p-6 w-full max-w-md">
             <h3 className="text-lg font-bold mb-4">回复反馈</h3>
-            <textarea value={reply} onChange={(e) => setReply(e.target.value)} placeholder="请输入回复内容" rows={4} className="w-full px-4 py-2 bg-[#EEF1F7] border border-[#D8DCE8] rounded-lg mb-4" />
+            <textarea
+              value={reply}
+              onChange={(e) => setReply(e.target.value)}
+              placeholder="请输入回复内容"
+              rows={4}
+              className="w-full px-4 py-2 bg-[#EEF1F7] border border-[#D8DCE8] rounded-lg mb-4"
+            />
             <div className="flex gap-2">
-              <button onClick={() => setShowModal(null)} className="flex-1 px-4 py-2 bg-[#E5E9F4] rounded-lg">取消</button>
-              <button onClick={() => handleReply(showModal)} className="flex-1 px-4 py-2 bg-[#1B4FD8] rounded-lg">提交回复</button>
+              <button
+                onClick={() => setShowModal(null)}
+                className="flex-1 px-4 py-2 bg-[#E5E9F4] rounded-lg"
+              >
+                取消
+              </button>
+              <button
+                onClick={() => handleReply(showModal)}
+                className="flex-1 px-4 py-2 bg-[#1B4FD8] rounded-lg"
+              >
+                提交回复
+              </button>
             </div>
           </div>
         </div>
@@ -2619,35 +3938,78 @@ function PackagesTab({ packages, setPackages, setMessage }) {
   const [form, setForm] = useState({ name: "", quota_amount: "", price_cents: "", is_active: 1 });
   const handleSave = async () => {
     try {
-      if (editing) { await api.put(`/api/admin/packages/${editing}`, form); }
-      else { await api.post("/api/admin/packages", { ...form, sort_order: packages.length }); }
+      if (editing) {
+        await api.put(`/api/admin/packages/${editing}`, form);
+      } else {
+        await api.post("/api/admin/packages", { ...form, sort_order: packages.length });
+      }
       const data = await api.get("/api/admin/packages");
       setPackages(data.packages || []);
-      setEditing(null); setForm({ name: "", quota_amount: "", price_cents: "", is_active: 1 });
+      setEditing(null);
+      setForm({ name: "", quota_amount: "", price_cents: "", is_active: 1 });
       setMessage({ type: "success", text: "保存成功" });
-    } catch (err) { setMessage({ type: "error", text: err.message }); }
+    } catch (err) {
+      setMessage({ type: "error", text: err.message });
+    }
   };
   const handleDelete = async (id) => {
     if (!window.confirm("确定删除此套餐？")) return;
-    try { await api.delete(`/api/admin/packages/${id}`); const data = await api.get("/api/admin/packages"); setPackages(data.packages || []); } catch (err) { setMessage({ type: "error", text: err.message }); }
+    try {
+      await api.delete(`/api/admin/packages/${id}`);
+      const data = await api.get("/api/admin/packages");
+      setPackages(data.packages || []);
+    } catch (err) {
+      setMessage({ type: "error", text: err.message });
+    }
   };
   return (
     <div className="space-y-6">
       <div className="bg-white border border-[#D8DCE8] rounded-xl p-6">
         <div className="flex justify-between items-center mb-4">
           <h3 className="text-lg font-bold">套餐列表</h3>
-          <button onClick={() => { setEditing(null); setForm({ name: "", quota_amount: "", price_cents: "", is_active: 1 }); }} className="px-3 py-1 bg-[#1B4FD8] rounded text-sm">新增套餐</button>
+          <button
+            onClick={() => {
+              setEditing(null);
+              setForm({ name: "", quota_amount: "", price_cents: "", is_active: 1 });
+            }}
+            className="px-3 py-1 bg-[#1B4FD8] rounded text-sm"
+          >
+            新增套餐
+          </button>
         </div>
         <div className="space-y-3">
           {packages.map((p) => (
-            <div key={p.id} className="p-4 bg-[#EEF1F7] rounded-lg flex items-center justify-between">
+            <div
+              key={p.id}
+              className="p-4 bg-[#EEF1F7] rounded-lg flex items-center justify-between"
+            >
               <div>
                 <div className="font-medium">{p.name}</div>
-                <div className="text-sm text-[#4B5A72]">{p.quota_amount} 次 · ¥{(p.price_cents / 100).toFixed(2)}</div>
+                <div className="text-sm text-[#4B5A72]">
+                  {p.quota_amount} 次 · ¥{(p.price_cents / 100).toFixed(2)}
+                </div>
               </div>
               <div className="flex gap-2">
-                <button onClick={() => { setEditing(p.id); setForm({ name: p.name, quota_amount: p.quota_amount, price_cents: p.price_cents, is_active: p.is_active }); }} className="p-2 hover:bg-[#E5E9F4] rounded"><Edit className="w-4 h-4" /></button>
-                <button onClick={() => handleDelete(p.id)} className="p-2 hover:bg-red-500/20 text-red-400 rounded"><Trash2 className="w-4 h-4" /></button>
+                <button
+                  onClick={() => {
+                    setEditing(p.id);
+                    setForm({
+                      name: p.name,
+                      quota_amount: p.quota_amount,
+                      price_cents: p.price_cents,
+                      is_active: p.is_active,
+                    });
+                  }}
+                  className="p-2 hover:bg-[#E5E9F4] rounded"
+                >
+                  <Edit className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => handleDelete(p.id)}
+                  className="p-2 hover:bg-red-500/20 text-red-400 rounded"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
               </div>
             </div>
           ))}
@@ -2657,12 +4019,51 @@ function PackagesTab({ packages, setPackages, setMessage }) {
         <div className="bg-white border border-[#D8DCE8] rounded-xl p-6">
           <h3 className="text-lg font-bold mb-4">{editing ? "编辑套餐" : "新增套餐"}</h3>
           <div className="grid grid-cols-2 gap-4 mb-4">
-            <div><label className="block text-sm text-[#4B5A72] mb-1">套餐名称</label><input type="text" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="w-full px-4 py-2 bg-[#EEF1F7] border border-[#D8DCE8] rounded-lg" /></div>
-            <div><label className="block text-sm text-[#4B5A72] mb-1">额度次数</label><input type="number" value={form.quota_amount} onChange={(e) => setForm({ ...form, quota_amount: e.target.value })} className="w-full px-4 py-2 bg-[#EEF1F7] border border-[#D8DCE8] rounded-lg" /></div>
-            <div><label className="block text-sm text-[#4B5A72] mb-1">价格(分)</label><input type="number" value={form.price_cents} onChange={(e) => setForm({ ...form, price_cents: e.target.value })} className="w-full px-4 py-2 bg-[#EEF1F7] border border-[#D8DCE8] rounded-lg" /></div>
-            <div><label className="block text-sm text-[#4B5A72] mb-1">状态</label><select value={form.is_active} onChange={(e) => setForm({ ...form, is_active: parseInt(e.target.value) })} className="w-full px-4 py-2 bg-[#EEF1F7] border border-[#D8DCE8] rounded-lg"><option value={1}>启用</option><option value={0}>禁用</option></select></div>
+            <div>
+              <label className="block text-sm text-[#4B5A72] mb-1">套餐名称</label>
+              <input
+                type="text"
+                value={form.name}
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
+                className="w-full px-4 py-2 bg-[#EEF1F7] border border-[#D8DCE8] rounded-lg"
+              />
+            </div>
+            <div>
+              <label className="block text-sm text-[#4B5A72] mb-1">额度次数</label>
+              <input
+                type="number"
+                value={form.quota_amount}
+                onChange={(e) => setForm({ ...form, quota_amount: e.target.value })}
+                className="w-full px-4 py-2 bg-[#EEF1F7] border border-[#D8DCE8] rounded-lg"
+              />
+            </div>
+            <div>
+              <label className="block text-sm text-[#4B5A72] mb-1">价格(分)</label>
+              <input
+                type="number"
+                value={form.price_cents}
+                onChange={(e) => setForm({ ...form, price_cents: e.target.value })}
+                className="w-full px-4 py-2 bg-[#EEF1F7] border border-[#D8DCE8] rounded-lg"
+              />
+            </div>
+            <div>
+              <label className="block text-sm text-[#4B5A72] mb-1">状态</label>
+              <select
+                value={form.is_active}
+                onChange={(e) => setForm({ ...form, is_active: parseInt(e.target.value) })}
+                className="w-full px-4 py-2 bg-[#EEF1F7] border border-[#D8DCE8] rounded-lg"
+              >
+                <option value={1}>启用</option>
+                <option value={0}>禁用</option>
+              </select>
+            </div>
           </div>
-          <button onClick={handleSave} className="px-6 py-2 bg-[#1B4FD8] hover:bg-[#163069] rounded-lg">保存</button>
+          <button
+            onClick={handleSave}
+            className="px-6 py-2 bg-[#1B4FD8] hover:bg-[#163069] rounded-lg"
+          >
+            保存
+          </button>
         </div>
       )}
     </div>
@@ -2673,9 +4074,17 @@ function PackagesTab({ packages, setPackages, setMessage }) {
 function SystemSettingsTab({ settings, setSettings, setMessage }) {
   const [form, setForm] = useState(settings);
   const handleSave = async () => {
-    try { await api.put("/api/admin/settings", form); setSettings(form); setMessage({ type: "success", text: "保存成功" }); } catch (err) { setMessage({ type: "error", text: err.message }); }
+    try {
+      await api.put("/api/admin/settings", form);
+      setSettings(form);
+      setMessage({ type: "success", text: "保存成功" });
+    } catch (err) {
+      setMessage({ type: "error", text: err.message });
+    }
   };
-  useEffect(() => { setForm(settings); }, [settings]);
+  useEffect(() => {
+    setForm(settings);
+  }, [settings]);
   return (
     <div className="space-y-6">
       <div className="bg-white border border-[#D8DCE8] rounded-xl p-6">
@@ -2683,23 +4092,44 @@ function SystemSettingsTab({ settings, setSettings, setMessage }) {
         <div className="space-y-4">
           <div>
             <label className="block text-sm text-[#4B5A72] mb-1">网站名称</label>
-            <input type="text" value={form.site_name || ""} onChange={(e) => setForm({ ...form, site_name: e.target.value })} className="w-full px-4 py-2 bg-[#EEF1F7] border border-[#D8DCE8] rounded-lg" />
+            <input
+              type="text"
+              value={form.site_name || ""}
+              onChange={(e) => setForm({ ...form, site_name: e.target.value })}
+              className="w-full px-4 py-2 bg-[#EEF1F7] border border-[#D8DCE8] rounded-lg"
+            />
             <p className="text-xs text-[#8E9BB0] mt-1">显示在网站导航栏的名称</p>
           </div>
           <div>
             <label className="block text-sm text-[#4B5A72] mb-1">新用户免费额度</label>
-            <input type="number" value={form.default_free_quota || ""} onChange={(e) => setForm({ ...form, default_free_quota: e.target.value })} className="w-full px-4 py-2 bg-[#EEF1F7] border border-[#D8DCE8] rounded-lg" />
+            <input
+              type="number"
+              value={form.default_free_quota || ""}
+              onChange={(e) => setForm({ ...form, default_free_quota: e.target.value })}
+              className="w-full px-4 py-2 bg-[#EEF1F7] border border-[#D8DCE8] rounded-lg"
+            />
             <p className="text-xs text-[#8E9BB0] mt-1">新用户注册时赠送的免费分析次数（默认3次）</p>
           </div>
           <div>
             <label className="block text-sm text-[#4B5A72] mb-1">维护模式</label>
-            <select value={form.maintenance_mode || "false"} onChange={(e) => setForm({ ...form, maintenance_mode: e.target.value })} className="w-full px-4 py-2 bg-[#EEF1F7] border border-[#D8DCE8] rounded-lg">
+            <select
+              value={form.maintenance_mode || "false"}
+              onChange={(e) => setForm({ ...form, maintenance_mode: e.target.value })}
+              className="w-full px-4 py-2 bg-[#EEF1F7] border border-[#D8DCE8] rounded-lg"
+            >
               <option value="false">关闭</option>
               <option value="true">开启</option>
             </select>
-            <p className="text-xs text-[#8E9BB0] mt-1">开启后普通用户无法使用分析功能，仅管理员可访问</p>
+            <p className="text-xs text-[#8E9BB0] mt-1">
+              开启后普通用户无法使用分析功能，仅管理员可访问
+            </p>
           </div>
-          <button onClick={handleSave} className="px-6 py-2 bg-[#1B4FD8] hover:bg-[#163069] rounded-lg">保存设置</button>
+          <button
+            onClick={handleSave}
+            className="px-6 py-2 bg-[#1B4FD8] hover:bg-[#163069] rounded-lg"
+          >
+            保存设置
+          </button>
         </div>
       </div>
     </div>
@@ -2714,15 +4144,21 @@ function SiteContentTab({ setMessage }) {
   const fileInputRef = React.useRef(null);
 
   useEffect(() => {
-    api.get("/api/admin/site-content/purchase_info").then((d) => {
-      setContent({ title: d.title || "", body: d.body || "", images: d.images || [] });
-    }).catch(() => {});
+    api
+      .get("/api/admin/site-content/purchase_info")
+      .then((d) => {
+        setContent({ title: d.title || "", body: d.body || "", images: d.images || [] });
+      })
+      .catch(() => {});
   }, []);
 
   const handleSave = async () => {
     setSaving(true);
     try {
-      await api.put("/api/admin/site-content/purchase_info", { title: content.title, body: content.body });
+      await api.put("/api/admin/site-content/purchase_info", {
+        title: content.title,
+        body: content.body,
+      });
       setMessage({ type: "success", text: "内容已保存" });
     } catch (err) {
       setMessage({ type: "error", text: err.message });
@@ -2756,7 +4192,10 @@ function SiteContentTab({ setMessage }) {
   const handleDeleteImage = async (imageUrl) => {
     try {
       const result = await api.delete("/api/admin/site-content/purchase_info/image", { imageUrl });
-      setContent({ ...content, images: result.images || content.images.filter((img) => img !== imageUrl) });
+      setContent({
+        ...content,
+        images: result.images || content.images.filter((img) => img !== imageUrl),
+      });
       setMessage({ type: "success", text: "图片已删除" });
     } catch (err) {
       setMessage({ type: "error", text: err.message });
@@ -2789,7 +4228,11 @@ function SiteContentTab({ setMessage }) {
               className="w-full px-4 py-2 bg-[#EEF1F7] border border-[#D8DCE8] rounded-lg text-[#0D2145]"
             />
           </div>
-          <button onClick={handleSave} disabled={saving} className="px-6 py-2 bg-[#1B4FD8] hover:bg-[#163069] disabled:bg-[#E5E9F4] rounded-lg flex items-center gap-2">
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            className="px-6 py-2 bg-[#1B4FD8] hover:bg-[#163069] disabled:bg-[#E5E9F4] rounded-lg flex items-center gap-2"
+          >
             {saving && <Loader2 className="w-4 h-4 animate-spin" />}保存文字内容
           </button>
         </div>
@@ -2800,7 +4243,11 @@ function SiteContentTab({ setMessage }) {
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-4 mb-4">
           {content.images.map((img, i) => (
             <div key={i} className="relative group">
-              <img src={img} alt={`图片${i + 1}`} className="w-full h-32 object-contain bg-white rounded-lg p-1" />
+              <img
+                src={img}
+                alt={`图片${i + 1}`}
+                className="w-full h-32 object-contain bg-white rounded-lg p-1"
+              />
               <button
                 onClick={() => handleDeleteImage(img)}
                 className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 hover:bg-red-400 rounded-full flex items-center justify-center text-[#0D2145] text-xs opacity-0 group-hover:opacity-100 transition-opacity"
@@ -2815,12 +4262,22 @@ function SiteContentTab({ setMessage }) {
               disabled={uploading}
               className="w-full h-32 border-2 border-dashed border-[#D8DCE8] hover:border-white/30 rounded-lg flex flex-col items-center justify-center gap-1 text-[#8E9BB0] hover:text-[#0F1C36] transition-colors"
             >
-              {uploading ? <Loader2 className="w-6 h-6 animate-spin" /> : <span className="text-2xl">+</span>}
+              {uploading ? (
+                <Loader2 className="w-6 h-6 animate-spin" />
+              ) : (
+                <span className="text-2xl">+</span>
+              )}
               <span className="text-xs">上传图片</span>
             </button>
           )}
         </div>
-        <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleUploadImage} />
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={handleUploadImage}
+        />
         <p className="text-xs text-[#8E9BB0]">支持 PNG、JPG 格式，单张最大 5MB</p>
       </div>
 
@@ -2832,15 +4289,23 @@ function SiteContentTab({ setMessage }) {
             {content.images.length > 0 && (
               <div className="flex gap-3 shrink-0">
                 {content.images.map((img, i) => (
-                  <img key={i} src={img} alt="" className="w-32 h-32 rounded-lg bg-white p-1 object-contain" />
+                  <img
+                    key={i}
+                    src={img}
+                    alt=""
+                    className="w-32 h-32 rounded-lg bg-white p-1 object-contain"
+                  />
                 ))}
               </div>
             )}
             <div className="text-center sm:text-left">
               {content.title && <p className="text-[#0D2145] font-medium mb-1">{content.title}</p>}
-              {content.body && content.body.split("\n").map((line, i) => (
-                <p key={i} className="text-sm text-[#4B5A72]">{line}</p>
-              ))}
+              {content.body &&
+                content.body.split("\n").map((line, i) => (
+                  <p key={i} className="text-sm text-[#4B5A72]">
+                    {line}
+                  </p>
+                ))}
             </div>
           </div>
         </div>
@@ -2850,7 +4315,22 @@ function SiteContentTab({ setMessage }) {
 }
 
 // 管理员面板组件
-function AdminPanel({ tokenQuota, setTokenQuota, tokenCount, setTokenCount, generating, setGenerating, setGeneratedToken, setMessage, adminTokens, setAdminTokens, adminAvailable, setAdminAvailable, loading, setLoading }) {
+function AdminPanel({
+  tokenQuota,
+  setTokenQuota,
+  tokenCount,
+  setTokenCount,
+  generating,
+  setGenerating,
+  setGeneratedToken,
+  setMessage,
+  adminTokens,
+  setAdminTokens,
+  adminAvailable,
+  setAdminAvailable,
+  loading,
+  setLoading,
+}) {
   const [allTokens, setAllTokens] = useState([]);
   const [tokenPage] = useState(1);
   const [generatedTokens, setGeneratedTokens] = useState([]);
@@ -2870,9 +4350,14 @@ function AdminPanel({ tokenQuota, setTokenQuota, tokenCount, setTokenCount, gene
   };
 
   const handleGenerate = async () => {
-    setGenerating(true); setMessage(null);
+    setGenerating(true);
+    setMessage(null);
     try {
-      const result = await api.post("/api/token/generate", { quotaAmount: tokenQuota, expireDays: 30, count: tokenCount });
+      const result = await api.post("/api/token/generate", {
+        quotaAmount: tokenQuota,
+        expireDays: 30,
+        count: tokenCount,
+      });
       // API returns array for count > 1, single object for count = 1
       const tokens = Array.isArray(result) ? result : [result];
       setGeneratedTokens(tokens);
@@ -2880,8 +4365,13 @@ function AdminPanel({ tokenQuota, setTokenQuota, tokenCount, setTokenCount, gene
       setMessage({ type: "success", text: `成功生成 ${tokens.length} 个兑换码` });
       loadAllTokens();
       const data = await api.get("/api/token/list");
-      setAdminTokens(data.tokens || []); setAdminAvailable(data.available || 0);
-    } catch (err) { setMessage({ type: "error", text: err.message || "生成失败" }); } finally { setGenerating(false); }
+      setAdminTokens(data.tokens || []);
+      setAdminAvailable(data.available || 0);
+    } catch (err) {
+      setMessage({ type: "error", text: err.message || "生成失败" });
+    } finally {
+      setGenerating(false);
+    }
   };
 
   const handleDeleteToken = async (token) => {
@@ -2918,7 +4408,7 @@ function AdminPanel({ tokenQuota, setTokenQuota, tokenCount, setTokenCount, gene
   };
 
   const copyAllTokens = async () => {
-    const text = generatedTokens.map(t => t.token).join("\n");
+    const text = generatedTokens.map((t) => t.token).join("\n");
     try {
       await navigator.clipboard.writeText(text);
       setMessage({ type: "success", text: `已复制 ${generatedTokens.length} 个兑换码` });
@@ -2946,18 +4436,56 @@ function AdminPanel({ tokenQuota, setTokenQuota, tokenCount, setTokenCount, gene
       <div className="bg-white border border-yellow-500/30 rounded-xl p-6">
         <h3 className="text-lg font-bold mb-4 text-yellow-400">生成兑换码</h3>
         <div className="flex gap-4 mb-4">
-          <div><label className="block text-sm text-[#4B5A72] mb-1">每个额度</label><select value={tokenQuota} onChange={(e) => setTokenQuota(parseInt(e.target.value))} className="px-4 py-2 bg-[#EEF1F7] border border-[#D8DCE8] rounded-lg"><option value={1}>1 次</option><option value={5}>5 次</option><option value={10}>10 次</option><option value={30}>30 次</option><option value={50}>50 次</option></select></div>
-          <div><label className="block text-sm text-[#4B5A72] mb-1">生成数量</label><select value={tokenCount} onChange={(e) => setTokenCount(parseInt(e.target.value))} className="px-4 py-2 bg-[#EEF1F7] border border-[#D8DCE8] rounded-lg"><option value={1}>1 个</option><option value={5}>5 个</option><option value={10}>10 个</option></select></div>
-          <div className="flex-1 flex items-end"><button onClick={handleGenerate} disabled={generating} className="w-full px-6 py-2 bg-yellow-600 hover:bg-yellow-500 disabled:bg-[#E5E9F4] rounded-lg font-medium flex items-center justify-center gap-2">{generating && <Loader2 className="w-4 h-4 animate-spin" />}生成</button></div>
+          <div>
+            <label className="block text-sm text-[#4B5A72] mb-1">每个额度</label>
+            <select
+              value={tokenQuota}
+              onChange={(e) => setTokenQuota(parseInt(e.target.value))}
+              className="px-4 py-2 bg-[#EEF1F7] border border-[#D8DCE8] rounded-lg"
+            >
+              <option value={1}>1 次</option>
+              <option value={5}>5 次</option>
+              <option value={10}>10 次</option>
+              <option value={30}>30 次</option>
+              <option value={50}>50 次</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm text-[#4B5A72] mb-1">生成数量</label>
+            <select
+              value={tokenCount}
+              onChange={(e) => setTokenCount(parseInt(e.target.value))}
+              className="px-4 py-2 bg-[#EEF1F7] border border-[#D8DCE8] rounded-lg"
+            >
+              <option value={1}>1 个</option>
+              <option value={5}>5 个</option>
+              <option value={10}>10 个</option>
+            </select>
+          </div>
+          <div className="flex-1 flex items-end">
+            <button
+              onClick={handleGenerate}
+              disabled={generating}
+              className="w-full px-6 py-2 bg-yellow-600 hover:bg-yellow-500 disabled:bg-[#E5E9F4] rounded-lg font-medium flex items-center justify-center gap-2"
+            >
+              {generating && <Loader2 className="w-4 h-4 animate-spin" />}生成
+            </button>
+          </div>
         </div>
 
         {/* 生成结果面板 */}
         {generatedTokens.length > 0 && (
           <div className="mt-4 p-4 bg-[#EEF1F7] rounded-lg border border-yellow-500/20">
             <div className="flex items-center justify-between mb-3">
-              <div className="text-sm font-medium text-yellow-400">刚生成的兑换码（有效期30天）</div>
-              <button onClick={copyAllTokens} className="flex items-center gap-1 px-3 py-1 bg-[#E5E9F4] hover:bg-slate-600 rounded text-sm">
-                <Copy className="w-3 h-3" />全部复制
+              <div className="text-sm font-medium text-yellow-400">
+                刚生成的兑换码（有效期30天）
+              </div>
+              <button
+                onClick={copyAllTokens}
+                className="flex items-center gap-1 px-3 py-1 bg-[#E5E9F4] hover:bg-slate-600 rounded text-sm"
+              >
+                <Copy className="w-3 h-3" />
+                全部复制
               </button>
             </div>
             <div className="space-y-2 max-h-60 overflow-y-auto">
@@ -2965,7 +4493,12 @@ function AdminPanel({ tokenQuota, setTokenQuota, tokenCount, setTokenCount, gene
                 <div key={i} className="flex items-center gap-3 p-2 bg-white rounded">
                   <code className="flex-1 font-mono font-bold text-green-400">{t.token}</code>
                   <span className="text-xs text-[#8E9BB0]">{t.quotaAmount} 次</span>
-                  <button onClick={() => copyToClipboard(t.token)} className="p-1 hover:bg-[#E5E9F4] rounded"><Copy className="w-4 h-4 text-[#4B5A72]" /></button>
+                  <button
+                    onClick={() => copyToClipboard(t.token)}
+                    className="p-1 hover:bg-[#E5E9F4] rounded"
+                  >
+                    <Copy className="w-4 h-4 text-[#4B5A72]" />
+                  </button>
                 </div>
               ))}
             </div>
@@ -2978,24 +4511,54 @@ function AdminPanel({ tokenQuota, setTokenQuota, tokenCount, setTokenCount, gene
         <h3 className="text-lg font-bold mb-4">兑换码列表</h3>
         <div className="overflow-x-auto">
           <table className="w-full">
-            <thead><tr className="text-left text-sm text-[#4B5A72] border-b border-[#D8DCE8]"><th className="pb-3">兑换码</th><th className="pb-3">额度</th><th className="pb-3">状态</th><th className="pb-3">过期时间</th><th className="pb-3">使用者</th><th className="pb-3">创建时间</th><th className="pb-3">操作</th></tr></thead>
-            <tbody>{allTokens.map((t) => {
-              const isUsed = t.used_at;
-              const isExpired = new Date(t.expires_at) < new Date();
-              return (
-                <tr key={t.token} className="border-b border-[#D8DCE8]/50 text-sm">
-                  <td className="py-3 font-mono font-medium">{t.token}</td>
-                  <td className="py-3">{t.quota_amount} 次</td>
-                  <td className="py-3"><span className={`px-2 py-0.5 rounded text-xs ${isUsed ? "bg-slate-500/20 text-[#4B5A72]" : isExpired ? "bg-red-500/20 text-red-400" : "bg-green-500/20 text-green-400"}`}>{isUsed ? "已使用" : isExpired ? "已过期" : "可用"}</span></td>
-                  <td className="py-3 text-[#4B5A72]">{new Date(t.expires_at).toLocaleDateString("zh-CN")}</td>
-                  <td className="py-3 text-[#4B5A72]">{t.used_by || "-"}</td>
-                  <td className="py-3 text-[#4B5A72]">{new Date(t.created_at).toLocaleDateString("zh-CN")}</td>
-                  <td className="py-3">
-                    {!isUsed && <button onClick={() => handleDeleteToken(t.token)} className="p-1 hover:bg-red-500/20 text-red-400 rounded" title="删除"><Trash2 className="w-4 h-4" /></button>}
-                  </td>
-                </tr>
-              );
-            })}</tbody>
+            <thead>
+              <tr className="text-left text-sm text-[#4B5A72] border-b border-[#D8DCE8]">
+                <th className="pb-3">兑换码</th>
+                <th className="pb-3">额度</th>
+                <th className="pb-3">状态</th>
+                <th className="pb-3">过期时间</th>
+                <th className="pb-3">使用者</th>
+                <th className="pb-3">创建时间</th>
+                <th className="pb-3">操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              {allTokens.map((t) => {
+                const isUsed = t.used_at;
+                const isExpired = new Date(t.expires_at) < new Date();
+                return (
+                  <tr key={t.token} className="border-b border-[#D8DCE8]/50 text-sm">
+                    <td className="py-3 font-mono font-medium">{t.token}</td>
+                    <td className="py-3">{t.quota_amount} 次</td>
+                    <td className="py-3">
+                      <span
+                        className={`px-2 py-0.5 rounded text-xs ${isUsed ? "bg-slate-500/20 text-[#4B5A72]" : isExpired ? "bg-red-500/20 text-red-400" : "bg-green-500/20 text-green-400"}`}
+                      >
+                        {isUsed ? "已使用" : isExpired ? "已过期" : "可用"}
+                      </span>
+                    </td>
+                    <td className="py-3 text-[#4B5A72]">
+                      {new Date(t.expires_at).toLocaleDateString("zh-CN")}
+                    </td>
+                    <td className="py-3 text-[#4B5A72]">{t.used_by || "-"}</td>
+                    <td className="py-3 text-[#4B5A72]">
+                      {new Date(t.created_at).toLocaleDateString("zh-CN")}
+                    </td>
+                    <td className="py-3">
+                      {!isUsed && (
+                        <button
+                          onClick={() => handleDeleteToken(t.token)}
+                          className="p-1 hover:bg-red-500/20 text-red-400 rounded"
+                          title="删除"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
           </table>
         </div>
       </div>
@@ -3013,13 +4576,17 @@ function AnnouncementsTab({ setMessage }) {
   const [publishing, setPublishing] = useState(false);
 
   useEffect(() => {
-    api.get("/api/announcement/list")
+    api
+      .get("/api/announcement/list")
       .then((d) => setAnnouncements(d.announcements || []))
       .catch(() => {});
   }, []);
 
   const handlePublish = async () => {
-    if (!newContent.trim()) { setMessage({ type: "error", text: "公告内容不能为空" }); return; }
+    if (!newContent.trim()) {
+      setMessage({ type: "error", text: "公告内容不能为空" });
+      return;
+    }
     setPublishing(true);
     try {
       await api.post("/api/announcement", { content: newContent.trim(), type: newType });
@@ -3053,16 +4620,33 @@ function AnnouncementsTab({ setMessage }) {
   return (
     <div className="space-y-6">
       <div className="bg-white border border-[#D8DCE8] rounded-xl p-6">
-        <h3 className="text-lg font-bold mb-4 flex items-center gap-2"><Megaphone className="w-5 h-5" />发布新公告</h3>
+        <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
+          <Megaphone className="w-5 h-5" />
+          发布新公告
+        </h3>
         <div className="space-y-3">
-          <textarea value={newContent} onChange={(e) => setNewContent(e.target.value)} placeholder="输入公告内容..." rows={3} className="w-full px-4 py-2 bg-[#EEF1F7] border border-[#D8DCE8] rounded-lg focus:border-blue-500 focus:outline-none" />
+          <textarea
+            value={newContent}
+            onChange={(e) => setNewContent(e.target.value)}
+            placeholder="输入公告内容..."
+            rows={3}
+            className="w-full px-4 py-2 bg-[#EEF1F7] border border-[#D8DCE8] rounded-lg focus:border-blue-500 focus:outline-none"
+          />
           <div className="flex items-center gap-3">
-            <select value={newType} onChange={(e) => setNewType(e.target.value)} className="px-3 py-2 bg-[#EEF1F7] border border-[#D8DCE8] rounded-lg text-sm">
+            <select
+              value={newType}
+              onChange={(e) => setNewType(e.target.value)}
+              className="px-3 py-2 bg-[#EEF1F7] border border-[#D8DCE8] rounded-lg text-sm"
+            >
               <option value="info">信息 (蓝色)</option>
               <option value="warning">警告 (黄色)</option>
               <option value="success">成功 (绿色)</option>
             </select>
-            <button onClick={handlePublish} disabled={publishing} className="px-6 py-2 bg-[#1B4FD8] hover:bg-[#163069] disabled:bg-[#E5E9F4] rounded-lg font-medium flex items-center gap-2">
+            <button
+              onClick={handlePublish}
+              disabled={publishing}
+              className="px-6 py-2 bg-[#1B4FD8] hover:bg-[#163069] disabled:bg-[#E5E9F4] rounded-lg font-medium flex items-center gap-2"
+            >
               {publishing && <Loader2 className="w-4 h-4 animate-spin" />}发布公告
             </button>
           </div>
@@ -3070,22 +4654,39 @@ function AnnouncementsTab({ setMessage }) {
       </div>
       <div className="bg-white border border-[#D8DCE8] rounded-xl p-6">
         <h3 className="text-lg font-bold mb-4">公告列表</h3>
-        {announcements.length === 0 ? <p className="text-[#8E9BB0] text-center py-6">暂无公告</p> : (
+        {announcements.length === 0 ? (
+          <p className="text-[#8E9BB0] text-center py-6">暂无公告</p>
+        ) : (
           <div className="space-y-3">
             {announcements.map((a) => (
-              <div key={a.id} className="flex items-center justify-between gap-3 p-3 bg-[#EEF1F7] rounded-lg">
+              <div
+                key={a.id}
+                className="flex items-center justify-between gap-3 p-3 bg-[#EEF1F7] rounded-lg"
+              >
                 <div className="min-w-0 flex-1">
                   <p className="text-sm truncate">{a.content}</p>
                   <p className="text-xs text-[#8E9BB0] mt-1">
                     {a.type} · {new Date(a.created_at).toLocaleString("zh-CN")}
-                    {a.is_active ? <span className="text-green-400 ml-2">生效中</span> : <span className="text-[#8E9BB0] ml-2">已关闭</span>}
+                    {a.is_active ? (
+                      <span className="text-green-400 ml-2">生效中</span>
+                    ) : (
+                      <span className="text-[#8E9BB0] ml-2">已关闭</span>
+                    )}
                   </p>
                 </div>
                 <div className="flex gap-2 shrink-0">
-                  <button onClick={() => handleToggle(a.id, a.is_active)} className={`px-3 py-1 rounded text-xs ${a.is_active ? "bg-yellow-500/20 text-yellow-400" : "bg-green-500/20 text-green-400"}`}>
+                  <button
+                    onClick={() => handleToggle(a.id, a.is_active)}
+                    className={`px-3 py-1 rounded text-xs ${a.is_active ? "bg-yellow-500/20 text-yellow-400" : "bg-green-500/20 text-green-400"}`}
+                  >
                     {a.is_active ? "关闭" : "启用"}
                   </button>
-                  <button onClick={() => handleDelete(a.id)} className="p-1 hover:bg-red-500/20 text-red-400 rounded"><Trash2 className="w-4 h-4" /></button>
+                  <button
+                    onClick={() => handleDelete(a.id)}
+                    className="p-1 hover:bg-red-500/20 text-red-400 rounded"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
                 </div>
               </div>
             ))}

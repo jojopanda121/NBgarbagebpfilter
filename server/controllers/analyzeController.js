@@ -4,6 +4,7 @@
 
 const fs = require("fs");
 const crypto = require("crypto");
+const config = require("../config");
 const { getDb } = require("../db");
 const { extractDocText } = require("../services/extractionService");
 const { runPipeline } = require("../services/pipelineService");
@@ -11,6 +12,9 @@ const { createTask, updateTask } = require("../services/taskService");
 const { deductQuota, refundQuota } = require("../middleware/quota");
 const { PIPELINE_VERSION } = require("../config/versions");
 const inflightTasks = require("../runtime/inflightTasks");
+const { runWithLlmContext } = require("../runtime/llmContext");
+const { buildContextForUser, isByokAvailable } = require("../services/llmCredentialService");
+const { describeActiveLlm } = require("../services/llmService");
 
 /** 计算文件内容的 SHA256 哈希（流式，避免 readFileSync 大文件阻塞事件循环） */
 function computeFileHash(filePath) {
@@ -74,10 +78,16 @@ function buildAnalysisFallbackText({ filePath, fileMode, originalName, fileSize,
  * 查找同一用户已完成的相同文件分析结果。
  * 仅复用 pipeline_version 与当前一致的结果——算法/prompt/模型升级后旧结果作废。
  */
-function findExistingResult(db, userId, fileHash) {
+function findExistingResult(db, userId, fileHash, llmKey) {
+  // 复用必须同时满足"同一份文件 + 同一管线版本 + 同一个模型"。
+  // 只按前两者匹配的话，用户换成自己的 Claude 重跑同一份 BP，会直接拿回
+  // 上次用平台 DeepSeek 出的旧报告——他花了自己的钱，却什么都没重算。
   const row = db.prepare(
-    "SELECT id, result FROM tasks WHERE user_id = ? AND file_hash = ? AND status = 'complete' AND deleted_at IS NULL ORDER BY created_at DESC LIMIT 1"
-  ).get(userId, fileHash);
+    `SELECT id, result FROM tasks
+      WHERE user_id = ? AND file_hash = ? AND status = 'complete' AND deleted_at IS NULL
+        AND IFNULL(llm_provider, '') || '/' || IFNULL(llm_model, '') = ?
+      ORDER BY created_at DESC LIMIT 1`
+  ).get(userId, fileHash, llmKey);
   if (!row || !row.result) return null;
   let parsed;
   try {
@@ -103,19 +113,20 @@ function findRunningTask(db, userId, fileHash) {
  *
  * @returns {{ kind: "resuming"|"cached"|"no_quota"|"created", ... }}
  */
-function admitAnalysis({ userId, isAdmin, fileHash }) {
+function admitAnalysis({ userId, isAdmin, fileHash, llmKey = "/", skipQuota = false }) {
   const db = getDb();
   return db.transaction(() => {
     if (userId && fileHash) {
       const running = findRunningTask(db, userId, fileHash);
       if (running) return { kind: "resuming", taskId: running.id };
 
-      const existing = findExistingResult(db, userId, fileHash);
+      const existing = findExistingResult(db, userId, fileHash, llmKey);
       if (existing) return { kind: "cached", existing };
     }
 
     let quotaDeductType = null;
-    if (!isAdmin && userId) {
+    // skipQuota：用户自带 API Key 时算力成本由用户自付，不消耗平台额度
+    if (!isAdmin && userId && !skipQuota) {
       const deductResult = deductQuota(userId); // 内部事务 → 此处自动降级为 savepoint
       if (!deductResult.success) return { kind: "no_quota" };
       quotaDeductType = deductResult.type; // "free" 或 "paid"
@@ -199,10 +210,43 @@ async function analyze(req, res) {
     }
   }
 
+  // ── 用户自带模型（BYOK）──────────────────────────────────
+  // multipart 表单里的布尔值是字符串，"1"/"true"/"on" 都当真。
+  const wantsOwnModel = ["1", "true", "on", "yes"].includes(
+    String(req.body?.use_own_model ?? "").trim().toLowerCase()
+  );
+  let llmContext = null;
+  if (wantsOwnModel) {
+    if (!userId) {
+      cleanupUpload();
+      return res.status(401).json({ error: "使用自己的模型需要先登录" });
+    }
+    if (!isByokAvailable()) {
+      cleanupUpload();
+      return res.status(503).json({ error: "自带模型功能当前不可用，请改用平台模型" });
+    }
+    llmContext = buildContextForUser(userId);
+    if (!llmContext) {
+      // 用户明确选了"用我自己的模型"，就不能偷偷用平台额度替他跑：
+      // 那既花了平台的钱，出的报告也不是他要的那个模型的结论。
+      cleanupUpload();
+      return res.status(400).json({
+        error: "未找到可用的自带模型配置，请先在「设置 → 我的模型」中添加并通过连接测试",
+        code: 4004,
+      });
+    }
+  }
+
+  // 分析结果按模型隔离缓存；平台模型走 config 的当前主力模型名
+  const llmDescriptor = llmContext
+    ? { provider: llmContext.providerId, model: llmContext.models.default, source: "byok" }
+    : { provider: config.llmProvider, model: config.llmModel, source: "platform" };
+  const llmKey = `${llmDescriptor.provider}/${llmDescriptor.model}`;
+
   // 准入事务：去重 → 扣额度 → 建任务（原子）
   let admission;
   try {
-    admission = admitAnalysis({ userId, isAdmin, fileHash });
+    admission = admitAnalysis({ userId, isAdmin, fileHash, llmKey, skipQuota: !!llmContext });
   } catch (err) {
     console.error("[Analyze] 准入事务失败:", err.message);
     cleanupUpload();
@@ -252,7 +296,9 @@ async function analyze(req, res) {
 
   // H1: 立即链式注册 .catch，确保 IIFE 任何同步/异步异常都不会触发 unhandledRejection
   inflightTasks.register(task.id);
-  (async () => {
+  // 整条后台链路跑在 LLM 上下文里：pipelineService → 各 Agent → llmService
+  // 都是同一条异步链，上下文自动继承，不需要逐层传 key（见 runtime/llmContext）。
+  runWithLlmContext(llmContext, () => (async () => {
     let bpText = "";
     try {
       if (filePath) {
@@ -336,13 +382,28 @@ async function analyze(req, res) {
         }
         // 客户端 IP（已在响应前提取）
         if (clientIp) extraFields.client_ip = clientIp;
+        // 这份报告是哪个模型出的 —— 缓存复用判定和事后排查都依赖它
+        extraFields.llm_provider = llmDescriptor.provider;
+        extraFields.llm_model = llmDescriptor.model;
+        extraFields.llm_source = llmDescriptor.source;
+        // 用户自带模型时把能力降级说明写进结果，让报告自己说清楚
+        // "这是用你的 X 模型跑的，因为它不支持深度思考，判定纪律被削弱了"
+        if (result && typeof result === "object") {
+          result.llm_runtime = describeActiveLlm();
+        }
       } catch (_) { /* ignore - new columns may not exist yet */ }
 
       updateTask(task.id, extraFields);
     } catch (err) {
       console.error(`[任务 ${task.id.slice(0, 8)}] 错误:`, err.message);
-      updateTask(task.id, { status: "error", error: err.message || "服务器内部错误" });
-      // 分析失败时退还额度（管理员无需退还）
+      // BYOK 失败不静默回退到平台模型（用户的明确选择要被尊重，
+      // 而且回退会让他在不知情的情况下消耗平台额度）——如实报错，
+      // 并把矛头指向他自己的 key/余额，免得以为是平台坏了。
+      const errMessage = llmContext
+        ? `使用你自己的模型分析失败：${err.message || "未知错误"}`
+        : (err.message || "服务器内部错误");
+      updateTask(task.id, { status: "error", error: errMessage });
+      // 分析失败时退还额度（管理员无需退还；BYOK 本就没扣，quotaDeductType 为 null）
       if (userId && !isAdmin && quotaDeductType) {
         refundQuota(userId, quotaDeductType);
       }
@@ -357,7 +418,7 @@ async function analyze(req, res) {
       updateTask(task.id, { status: "error", error: "服务器内部错误" });
       if (userId && !isAdmin && quotaDeductType) refundQuota(userId, quotaDeductType);
     } catch (_) { /* ignore */ }
-  });
+  }));
 }
 
 module.exports = { analyze, computeFileHash, verifyFileMagic, admitAnalysis };

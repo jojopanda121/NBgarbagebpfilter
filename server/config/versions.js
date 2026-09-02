@@ -27,6 +27,12 @@
 //         拉低诚信维度，不再硬封顶分数或强制改评级（LLM 对重大类别尤其财务易误判，
 //         否决误伤面太大）；multiagent 六专家深度尽调改为按需生成（multiagentService），
 //         分析阶段不再自动跑、投研结论不再喂评分/估值对比。语义变更 → bump 作废旧缓存。
-const PIPELINE_VERSION = "v4.8.0";
+// v4.9.0: 主力模型切换到 DeepSeek V4（此前 b8df8e6 换了模型但漏了 bump，
+//         导致 MiniMax 时代的旧结果仍被当作有效缓存复用）；
+//         BP_Valuation / BP_Revenue 语义收紧——未披露必须为 null，禁止倒推，
+//         估值倍数与溢价在缺自述数字时不再计算（AGENT_A_PROMPT + buildValuationComparison）；
+//         多模型支持：厂商可插拔 + 用户自带 API Key（BYOK），
+//         结果缓存改为按 (文件, 管线版本, 厂商/模型) 三元组复用。
+const PIPELINE_VERSION = "v4.9.0";
 
 module.exports = { PIPELINE_VERSION };

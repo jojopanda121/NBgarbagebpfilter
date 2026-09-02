@@ -83,6 +83,13 @@ const { asyncHandler } = require("../middleware/errorHandler");
 const analyzeAsync = asyncHandler(analyze);
 
 router.post("/", authMiddleware, analyzeLimiter, handleUpload, (req, res, next) => {
+  // 用户自带 API Key 时算力由他自己付，不占平台额度，因此额度为 0 也要能跑。
+  // 注意这里**只豁免余额检查**，仍然走 checkQuota —— 邮箱绑定等账号级闸门
+  // 与计费无关，不能因为换了个付费方式就被绕过。
+  // 凭证是否真的存在、可用，由 analyzeController 二次校验后再放行。
+  req.skipQuotaBalance = ["1", "true", "on", "yes"].includes(
+    String(req.body?.use_own_model ?? "").trim().toLowerCase()
+  );
   // 如果用户已登录，检查额度
   if (req.user) {
     return checkQuota(req, res, () => analyzeAsync(req, res, next));

@@ -1,9 +1,10 @@
-import React, { useRef, useCallback, memo } from "react";
-import { Upload, FileText, XCircle, Lock, Loader2, Mail } from "lucide-react";
+import React, { useRef, useCallback, memo, useEffect, useState } from "react";
+import { Upload, FileText, XCircle, Lock, Loader2, Mail, Cpu, Settings } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import useAnalysisStore from "../../store/useAnalysisStore";
 import useAuthStore from "../../store/useAuthStore";
 import { useAnalysisPipeline } from "../../hooks/useAnalysisPipeline";
+import api from "../../services/api";
 
 /**
  * UploadSection
@@ -24,15 +25,41 @@ const UploadSection = memo(function UploadSection() {
   const setFile = useAnalysisStore((s) => s.setFile);
   const setDragOver = useAnalysisStore((s) => s.setDragOver);
   const setError = useAnalysisStore((s) => s.setError);
+  const useOwnModel = useAnalysisStore((s) => s.useOwnModel);
+  const setUseOwnModel = useAnalysisStore((s) => s.setUseOwnModel);
 
   const user = useAuthStore((s) => s.user);
   const navigate = useNavigate();
   const username = (user?.username || "").trim().toLowerCase();
   const isTestAccount = username === "admin" || username === "test";
-  const canAnalyze = !!(user?.email) || isTestAccount;
+  const canAnalyze = !!user?.email || isTestAccount;
 
   const { startAnalysis } = useAnalysisPipeline();
   const fileInputRef = useRef(null);
+
+  // ── 自带模型（BYOK）──
+  // 只有"功能开着 + 用户已保存并通过校验"时才出现引擎选择；
+  // 其余情况完全不打扰，分析照旧走平台模型。
+  const [byok, setByok] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    if (!user) return undefined;
+    (async () => {
+      try {
+        const resp = await api.getLlmCredential();
+        if (alive) setByok(resp?.byok_enabled ? resp.credential : null);
+      } catch (_) {
+        if (alive) setByok(null); // 拿不到就当没配，不影响主流程
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [user]);
+  // 凭证被删除或失效时，别让上次的勾选残留下来导致提交必然失败
+  useEffect(() => {
+    if (useOwnModel && !byok?.usable) setUseOwnModel(false);
+  }, [byok, useOwnModel, setUseOwnModel]);
 
   // ── 文件校验 ──
   // 支持 PDF / Word(.doc/.docx) / PPT(.pptx)。部分浏览器对 doc/docx/pptx 的 MIME 不稳定，
@@ -42,7 +69,10 @@ const UploadSection = memo(function UploadSection() {
       if (!f) return;
       const name = (f.name || "").toLowerCase();
       const okExt =
-        name.endsWith(".pdf") || name.endsWith(".doc") || name.endsWith(".docx") || name.endsWith(".pptx");
+        name.endsWith(".pdf") ||
+        name.endsWith(".doc") ||
+        name.endsWith(".docx") ||
+        name.endsWith(".pptx");
       const okMime =
         f.type === "application/pdf" ||
         f.type === "application/msword" ||
@@ -104,9 +134,7 @@ const UploadSection = memo(function UploadSection() {
         </p>
         <div className="inline-flex items-center gap-2 px-4 py-2 bg-[#EEF1F7] rounded-full border border-[#D8DCE8]/50">
           <Lock className="w-3.5 h-3.5 text-emerald-400" />
-          <span className="text-sm text-[#4B5A72]">
-            您的文件将安全存储，仅用于本次分析
-          </span>
+          <span className="text-sm text-[#4B5A72]">您的文件将安全存储，仅用于本次分析</span>
         </div>
       </div>
 
@@ -123,8 +151,8 @@ const UploadSection = memo(function UploadSection() {
             dragOver
               ? "border-blue-500 bg-blue-500/5"
               : file
-              ? "border-emerald-500/50 bg-emerald-500/5"
-              : "border-[#D8DCE8] hover:border-[#BFC5D6] bg-white"
+                ? "border-emerald-500/50 bg-emerald-500/5"
+                : "border-[#D8DCE8] hover:border-[#BFC5D6] bg-white"
           }
         `}
       >
@@ -146,13 +174,67 @@ const UploadSection = memo(function UploadSection() {
         ) : (
           <div className="flex flex-col items-center gap-3">
             <Upload className="w-12 h-12 text-[#8E9BB0]" />
-            <p className="text-lg text-[#4B5A72]">
-              拖拽 PDF / Word / PPT 到此处，或点击选择文件
+            <p className="text-lg text-[#4B5A72]">拖拽 PDF / Word / PPT 到此处，或点击选择文件</p>
+            <p className="text-sm text-[#8E9BB0]">
+              支持 PDF（文字版/扫描版）、Word(.doc/.docx)、PPT(.pptx)
             </p>
-            <p className="text-sm text-[#8E9BB0]">支持 PDF（文字版/扫描版）、Word(.doc/.docx)、PPT(.pptx)</p>
           </div>
         )}
       </div>
+
+      {/* 分析引擎选择（仅在用户配好自带模型时出现） */}
+      {byok?.usable && (
+        <div className="mt-4 rounded-xl border border-[#D8DCE8] bg-white p-3">
+          <div className="flex items-center gap-2 mb-2">
+            <Cpu className="w-4 h-4 text-[#1B4FD8]" />
+            <span className="text-sm font-medium text-[#0D2145]">分析引擎</span>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => setUseOwnModel(false)}
+              className={`px-3 py-2 rounded-lg text-left border transition-colors ${
+                !useOwnModel
+                  ? "border-[#1B4FD8] bg-[#1B4FD8]/5"
+                  : "border-[#D8DCE8] hover:border-[#BFC5D6]"
+              }`}
+            >
+              <div className="text-sm text-[#0D2145]">平台模型</div>
+              <div className="text-[11px] text-[#8E9BB0] mt-0.5">消耗 1 次分析额度</div>
+            </button>
+            <button
+              type="button"
+              onClick={() => setUseOwnModel(true)}
+              className={`px-3 py-2 rounded-lg text-left border transition-colors ${
+                useOwnModel
+                  ? "border-[#1B4FD8] bg-[#1B4FD8]/5"
+                  : "border-[#D8DCE8] hover:border-[#BFC5D6]"
+              }`}
+            >
+              <div className="text-sm text-[#0D2145]">我自己的模型</div>
+              <div className="text-[11px] text-[#8E9BB0] mt-0.5 font-mono truncate">
+                {byok.models?.default}
+              </div>
+            </button>
+          </div>
+          {useOwnModel && (
+            <p className="text-[11px] text-[#8E9BB0] mt-2 leading-relaxed">
+              本次分析走你自己的 API，不消耗平台额度，费用由你的模型账户承担。
+              若你的模型能力弱于平台默认模型，报告里会注明哪些判定环节被降级。
+            </p>
+          )}
+        </div>
+      )}
+      {byok === null && user && (
+        <button
+          type="button"
+          onClick={() => navigate("/settings?tab=mymodel")}
+          className="mt-4 w-full flex items-center justify-center gap-1.5 text-xs text-[#8E9BB0] hover:text-[#1B4FD8] transition-colors"
+        >
+          <Settings className="w-3.5 h-3.5" />
+          想用自己的 Claude / GPT / Gemini 跑？去配置「我的模型」（不消耗平台额度）
+        </button>
+      )}
 
       {/* 错误提示 */}
       {error && (
@@ -190,7 +272,9 @@ const UploadSection = memo(function UploadSection() {
       {/* Powered by */}
       {!analyzing && (
         <div className="mt-8 text-center">
-          <p className="text-xs text-[#8E9BB0]">Powered by AI 大模型 · DeepThink 深度研究引擎 · 提取30000字符</p>
+          <p className="text-xs text-[#8E9BB0]">
+            Powered by AI 大模型 · DeepThink 深度研究引擎 · 提取30000字符
+          </p>
         </div>
       )}
     </div>

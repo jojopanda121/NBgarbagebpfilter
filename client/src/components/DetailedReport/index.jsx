@@ -11,6 +11,7 @@ import {
   TrendingDown,
   Shield,
   Brain,
+  Cpu,
 } from "lucide-react";
 import { dimIcons } from "../../constants";
 import { getScoreColor } from "../../utils/scoreHelpers";
@@ -21,18 +22,61 @@ import ensureStringArray from "../../utils/ensureStringArray";
 // ── 声明核查结论标签 ──
 function VerdictBadge({ verdict }) {
   const map = {
-    "诚实":      { bg: "bg-emerald-500/15", text: "text-emerald-400", border: "border-emerald-500/30", icon: <CheckCircle className="w-3 h-3" /> },
-    "保守低估":  { bg: "bg-teal-500/15",    text: "text-teal-400",    border: "border-teal-500/30",    icon: <CheckCircle className="w-3 h-3" /> },
-    "夸大":      { bg: "bg-yellow-500/15",  text: "text-yellow-400",  border: "border-yellow-500/30",  icon: <TrendingDown className="w-3 h-3" /> },
-    "严重夸大":  { bg: "bg-orange-500/15",  text: "text-orange-400",  border: "border-orange-500/30",  icon: <AlertTriangle className="w-3 h-3" /> },
-    "信息不对称":{ bg: "bg-red-500/15",     text: "text-red-400",     border: "border-red-500/30",     icon: <Shield className="w-3 h-3" /> },
-    "存疑":      { bg: "bg-blue-500/15",    text: "text-blue-400",    border: "border-blue-500/30",    icon: <HelpCircle className="w-3 h-3" /> },
-    "证伪":      { bg: "bg-red-600/20",     text: "text-red-500",     border: "border-red-600/40",     icon: <XCircle className="w-3 h-3" /> },
+    诚实: {
+      bg: "bg-emerald-500/15",
+      text: "text-emerald-400",
+      border: "border-emerald-500/30",
+      icon: <CheckCircle className="w-3 h-3" />,
+    },
+    保守低估: {
+      bg: "bg-teal-500/15",
+      text: "text-teal-400",
+      border: "border-teal-500/30",
+      icon: <CheckCircle className="w-3 h-3" />,
+    },
+    夸大: {
+      bg: "bg-yellow-500/15",
+      text: "text-yellow-400",
+      border: "border-yellow-500/30",
+      icon: <TrendingDown className="w-3 h-3" />,
+    },
+    严重夸大: {
+      bg: "bg-orange-500/15",
+      text: "text-orange-400",
+      border: "border-orange-500/30",
+      icon: <AlertTriangle className="w-3 h-3" />,
+    },
+    信息不对称: {
+      bg: "bg-red-500/15",
+      text: "text-red-400",
+      border: "border-red-500/30",
+      icon: <Shield className="w-3 h-3" />,
+    },
+    存疑: {
+      bg: "bg-blue-500/15",
+      text: "text-blue-400",
+      border: "border-blue-500/30",
+      icon: <HelpCircle className="w-3 h-3" />,
+    },
+    证伪: {
+      bg: "bg-red-600/20",
+      text: "text-red-500",
+      border: "border-red-600/40",
+      icon: <XCircle className="w-3 h-3" />,
+    },
   };
-  const style = map[verdict] || { bg: "bg-[#E5E9F4]/50", text: "text-[#4B5A72]", border: "border-gray-600/30", icon: <HelpCircle className="w-3 h-3" /> };
+  const style = map[verdict] || {
+    bg: "bg-[#E5E9F4]/50",
+    text: "text-[#4B5A72]",
+    border: "border-gray-600/30",
+    icon: <HelpCircle className="w-3 h-3" />,
+  };
   return (
-    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold border ${style.bg} ${style.text} ${style.border}`}>
-      {style.icon}{verdict || "未判定"}
+    <span
+      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold border ${style.bg} ${style.text} ${style.border}`}
+    >
+      {style.icon}
+      {verdict || "未判定"}
     </span>
   );
 }
@@ -40,29 +84,27 @@ function VerdictBadge({ verdict }) {
 // ── 严重程度徽章 ──
 function SeverityBadge({ severity }) {
   const map = {
-    "严重": "bg-red-500/20 text-red-400 border-red-500/30",
-    "高":   "bg-red-500/20 text-red-400 border-red-500/30",
-    "中":   "bg-yellow-500/20 text-yellow-400 border-yellow-500/30",
-    "中等": "bg-yellow-500/20 text-yellow-400 border-yellow-500/30",
-    "低":   "bg-blue-500/20 text-blue-400 border-blue-500/30",
+    严重: "bg-red-500/20 text-red-400 border-red-500/30",
+    高: "bg-red-500/20 text-red-400 border-red-500/30",
+    中: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30",
+    中等: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30",
+    低: "bg-blue-500/20 text-blue-400 border-blue-500/30",
   };
   const cls = map[severity] || "bg-[#E5E9F4]/50 text-[#4B5A72] border-gray-600/30";
-  return (
-    <span className={`px-2 py-0.5 text-xs font-bold rounded border ${cls}`}>{severity}</span>
-  );
+  return <span className={`px-2 py-0.5 text-xs font-bold rounded border ${cls}`}>{severity}</span>;
 }
 
 // ── 类别标签 ──
 function CategoryBadge({ category }) {
   const map = {
-    market:       { label: "市场规模", cls: "bg-purple-500/15 text-purple-400" },
-    tech:         { label: "技术",     cls: "bg-cyan-500/15 text-cyan-400" },
-    product:      { label: "产品",     cls: "bg-blue-500/15 text-blue-400" },
-    competition:  { label: "竞争",     cls: "bg-orange-500/15 text-orange-400" },
-    team:         { label: "团队",     cls: "bg-green-500/15 text-green-400" },
-    financial:    { label: "财务",     cls: "bg-yellow-500/15 text-yellow-400" },
-    valuation:    { label: "估值",     cls: "bg-red-500/15 text-red-400" },
-    policy:       { label: "政策",     cls: "bg-gray-500/15 text-[#4B5A72]" },
+    market: { label: "市场规模", cls: "bg-purple-500/15 text-purple-400" },
+    tech: { label: "技术", cls: "bg-cyan-500/15 text-cyan-400" },
+    product: { label: "产品", cls: "bg-blue-500/15 text-blue-400" },
+    competition: { label: "竞争", cls: "bg-orange-500/15 text-orange-400" },
+    team: { label: "团队", cls: "bg-green-500/15 text-green-400" },
+    financial: { label: "财务", cls: "bg-yellow-500/15 text-yellow-400" },
+    valuation: { label: "估值", cls: "bg-red-500/15 text-red-400" },
+    policy: { label: "政策", cls: "bg-gray-500/15 text-[#4B5A72]" },
   };
   const m = map[category] || { label: category, cls: "bg-[#E5E9F4]/50 text-[#4B5A72]" };
   return <span className={`px-2 py-0.5 rounded text-xs font-medium ${m.cls}`}>{m.label}</span>;
@@ -85,9 +127,11 @@ function ClaimVerdictCard({ item }) {
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <VerdictBadge verdict={item.verdict} />
-          {open
-            ? <ChevronUp className="w-3 h-3 text-[#8E9BB0]" />
-            : <ChevronDown className="w-3 h-3 text-[#8E9BB0]" />}
+          {open ? (
+            <ChevronUp className="w-3 h-3 text-[#8E9BB0]" />
+          ) : (
+            <ChevronDown className="w-3 h-3 text-[#8E9BB0]" />
+          )}
         </div>
       </div>
 
@@ -96,11 +140,17 @@ function ClaimVerdictCard({ item }) {
           {/* BP 声称 vs AI 研究 */}
           <div className="grid grid-cols-1 sm:grid-cols-2 divide-y sm:divide-y-0 sm:divide-x divide-gray-800">
             <div className="p-3">
-              <div className="text-xs font-bold text-blue-400 uppercase tracking-wider mb-2">📄 BP 声称</div>
-              <p className="text-sm text-[#4B5A72] leading-relaxed">{item.bp_claim || item.original_claim || "—"}</p>
+              <div className="text-xs font-bold text-blue-400 uppercase tracking-wider mb-2">
+                📄 BP 声称
+              </div>
+              <p className="text-sm text-[#4B5A72] leading-relaxed">
+                {item.bp_claim || item.original_claim || "—"}
+              </p>
             </div>
             <div className="p-3">
-              <div className="text-xs font-bold text-purple-400 uppercase tracking-wider mb-2">🔬 AI 研究发现</div>
+              <div className="text-xs font-bold text-purple-400 uppercase tracking-wider mb-2">
+                🔬 AI 研究发现
+              </div>
               <p className="text-sm text-[#4B5A72] leading-relaxed">{item.ai_research || "—"}</p>
             </div>
           </div>
@@ -110,12 +160,14 @@ function ClaimVerdictCard({ item }) {
             <div className="px-3 py-2 bg-white border-t border-[#D8DCE8] flex flex-wrap items-center gap-3">
               {item.diff && (
                 <span className="text-xs text-orange-400">
-                  <span className="font-bold">差异：</span>{item.diff}
+                  <span className="font-bold">差异：</span>
+                  {item.diff}
                 </span>
               )}
               {item.severity && (
                 <span className="flex items-center gap-1 text-xs text-[#8E9BB0]">
-                  影响程度：<SeverityBadge severity={item.severity} />
+                  影响程度：
+                  <SeverityBadge severity={item.severity} />
                 </span>
               )}
               {item.score_impact && (
@@ -136,30 +188,31 @@ const ClaimVerdictsPanel = memo(function ClaimVerdictsPanel({ claimVerdicts }) {
 
   if (!claimVerdicts?.length) return null;
 
-  const filtered = filter === "all"
-    ? claimVerdicts
-    : filter === "夸大"
-    ? claimVerdicts.filter(c => ["夸大", "严重夸大"].includes(c.verdict))
-    : filter === "证伪"
-    ? claimVerdicts.filter(c => ["证伪", "信息不对称"].includes(c.verdict))
-    : claimVerdicts.filter(c => c.verdict === filter);
+  const filtered =
+    filter === "all"
+      ? claimVerdicts
+      : filter === "夸大"
+        ? claimVerdicts.filter((c) => ["夸大", "严重夸大"].includes(c.verdict))
+        : filter === "证伪"
+          ? claimVerdicts.filter((c) => ["证伪", "信息不对称"].includes(c.verdict))
+          : claimVerdicts.filter((c) => c.verdict === filter);
 
   const stats = {
     total: claimVerdicts.length,
-    honest: claimVerdicts.filter(c => c.verdict === "诚实").length,
-    conservative: claimVerdicts.filter(c => c.verdict === "保守低估").length,
-    exaggerated: claimVerdicts.filter(c => ["夸大", "严重夸大"].includes(c.verdict)).length,
-    questionable: claimVerdicts.filter(c => c.verdict === "存疑").length,
-    disproved: claimVerdicts.filter(c => ["证伪", "信息不对称"].includes(c.verdict)).length,
+    honest: claimVerdicts.filter((c) => c.verdict === "诚实").length,
+    conservative: claimVerdicts.filter((c) => c.verdict === "保守低估").length,
+    exaggerated: claimVerdicts.filter((c) => ["夸大", "严重夸大"].includes(c.verdict)).length,
+    questionable: claimVerdicts.filter((c) => c.verdict === "存疑").length,
+    disproved: claimVerdicts.filter((c) => ["证伪", "信息不对称"].includes(c.verdict)).length,
   };
 
   const FILTERS = [
-    { key: "all",    label: `全部 (${stats.total})` },
-    { key: "诚实",   label: `诚实 (${stats.honest})` },
+    { key: "all", label: `全部 (${stats.total})` },
+    { key: "诚实", label: `诚实 (${stats.honest})` },
     { key: "保守低估", label: `保守 (${stats.conservative})` },
-    { key: "夸大",   label: `夸大 (${stats.exaggerated})` },
-    { key: "存疑",   label: `存疑 (${stats.questionable})` },
-    { key: "证伪",   label: `证伪/信息不对称 (${stats.disproved})` },
+    { key: "夸大", label: `夸大 (${stats.exaggerated})` },
+    { key: "存疑", label: `存疑 (${stats.questionable})` },
+    { key: "证伪", label: `证伪/信息不对称 (${stats.disproved})` },
   ];
 
   return (
@@ -176,9 +229,11 @@ const ClaimVerdictsPanel = memo(function ClaimVerdictsPanel({ claimVerdicts }) {
           <span className="text-yellow-400">{stats.exaggerated} 夸大</span>
           <span className="text-blue-400">{stats.questionable} 存疑</span>
           <span className="text-red-400">{stats.disproved} 证伪</span>
-          {expanded
-            ? <ChevronUp className="w-4 h-4 text-[#8E9BB0]" />
-            : <ChevronDown className="w-4 h-4 text-[#8E9BB0]" />}
+          {expanded ? (
+            <ChevronUp className="w-4 h-4 text-[#8E9BB0]" />
+          ) : (
+            <ChevronDown className="w-4 h-4 text-[#8E9BB0]" />
+          )}
         </span>
       </button>
       <p className="text-xs text-[#8E9BB0] mb-4 ml-7">
@@ -189,10 +244,13 @@ const ClaimVerdictsPanel = memo(function ClaimVerdictsPanel({ claimVerdicts }) {
         <>
           {/* 筛选 */}
           <div className="flex flex-wrap gap-2 mb-4">
-            {FILTERS.map(f => (
+            {FILTERS.map((f) => (
               <button
                 key={f.key}
-                onClick={(e) => { e.stopPropagation(); setFilter(f.key); }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setFilter(f.key);
+                }}
                 className={`px-3 py-1 text-xs rounded-full border transition-colors ${
                   filter === f.key
                     ? "bg-blue-500/20 text-blue-400 border-blue-500/40"
@@ -222,7 +280,8 @@ const ClaimVerdictsPanel = memo(function ClaimVerdictsPanel({ claimVerdicts }) {
 function DimensionDetailCard({ dimKey, dim, Icon }) {
   const [open, setOpen] = useState(false);
   const hasBpVsAi = dim.bp_claim || dim.ai_finding;
-  const hasEnrichedData = dim.bp_key_points?.length || dim.ai_research_findings?.length || dim.comprehensive_analysis;
+  const hasEnrichedData =
+    dim.bp_key_points?.length || dim.ai_research_findings?.length || dim.comprehensive_analysis;
 
   return (
     <div className="border border-[#D8DCE8] rounded-xl overflow-hidden">
@@ -240,10 +299,15 @@ function DimensionDetailCard({ dimKey, dim, Icon }) {
               <span className="text-xs text-[#8E9BB0] hidden sm:inline">{dim.subtitle}</span>
             )}
             {dimKey === "external_risk" && dim.multiplier !== undefined && (
-              <span className={`text-xs font-mono font-bold ${
-                dim.multiplier >= 0.95 ? "text-emerald-400" :
-                dim.multiplier >= 0.85 ? "text-yellow-400" : "text-red-400"
-              }`}>
+              <span
+                className={`text-xs font-mono font-bold ${
+                  dim.multiplier >= 0.95
+                    ? "text-emerald-400"
+                    : dim.multiplier >= 0.85
+                      ? "text-yellow-400"
+                      : "text-red-400"
+                }`}
+              >
                 ×{dim.multiplier.toFixed(2)} 乘数
               </span>
             )}
@@ -257,16 +321,22 @@ function DimensionDetailCard({ dimKey, dim, Icon }) {
           <div className="w-14 h-2 bg-[#EEF1F7] rounded-full overflow-hidden">
             <div
               className={`h-full rounded-full ${
-                dim.score >= 75 ? "bg-emerald-500" :
-                dim.score >= 60 ? "bg-blue-500" :
-                dim.score >= 50 ? "bg-yellow-500" : "bg-red-500"
+                dim.score >= 75
+                  ? "bg-emerald-500"
+                  : dim.score >= 60
+                    ? "bg-blue-500"
+                    : dim.score >= 50
+                      ? "bg-yellow-500"
+                      : "bg-red-500"
               }`}
               style={{ width: `${dim.score}%` }}
             />
           </div>
-          {open
-            ? <ChevronUp className="w-4 h-4 text-[#8E9BB0]" />
-            : <ChevronDown className="w-4 h-4 text-[#8E9BB0]" />}
+          {open ? (
+            <ChevronUp className="w-4 h-4 text-[#8E9BB0]" />
+          ) : (
+            <ChevronDown className="w-4 h-4 text-[#8E9BB0]" />
+          )}
         </div>
       </div>
 
@@ -275,10 +345,15 @@ function DimensionDetailCard({ dimKey, dim, Icon }) {
           {/* BP 核心声明列表 */}
           {dim.bp_key_points?.length > 0 && (
             <div>
-              <div className="text-xs font-bold text-blue-400 uppercase tracking-wider mb-2">📄 BP 核心声明</div>
+              <div className="text-xs font-bold text-blue-400 uppercase tracking-wider mb-2">
+                📄 BP 核心声明
+              </div>
               <ul className="space-y-1">
                 {ensureStringArray(dim.bp_key_points).map((point, i) => (
-                  <li key={i} className="text-sm text-[#4B5A72] leading-relaxed bg-white rounded-lg px-3 py-2 border-l-2 border-blue-500/40">
+                  <li
+                    key={i}
+                    className="text-sm text-[#4B5A72] leading-relaxed bg-white rounded-lg px-3 py-2 border-l-2 border-blue-500/40"
+                  >
                     {point}
                   </li>
                 ))}
@@ -289,10 +364,15 @@ function DimensionDetailCard({ dimKey, dim, Icon }) {
           {/* AI 研究发现（逐条对应） */}
           {dim.ai_research_findings?.length > 0 && (
             <div>
-              <div className="text-xs font-bold text-purple-400 uppercase tracking-wider mb-2">🔬 AI 研究发现</div>
+              <div className="text-xs font-bold text-purple-400 uppercase tracking-wider mb-2">
+                🔬 AI 研究发现
+              </div>
               <ul className="space-y-1">
                 {ensureStringArray(dim.ai_research_findings).map((finding, i) => (
-                  <li key={i} className="text-sm text-[#4B5A72] leading-relaxed bg-white rounded-lg px-3 py-2 border-l-2 border-purple-500/40">
+                  <li
+                    key={i}
+                    className="text-sm text-[#4B5A72] leading-relaxed bg-white rounded-lg px-3 py-2 border-l-2 border-purple-500/40"
+                  >
                     {finding}
                   </li>
                 ))}
@@ -303,7 +383,9 @@ function DimensionDetailCard({ dimKey, dim, Icon }) {
           {/* 综合分析结论 */}
           {dim.comprehensive_analysis && (
             <div>
-              <div className="text-xs font-bold text-orange-400 uppercase tracking-wider mb-2">📋 综合分析</div>
+              <div className="text-xs font-bold text-orange-400 uppercase tracking-wider mb-2">
+                📋 综合分析
+              </div>
               <p className="text-sm text-[#4B5A72] leading-relaxed bg-white rounded-lg p-3 border-l-2 border-orange-500/40">
                 {dim.comprehensive_analysis}
               </p>
@@ -313,7 +395,9 @@ function DimensionDetailCard({ dimKey, dim, Icon }) {
           {/* 评分理由 */}
           {dim.score_rationale && (
             <div>
-              <div className="text-xs font-bold text-cyan-400 uppercase tracking-wider mb-2">💡 评分理由</div>
+              <div className="text-xs font-bold text-cyan-400 uppercase tracking-wider mb-2">
+                💡 评分理由
+              </div>
               <p className="text-sm text-[#4B5A72] leading-relaxed bg-white rounded-lg p-3 border-l-2 border-cyan-500/40">
                 {dim.score_rationale}
               </p>
@@ -324,13 +408,21 @@ function DimensionDetailCard({ dimKey, dim, Icon }) {
           {(dim.risk_factors?.length > 0 || dim.positive_signals?.length > 0) && (
             <div className="flex flex-wrap gap-2">
               {ensureStringArray(dim.risk_factors).map((risk, i) => (
-                <span key={`risk-${i}`} className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs bg-red-500/10 text-red-400 border border-red-500/20">
-                  <AlertTriangle className="w-3 h-3" />{risk}
+                <span
+                  key={`risk-${i}`}
+                  className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs bg-red-500/10 text-red-400 border border-red-500/20"
+                >
+                  <AlertTriangle className="w-3 h-3" />
+                  {risk}
                 </span>
               ))}
               {ensureStringArray(dim.positive_signals).map((signal, i) => (
-                <span key={`pos-${i}`} className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                  <CheckCircle className="w-3 h-3" />{signal}
+                <span
+                  key={`pos-${i}`}
+                  className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
+                >
+                  <CheckCircle className="w-3 h-3" />
+                  {signal}
                 </span>
               ))}
             </div>
@@ -339,7 +431,9 @@ function DimensionDetailCard({ dimKey, dim, Icon }) {
           {/* Fallback: 旧版 AI 分析结论 (when enriched data is unavailable) */}
           {!hasEnrichedData && dim.finding && (
             <div>
-              <div className="text-xs font-bold text-orange-400 uppercase tracking-wider mb-2">📋 AI 分析结论</div>
+              <div className="text-xs font-bold text-orange-400 uppercase tracking-wider mb-2">
+                📋 AI 分析结论
+              </div>
               <p className="text-sm text-[#4B5A72] leading-relaxed bg-white rounded-lg p-3 border-l-2 border-orange-500/40">
                 {dim.finding}
               </p>
@@ -351,7 +445,9 @@ function DimensionDetailCard({ dimKey, dim, Icon }) {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {dim.bp_claim && (
                 <div>
-                  <div className="text-xs font-bold text-blue-400 uppercase tracking-wider mb-2">📄 BP 声称</div>
+                  <div className="text-xs font-bold text-blue-400 uppercase tracking-wider mb-2">
+                    📄 BP 声称
+                  </div>
                   <p className="text-sm text-[#4B5A72] leading-relaxed bg-white rounded-lg p-3 border-l-2 border-blue-500/40">
                     {dim.bp_claim}
                   </p>
@@ -359,7 +455,9 @@ function DimensionDetailCard({ dimKey, dim, Icon }) {
               )}
               {dim.ai_finding && (
                 <div>
-                  <div className="text-xs font-bold text-purple-400 uppercase tracking-wider mb-2">🔬 AI 专家研究</div>
+                  <div className="text-xs font-bold text-purple-400 uppercase tracking-wider mb-2">
+                    🔬 AI 专家研究
+                  </div>
                   <p className="text-sm text-[#4B5A72] leading-relaxed bg-white rounded-lg p-3 border-l-2 border-purple-500/40">
                     {dim.ai_finding}
                   </p>
@@ -411,9 +509,11 @@ const DeepResearchPanel = memo(function DeepResearchPanel({ deepResearch, thinki
       >
         <Microscope className="w-5 h-5 text-purple-400" />
         AI 深度研究报告（DeepResearch）
-        {showResearch
-          ? <ChevronUp className="w-5 h-5 ml-auto text-[#8E9BB0]" />
-          : <ChevronDown className="w-5 h-5 ml-auto text-[#8E9BB0]" />}
+        {showResearch ? (
+          <ChevronUp className="w-5 h-5 ml-auto text-[#8E9BB0]" />
+        ) : (
+          <ChevronDown className="w-5 h-5 ml-auto text-[#8E9BB0]" />
+        )}
       </button>
       <p className="text-xs text-[#8E9BB0] mt-1 ml-7">
         AI 大模型知识库全量分析 · 市场数据 · 可比公司 · 估值分析 · 投资建议
@@ -451,17 +551,55 @@ const DeepResearchPanel = memo(function DeepResearchPanel({ deepResearch, thinki
  *
  * 展示顺序：AI声明核查 → 核心冲突 → 五维评分详情（含BP vs AI对比）→ 深度研究报告
  */
+/**
+ * 生成本报告所用的模型，以及能力降级说明。
+ *
+ * 用户自带模型时这块是**必须显示**的：一个不支持深度思考、输出上限很小的
+ * 模型，跑出来的判定会比平台默认模型松。不说清楚，用户会拿一份被削弱的
+ * 结论当成同等质量的结论用来做投资决策。
+ */
+const LlmRuntimeNote = memo(function LlmRuntimeNote({ runtime }) {
+  if (!runtime || runtime.source !== "byok") return null;
+  const notes = runtime.degrade_notes || [];
+
+  return (
+    <div className="rounded-xl border border-[#D8DCE8] bg-[#F7F9FC] p-4">
+      <div className="flex items-center gap-2 mb-1.5">
+        <Cpu className="w-4 h-4 text-[#1B4FD8]" />
+        <span className="text-sm font-medium text-[#0D2145]">本报告由你自己的模型生成</span>
+      </div>
+      <p className="text-xs text-[#4B5A72] font-mono mb-2">
+        {runtime.provider} · {runtime.model}
+      </p>
+      {notes.length > 0 ? (
+        <div className="space-y-1.5 pt-2 border-t border-[#D8DCE8]">
+          <p className="text-xs text-amber-700 font-medium">以下环节因模型能力限制已降级：</p>
+          {notes.map((n, i) => (
+            <p key={i} className="flex items-start gap-1.5 text-xs text-amber-700">
+              <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+              <span>{n}</span>
+            </p>
+          ))}
+          <p className="text-[11px] text-[#8E9BB0] pt-1">
+            判定严格度可能低于平台默认模型，建议对结论保留余量。
+          </p>
+        </div>
+      ) : (
+        <p className="text-xs text-emerald-600">该模型能力满足全部分析环节，未发生降级。</p>
+      )}
+    </div>
+  );
+});
+
 const DetailedReport = memo(function DetailedReport({ result }) {
   if (!result) return null;
 
   return (
     <div className="space-y-6">
+      <LlmRuntimeNote runtime={result.llm_runtime} />
       <ClaimVerdictsPanel claimVerdicts={result.verdict?.claim_verdicts} />
       <DimensionsDetail dimensions={result.verdict?.dimensions} />
-      <DeepResearchPanel
-        deepResearch={result.deep_research}
-        thinking={result.thinking}
-      />
+      <DeepResearchPanel deepResearch={result.deep_research} thinking={result.thinking} />
     </div>
   );
 });

@@ -11,6 +11,8 @@ const useAnalysisStore = create((set, get) => ({
   // ── 文件上传状态 ──
   file: null,
   dragOver: false,
+  // 本次分析是否使用用户自己的模型 API（BYOK）。默认走平台模型。
+  useOwnModel: false,
 
   // ── 轮询世代号 ──
   // 「当前有效分析」的单一真相。每开启一轮（start/resume）或 reset 时 +1，
@@ -20,9 +22,9 @@ const useAnalysisStore = create((set, get) => ({
 
   // ── 流水线进度状态（高频更新） ──
   analyzing: false,
-  currentStep: -1,   // -1=未开始  0/1=步骤中  2=全部完成
-  progress: 0,        // 0-100，整体百分比进度
-  eta: null,          // 预估剩余秒数（null=尚未计算）
+  currentStep: -1, // -1=未开始  0/1=步骤中  2=全部完成
+  progress: 0, // 0-100，整体百分比进度
+  eta: null, // 预估剩余秒数（null=尚未计算）
   progressMessage: "", // 当前阶段描述文字
 
   // ── 分析结果（低频更新） ──
@@ -47,6 +49,7 @@ const useAnalysisStore = create((set, get) => ({
   // ══════════════════════════
   setFile: (file) => set({ file }),
   setDragOver: (dragOver) => set({ dragOver }),
+  setUseOwnModel: (useOwnModel) => set({ useOwnModel }),
 
   setAnalyzing: (analyzing) => set({ analyzing }),
   setCurrentStep: (currentStep) => set({ currentStep }),

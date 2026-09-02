@@ -77,6 +77,9 @@ const ALLOWED_TASK_COLUMNS = new Set([
   "project_location", "client_ip", "project_stage", "adjusted_score",
   "next_followup_date", "archive_number",
   "bp_text",
+  // BYOK：这份报告用的是哪个厂商/模型、平台的还是用户自己的。
+  // 缓存复用判定（同文件同模型才复用）和事后排查都依赖这三列。
+  "llm_provider", "llm_model", "llm_source",
 ]);
 
 function updateTask(taskId, fields) {

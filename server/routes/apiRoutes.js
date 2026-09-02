@@ -19,6 +19,7 @@ const apiRoutes = [
   ["/api/skills", "./skills"],
   ["/api/teaser", "./teaser"],
   ["/api/forum", "./forum"],
+  ["/api/llm", "./llm"],
 ];
 
 function mountApiRoutes(app) {

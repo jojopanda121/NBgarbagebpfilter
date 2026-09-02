@@ -12,17 +12,28 @@ import api, { ApiError } from "../services/api";
  */
 
 const STAGE_TO_STEP = {
-  pdf_done: 0, data_extract: 0, data_extract_retry: 0, data_done: 0,
-  agent_b_start: 1, claim_verify: 1, claims_verified: 1,
-  scoring_retry: 1, scoring_retry2: 1,
-  ai_research: 1, ai_research_retry: 1, ai_done: 1,
-  scoring: 1, report: 1, finalizing: 1,
-  multiagent_start: 1, multiagent_done: 1,
+  pdf_done: 0,
+  data_extract: 0,
+  data_extract_retry: 0,
+  data_done: 0,
+  agent_b_start: 1,
+  claim_verify: 1,
+  claims_verified: 1,
+  scoring_retry: 1,
+  scoring_retry2: 1,
+  ai_research: 1,
+  ai_research_retry: 1,
+  ai_done: 1,
+  scoring: 1,
+  report: 1,
+  finalizing: 1,
+  multiagent_start: 1,
+  multiagent_done: 1,
   complete: 2,
 };
 
 const POLL_INTERVAL_MS = 2500;
-const MAX_POLL_COUNT = 240;           // 最多轮询 240 次（约 10 分钟）
+const MAX_POLL_COUNT = 240; // 最多轮询 240 次（约 10 分钟）
 const MAX_CONSECUTIVE_ERRORS = 8;
 const PENDING_TASK_KEY = "bp_pending_task";
 
@@ -74,7 +85,9 @@ export function useAnalysisPipeline() {
 
   // 组件卸载时停止本实例触发的轮询，避免离开页面后僵尸循环继续写全局 store
   useEffect(() => {
-    return () => { analyzingRef.current = false; };
+    return () => {
+      analyzingRef.current = false;
+    };
   }, []);
 
   // 慢速爬行 + ETA
@@ -108,100 +121,115 @@ export function useAnalysisPipeline() {
   const agentPollStartedRef = useRef(false);
 
   /** 拉取 6 个 agent 的实时状态，更新 store */
-  const pollAgentStatuses = useCallback(async (taskId) => {
-    try {
-      const data = await api.get(`/api/agents/run/${taskId}/status`);
-      if (data?.agents) {
-        const statuses = {};
-        const summaries = {};
-        for (const a of data.agents) {
-          statuses[a.agent_name] = a.status;
-          if (a.summary) summaries[a.agent_name] = a.summary;
+  const pollAgentStatuses = useCallback(
+    async (taskId) => {
+      try {
+        const data = await api.get(`/api/agents/run/${taskId}/status`);
+        if (data?.agents) {
+          const statuses = {};
+          const summaries = {};
+          for (const a of data.agents) {
+            statuses[a.agent_name] = a.status;
+            if (a.summary) summaries[a.agent_name] = a.summary;
+          }
+          setAgentStatuses(statuses);
+          setAgentSummaries(summaries);
         }
-        setAgentStatuses(statuses);
-        setAgentSummaries(summaries);
+      } catch (_) {
+        /* 静默失败，不影响主轮询 */
       }
-    } catch (_) { /* 静默失败，不影响主轮询 */ }
-  }, [setAgentStatuses, setAgentSummaries]);
+    },
+    [setAgentStatuses, setAgentSummaries]
+  );
 
   /**
    * 核心轮询逻辑，传入 taskId 开始轮询。
    * gen 为本轮的世代号：一旦全局 analysisGeneration 不再等于 gen
    * （被新一轮分析或 reset 取代），立即停止写入并退出，避免并发循环污染 store。
    */
-  const pollUntilDone = useCallback(async (taskId, gen) => {
-    let consecutiveErrors = 0;
-    let pollCount = 0;
-    agentPollStartedRef.current = false;
+  const pollUntilDone = useCallback(
+    async (taskId, gen) => {
+      let consecutiveErrors = 0;
+      let pollCount = 0;
+      agentPollStartedRef.current = false;
 
-    const isActive = () =>
-      analyzingRef.current && useAnalysisStore.getState().analysisGeneration === gen;
+      const isActive = () =>
+        analyzingRef.current && useAnalysisStore.getState().analysisGeneration === gen;
 
-    while (isActive()) {
-      pollCount++;
-      if (pollCount > MAX_POLL_COUNT) {
-        // 不抛出错误，改为提示后台处理中（不清除 pendingTask，下次可恢复）
-        setBackgroundProcessing(true);
-        setProgressMessage("后台处理中，请点击头像，下拉菜单历史报告查看");
-        return;
-      }
-      await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
-      if (!isActive()) break;
-
-      let taskData;
-      try {
-        taskData = await api.pollTask(taskId);
-        consecutiveErrors = 0;
-      } catch (_pollErr) {
-        consecutiveErrors++;
-        if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
-          throw new Error(`连续 ${MAX_CONSECUTIVE_ERRORS} 次轮询失败，请检查网络`);
+      while (isActive()) {
+        pollCount++;
+        if (pollCount > MAX_POLL_COUNT) {
+          // 不抛出错误，改为提示后台处理中（不清除 pendingTask，下次可恢复）
+          setBackgroundProcessing(true);
+          setProgressMessage("后台处理中，请点击头像，下拉菜单历史报告查看");
+          return;
         }
-        continue;
-      }
+        await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
+        if (!isActive()) break;
 
-      // 网络请求期间本轮可能已被取代（新一轮分析 / reset）；若是则丢弃结果，不写 store
-      if (!isActive()) return;
-
-      const currentProgress = useAnalysisStore.getState().progress;
-      if (taskData.percentage > currentProgress) {
-        setProgress(taskData.percentage);
-      }
-      if (taskData.message) setProgressMessage(taskData.message);
-
-      const step = STAGE_TO_STEP[taskData.stage];
-      if (step !== undefined) setCurrentStep(step);
-
-      // 一旦进入 multiagent 阶段，开始并发拉取 agent 状态（每 3 轮一次）
-      if (taskData.stage === "multiagent_start" || taskData.stage === "multiagent_done") {
-        agentPollStartedRef.current = true;
-      }
-      if (agentPollStartedRef.current && pollCount % 3 === 0) {
-        pollAgentStatuses(taskId);
-      }
-
-      if (taskData.status === "complete") {
-        setProgress(100);
-        setProgressMessage("分析完成！");
-        setCurrentStep(2);
-        setResult(taskData.result);
-        // 最终拉一次 agent 状态，确保显示全部完成
-        pollAgentStatuses(taskId);
-        localStorage.removeItem(PENDING_TASK_KEY);  // 完成后清除
-
-        // 刷新额度
+        let taskData;
         try {
-          const quotaData = await api.get("/api/quota");
-          useAuthStore.getState().setQuota(quotaData);
-        } catch {}
+          taskData = await api.pollTask(taskId);
+          consecutiveErrors = 0;
+        } catch (_pollErr) {
+          consecutiveErrors++;
+          if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+            throw new Error(`连续 ${MAX_CONSECUTIVE_ERRORS} 次轮询失败，请检查网络`);
+          }
+          continue;
+        }
 
-        break;
-      } else if (taskData.status === "error" || taskData.status === "failed") {
-        localStorage.removeItem(PENDING_TASK_KEY);
-        throw new Error(taskData.error || "分析失败，请重试");
+        // 网络请求期间本轮可能已被取代（新一轮分析 / reset）；若是则丢弃结果，不写 store
+        if (!isActive()) return;
+
+        const currentProgress = useAnalysisStore.getState().progress;
+        if (taskData.percentage > currentProgress) {
+          setProgress(taskData.percentage);
+        }
+        if (taskData.message) setProgressMessage(taskData.message);
+
+        const step = STAGE_TO_STEP[taskData.stage];
+        if (step !== undefined) setCurrentStep(step);
+
+        // 一旦进入 multiagent 阶段，开始并发拉取 agent 状态（每 3 轮一次）
+        if (taskData.stage === "multiagent_start" || taskData.stage === "multiagent_done") {
+          agentPollStartedRef.current = true;
+        }
+        if (agentPollStartedRef.current && pollCount % 3 === 0) {
+          pollAgentStatuses(taskId);
+        }
+
+        if (taskData.status === "complete") {
+          setProgress(100);
+          setProgressMessage("分析完成！");
+          setCurrentStep(2);
+          setResult(taskData.result);
+          // 最终拉一次 agent 状态，确保显示全部完成
+          pollAgentStatuses(taskId);
+          localStorage.removeItem(PENDING_TASK_KEY); // 完成后清除
+
+          // 刷新额度
+          try {
+            const quotaData = await api.get("/api/quota");
+            useAuthStore.getState().setQuota(quotaData);
+          } catch {}
+
+          break;
+        } else if (taskData.status === "error" || taskData.status === "failed") {
+          localStorage.removeItem(PENDING_TASK_KEY);
+          throw new Error(taskData.error || "分析失败，请重试");
+        }
       }
-    }
-  }, [setCurrentStep, setProgress, setProgressMessage, setResult, setBackgroundProcessing, pollAgentStatuses]);
+    },
+    [
+      setCurrentStep,
+      setProgress,
+      setProgressMessage,
+      setResult,
+      setBackgroundProcessing,
+      pollAgentStatuses,
+    ]
+  );
 
   /** 从头开始分析（上传文件） */
   const startAnalysis = useCallback(async () => {
@@ -224,7 +252,9 @@ export function useAnalysisPipeline() {
       // Step 1: 提交任务
       let taskId;
       try {
-        const body = await api.uploadFile(file);
+        const body = await api.uploadFile(file, {
+          useOwnModel: useAnalysisStore.getState().useOwnModel,
+        });
         taskId = body.taskId;
       } catch (err) {
         if (err instanceof ApiError && err.status === 4031) {
@@ -265,38 +295,62 @@ export function useAnalysisPipeline() {
         }
       }
     }
-  }, [file, beginRun, setAnalyzing, setCurrentStep, setProgress, setEta, setProgressMessage, setResult, setError, pollUntilDone]);
+  }, [
+    file,
+    beginRun,
+    setAnalyzing,
+    setCurrentStep,
+    setProgress,
+    setEta,
+    setProgressMessage,
+    setResult,
+    setError,
+    pollUntilDone,
+  ]);
 
   /** 恢复对已提交任务的轮询（用户返回页面时调用） */
-  const resumeAnalysis = useCallback(async (taskId) => {
-    // 已有分析在跑（本实例或其它实例）就不再起重复循环，避免并发污染全局 store
-    if (!taskId || analyzingRef.current || useAnalysisStore.getState().analyzing) return;
+  const resumeAnalysis = useCallback(
+    async (taskId) => {
+      // 已有分析在跑（本实例或其它实例）就不再起重复循环，避免并发污染全局 store
+      if (!taskId || analyzingRef.current || useAnalysisStore.getState().analyzing) return;
 
-    const gen = beginRun();
-    startTimeRef.current = Date.now();
-    analyzingRef.current = true;
+      const gen = beginRun();
+      startTimeRef.current = Date.now();
+      analyzingRef.current = true;
 
-    setAnalyzing(true);
-    setError("");
-    setResult(null);
-    setCurrentStep(1);
-    setProgress(10);
-    setEta(null);
-    setProgressMessage("正在恢复分析进度...");
+      setAnalyzing(true);
+      setError("");
+      setResult(null);
+      setCurrentStep(1);
+      setProgress(10);
+      setEta(null);
+      setProgressMessage("正在恢复分析进度...");
 
-    try {
-      await pollUntilDone(taskId, gen);
-    } catch (err) {
-      localStorage.removeItem(PENDING_TASK_KEY);
-      setError(err.message || "恢复分析失败，请在历史记录中查看");
-    } finally {
-      // 仅当本轮仍是最新世代时才收尾，避免误关掉已接管的新一轮分析
-      if (useAnalysisStore.getState().analysisGeneration === gen) {
-        analyzingRef.current = false;
-        setAnalyzing(false);
+      try {
+        await pollUntilDone(taskId, gen);
+      } catch (err) {
+        localStorage.removeItem(PENDING_TASK_KEY);
+        setError(err.message || "恢复分析失败，请在历史记录中查看");
+      } finally {
+        // 仅当本轮仍是最新世代时才收尾，避免误关掉已接管的新一轮分析
+        if (useAnalysisStore.getState().analysisGeneration === gen) {
+          analyzingRef.current = false;
+          setAnalyzing(false);
+        }
       }
-    }
-  }, [beginRun, setAnalyzing, setCurrentStep, setProgress, setEta, setProgressMessage, setResult, setError, pollUntilDone]);
+    },
+    [
+      beginRun,
+      setAnalyzing,
+      setCurrentStep,
+      setProgress,
+      setEta,
+      setProgressMessage,
+      setResult,
+      setError,
+      pollUntilDone,
+    ]
+  );
 
   return { startAnalysis, resumeAnalysis, getPendingTask };
 }

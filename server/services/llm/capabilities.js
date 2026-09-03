@@ -38,6 +38,8 @@ const FALLBACK = {
 //   deepseek   thinking: { type: "enabled" | "disabled" }
 //   anthropic  thinking: { type: "enabled", budget_tokens: N }（budget 必须小于 max_tokens）
 //   qwen       enable_thinking: true/false
+//   minimax    thinking: { type: "adaptive" | "disabled" }（**没有 enabled**，
+//              发 enabled 会被 2013 invalid params 拒绝，而且是 HTTP 200 的业务错误）
 //   zhipu      thinking: { type: "enabled" | "disabled" }（形状同 deepseek）
 //   effort     只认 reasoning_effort，没有独立的 thinking 字段（OpenAI o 系 / gpt-5）
 //   always     模型永远在思考且不可关（如 o 系推理模型），发任何开关字段都会 400
@@ -149,6 +151,7 @@ const PROVIDER_CAPABILITIES = {
     default: {
       maxOutputTokens: 8192,
       contextWindow: 245000,
+      // abab / Text-01 这代没有思考开关；M 系列有，但只认 adaptive/disabled
       thinkingStyle: "none",
       supportsReasoningEffort: false,
       supportsTools: true,
@@ -157,7 +160,13 @@ const PROVIDER_CAPABILITIES = {
       supportsTemperature: true,
     },
     models: [
-      { match: /^minimax-m/i, caps: { maxOutputTokens: 32768, contextWindow: 1000000, thinkingStyle: "deepseek" } },
+      // M 系（M1/M2/M3）：thinking 只接受 adaptive / disabled。
+      // 此前误标成 deepseek 风格（发 "enabled"），导致每一次开思考的调用
+      // 都被 2013 拒绝，且因为是 HTTP 200 而被当成"空回答"静默重试。
+      // M1 官方标称 1M 上下文；M2/M3 等后续型号拿不准，按本文件的规矩往小写
+      // （写小只损失一点输入余量，写大是每次调用都失败）。
+      { match: /^minimax-m1/i, caps: { maxOutputTokens: 32768, contextWindow: 1000000, thinkingStyle: "minimax" } },
+      { match: /^minimax-m/i, caps: { maxOutputTokens: 32768, contextWindow: 192000, thinkingStyle: "minimax" } },
       { match: /^(abab|minimax-text)/i, caps: { maxOutputTokens: 8192, contextWindow: 245000 } },
     ],
   },

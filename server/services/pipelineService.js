@@ -4,7 +4,10 @@
 // ============================================================
 
 const pLimit = require("p-limit");
-const { callLLM, callLLMWithThinking, callLLMWithSearch, getModelName, inputBudgetChars } = require("./llmService");
+const {
+  callLLM, callLLMWithThinking, callLLMWithSearch, getModelName, inputBudgetChars,
+  getRecommendedConcurrency,
+} = require("./llmService");
 const { extractJson, extractJsonArray, extractPartialResult, ensureStringArray } = require("../utils/jsonParser");
 const { scoreProject, analyzeIntegrity } = require("../scoring");
 const { runWebSearch, formatSearchContext } = require("./webSearchService");
@@ -26,7 +29,11 @@ const {
 } = require("../utils/prompts");
 
 const MAX_CLAIMS_PER_BATCH = 6; // 每批最多6条声明，截断时按"已完成条数"做残片抢救+重试剩余
-const MAX_CONCURRENT_BATCHES = 8; // 并发批次（M3 限流 RPM 200/TPM 10M，8 路仍有大量余量）
+// 并发批次上限不能写死：8 是照 DeepSeek 的配额（RPM 200）定的，而一把
+// MiniMax Token Plan 订阅 key 或用户 BYOK 的入门档 key 只允许个位数并发，
+// 8 路会稳定触发上游 429，退避后又一起重撞，整份分析被限流拖垮。
+// 改为按当前生效的厂商取推荐值（见 services/llm/concurrency.js），
+// BYOK 时自动跟着用户选的厂商走；可用 LLM_MAX_CONCURRENCY 覆盖。
 // 单路并行任务上限 11min：必须 > 单次 LLM 请求超时上限（calcTimeout 封顶 600s/10min），
 // 否则放大 max_tokens 后的慢请求会被本壳子提前 kill，误判为失败。
 const PARALLEL_TASK_TIMEOUT_MS = 11 * 60 * 1000;
@@ -281,7 +288,7 @@ async function runAgentBWithBatchingAndResearch(extractedData, bpText, onProgres
 
   const bpContext = `请对处于 ${extractedData.industry || "未知"} 赛道的 ${extractedData.company_name || "未知公司"} 进行核查。产品：${extractedData.product_name || "未知"}。`;
 
-  const limit = pLimit(MAX_CONCURRENT_BATCHES);
+  const limit = pLimit(getRecommendedConcurrency());
   // 含 critical/high 声明的批次走真实联网检索，让"事实核查"对关键声明有
   // 外部证据，而不是纯模型记忆自我背书。优先服务端预检索注入，
   // 检索失败时 callLLMWithSearch 会降级为纯模型回答。

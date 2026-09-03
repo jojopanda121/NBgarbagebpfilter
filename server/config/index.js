@@ -28,6 +28,29 @@ const devJwtSecret = (() => {
   return secret;
 })();
 
+// ── 厂商别名环境变量 ─────────────────────────────────────────
+// 每家一个前缀：DEEPSEEK_API_KEY / MINIMAX_API_KEY / OPENAI_API_KEY ...
+// 只有与当前 LLM_PROVIDER 匹配的那一组会被读取。
+const _llmProvider = (process.env.LLM_PROVIDER || "deepseek").trim().toLowerCase();
+const _isDeepseek = _llmProvider === "deepseek";
+const PROVIDER_ENV_PREFIX = {
+  deepseek: ["DEEPSEEK"],
+  anthropic: ["ANTHROPIC", "CLAUDE"],
+  openai: ["OPENAI"],
+  gemini: ["GEMINI", "GOOGLE"],
+  minimax: ["MINIMAX"],
+  moonshot: ["MOONSHOT", "KIMI"],
+  qwen: ["QWEN", "DASHSCOPE"],
+  zhipu: ["ZHIPU", "BIGMODEL"],
+};
+function _providerEnv(suffix) {
+  for (const prefix of PROVIDER_ENV_PREFIX[_llmProvider] || []) {
+    const v = process.env[`${prefix}_${suffix}`];
+    if (v) return v;
+  }
+  return "";
+}
+
 const config = {
   env: process.env.NODE_ENV || "development",
   port: parseInt(process.env.PORT, 10) || 3001,
@@ -48,13 +71,22 @@ const config = {
   //   LLM_PROVIDER   deepseek | anthropic | openai | gemini | minimax | moonshot | qwen | zhipu
   //   LLM_API_KEY / LLM_API_HOST / LLM_MODEL / LLM_MODEL_HEAVY / LLM_MODEL_LIGHT
   // 下面的 DEEPSEEK_* 是向后兼容别名：生产 .env 不动也能继续跑。
-  llmProvider: (process.env.LLM_PROVIDER || "deepseek").trim().toLowerCase(),
-  llmApiKey: process.env.LLM_API_KEY || process.env.DEEPSEEK_API_KEY || "",
-  llmApiHost: process.env.LLM_API_HOST || process.env.DEEPSEEK_API_HOST || process.env.DEEPSEEK_BASE_URL || "",
-  llmModel: process.env.LLM_MODEL || process.env.DEEPSEEK_MODEL || "deepseek-v4-flash",
-  llmModelHeavy: process.env.LLM_MODEL_HEAVY || process.env.DEEPSEEK_MODEL_HEAVY || "deepseek-v4-pro",
-  llmModelLight: process.env.LLM_MODEL_LIGHT || process.env.DEEPSEEK_MODEL_LIGHT || "",
-  llmReasoningEffort: process.env.LLM_REASONING_EFFORT || process.env.DEEPSEEK_REASONING_EFFORT || "",
+  llmProvider: _llmProvider,
+  // 厂商别名兜底（_providerEnv）：老部署把 key 写在 DEEPSEEK_* / MINIMAX_* 里，
+  // 只改 LLM_PROVIDER 也要能立刻生效。
+  //
+  // 关键：**别名只在与当前厂商匹配时才生效**。此前 llmApiHost 会一路兜底到
+  // DEEPSEEK_API_HOST 的硬编码默认值 https://api.deepseek.com/v1，
+  // llmModel 会兜底到 "deepseek-v4-flash" —— 于是 LLM_PROVIDER=minimax
+  // 却不额外配 HOST/MODEL 时，会拿着 MiniMax 的 key 去打 DeepSeek 的域名、
+  // 报一个跟真实原因毫无关系的错。留空 = 用该厂商的官方端点与默认模型
+  // （见 services/llm/providers/index.js）。
+  llmApiKey: process.env.LLM_API_KEY || _providerEnv("API_KEY") || "",
+  llmApiHost: process.env.LLM_API_HOST || _providerEnv("API_HOST") || _providerEnv("BASE_URL") || "",
+  llmModel: process.env.LLM_MODEL || _providerEnv("MODEL") || (_isDeepseek ? "deepseek-v4-flash" : ""),
+  llmModelHeavy: process.env.LLM_MODEL_HEAVY || _providerEnv("MODEL_HEAVY") || (_isDeepseek ? "deepseek-v4-pro" : ""),
+  llmModelLight: process.env.LLM_MODEL_LIGHT || _providerEnv("MODEL_LIGHT") || "",
+  llmReasoningEffort: process.env.LLM_REASONING_EFFORT || _providerEnv("REASONING_EFFORT") || "",
 
   // ── 用户自带模型 BYOK ────────────────────────────────────
   // 允许用户在分析时使用自己的 API Key。关掉后前端不再展示该入口，
@@ -76,6 +108,14 @@ const config = {
   deepseekModelHeavy: process.env.DEEPSEEK_MODEL_HEAVY || "deepseek-v4-pro",
   deepseekModelLight: process.env.DEEPSEEK_MODEL_LIGHT || "",
   deepseekApiHost: process.env.DEEPSEEK_API_HOST || process.env.DEEPSEEK_BASE_URL || "https://api.deepseek.com/v1",
+  // LLM 并发闸门：同一把 key 同时在途的请求数上限（services/llm/concurrency.js）。
+  // 留空 = 按厂商默认（DeepSeek 8 / MiniMax 3 / Kimi 2 ...）；0 = 完全关闭闸门。
+  // 这是限流问题的根治开关：上游 429 的直接原因几乎总是我们自己并发开太大。
+  llmMaxConcurrency:
+    process.env.LLM_MAX_CONCURRENCY === undefined || process.env.LLM_MAX_CONCURRENCY === ""
+      ? null
+      : Math.max(0, parseInt(process.env.LLM_MAX_CONCURRENCY, 10) || 0),
+
   // 推理档位：deepseek-v4-flash 支持 low/high/max，deepseek-v4-pro 目前只支持 high/max。
   // 留空 = 不发送该字段，用服务端默认。
   deepseekReasoningEffort: process.env.DEEPSEEK_REASONING_EFFORT || "",

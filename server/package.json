@@ -17,7 +17,6 @@
     "better-sqlite3": "^11.7.0",
     "compression": "^1.8.1",
     "cors": "^2.8.5",
-    "dompurify": "^3.3.1",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
     "express-rate-limit": "^8.2.1",
@@ -26,8 +25,7 @@
     "multer": "^1.4.5-lts.1",
     "p-limit": "^3.1.0",
     "pptxgenjs": "^4.0.1",
-    "satori": "^0.26.0",
-    "undici": "^6.21.1"
+    "satori": "^0.26.0"
   },
   "devDependencies": {
     "eslint": "^8.57.0",

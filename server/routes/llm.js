@@ -57,6 +57,9 @@ function parsePayload(body = {}) {
 router.get("/providers", (req, res) => {
   res.json({
     byok_enabled: credentials.isByokAvailable(),
+    // 平台模型是否可用。为 false 时站点处于「纯自带模型模式」（平台没配 LLM key，
+    // 例如运营方停止续费），前端据此把"用自己的模型"从可选项变成必要条件。
+    platform_model_available: config.platformModelAvailable,
     // 未配置 ENCRYPTION_KEY 时前端要能说明白为什么用不了，而不是入口莫名消失
     byok_disabled_reason: credentials.isByokAvailable()
       ? null
@@ -67,8 +70,17 @@ router.get("/providers", (req, res) => {
 });
 
 router.get("/credentials", requireAuth, (req, res) => {
-  if (!credentials.isByokAvailable()) return res.json({ credential: null, byok_enabled: false });
-  res.json({ credential: credentials.getCredentialForUser(req.user.id), byok_enabled: true });
+  // platform_model_available 两个分支都要带上：上传页只调这一个接口，
+  // BYOK 关着的时候它同样需要知道平台模型还在不在，才能给出正确的提示。
+  const platform = config.platformModelAvailable;
+  if (!credentials.isByokAvailable()) {
+    return res.json({ credential: null, byok_enabled: false, platform_model_available: platform });
+  }
+  res.json({
+    credential: credentials.getCredentialForUser(req.user.id),
+    byok_enabled: true,
+    platform_model_available: platform,
+  });
 });
 
 router.post("/validate", requireAuth, validateLimiter, asyncHandler(async (req, res) => {

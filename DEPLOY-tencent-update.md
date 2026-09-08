@@ -55,12 +55,12 @@ SKIP_CHROMIUM=1
 
 ### ③ `.env` 生产必填项（缺任一 → app 启动即 `exit(1)`、网站 502）
 
-| 变量                                   | 规则                                                                                                                            |
-| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| `DEEPSEEK_API_KEY`（或 `LLM_API_KEY`） | 非空。**⚠️ 本项已由 `MINIMAX_API_KEY` 更名**：LLM 后端已全量切到 DeepSeek，老 `.env` 只有 MiniMax 的 key 会直接 `exit(1)` → 502 |
-| `JWT_SECRET`                           | ≥32 字符，无占位文案；`openssl rand -hex 32`                                                                                    |
-| `ALLOWED_ORIGINS`                      | 非空、**不能是 `*`**；如 `https://www.你的域名`                                                                                 |
-| `PII_SALT`                             | **≥16 字符**（安全加固后新增，老 .env 常缺）；`openssl rand -hex 24`                                                            |
+| 变量                                   | 规则                                                                                                                                                                                                                                 |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `DEEPSEEK_API_KEY`（或 `LLM_API_KEY`） | 非空。**⚠️ 本项已由 `MINIMAX_API_KEY` 更名**：LLM 后端已全量切到 DeepSeek，老 `.env` 只有 MiniMax 的 key 会直接 `exit(1)` → 502。**例外**：配了 `ENCRYPTION_KEY`（BYOK 可用）时本项可留空，站点进入「纯自带模型模式」照常启动，见 §9 |
+| `JWT_SECRET`                           | ≥32 字符，无占位文案；`openssl rand -hex 32`                                                                                                                                                                                         |
+| `ALLOWED_ORIGINS`                      | 非空、**不能是 `*`**；如 `https://www.你的域名`                                                                                                                                                                                      |
+| `PII_SALT`                             | **≥16 字符**（安全加固后新增，老 .env 常缺）；`openssl rand -hex 24`                                                                                                                                                                 |
 
 强烈建议同时配置（不配不会崩，但功能会缺）：
 
@@ -143,6 +143,7 @@ curl -s http://127.0.0.1:3001/api/health; echo   # 期望 {"status":"ok","versio
 | `[FATAL] ... PII_SALT（≥ 16 字符）`                           | 老 `.env` 缺 `PII_SALT`                      | `echo "PII_SALT=$(openssl rand -hex 24)" >> .env` 后 `$DC up -d --force-recreate app`                                                                      |
 | `[FATAL] ... JWT_SECRET / ALLOWED_ORIGINS / LLM_API_KEY`      | 必填项缺失/不合规                            | 补 `.env`（见 §1③）后 `$DC up -d --force-recreate app`                                                                                                     |
 | `[FATAL] 生产环境必须设置 LLM_API_KEY（或 DEEPSEEK_API_KEY）` | 老 `.env` 里还是 `MINIMAX_API_KEY`           | 改成 `DEEPSEEK_API_KEY=...` 后 `$DC up -d --force-recreate app`                                                                                            |
+| `[WARN] ... 服务以「纯自带模型模式」启动`                     | 没配平台 LLM key，但 BYOK 可用               | **不是错误**：站点正常，只是分析必须由用户自带模型。想恢复平台模型就补 `LLM_API_KEY`                                                                       |
 | 用户反馈「自带模型」入口不出现 / 提示未配置加密密钥           | `.env` 缺 `ENCRYPTION_KEY`                   | `echo "ENCRYPTION_KEY=$(openssl rand -hex 32)" >> .env` 后重建 app；**注意该密钥一旦更换，已保存的用户 API Key 全部失效需重填**                            |
 | `container name "/bp-filter-app" is already in use`           | 旧同名容器占用                               | `docker rm -f bp-filter-app && $DC up -d`（app 无状态，删容器不丢数据）                                                                                    |
 | 构建卡在 `npm ci` 一动不动（前端阶段）                        | puppeteer 在下 Chromium，国内被墙            | 确认 `.env` 有 `SKIP_CHROMIUM=1`，重新 `$DC build`                                                                                                         |
@@ -224,3 +225,18 @@ docker logs bp-filter-backup
 | `docker system prune -a`                                 | 删掉回滚镜像                                                 |
 | `ALLOWED_ORIGINS=*` / `JWT_SECRET=占位文案`              | 生产启动被拒、网站 502                                       |
 | 直接 `docker compose --profile production up -d`（全量） | 会拉起 compose 的 nginx，和你宿主机 nginx **抢 80/443 端口** |
+
+---
+
+## 9. 纯自带模型模式（平台不再续费 API 时）
+
+站点不依赖平台自己的 LLM key 才能活着。只要 `ENCRYPTION_KEY` 已配（BYOK 可用），把 `.env` 里的 `LLM_API_KEY` / `DEEPSEEK_API_KEY` 留空或删掉，服务照常启动：
+
+- 启动日志出现 `[WARN] ... 服务以「纯自带模型模式」启动`，**不是错误**
+- 用户在「用户中心 → 我的模型」填自己的 API Key（DeepSeek / Claude / GPT / Gemini 等），照常分析，费用走他自己的账户
+- 没配自己模型的用户，上传页会直接显示「需要先配置你自己的模型」并禁用分析按钮，不会白扣额度、也不会跑到一半失败
+- 论坛、报告、工作台等不调模型的功能完全不受影响
+
+想恢复平台模型，把 key 加回 `.env` 再 `$DC up -d --force-recreate app` 即可。
+
+⚠️ `ENCRYPTION_KEY` 和 `LLM_API_KEY` 同时缺失才是真的启动失败——那种情况下没有任何模型可跑，站点起来也没意义。

@@ -237,6 +237,19 @@ async function analyze(req, res) {
     }
   }
 
+  // 平台模型不可用（运营方没配/停用了平台 LLM key）时，唯一能跑的就是用户自己的
+  // 模型。这里必须**在扣额度和建任务之前**拦下来，否则用户白扣一次额度、任务跑到
+  // 第一次调模型才炸，错误信息还是一句对他毫无意义的"服务端缺少 API Key"。
+  if (!llmContext && !config.platformModelAvailable) {
+    cleanupUpload();
+    return res.status(503).json({
+      error: isByokAvailable()
+        ? "平台模型当前不可用，请在「设置 → 我的模型」配置你自己的 API Key 后，选择「我自己的模型」再分析"
+        : "分析服务当前不可用，请联系管理员",
+      code: 4005,
+    });
+  }
+
   // 分析结果按模型隔离缓存；平台模型走 config 的当前主力模型名
   const llmDescriptor = llmContext
     ? { provider: llmContext.providerId, model: llmContext.models.default, source: "byok" }

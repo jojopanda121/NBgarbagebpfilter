@@ -218,6 +218,20 @@ const config = {
   },
 };
 
+// ── 派生开关（依赖上面多个字段，故在字面量之后计算）──────────
+// byokAvailable：用户自带模型能否使用。BYOK 要把用户的 API Key 落库，
+//   必须有 ENCRYPTION_KEY（64 位 hex = 32 字节 AES-256 密钥）才能加密存储，
+//   没有就整体关闭，绝不明文保存。llmCredentialService.isByokAvailable() 与此同源。
+// platformModelAvailable：平台自己的模型能否使用。为 false 时站点进入
+//   「纯自带模型模式」——服务照常启动，但分析必须由用户提供自己的 Key。
+config.byokAvailable = !!config.byokEnabled && !!config.encryptionKey && config.encryptionKey.length >= 64;
+// 判定口径与 llmService._platformProfile() 完全一致：DEEPSEEK_* 这组老别名
+// 只在主力厂商确实是 DeepSeek 时才算数，否则会把"拿着别家的 key 打 DeepSeek"
+// 误判成平台模型可用。
+config.platformModelAvailable = !!(
+  config.llmApiKey || (config.llmProvider === "deepseek" && config.deepseekApiKey)
+);
+
 // ── 生产环境安全检查 ──
 if (config.env === "production") {
   const secret = process.env.JWT_SECRET;
@@ -242,13 +256,26 @@ if (config.env === "production") {
 
   // 平台自己的 LLM key。DEEPSEEK_API_KEY 与 LLM_API_KEY 二者有其一即可，
   // 这样把主力后端换成别家时不必再保留一个名不副实的 DEEPSEEK_ 变量。
-  if (!config.llmApiKey) {
-    console.error(
-      "\n[FATAL] 生产环境必须设置 LLM_API_KEY（或向后兼容的 DEEPSEEK_API_KEY）！\n" +
-      `  当前 LLM_PROVIDER=${config.llmProvider}\n` +
-      "  DeepSeek 申请: https://platform.deepseek.com/api_keys\n"
-    );
-    process.exit(1);
+  if (!config.platformModelAvailable) {
+    // 平台 key 缺失不必然致命：只要 BYOK 可用，用户拿自己的 key 就能继续跑。
+    // 这正是"平台方哪天不再续费 API，站点仍然可用"的兜底路径——此时整站
+    // 起不来才是最坏结果（用户连填自己 key 的页面都打不开）。
+    // 反之，BYOK 也关着时没有任何模型可用，仍然按启动失败处理。
+    if (config.byokAvailable) {
+      console.warn(
+        "\n[WARN] 未设置 LLM_API_KEY（或 DEEPSEEK_API_KEY），平台模型不可用。\n" +
+        "  服务以「纯自带模型模式」启动：用户必须在「设置 → 我的模型」配置自己的 API Key 才能分析。\n" +
+        `  当前 LLM_PROVIDER=${config.llmProvider}\n`
+      );
+    } else {
+      console.error(
+        "\n[FATAL] 生产环境必须设置 LLM_API_KEY（或向后兼容的 DEEPSEEK_API_KEY）！\n" +
+        `  当前 LLM_PROVIDER=${config.llmProvider}\n` +
+        "  DeepSeek 申请: https://platform.deepseek.com/api_keys\n" +
+        "  或：配置 ENCRYPTION_KEY 开启自带模型（BYOK），让用户用自己的 Key 跑。\n"
+      );
+      process.exit(1);
+    }
   }
 
   // 检索 key 缺失不致命：检索层会静默降级，但要让运维知道分析质量会下降。

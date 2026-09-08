@@ -67,11 +67,13 @@ const PROVIDERS = {
     id: "minimax",
     label: "MiniMax 稀宇",
     kind: "openai",
-    defaultHost: "https://api.minimax.chat/v1",
+    // 国内站是 api.minimaxi.com（注意多一个 i），api.minimax.chat 是老域名，
+    // api.minimax.io 是国际站。默认给国内站，三个都在白名单里。
+    defaultHost: "https://api.minimaxi.com/v1",
     chatPath: "/v1/text/chatcompletion_v2",
-    allowedHostSuffixes: ["api.minimax.chat", "api.minimaxi.com"],
-    defaultModels: { default: "MiniMax-Text-01", heavy: "MiniMax-Text-01", light: "abab6.5s-chat" },
-    suggestedModels: ["MiniMax-Text-01", "MiniMax-M1", "abab6.5s-chat"],
+    allowedHostSuffixes: ["api.minimaxi.com", "api.minimax.chat", "api.minimax.io"],
+    defaultModels: { default: "MiniMax-M2", heavy: "MiniMax-M2", light: "MiniMax-M2" },
+    suggestedModels: ["MiniMax-M2", "MiniMax-M1", "MiniMax-Text-01", "abab6.5s-chat"],
     consoleUrl: "https://platform.minimaxi.com/user-center/basic-information/interface-key",
   },
 

@@ -15,7 +15,7 @@
 //      否则整轮请求会被拒。剔除只损失一点上下文，不影响结论正确性。
 // ============================================================
 
-const { LLMAPIError } = require("./openaiCompatible");
+const { LLMAPIError, parseRetryAfter } = require("./openaiCompatible");
 
 const ANTHROPIC_VERSION = "2023-06-01";
 const MIN_THINKING_BUDGET = 1024;
@@ -114,7 +114,13 @@ async function parseError(resp) {
     const json = JSON.parse(text);
     msg = json?.error?.message || json?.message || msg;
   } catch (_) { /* ignore */ }
-  throw new LLMAPIError(`Anthropic API 失败 (${resp.status}): ${msg}`, resp.status, text);
+  // Retry-After 同样要带上：被限流时听上游的退避时长，别自己拍脑袋
+  throw new LLMAPIError(
+    `Anthropic API 失败 (${resp.status}): ${msg}`,
+    resp.status,
+    text,
+    parseRetryAfter(resp.headers)
+  );
 }
 
 function createAnthropicClient({ apiKey, endpoint, caps }) {

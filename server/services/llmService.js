@@ -22,6 +22,8 @@ const { extractJson } = require("../utils/jsonParser");
 const jsonSchema = require("../utils/jsonSchema");
 const { createLLMClient } = require("../utils/llmClient");
 const { resolveCapabilities, inputCharBudget } = require("./llm/capabilities");
+const { getProvider } = require("./llm/providers");
+const { runLimited, recommendedConcurrency, describeGates } = require("./llm/concurrency");
 const { getLlmContext, addDegradeNote, getDegradeNotes, fingerprint } = require("../runtime/llmContext");
 
 // ── LLM 调用计量（成本可观测最小实现）────────────────────────
@@ -43,7 +45,11 @@ function getLlmStats() {
 function _instrument(client, meta) {
   if (!client || !client.messages || typeof client.messages.create !== "function") return client;
   const _origCreate = client.messages.create.bind(client.messages);
+  // 每把 key 一个并发闸门：上游 429 的直接原因几乎总是我们自己开太多路，
+  // 在这里排队比事后退避重试便宜得多（见 llm/concurrency.js）。
+  const _gated = (fn) => runLimited(meta.gateKey || meta.providerId, meta.providerId, fn);
   client.messages.create = async function instrumentedCreate(body, ...rest) {
+    return _gated(async () => {
     const start = Date.now();
     try {
       const resp = await _origCreate(body, ...rest);
@@ -82,6 +88,7 @@ function _instrument(client, meta) {
       }));
       throw err;
     }
+    });
   };
   return client;
 }
@@ -102,7 +109,9 @@ function _getClient({ providerId, apiKey, baseURL, model, capabilityOverrides, s
   }
   const client = _instrument(
     createLLMClient({ apiKey, baseURL, providerId, model, capabilityOverrides }),
-    { providerId, source }
+    // 闸门按账号分组，不按模型：限流额度是账号级的，同一把 key 的
+    // heavy/light 两个模型必须共用一个闸门，否则并发翻倍。
+    { providerId, source, gateKey: `${providerId}|${fingerprint(apiKey)}` }
   );
   _clientCache.set(cacheKey, client);
   while (_clientCache.size > CLIENT_CACHE_MAX) {
@@ -115,17 +124,22 @@ function _getClient({ providerId, apiKey, baseURL, model, capabilityOverrides, s
 // config 里 deepseek* 是历史别名，llm* 是中立名；两者指向同一批环境变量，
 // 换厂商只需改 env，不改代码。
 function _platformProfile() {
+  const providerId = config.llmProvider || "deepseek";
+  // DeepSeek 的别名配置只在主力厂商确实是 DeepSeek 时才兜底。
+  // 否则 LLM_PROVIDER=minimax 会拿着 deepseek 的默认端点和默认模型跑，
+  // 报出来的错跟真实原因完全对不上（历史坑，见 config/index.js 的注释）。
+  const legacy = providerId === "deepseek";
   return {
     source: "platform",
-    providerId: config.llmProvider || "deepseek",
-    apiKey: config.llmApiKey || config.deepseekApiKey || "",
-    baseURL: config.llmApiHost || config.deepseekApiHost || "",
+    providerId,
+    apiKey: config.llmApiKey || (legacy ? config.deepseekApiKey : "") || "",
+    baseURL: config.llmApiHost || (legacy ? config.deepseekApiHost : "") || "",
     models: {
-      default: config.llmModel || config.deepseekModel,
-      heavy: config.llmModelHeavy || config.deepseekModelHeavy,
-      light: config.llmModelLight || config.deepseekModelLight,
+      default: config.llmModel || (legacy ? config.deepseekModel : ""),
+      heavy: config.llmModelHeavy || (legacy ? config.deepseekModelHeavy : ""),
+      light: config.llmModelLight || (legacy ? config.deepseekModelLight : ""),
     },
-    reasoningEffort: config.llmReasoningEffort || config.deepseekReasoningEffort || "",
+    reasoningEffort: config.llmReasoningEffort || (legacy ? config.deepseekReasoningEffort : "") || "",
   };
 }
 
@@ -165,9 +179,16 @@ const MODEL_TIERS = { heavy: true, default: true, light: true };
 // 用户只配一个模型是完全正常的用法，不能因此报错。
 function _modelForTier(tier, profile) {
   const models = profile.models || {};
-  const fallback = models.default || MODEL;
-  if (tier === "heavy") return models.heavy || fallback;
-  if (tier === "light") return models.light || fallback;
+  // 没配模型名时用**该厂商**的默认模型，而不是 DeepSeek 的模型名
+  // （拿 deepseek-v4-flash 去问 MiniMax，只会换来一个 "模型不存在"）。
+  const providerDefaults = (getProvider(profile.providerId) || {}).defaultModels || {};
+  // 配了 default 就以它为准 —— 只配一把模型是完全正常的用法，
+  // 不能因为任务是 heavy 档就擅自换成厂商的贵模型。
+  // 一个都没配（比如只设了 LLM_PROVIDER）时才用厂商默认模型分档。
+  const configured = models.default || "";
+  const fallback = configured || providerDefaults.default || MODEL;
+  if (tier === "heavy") return models.heavy || (configured ? configured : providerDefaults.heavy || fallback);
+  if (tier === "light") return models.light || (configured ? configured : providerDefaults.light || fallback);
   return fallback;
 }
 
@@ -436,6 +457,25 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/**
+ * 第 attempt 次重试前该等多久。
+ *
+ * 两条硬要求：
+ *  1) 上游给了 Retry-After 就听它的——它知道自己什么时候恢复，我们不知道；
+ *  2) 必须加抖动。没有抖动时，被限流的 N 路请求会在同一毫秒一起醒来再撞一次，
+ *     限流就自我延长了（这正是"8 路批次 + 固定 2/4/8s"的老行为）。
+ */
+function retryDelayMs(attempt, err) {
+  const hinted = Number(err?.retryAfterMs) || 0;
+  if (hinted > 0) {
+    // 听上游的时长，再加 0~1s 随机错峰，避免几路同时醒来
+    return Math.min(hinted + Math.floor(Math.random() * 1000), 120000);
+  }
+  const base = BASE_DELAY_MS * Math.pow(2, attempt - 1);
+  const jittered = base * (0.7 + Math.random() * 0.6); // ±30%
+  return Math.min(Math.round(jittered), 60000);
+}
+
 /** 带超时的 Promise 包装 */
 function withTimeout(promise, ms, label) {
   return new Promise((resolve, reject) => {
@@ -469,6 +509,9 @@ function isRetryable(err) {
 function normalizeLLMError(err) {
   const status = err?.status;
   const isByok = _activeProfile().source === "byok";
+  // 上游原文（比如 MiniMax 的"已达到 Token Plan 用量上限"）必须留痕：
+  // 用户看到的是规范化文案，排查的人要能在日志里看到真实原因。
+  if (err?.message) console.warn(`[LLM] 上游错误(status=${status ?? "?"}): ${String(err.message).slice(0, 300)}`);
   if (status === 401 || status === 403) {
     const e = new Error(
       isByok
@@ -477,20 +520,25 @@ function normalizeLLMError(err) {
     );
     e.permanent = true;
     e.byok = isByok;
+    e.upstream = err?.message;
     return e;
   }
   if (status === 402 || /insufficient|balance|quota|欠费|余额/i.test(err?.message || "")) {
     const e = new Error(
       isByok
-        ? "你的模型账户余额不足或已超出配额，请到厂商控制台充值后重试"
-        : "LLM 服务余额不足"
+        ? "你的模型账户余额不足或已超出配额（含套餐用量上限），请到厂商控制台充值/升级后重试"
+        : "LLM 服务余额不足或已达套餐用量上限（真实原因见服务端日志）"
     );
     e.permanent = true;
     e.byok = isByok;
+    e.upstream = err?.message;
     return e;
   }
   if (status === 429) {
-    return new Error(isByok ? "你的模型账户被限流，请稍后重试" : "LLM 服务限流，请稍后重试");
+    const e = new Error(isByok ? "你的模型账户被限流，请稍后重试" : "LLM 服务限流，请稍后重试");
+    e.upstream = err?.message;
+    e.byok = isByok;
+    return e;
   }
   if (isByok && err) err.byok = true;
   return err;
@@ -524,7 +572,7 @@ async function callLLM(systemPrompt, userContent, maxTokensOrOpts = 12000) {
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     try {
       if (attempt > 0) {
-        const delay = BASE_DELAY_MS * Math.pow(2, attempt - 1);
+        const delay = retryDelayMs(attempt, lastError);
         console.warn(`[LLM] 第 ${attempt + 1} 次尝试（延迟 ${delay}ms）...`);
         await sleep(delay);
       }
@@ -547,10 +595,25 @@ async function callLLM(systemPrompt, userContent, maxTokensOrOpts = 12000) {
         `callLLM(model=${model}, maxTokens=${maxTokens})`
       );
 
-      return resp.content
+      const outText = resp.content
         .filter((b) => b.type === "text")
         .map((b) => b.text)
         .join("");
+      // 空正文不是成功。历史上这里直接 return ""，于是上游的任何静默失败
+      // （最典型的是把错误塞进 HTTP 200 的厂商）都会变成下游的"JSON 解析失败"，
+      // 真实原因永远查不到。provider 层现在会拦下大部分这类响应，
+      // 这里作为第二道防线：报清楚并按可重试处理。
+      if (!outText) {
+        lastError = new Error(
+          `LLM 返回空正文（model=${model}, maxTokens=${maxTokens}, stop_reason=${resp.stop_reason || "?"}）`
+        );
+        if (attempt < MAX_RETRIES) {
+          console.warn(`[LLM] 空正文，重试 (attempt ${attempt + 1})`);
+          continue;
+        }
+        break;
+      }
+      return outText;
     } catch (err) {
       lastError = err;
       if (attempt < MAX_RETRIES && isRetryable(err)) {
@@ -590,7 +653,7 @@ async function callLLMWithThinking(systemPrompt, userContent, maxTokens = 16000,
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
       try {
         if (attempt > 0) {
-          const delay = BASE_DELAY_MS * Math.pow(2, attempt - 1);
+          const delay = retryDelayMs(attempt, lastError);
           console.warn(`[LLM/Thinking] 第 ${attempt + 1} 次尝试（延迟 ${delay}ms）...`);
           await sleep(delay);
         }
@@ -618,6 +681,13 @@ async function callLLMWithThinking(systemPrompt, userContent, maxTokens = 16000,
           if (block.type === "text") text += block.text;
         }
         if (text) return { thinking, text };
+        // 拿到响应但正文是空的（思考把预算吃光，或上游静默失败）。
+        // 这里必须造一个真的 Error：否则循环跑完 lastError 仍是 undefined，
+        // `throw lastError` 会让外层 catch 读 undefined.message 直接 TypeError，
+        // 报错信息彻底丢失（MiniMax 上每次开思考都会走到这条路）。
+        lastError = new Error(
+          `LLM(thinking) 返回空正文（model=${model}, maxTokens=${maxTokens}）`
+        );
       } catch (err) {
         lastError = err;
         if (attempt < MAX_RETRIES && isRetryable(err)) {
@@ -629,9 +699,15 @@ async function callLLMWithThinking(systemPrompt, userContent, maxTokens = 16000,
     }
 
     // Thinking 模式完全失败，抛出以便降级
-    throw lastError;
+    throw lastError || new Error("LLM(thinking) 未取得任何结果");
   } catch (thinkErr) {
-    console.warn("[LLM] Thinking 模式不可用，降级为普通模式:", thinkErr.message);
+    // 永久错误（401/402/400：鉴权、余额、参数非法）不该被降级掩盖成
+    // "普通模式再试一次"——那只是把同一个错误再花一次钱重犯一遍。
+    // 400（参数不合）不在此列：provider 层已经会自适应改写重试，走到这里
+    // 说明还有别的问题，降级为普通模式再试一次是划算的。
+    // 但鉴权/余额类错误重试一次只是再花一次钱重犯同一个错，直接抛。
+    if ([401, 402, 403].includes(thinkErr?.status)) throw normalizeLLMError(thinkErr);
+    console.warn("[LLM] Thinking 模式不可用，降级为普通模式:", thinkErr?.message || thinkErr);
   }
 
   // 降级为普通模式时保持同一档模型，否则 heavy 任务会在 thinking 失败后
@@ -667,7 +743,7 @@ async function callLLMChat(systemPrompt, messages, opts = {}) {
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     try {
       if (attempt > 0) {
-        const delay = BASE_DELAY_MS * Math.pow(2, attempt - 1);
+        const delay = retryDelayMs(attempt, lastError);
         console.warn(`[LLM/Chat] 第 ${attempt + 1} 次尝试（延迟 ${delay}ms）...`);
         await sleep(delay);
       }
@@ -846,7 +922,7 @@ async function callLLMWithSearch(systemPrompt, userContent, opts = {}) {
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     try {
       if (attempt > 0) {
-        const delay = BASE_DELAY_MS * Math.pow(2, attempt - 1);
+        const delay = retryDelayMs(attempt, lastError);
         console.warn(`[LLM/Search] 第 ${attempt + 1} 次尝试（延迟 ${delay}ms）...`);
         await sleep(delay);
       }
@@ -928,6 +1004,19 @@ async function callLLMWithSearch(systemPrompt, userContent, opts = {}) {
   // 降级同样保持档位，避免 heavy 任务静默掉档
   const text = await callLLM(systemPrompt, userContent, { maxTokens, ...opts });
   return { text, searchUsed: false };
+}
+
+/**
+ * 当前生效的这把 key 建议开几路并发。
+ * 调用方（如流水线的批次并发）照它开路，别再写死 8。
+ */
+function getRecommendedConcurrency() {
+  return recommendedConcurrency(_activeProfile().providerId);
+}
+
+/** 可观测：各并发闸门的实时占用 */
+function getConcurrencyGates() {
+  return describeGates();
 }
 
 function getModelName(opts) {
@@ -1401,4 +1490,6 @@ module.exports = {
   getLlmStats,
   describeActiveLlm,
   inputBudgetChars,
+  getRecommendedConcurrency,
+  getConcurrencyGates,
 };

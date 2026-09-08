@@ -140,9 +140,16 @@ export default function MyModelTab() {
         <p className="text-xs text-[#8E9BB0]">
           {meta?.byok_disabled_reason || "该功能当前不可用。"}
         </p>
+        <p className="text-xs text-[#8E9BB0] mt-2">
+          {meta?.platform_model_available === false
+            ? "平台模型目前也不可用，分析功能暂时无法使用，请联系管理员。"
+            : "分析仍会使用平台模型，功能不受影响。"}
+        </p>
       </div>
     );
   }
+
+  const platformDown = meta?.platform_model_available === false;
 
   return (
     <div className="bg-white border border-[#D8DCE8] rounded-xl p-5 space-y-5">
@@ -156,6 +163,19 @@ export default function MyModelTab() {
           AES-256-GCM 加密存储，平台不会明文保存或记录。
         </p>
       </div>
+
+      {/* 平台模型停用时，这页从"可选增强"变成"必配项"，得先把这件事说清楚 */}
+      {platformDown && (
+        <div className="rounded-lg border border-amber-300 bg-amber-50 p-3">
+          <div className="flex items-start gap-2">
+            <AlertTriangle className="w-4 h-4 text-amber-600 mt-0.5 shrink-0" />
+            <p className="text-xs text-[#4B5A72] leading-relaxed">
+              <span className="font-medium text-[#0D2145]">平台模型当前不可用。</span>{" "}
+              配置你自己的模型后即可继续使用全部分析功能；未配置前无法发起分析。
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* 已保存的凭证 */}
       {credential && (

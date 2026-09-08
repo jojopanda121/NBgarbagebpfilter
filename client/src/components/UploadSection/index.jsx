@@ -41,13 +41,18 @@ const UploadSection = memo(function UploadSection() {
   // 只有"功能开着 + 用户已保存并通过校验"时才出现引擎选择；
   // 其余情况完全不打扰，分析照旧走平台模型。
   const [byok, setByok] = useState(null);
+  // 平台模型是否可用。默认按"可用"起步：接口没回来之前不该先吓唬用户。
+  const [platformModel, setPlatformModel] = useState(true);
   useEffect(() => {
     let alive = true;
     if (!user) return undefined;
     (async () => {
       try {
         const resp = await api.getLlmCredential();
-        if (alive) setByok(resp?.byok_enabled ? resp.credential : null);
+        if (!alive) return;
+        setByok(resp?.byok_enabled ? resp.credential : null);
+        // 字段缺失（老后端）时按可用处理，避免把正常站点误判成停服
+        setPlatformModel(resp?.platform_model_available !== false);
       } catch (_) {
         if (alive) setByok(null); // 拿不到就当没配，不影响主流程
       }
@@ -60,6 +65,14 @@ const UploadSection = memo(function UploadSection() {
   useEffect(() => {
     if (useOwnModel && !byok?.usable) setUseOwnModel(false);
   }, [byok, useOwnModel, setUseOwnModel]);
+  // 平台模型不可用时，自带模型不是"可选项"而是唯一通路：配好了就默认选中，
+  // 省得用户点了分析才被后端拒绝。
+  useEffect(() => {
+    if (!platformModel && byok?.usable && !useOwnModel) setUseOwnModel(true);
+  }, [platformModel, byok, useOwnModel, setUseOwnModel]);
+
+  // 没有任何模型可用：平台停了，用户也没配自己的
+  const noModelAvailable = !platformModel && !byok?.usable;
 
   // ── 文件校验 ──
   // 支持 PDF / Word(.doc/.docx) / PPT(.pptx)。部分浏览器对 doc/docx/pptx 的 MIME 不稳定，
@@ -192,15 +205,20 @@ const UploadSection = memo(function UploadSection() {
           <div className="grid grid-cols-2 gap-2">
             <button
               type="button"
-              onClick={() => setUseOwnModel(false)}
+              onClick={() => platformModel && setUseOwnModel(false)}
+              disabled={!platformModel}
               className={`px-3 py-2 rounded-lg text-left border transition-colors ${
-                !useOwnModel
-                  ? "border-[#1B4FD8] bg-[#1B4FD8]/5"
-                  : "border-[#D8DCE8] hover:border-[#BFC5D6]"
+                !platformModel
+                  ? "border-[#D8DCE8] bg-[#F5F7FB] cursor-not-allowed opacity-60"
+                  : !useOwnModel
+                    ? "border-[#1B4FD8] bg-[#1B4FD8]/5"
+                    : "border-[#D8DCE8] hover:border-[#BFC5D6]"
               }`}
             >
               <div className="text-sm text-[#0D2145]">平台模型</div>
-              <div className="text-[11px] text-[#8E9BB0] mt-0.5">消耗 1 次分析额度</div>
+              <div className="text-[11px] text-[#8E9BB0] mt-0.5">
+                {platformModel ? "消耗 1 次分析额度" : "当前不可用"}
+              </div>
             </button>
             <button
               type="button"
@@ -225,7 +243,30 @@ const UploadSection = memo(function UploadSection() {
           )}
         </div>
       )}
-      {byok === null && user && (
+      {/* 平台模型停用且用户没配自己的模型：这时候不是"顺带推荐"，而是唯一出路 */}
+      {noModelAvailable && user && (
+        <div className="mt-4 rounded-xl border border-amber-300 bg-amber-50 p-4">
+          <div className="flex items-start gap-2">
+            <Cpu className="w-4 h-4 text-amber-600 mt-0.5 shrink-0" />
+            <div>
+              <div className="text-sm font-medium text-[#0D2145]">需要先配置你自己的模型</div>
+              <p className="text-xs text-[#4B5A72] mt-1 leading-relaxed">
+                平台模型当前不可用。在「设置 → 我的模型」填入你自己的 API Key （DeepSeek / Claude /
+                GPT / Gemini 等任选），即可继续分析，费用由你的模型账户承担、不消耗平台额度。
+              </p>
+              <button
+                type="button"
+                onClick={() => navigate("/settings?tab=mymodel")}
+                className="mt-2 px-3 py-1.5 rounded-lg bg-[#1B4FD8] text-white text-xs font-medium hover:bg-[#1745BC] transition-colors"
+              >
+                去配置我的模型
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {byok === null && user && platformModel && (
         <button
           type="button"
           onClick={() => navigate("/settings?tab=mymodel")}
@@ -247,11 +288,11 @@ const UploadSection = memo(function UploadSection() {
       {/* 分析按钮 */}
       <button
         onClick={startAnalysis}
-        disabled={!file || analyzing || !canAnalyze}
+        disabled={!file || analyzing || !canAnalyze || noModelAvailable}
         className={`
           mt-6 w-full py-4 rounded-xl text-lg font-semibold transition-all
           ${
-            file && !analyzing && canAnalyze
+            file && !analyzing && canAnalyze && !noModelAvailable
               ? "bg-gradient-to-r from-red-500 to-orange-500 hover:from-red-600 hover:to-orange-600 text-[#0D2145] shadow-lg shadow-red-500/20"
               : "bg-[#EEF1F7] text-[#8E9BB0] cursor-not-allowed"
           }
@@ -264,6 +305,8 @@ const UploadSection = memo(function UploadSection() {
           </span>
         ) : !canAnalyze ? (
           "请先绑定邮箱"
+        ) : noModelAvailable ? (
+          "请先配置你自己的模型"
         ) : (
           "开始辩证分析"
         )}

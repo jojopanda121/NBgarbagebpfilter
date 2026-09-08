@@ -442,7 +442,14 @@ function ensureLLMConfigured() {
     e.byok = true;
     throw e;
   }
-  throw new Error("LLM 未配置：服务端缺少 DEEPSEEK_API_KEY，请在 .env 中设置后重启进程");
+  // 平台 key 缺失时的文案要分人：BYOK 开着，用户自己就能解决（去配自己的 Key），
+  // 给他一句能照做的话；BYOK 也关着才是纯运维问题，那句 .env 提示才有意义。
+  if (config.byokAvailable) {
+    const e = new Error("平台模型当前不可用，请在「设置 → 我的模型」配置你自己的 API Key 后再试");
+    e.permanent = true;
+    throw e;
+  }
+  throw new Error("LLM 未配置：服务端缺少 LLM_API_KEY（或 DEEPSEEK_API_KEY），请在 .env 中设置后重启进程");
 }
 
 /** 根据 maxTokens 动态计算超时时间 */
@@ -1478,6 +1485,7 @@ async function callLLMJson(systemPrompt, userContent, schema, opts = {}) {
 
 module.exports = {
   callLLM,
+  ensureLLMConfigured,
   callLLMWithThinking,
   callLLMChat,
   callLLMWithSearch,
